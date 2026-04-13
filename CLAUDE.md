@@ -11,9 +11,10 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **Single HTML file** — no build step, no dependencies, no framework. Opens directly in any browser.
 - **Five views**: Dashboard, Sprint Planning (swim lane), Roadmap/Gantt, Capacity & Workload, Governance Forums
 - **Data model**: Projects → Stages (Delivery Phases) → Skills → Sprints. Team Members with skill-based capacity. Governance Forums with project mapping.
-- **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance` — all as plain JS objects in a single `<script>` block.
+- **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal` — all as plain JS objects in a single `<script>` block.
 - **No emojis** — all icons are inline SVGs throughout.
-- **Customer-scoped** — every view requires a customer selection (GCC, KS, DR&I). No "All" option exists. Capacity calculations filter team members by customer (including those marked "Both"). Auto-selects first customer on data load.
+- **Customer-scoped** — `App.activeCustomer` is the single source of truth for customer selection. Changing it on any view syncs all views. Defaults to GCC. No "All" option exists. Use `App.setActiveCustomer(value)` to change.
+- **Skill colors** — defined in `Sprint.SKILL_COLORS`. Intentionally avoid green/amber/red to prevent confusion with RAG statuses. Current: Indigo (Req), Cyan (Tab), Blue (Eng), Violet (DS), Pink (UAT).
 
 ## Data Model Key Facts
 - **Customer** is always single-select and mandatory: GCC, KS, DR&I. Never allow an "All" option.
@@ -66,12 +67,16 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **Capacity headers**: each sprint column header shows per-skill capacity bars with load percentages, filtered to the selected customer's team.
 - **Move logic**: `moveSkillToSprint()` initialises `skill_splits` for ALL skills on first move, then moves only the targeted skill. Updates `current_sprint` to the sprint with the most total work.
 
-## Auto-Allocate Engine
-- **Customer is required** — opens settings modal if not set.
-- **4-phase delivery pipeline**: Req (1) → Eng+DS (2, parallel) → Tableau (3) → UAT (4).
-- **Strict sequential phasing**: each phase must start in the sprint AFTER the previous phase finishes. No concurrent phases within a sprint.
-- **Capacity-constrained**: respects `maxCapacityPct` target per skill per sprint.
-- **Priority-ordered**: highest priority projects allocated first.
+## Auto-Allocate Engine (Constraint Solver)
+- **Uses global customer filter** — no popup, reads `App.activeCustomer` directly.
+- **Three-pass constraint solver** (`Solver` module):
+  - **Pass 1 (Forward Schedule)**: Priority-ordered, dependency-aware, deadline-constrained. Respects phase sequencing, capacity limits, and holiday-reduced capacity.
+  - **Pass 2 (Deadline Repair)**: Projects with hard deadlines that can't be met are compacted into a tighter window. Flags impossible constraints.
+  - **Pass 3 (Load Balancing)**: Smooths capacity spikes by shifting work from overloaded sprints (>90%) to adjacent underutilised sprints (<60%).
+- **Dependency-aware**: Normalises `dependencies` (string, array, or object format). Detects circular deps via topological sort (Kahn's algorithm), breaks cycles at lowest-priority edge.
+- **Deadline-constrained**: Maps `hard_deadline` to sprint indices. Hard constraint for `deadline_type === 'Hard Deadline'`.
+- **Priority + spread**: `priorityWeight` (1-5) controls front-loading. `spreadWork` distributes points across sprints instead of packing greedily.
+- **Preview before apply**: Results shown in a modal with summary, warnings, and utilisation heat map. User clicks Apply or Cancel.
 - **Settings**: max capacity %, priority weight, start sprint, respect delivery pipeline, spread work, lock completed/in-progress.
 
 ## What's Not Yet Built

@@ -1036,7 +1036,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <input type="text" class="search-input" id="searchInput" placeholder="Search projects..." oninput="Dashboard.applyFilters()">
           <div class="filter-divider"></div>
           <span class="filter-label">Customer</span>
-          <select class="filter-select" id="filterCustomer" onchange="Dashboard.applyFilters()"><option value="" disabled>-- Select --</option></select>
+          <select class="filter-select" id="filterCustomer" onchange="App.setActiveCustomer(this.value)"><option value="" disabled>-- Select --</option></select>
           <span class="filter-label">Manager</span>
           <div class="multi-select" id="filterManager" data-field="manager"></div>
           <span class="filter-label">Status</span>
@@ -1088,7 +1088,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
       <div class="sprint-container">
         <div class="sprint-toolbar">
           <span class="filter-label">Customer</span>
-          <select class="filter-select" id="sprintFilterCustomer" onchange="Sprint.render()"><option value="" disabled>-- Select --</option></select>
+          <select class="filter-select" id="sprintFilterCustomer" onchange="App.setActiveCustomer(this.value)"><option value="" disabled>-- Select --</option></select>
           <span class="filter-label">Manager</span>
           <div class="multi-select" id="sprintFilterManager" data-field="manager"></div>
           <div class="toolbar-spacer"></div>
@@ -1102,7 +1102,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
       <div class="gantt-container">
         <div class="gantt-toolbar">
           <span class="filter-label">Customer</span>
-          <select class="filter-select" id="ganttFilterCustomer" onchange="Gantt.render()"><option value="" disabled>-- Select --</option></select>
+          <select class="filter-select" id="ganttFilterCustomer" onchange="App.setActiveCustomer(this.value)"><option value="" disabled>-- Select --</option></select>
           <span class="filter-label">Manager</span>
           <div class="multi-select" id="ganttFilterManager" data-field="manager"></div>
           <div class="toolbar-spacer"></div>
@@ -1138,7 +1138,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
         <div class="toolbar" style="padding:0 0 12px 0;border:none">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:11px;font-weight:600;color:var(--text-dark-secondary)">Customer</span>
-            <select class="filter-select" id="capacityFilterCustomer" onchange="Capacity.render()"><option value="" disabled>-- Select --</option></select>
+            <select class="filter-select" id="capacityFilterCustomer" onchange="App.setActiveCustomer(this.value)"><option value="" disabled>-- Select --</option></select>
           </div>
         </div>
         <div class="capacity-section">
@@ -1220,6 +1220,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 const App = {
   data: null,
   currentView: 'dashboard',
+  activeCustomer: null,
   isDirty: false,
   autoSaveTimer: null,
   fileName: '',
@@ -1749,6 +1750,20 @@ const App = {
     if (viewName === 'governance' && this.data) Governance.render();
   },
 
+  setActiveCustomer(customer) {
+    this.activeCustomer = customer;
+    ['filterCustomer', 'sprintFilterCustomer', 'ganttFilterCustomer', 'capacityFilterCustomer'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.value !== customer) el.value = customer;
+    });
+    // Re-render current view
+    if (this.currentView === 'dashboard') Dashboard.applyFilters();
+    else if (this.currentView === 'sprint') Sprint.render();
+    else if (this.currentView === 'roadmap') Gantt.init();
+    else if (this.currentView === 'capacity') Capacity.render();
+    else if (this.currentView === 'governance') Governance.render();
+  },
+
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (this.data) this.exportJSON(); }
@@ -1911,10 +1926,15 @@ const Dashboard = {
     const d = App.data;
     if (!d) return;
     const customers = App.getUniqueValues('customer');
-    this.fillSelect('filterCustomer', customers, true);
-    this.fillSelect('sprintFilterCustomer', customers, true);
-    this.fillSelect('ganttFilterCustomer', customers, true);
-    this.fillSelect('capacityFilterCustomer', customers, true);
+    // Set global customer: prefer existing, then GCC, then first available
+    if (!App.activeCustomer || !customers.includes(App.activeCustomer)) {
+      App.activeCustomer = customers.includes('GCC') ? 'GCC' : (customers[0] || null);
+    }
+    ['filterCustomer', 'sprintFilterCustomer', 'ganttFilterCustomer', 'capacityFilterCustomer'].forEach(id => {
+      this.fillSelect(id, customers, false);
+      const el = document.getElementById(id);
+      if (el && App.activeCustomer) el.value = App.activeCustomer;
+    });
     this.initMultiSelect('filterManager', App.getUniqueValues('manager'));
     this.initMultiSelect('filterStatus', App.getUniqueValues('status'));
     this.initMultiSelect('filterCategory', App.getUniqueValues('category'));
@@ -2020,7 +2040,7 @@ const Dashboard = {
     if (!App.data) return;
 
     const search = document.getElementById('searchInput').value.toLowerCase().trim();
-    const customer = document.getElementById('filterCustomer').value;
+    const customer = App.activeCustomer;
     const managers = this.getFilterValues('filterManager');
     const statuses = this.getFilterValues('filterStatus');
     const categories = this.getFilterValues('filterCategory');
@@ -2620,7 +2640,7 @@ const Dashboard = {
   renderAttentionPanel() {
     const panel = document.getElementById('attentionPanel');
     if (!panel) return;
-    const customer = document.getElementById('filterCustomer').value;
+    const customer = App.activeCustomer;
     if (!customer) { panel.innerHTML = ''; return; }
     const alerts = this.computeAlerts(customer);
     if (!alerts.length) { panel.innerHTML = ''; return; }
@@ -3291,7 +3311,7 @@ const Gantt = {
 
   getFilteredProjects() {
     let projects = App.data.projects.filter(p => p.start_date && p.target_date);
-    const customer = document.getElementById('ganttFilterCustomer').value;
+    const customer = App.activeCustomer;
     const managers = this.multiSelections['ganttFilterManager'] || [];
     // Customer is always required
     if (customer) projects = projects.filter(p => p.customer === customer);
@@ -3400,13 +3420,7 @@ const Gantt = {
     const showBaseline = document.getElementById('ganttBaseline').checked;
 
     // Skill colors for Gantt segments
-    const skillColors = {
-      'size_requirements': '#6366f1',
-      'size_tableau': '#0891b2',
-      'size_engineering': '#059669',
-      'size_data_science': '#d97706',
-      'size_uat_adoption': '#dc2626'
-    };
+    const skillColors = Sprint.SKILL_COLORS;
     const skillLabels = {
       'size_requirements': 'Req',
       'size_tableau': 'Tab',
@@ -3722,7 +3736,7 @@ const Sprint = {
 
   getFilteredProjects() {
     let projects = App.data.projects.slice();
-    const customer = document.getElementById('sprintFilterCustomer').value;
+    const customer = App.activeCustomer;
     const managers = this.multiSelections['sprintFilterManager'] || [];
     // Customer is always required
     if (customer) projects = projects.filter(p => p.customer === customer);
@@ -3738,6 +3752,15 @@ const Sprint = {
     { key: 'size_data_science', label: 'Data Science', short: 'DS' },
     { key: 'size_uat_adoption', label: 'UAT', short: 'UAT' }
   ],
+
+  // Skill colors — intentionally avoid green/amber/red to prevent RAG confusion
+  SKILL_COLORS: {
+    'size_requirements': '#6366f1',  // Indigo
+    'size_tableau': '#0891b2',       // Cyan
+    'size_engineering': '#2563eb',   // Blue
+    'size_data_science': '#7c3aed',  // Violet
+    'size_uat_adoption': '#ec4899'   // Pink
+  },
 
   render() {
     if (!App.data) return;
@@ -3786,7 +3809,7 @@ const Sprint = {
     });
 
     // Calculate per-skill capacity from team members (filtered by customer if selected)
-    const boardCustomerFilter = document.getElementById('sprintFilterCustomer').value || '';
+    const boardCustomerFilter = App.activeCustomer || '';
 
     let html = '';
     html += this.renderColumn('backlog', 'Backlog', '', backlog, {}, true);
@@ -4058,13 +4081,7 @@ const Sprint = {
     const skillLabel = c.skill ? c.skill.label : 'Unsized';
     const ptsLabel = c.points > 0 ? c.points + ' pts' : '';
 
-    const skillColors = {
-      'size_requirements': '#6366f1',
-      'size_tableau': '#0891b2',
-      'size_engineering': '#059669',
-      'size_data_science': '#d97706',
-      'size_uat_adoption': '#dc2626'
-    };
+    const skillColors = Sprint.SKILL_COLORS;
     const skillColor = c.skill ? (skillColors[c.skill.key] || '#94a3b8') : '#94a3b8';
 
     const hasWarning = this.checkOrdering(c);
@@ -4099,18 +4116,12 @@ const Sprint = {
   renderSwimLane(board) {
     const projects = this.getFilteredProjects().sort((a, b) => (a.priority || 999) - (b.priority || 999));
     const sprints = App.data.sprints || [];
-    const customerFilter = document.getElementById('sprintFilterCustomer').value || '';
+    const customerFilter = App.activeCustomer || '';
     // Per-sprint holiday-aware capacity cache
     const sprintCapCache = {};
     sprints.forEach(s => { sprintCapCache[s.sprint_id] = this.calcSkillCapacityForSprint(customerFilter || undefined, s.sprint_id); });
 
-    const skillColors = {
-      'size_requirements': '#6366f1',
-      'size_tableau': '#0891b2',
-      'size_engineering': '#059669',
-      'size_data_science': '#d97706',
-      'size_uat_adoption': '#dc2626'
-    };
+    const skillColors = Sprint.SKILL_COLORS;
     const skillShort = {
       'size_requirements': 'Req',
       'size_tableau': 'Tab',
@@ -4460,7 +4471,6 @@ const Sprint = {
 
   // --- Auto-Allocation Engine ---
   allocSettings: {
-    customer: '',               // REQUIRED: which customer to allocate (GCC, KS, DR&I)
     maxCapacityPct: 85,        // Target max capacity per skill per sprint (%)
     respectSkillOrder: true,    // Requirements before Dev before UAT
     priorityWeight: 3,          // How much priority matters (1-5)
@@ -4476,18 +4486,11 @@ const Sprint = {
     const sprintOpts = '<option value="">First available</option>' +
       sprints.map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace('CY26-', '') + '</option>').join('');
 
-    // Get unique customers from projects
-    const customers = [...new Set((App.data.projects || []).map(p => p.customer).filter(Boolean))].sort();
-    const custOpts = '<option value="">-- Select customer --</option>' +
-      customers.map(c => '<option value="' + c + '"' + (s.customer === c ? ' selected' : '') + '>' + c + '</option>').join('');
-
     const body = document.getElementById('allocSettingsBody');
     body.innerHTML =
       '<div style="display:flex;flex-direction:column;gap:10px">' +
-        '<div style="background:#fffbeb;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:8px 10px">' +
-          '<label style="font-size:11px;font-weight:700;color:var(--text-dark)">Customer (required)<br>' +
-            '<select id="asCustomer" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:13px;font-weight:600;margin-top:4px">' + custOpts + '</select></label>' +
-          '<div style="font-size:9px;color:var(--text-muted);margin-top:4px">Allocates only projects for the selected customer using team members assigned to that customer</div>' +
+        '<div style="background:#eff6ff;border:1px solid #3b82f640;border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--text-dark)">' +
+          '<strong>Customer:</strong> ' + Dashboard.esc(App.activeCustomer || 'None') + ' <span style="color:var(--text-muted)">(change via the customer filter on any view)</span>' +
         '</div>' +
         '<div class="field-grid" style="grid-template-columns:1fr 1fr;gap:8px">' +
           '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Max capacity target (%)<br>' +
@@ -4509,13 +4512,13 @@ const Sprint = {
             '<span style="background:#6366f120;color:#6366f1;padding:2px 6px;border-radius:3px;font-weight:600">Req</span>' +
             '<span style="color:var(--text-muted)">\u2192</span>' +
             '<span style="display:flex;gap:2px">' +
-              '<span style="background:#05966920;color:#059669;padding:2px 6px;border-radius:3px;font-weight:600">Eng</span>' +
-              '<span style="background:#d9770620;color:#d97706;padding:2px 6px;border-radius:3px;font-weight:600">DS</span>' +
+              '<span style="background:#2563eb20;color:#2563eb;padding:2px 6px;border-radius:3px;font-weight:600">Eng</span>' +
+              '<span style="background:#7c3aed20;color:#7c3aed;padding:2px 6px;border-radius:3px;font-weight:600">DS</span>' +
             '</span>' +
             '<span style="color:var(--text-muted)">\u2192</span>' +
             '<span style="background:#0891b220;color:#0891b2;padding:2px 6px;border-radius:3px;font-weight:600">Tableau</span>' +
             '<span style="color:var(--text-muted)">\u2192</span>' +
-            '<span style="background:#dc262620;color:#dc2626;padding:2px 6px;border-radius:3px;font-weight:600">UAT</span>' +
+            '<span style="background:#ec489920;color:#ec4899;padding:2px 6px;border-radius:3px;font-weight:600">UAT</span>' +
           '</div>' +
           '<div style="font-size:9px;color:var(--text-muted);margin-top:4px">Each phase starts in the next sprint after the previous phase completes. Eng & DS can run in parallel. Phases may share a sprint if capacity allows.</div>' +
         '</div>' +
@@ -4531,7 +4534,6 @@ const Sprint = {
   },
 
   saveAllocSettings() {
-    this.allocSettings.customer = document.getElementById('asCustomer').value;
     this.allocSettings.maxCapacityPct = parseInt(document.getElementById('asMaxCap').value) || 85;
     this.allocSettings.priorityWeight = parseInt(document.getElementById('asPriWeight').value) || 3;
     this.allocSettings.startFromSprint = document.getElementById('asStartSprint').value;
@@ -4543,171 +4545,126 @@ const Sprint = {
     App.toast('Allocation settings saved', 'success');
   },
 
+  pendingAllocation: null,
+
   autoAllocate() {
     if (!App.data) return;
-    const settings = this.allocSettings;
-
-    // Customer is REQUIRED
-    if (!settings.customer) {
-      this.openAllocSettings();
-      App.toast('Please select a customer before auto-allocating', 'error');
-      return;
-    }
-    const customer = settings.customer;
-
-    const sprints = (App.data.sprints || []).slice();
+    const customer = App.activeCustomer;
+    if (!customer) { App.toast('Select a customer from the filter bar first', 'error'); return; }
+    const sprints = App.data.sprints || [];
     if (!sprints.length) { App.toast('No sprints defined', 'error'); return; }
 
-    // Find starting sprint index
-    let startIdx = 0;
-    if (settings.startFromSprint) {
-      const idx = sprints.findIndex(s => s.sprint_id === settings.startFromSprint);
-      if (idx >= 0) startIdx = idx;
-    }
-    const availSprints = sprints.slice(startIdx);
-    if (!availSprints.length) { App.toast('No sprints available from selected start', 'error'); return; }
+    const result = Solver.solve(customer, this.allocSettings, App.data, this);
+    this.pendingAllocation = result;
+    this.showAllocResults(result);
+  },
 
-    App.pushUndo('Auto-allocate sprints (' + customer + ')');
-
-    // Build capacity per sprint per skill — filtered to selected customer's team (holiday-aware)
-    const maxPct = settings.maxCapacityPct / 100;
-
-    // Track remaining capacity per sprint per skill
-    const remaining = {};
-    availSprints.forEach(s => {
-      const sprintCap = this.calcSkillCapacityForSprint(customer, s.sprint_id);
-      remaining[s.sprint_id] = {};
-      this.SKILLS.forEach(sk => {
-        remaining[s.sprint_id][sk.key] = Math.floor((sprintCap[sk.key] || 0) * maxPct);
-      });
-    });
-
-    // Get projects for selected customer only, sorted by priority
-    const projects = App.data.projects.slice()
-      .filter(p => {
-        if (p.customer !== customer) return false;
-        if (settings.lockCompleted && (p.status === 'Complete' || p.status === 'Closed')) return false;
-        if (settings.lockInProgress && p.status === 'In Progress') return false;
-        return true;
-      })
-      .sort((a, b) => {
-        const priA = a.priority || 999;
-        const priB = b.priority || 999;
-        return priA - priB;
-      });
-
-    // Skill phases: sequential delivery pipeline
-    // Phase 1: Requirements (must complete before anything else)
-    // Phase 2: Engineering & Data Science (data build — can run in parallel with each other)
-    // Phase 3: Tableau (needs data from Engineering/DS — must follow Phase 2)
-    // Phase 4: UAT (testing — must follow all build work)
-    const SKILL_PHASE = {
-      'size_requirements': 1,
-      'size_engineering': 2,
-      'size_data_science': 2,
-      'size_tableau': 3,
-      'size_uat_adoption': 4
-    };
-
-    let allocated = 0;
-    let skipped = 0;
-
-    projects.forEach(p => {
-      // Get skills that need allocation
-      const skillsToAllocate = this.SKILLS
-        .map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: SKILL_PHASE[sk.key] || 2 }))
-        .filter(sk => sk.points > 0);
-
-      if (!skillsToAllocate.length) return;
-
-      // Sort by phase if respecting order
-      if (settings.respectSkillOrder) {
-        skillsToAllocate.sort((a, b) => a.phase - b.phase);
-      }
-
-      // Clear existing splits for this project
-      p.skill_splits = {};
-      let earliestSprint = null;
-
-      // Group skills by phase
-      const phases = {};
-      skillsToAllocate.forEach(sk => {
-        if (!phases[sk.phase]) phases[sk.phase] = [];
-        phases[sk.phase].push(sk);
-      });
-
-      const phaseNums = Object.keys(phases).map(Number).sort();
-      let minSprintIdx = 0; // Earliest sprint index for current phase
-
-      phaseNums.forEach((phaseNum, phaseOrder) => {
-        const phaseSkills = phases[phaseNum];
-        const isFirstPhase = phaseOrder === 0;
-
-        phaseSkills.forEach(sk => {
-          let pointsLeft = sk.points;
-          p.skill_splits[sk.key] = [];
-
-          // Try to fit into sprints starting from minSprintIdx
-          for (let si = minSprintIdx; si < availSprints.length && pointsLeft > 0; si++) {
-            const sid = availSprints[si].sprint_id;
-            const cap = remaining[sid][sk.key];
-            if (cap <= 0) continue;
-
-            const assign = Math.min(pointsLeft, cap);
-            p.skill_splits[sk.key].push({ sprint: sid, points: assign });
-            remaining[sid][sk.key] -= assign;
-            pointsLeft -= assign;
-
-            if (!earliestSprint) earliestSprint = sid;
-          }
-
-          if (pointsLeft > 0) {
-            // Overflow — put remaining in last sprint
-            const lastSprint = availSprints[availSprints.length - 1].sprint_id;
-            const existing = p.skill_splits[sk.key].find(s => s.sprint === lastSprint);
-            if (existing) {
-              existing.points += pointsLeft;
-            } else {
-              p.skill_splits[sk.key].push({ sprint: lastSprint, points: pointsLeft });
-            }
-            skipped++;
-          }
+  applyAllocation() {
+    if (!this.pendingAllocation) return;
+    const result = this.pendingAllocation;
+    App.pushUndo('Smart auto-allocate (' + App.activeCustomer + ')');
+    const alloc = result.allocations;
+    Object.keys(alloc).forEach(projectId => {
+      const p = App.data.projects.find(pr => pr.id === projectId);
+      if (!p) return;
+      p.skill_splits = alloc[projectId];
+      // Set current_sprint to earliest, target_sprint to latest
+      let earliest = null, latest = null;
+      Object.values(alloc[projectId]).forEach(splits => {
+        splits.forEach(sp => {
+          if (!earliest || sp.sprint < earliest) earliest = sp.sprint;
+          if (!latest || sp.sprint > latest) latest = sp.sprint;
         });
-
-        // Enforce sequential phasing: next phase starts AFTER this one finishes
-        if (settings.respectSkillOrder) {
-          let latestIdx = minSprintIdx;
-          phaseSkills.forEach(sk => {
-            const splits = p.skill_splits[sk.key] || [];
-            splits.forEach(sp => {
-              const idx = availSprints.findIndex(s => s.sprint_id === sp.sprint);
-              if (idx > latestIdx) latestIdx = idx;
-            });
-          });
-
-          // Skills cannot run concurrently within a sprint for the same project.
-          // Each phase MUST start in the NEXT sprint after the previous phase finishes.
-          // Exception: Eng & DS are Phase 2 together — they CAN run in parallel
-          // because they are independent data build activities done by different people.
-          minSprintIdx = latestIdx + 1;
-        }
       });
-
-      // Set current_sprint to earliest assigned sprint
-      if (earliestSprint) {
-        p.current_sprint = earliestSprint;
-        allocated++;
-      }
-
+      if (earliest) p.current_sprint = earliest;
+      if (latest) p.target_sprint = latest;
       p.last_updated = new Date().toISOString();
     });
-
+    this.pendingAllocation = null;
     App.markDirty();
     App.saveToLocalStorage();
+    this.closeAllocResults();
     this.render();
-    let msg = customer + ': allocated ' + allocated + ' projects across ' + availSprints.length + ' sprints';
-    if (skipped > 0) msg += ' (' + skipped + ' skill overflows)';
-    App.toast(msg, skipped > 0 ? 'warning' : 'success');
+    App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
+  },
+
+  showAllocResults(result) {
+    const esc = Dashboard.esc;
+    const s = result.stats;
+    const w = result.warnings;
+    const hasBadWarnings = w.some(x => x.type === 'deadline_miss' || x.type === 'impossible');
+    const bannerColor = hasBadWarnings ? '#fef2f2' : w.length ? '#fffbeb' : '#f0fdf4';
+    const bannerBorder = hasBadWarnings ? '#ef4444' : w.length ? '#f59e0b' : '#22c55e';
+    const bannerText = hasBadWarnings ? 'Allocation has issues' : w.length ? 'Allocation completed with warnings' : 'Clean allocation';
+
+    let html = '<div style="display:flex;flex-direction:column;gap:12px">';
+    // Summary banner
+    html += '<div style="background:' + bannerColor + ';border:1px solid ' + bannerBorder + '40;border-radius:var(--radius-sm);padding:12px">' +
+      '<div style="font-size:13px;font-weight:700;color:var(--text-dark)">' + bannerText + '</div>' +
+      '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:4px">' +
+        s.projectsAllocated + ' projects allocated | ' + s.totalPoints + ' total points | ' +
+        s.makespan + ' sprints | Avg utilisation ' + s.avgUtilization + '%' +
+        (s.projectsSkipped ? ' | <span style="color:var(--status-red);font-weight:600">' + s.projectsSkipped + ' skipped</span>' : '') +
+      '</div></div>';
+
+    // Warnings
+    if (w.length) {
+      html += '<div style="max-height:150px;overflow-y:auto">';
+      w.forEach(warn => {
+        const icon = warn.type === 'deadline_miss' || warn.type === 'impossible' ? '<span style="color:var(--status-red)">!</span>' :
+          warn.type === 'circular_dependency' ? '<span style="color:var(--accent-violet)">~</span>' : '<span style="color:var(--status-amber)">!</span>';
+        html += '<div style="display:flex;gap:6px;padding:3px 0;font-size:11px;color:var(--text-dark-secondary)">' +
+          '<span style="font-weight:700;width:14px;text-align:center">' + icon + '</span>' +
+          '<span>' + esc(warn.message) + '</span></div>';
+      });
+      html += '</div>';
+    }
+
+    // Utilization heat map
+    const grid = result.utilizationGrid;
+    const sprintIds = Object.keys(grid);
+    if (sprintIds.length) {
+      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:10px">';
+      html += '<tr><th style="padding:4px 6px;text-align:left;border-bottom:1px solid var(--border-light)">Skill</th>';
+      sprintIds.forEach(sid => { html += '<th style="padding:4px 6px;text-align:center;border-bottom:1px solid var(--border-light)">' + sid.replace(/CY\d+-/, '') + '</th>'; });
+      html += '</tr>';
+      this.SKILLS.forEach(sk => {
+        html += '<tr><td style="padding:3px 6px;font-weight:600;color:' + (Sprint.SKILL_COLORS[sk.key] || '#666') + '">' + sk.short + '</td>';
+        sprintIds.forEach(sid => {
+          const cell = grid[sid][sk.key];
+          if (!cell || (cell.capacity === 0 && cell.used === 0)) { html += '<td style="padding:3px 6px;text-align:center;color:var(--text-muted)">-</td>'; return; }
+          const bg = cell.pct <= 80 ? '#f0fdf4' : cell.pct <= 100 ? '#fffbeb' : '#fef2f2';
+          const color = cell.pct <= 80 ? 'var(--status-green)' : cell.pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+          html += '<td style="padding:3px 6px;text-align:center;background:' + bg + ';color:' + color + ';font-weight:600">' + cell.used + '/' + cell.capacity + '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</table></div>';
+    }
+
+    html += '</div>';
+
+    const body = document.getElementById('allocSettingsBody');
+    body.innerHTML = html;
+    // Replace footer buttons
+    const footer = body.parentElement.querySelector('.modal-footer') || body.parentElement;
+    const existing = document.getElementById('allocResultsFooter');
+    if (existing) existing.remove();
+    const footerDiv = document.createElement('div');
+    footerDiv.id = 'allocResultsFooter';
+    footerDiv.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border-light)';
+    footerDiv.innerHTML = '<button class="btn btn-outline btn-sm" onclick="Sprint.closeAllocResults()">Cancel</button>' +
+      '<button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply Allocation</button>';
+    body.parentElement.appendChild(footerDiv);
+    document.getElementById('allocSettingsOverlay').style.display = 'block';
+    document.getElementById('allocSettingsModal').style.display = 'block';
+  },
+
+  closeAllocResults() {
+    this.pendingAllocation = null;
+    const footer = document.getElementById('allocResultsFooter');
+    if (footer) footer.remove();
+    this.closeAllocSettings();
   },
 
   attachDragHandlers() {
@@ -4880,7 +4837,7 @@ const Capacity = {
 
   renderSprintCapacity() {
     const sprints = App.data.sprints || [];
-    const customerFilter = document.getElementById('capacityFilterCustomer').value || '';
+    const customerFilter = App.activeCustomer || '';
     let projects = App.data.projects;
     if (customerFilter) projects = projects.filter(p => p.customer === customerFilter);
 
@@ -4931,7 +4888,7 @@ const Capacity = {
   },
 
   renderTeamGrid() {
-    const customerFilter = document.getElementById('capacityFilterCustomer').value || '';
+    const customerFilter = App.activeCustomer || '';
     let teamMembers = App.data.team_members || [];
     if (customerFilter) {
       teamMembers = teamMembers.filter(tm => {
@@ -5132,6 +5089,421 @@ const Capacity = {
       if (new Date(s.start_date) > today) return s.sprint_id;
     }
     return sprints.length ? sprints[sprints.length - 1].sprint_id : null;
+  }
+};
+
+/* ============================================================
+   Solver — Constraint-Aware Resource Scheduler
+   ============================================================ */
+const Solver = {
+  SKILL_PHASE: { 'size_requirements': 1, 'size_engineering': 2, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4 },
+
+  // Map a date to the index of the sprint it falls within (or nearest)
+  dateToSprintIdx(dateStr, sprints) {
+    if (!dateStr) return -1;
+    const d = new Date(dateStr);
+    for (let i = 0; i < sprints.length; i++) {
+      if (d <= new Date(sprints[i].end_date)) return i;
+    }
+    return sprints.length - 1;
+  },
+
+  // Normalize dependencies into an array of blocked_by project IDs
+  normalizeDeps(project) {
+    const deps = project.dependencies;
+    if (!deps) return [];
+    if (Array.isArray(deps)) return deps.filter(d => d.type === 'blocked_by').map(d => d.target_id);
+    if (typeof deps === 'string' && deps.trim()) return deps.split(',').map(s => s.trim()).filter(Boolean);
+    return [];
+  },
+
+  // Topological sort to detect circular dependencies; returns { order: [], cycles: [] }
+  topoSort(projects) {
+    const ids = new Set(projects.map(p => p.id));
+    const inDeg = {};
+    const adj = {};
+    projects.forEach(p => { inDeg[p.id] = 0; adj[p.id] = []; });
+    projects.forEach(p => {
+      this.normalizeDeps(p).forEach(depId => {
+        if (ids.has(depId)) { adj[depId].push(p.id); inDeg[p.id]++; }
+      });
+    });
+    const queue = Object.keys(inDeg).filter(id => inDeg[id] === 0);
+    const order = [];
+    while (queue.length) {
+      const id = queue.shift();
+      order.push(id);
+      (adj[id] || []).forEach(next => { inDeg[next]--; if (inDeg[next] === 0) queue.push(next); });
+    }
+    const cycles = Object.keys(inDeg).filter(id => !order.includes(id));
+    return { order, cycles };
+  },
+
+  // Get the finish sprint index of a locked project from its existing allocations
+  getLockedFinishIdx(project, sprints) {
+    const splits = project.skill_splits || {};
+    let latest = -1;
+    Object.values(splits).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => {
+        const idx = sprints.findIndex(s => s.sprint_id === sp.sprint);
+        if (idx > latest) latest = idx;
+      });
+    });
+    if (latest < 0 && project.current_sprint) {
+      latest = sprints.findIndex(s => s.sprint_id === project.current_sprint);
+    }
+    return latest;
+  },
+
+  solve(customer, settings, data, sprintModule) {
+    const allSprints = (data.sprints || []).slice();
+    const warnings = [];
+
+    // Available sprints from start point
+    let startIdx = 0;
+    if (settings.startFromSprint) {
+      const idx = allSprints.findIndex(s => s.sprint_id === settings.startFromSprint);
+      if (idx >= 0) startIdx = idx;
+    }
+    const sprints = allSprints.slice(startIdx);
+    if (!sprints.length) return { allocations: {}, warnings: [{ type: 'impossible', message: 'No sprints available' }], stats: { projectsAllocated: 0, projectsSkipped: 0, totalPoints: 0, avgUtilization: 0, makespan: 0 }, utilizationGrid: {} };
+
+    const maxPct = (settings.maxCapacityPct || 85) / 100;
+    const SKILLS = sprintModule.SKILLS;
+
+    // Build capacity grid (holiday-aware)
+    const baseCap = {};
+    const remaining = {};
+    sprints.forEach(s => {
+      const cap = sprintModule.calcSkillCapacityForSprint(customer, s.sprint_id);
+      baseCap[s.sprint_id] = {};
+      remaining[s.sprint_id] = {};
+      SKILLS.forEach(sk => {
+        const c = Math.floor((cap[sk.key] || 0) * maxPct);
+        baseCap[s.sprint_id][sk.key] = c;
+        remaining[s.sprint_id][sk.key] = c;
+      });
+    });
+
+    // Identify locked projects and subtract their capacity
+    const allProjects = data.projects || [];
+    const lockedIds = new Set();
+    allProjects.forEach(p => {
+      if (p.customer !== customer) return;
+      const isLocked = (settings.lockCompleted && (p.status === 'Complete' || p.status === 'Closed')) ||
+                       (settings.lockInProgress && p.status === 'In Progress');
+      if (!isLocked) return;
+      lockedIds.add(p.id);
+      const splits = p.skill_splits || {};
+      SKILLS.forEach(sk => {
+        const arr = splits[sk.key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (remaining[sp.sprint] && remaining[sp.sprint][sk.key] !== undefined) {
+            remaining[sp.sprint][sk.key] = Math.max(0, remaining[sp.sprint][sk.key] - sp.points);
+          }
+        });
+      });
+    });
+
+    // Get allocatable projects
+    let projects = allProjects.filter(p => {
+      if (p.customer !== customer) return false;
+      if (lockedIds.has(p.id)) return false;
+      if (settings.lockCompleted && (p.status === 'Complete' || p.status === 'Closed')) return false;
+      if (settings.lockInProgress && p.status === 'In Progress') return false;
+      return true;
+    });
+
+    // Detect circular dependencies
+    const topo = this.topoSort(projects);
+    if (topo.cycles.length) {
+      warnings.push({ type: 'circular_dependency', message: 'Circular dependency detected: ' + topo.cycles.join(', ') + '. Dependencies within cycle ignored.' });
+    }
+    const cycleSet = new Set(topo.cycles);
+
+    // Compute earliest start from dependency chains (memoized)
+    const finishCache = {};
+    const allProjectMap = {};
+    allProjects.forEach(p => { allProjectMap[p.id] = p; });
+
+    const getDepFinish = (projectId) => {
+      if (finishCache[projectId] !== undefined) return finishCache[projectId];
+      const p = allProjectMap[projectId];
+      if (!p) return -1;
+      if (lockedIds.has(projectId)) {
+        finishCache[projectId] = this.getLockedFinishIdx(p, sprints);
+        return finishCache[projectId];
+      }
+      finishCache[projectId] = -1; // prevent infinite recursion
+      return -1;
+    };
+
+    // Sort: deadline projects first (by deadline sprint), then by priority
+    projects = projects.map(p => {
+      const hardDl = (p.deadline_type === 'Hard Deadline' && p.hard_deadline) ? this.dateToSprintIdx(p.hard_deadline, sprints) : -1;
+      const targetDl = p.target_date ? this.dateToSprintIdx(p.target_date, sprints) : -1;
+      // Compute earliest start from dependencies
+      let depEarliest = 0;
+      this.normalizeDeps(p).forEach(depId => {
+        if (cycleSet.has(p.id) && cycleSet.has(depId)) return; // ignore cycle edges
+        if (p.customer !== customer && !lockedIds.has(depId)) {
+          warnings.push({ type: 'dependency_cross_customer', message: p.name + ' depends on ' + depId + ' (different customer) - treated as unblocked' });
+          return;
+        }
+        const fin = getDepFinish(depId);
+        if (fin >= 0 && fin + 1 > depEarliest) depEarliest = fin + 1;
+      });
+      return { ...p, _hardDl: hardDl, _targetDl: targetDl, _depEarliest: depEarliest };
+    }).sort((a, b) => {
+      // Deadline projects first
+      const aDl = a._hardDl >= 0 ? a._hardDl : 9999;
+      const bDl = b._hardDl >= 0 ? b._hardDl : 9999;
+      if (aDl !== bDl) return aDl - bDl;
+      return (a.priority || 999) - (b.priority || 999);
+    });
+
+    // Check for zero-capacity skills
+    SKILLS.forEach(sk => {
+      const totalCap = sprints.reduce((sum, s) => sum + (baseCap[s.sprint_id][sk.key] || 0), 0);
+      if (totalCap === 0) {
+        const affected = projects.filter(p => (p[sk.key] || 0) > 0);
+        if (affected.length) {
+          warnings.push({ type: 'zero_capacity', message: 'No ' + sk.label + ' capacity for ' + customer + '. ' + affected.length + ' project(s) need it.' });
+        }
+      }
+    });
+
+    // ============ PASS 1: Forward Schedule ============
+    const allocations = {};
+    let totalAllocated = 0;
+    let totalSkipped = 0;
+    let totalPoints = 0;
+    const priorityWeight = settings.priorityWeight || 3;
+    const spreadWork = settings.spreadWork;
+
+    projects.forEach(p => {
+      const skills = SKILLS.map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: this.SKILL_PHASE[sk.key] || 2 }))
+        .filter(sk => sk.points > 0);
+      if (!skills.length) { totalSkipped++; return; }
+
+      allocations[p.id] = {};
+      const phases = {};
+      skills.forEach(sk => { if (!phases[sk.phase]) phases[sk.phase] = []; phases[sk.phase].push(sk); });
+      const phaseNums = Object.keys(phases).map(Number).sort();
+      let minIdx = Math.max(0, p._depEarliest);
+
+      phaseNums.forEach(phaseNum => {
+        const phaseSkills = phases[phaseNum];
+        phaseSkills.forEach(sk => {
+          let pointsLeft = sk.points;
+          totalPoints += sk.points;
+          allocations[p.id][sk.key] = [];
+          const availCount = Math.max(1, sprints.length - minIdx);
+
+          for (let si = minIdx; si < sprints.length && pointsLeft > 0; si++) {
+            const sid = sprints[si].sprint_id;
+            const cap = remaining[sid][sk.key];
+            if (cap <= 0) continue;
+            // Spread work: limit per-sprint to distribute evenly, weighted by priority
+            let maxAssign = pointsLeft;
+            if (spreadWork) {
+              const remainingSprints = Math.max(1, sprints.length - si);
+              const frontLoad = priorityWeight / 5; // 0.2 (even) to 1.0 (front-loaded)
+              const target = Math.ceil(pointsLeft / remainingSprints * (1 + frontLoad));
+              maxAssign = Math.max(1, Math.min(pointsLeft, target));
+            }
+            const assign = Math.min(pointsLeft, cap, maxAssign);
+            allocations[p.id][sk.key].push({ sprint: sid, points: assign });
+            remaining[sid][sk.key] -= assign;
+            pointsLeft -= assign;
+          }
+          if (pointsLeft > 0) {
+            // Overflow
+            const lastSid = sprints[sprints.length - 1].sprint_id;
+            const existing = allocations[p.id][sk.key].find(s => s.sprint === lastSid);
+            if (existing) existing.points += pointsLeft;
+            else allocations[p.id][sk.key].push({ sprint: lastSid, points: pointsLeft });
+            warnings.push({ type: 'capacity_overflow', message: p.name + ': ' + sk.label + ' overflows by ' + pointsLeft + ' pts' });
+          }
+        });
+
+        // Enforce phase sequencing
+        if (settings.respectSkillOrder) {
+          let latestIdx = minIdx;
+          phaseSkills.forEach(sk => {
+            (allocations[p.id][sk.key] || []).forEach(sp => {
+              const idx = sprints.findIndex(s => s.sprint_id === sp.sprint);
+              if (idx > latestIdx) latestIdx = idx;
+            });
+          });
+          minIdx = latestIdx + 1;
+        }
+      });
+
+      // Cache finish for dependency resolution
+      let finIdx = 0;
+      Object.values(allocations[p.id]).forEach(arr => {
+        arr.forEach(sp => {
+          const idx = sprints.findIndex(s => s.sprint_id === sp.sprint);
+          if (idx > finIdx) finIdx = idx;
+        });
+      });
+      finishCache[p.id] = finIdx;
+      totalAllocated++;
+    });
+
+    // ============ PASS 2: Deadline Repair ============
+    projects.forEach(p => {
+      if (p._hardDl < 0 || !allocations[p.id]) return;
+      let finIdx = 0;
+      Object.values(allocations[p.id]).forEach(arr => {
+        arr.forEach(sp => {
+          const idx = sprints.findIndex(s => s.sprint_id === sp.sprint);
+          if (idx > finIdx) finIdx = idx;
+        });
+      });
+      if (finIdx <= p._hardDl) return; // meets deadline
+
+      // Try to compact: re-allocate this project into a tighter window
+      // First, release this project's capacity back
+      Object.keys(allocations[p.id]).forEach(skillKey => {
+        (allocations[p.id][skillKey] || []).forEach(sp => {
+          if (remaining[sp.sprint] && remaining[sp.sprint][skillKey] !== undefined) {
+            remaining[sp.sprint][skillKey] += sp.points;
+          }
+        });
+      });
+
+      // Re-allocate with deadline ceiling
+      const skills = SKILLS.map(sk => ({ key: sk.key, points: p[sk.key] || 0, phase: this.SKILL_PHASE[sk.key] || 2 })).filter(sk => sk.points > 0);
+      const phases = {};
+      skills.forEach(sk => { if (!phases[sk.phase]) phases[sk.phase] = []; phases[sk.phase].push(sk); });
+      const phaseNums = Object.keys(phases).map(Number).sort();
+      let minIdx = Math.max(0, p._depEarliest);
+      let repaired = true;
+
+      phaseNums.forEach(phaseNum => {
+        const phaseSkills = phases[phaseNum];
+        phaseSkills.forEach(sk => {
+          let pointsLeft = sk.points;
+          allocations[p.id][sk.key] = [];
+          const ceiling = Math.min(sprints.length - 1, p._hardDl);
+          for (let si = minIdx; si <= ceiling && pointsLeft > 0; si++) {
+            const sid = sprints[si].sprint_id;
+            const cap = remaining[sid][sk.key];
+            if (cap <= 0) continue;
+            const assign = Math.min(pointsLeft, cap);
+            allocations[p.id][sk.key].push({ sprint: sid, points: assign });
+            remaining[sid][sk.key] -= assign;
+            pointsLeft -= assign;
+          }
+          if (pointsLeft > 0) {
+            repaired = false;
+            // Put overflow at deadline sprint
+            const dlSid = sprints[Math.min(p._hardDl, sprints.length - 1)].sprint_id;
+            const existing = allocations[p.id][sk.key].find(s => s.sprint === dlSid);
+            if (existing) existing.points += pointsLeft;
+            else allocations[p.id][sk.key].push({ sprint: dlSid, points: pointsLeft });
+          }
+        });
+        if (settings.respectSkillOrder) {
+          let latestIdx = minIdx;
+          phaseSkills.forEach(sk => {
+            (allocations[p.id][sk.key] || []).forEach(sp => {
+              const idx = sprints.findIndex(s => s.sprint_id === sp.sprint);
+              if (idx > latestIdx) latestIdx = idx;
+            });
+          });
+          minIdx = latestIdx + 1;
+        }
+      });
+
+      if (!repaired) {
+        const dlDate = new Date(p.hard_deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        warnings.push({ type: 'deadline_miss', message: p.name + ': cannot meet hard deadline (' + dlDate + ') - insufficient capacity' });
+      }
+    });
+
+    // ============ PASS 3: Load Balancing ============
+    if (spreadWork && sprints.length > 1) {
+      for (let iter = 0; iter < 3; iter++) {
+        let improved = false;
+        SKILLS.forEach(sk => {
+          for (let si = 0; si < sprints.length - 1; si++) {
+            const sid = sprints[si].sprint_id;
+            const nextSid = sprints[si + 1].sprint_id;
+            const cap = baseCap[sid][sk.key] || 0;
+            const nextCap = baseCap[nextSid][sk.key] || 0;
+            if (cap === 0 || nextCap === 0) return;
+            const used = cap - (remaining[sid][sk.key] || 0);
+            const nextUsed = nextCap - (remaining[nextSid][sk.key] || 0);
+            const pct = Math.round((used / cap) * 100);
+            const nextPct = Math.round((nextUsed / nextCap) * 100);
+            // If this sprint is hot and next is cold, try to shift
+            if (pct > 90 && nextPct < 60 && remaining[nextSid][sk.key] > 0) {
+              // Find allocations in hot sprint for this skill that can shift
+              Object.keys(allocations).forEach(pid => {
+                const alloc = allocations[pid][sk.key];
+                if (!alloc) return;
+                const entry = alloc.find(a => a.sprint === sid && a.points > 1);
+                if (!entry) return;
+                const shift = Math.min(Math.ceil(entry.points / 2), remaining[nextSid][sk.key]);
+                if (shift <= 0) return;
+                entry.points -= shift;
+                const nextEntry = alloc.find(a => a.sprint === nextSid);
+                if (nextEntry) nextEntry.points += shift;
+                else alloc.push({ sprint: nextSid, points: shift });
+                remaining[sid][sk.key] += shift;
+                remaining[nextSid][sk.key] -= shift;
+                if (entry.points <= 0) alloc.splice(alloc.indexOf(entry), 1);
+                improved = true;
+              });
+            }
+          }
+        });
+        if (!improved) break;
+      }
+    }
+
+    // ============ Build Results ============
+    const utilizationGrid = {};
+    let totalUtilPct = 0;
+    let utilCount = 0;
+    let peakUtil = { sprint: '', skill: '', pct: 0 };
+    let minSprintUsed = sprints.length, maxSprintUsed = 0;
+
+    sprints.forEach((s, si) => {
+      utilizationGrid[s.sprint_id] = {};
+      SKILLS.forEach(sk => {
+        const cap = baseCap[s.sprint_id][sk.key] || 0;
+        const used = cap - (remaining[s.sprint_id][sk.key] || 0);
+        const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
+        utilizationGrid[s.sprint_id][sk.key] = { used, capacity: cap, pct };
+        if (used > 0) {
+          totalUtilPct += pct;
+          utilCount++;
+          if (si < minSprintUsed) minSprintUsed = si;
+          if (si > maxSprintUsed) maxSprintUsed = si;
+          if (pct > peakUtil.pct) peakUtil = { sprint: s.sprint_id, skill: sk.label, pct };
+        }
+      });
+    });
+
+    return {
+      allocations,
+      warnings,
+      stats: {
+        projectsAllocated: totalAllocated,
+        projectsSkipped: totalSkipped,
+        totalPoints,
+        avgUtilization: utilCount > 0 ? Math.round(totalUtilPct / utilCount) : 0,
+        peakUtilization: peakUtil,
+        makespan: maxSprintUsed >= minSprintUsed ? maxSprintUsed - minSprintUsed + 1 : 0
+      },
+      utilizationGrid
+    };
   }
 };
 
