@@ -35,19 +35,27 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - All icons must be inline SVGs. Never use emojis.
 - CSS uses custom properties defined in `:root`. Three responsive breakpoints: 1100px, 768px, 480px.
 - Customer filter is always a standard `<select>` (single-select, no "All" option, auto-selects first). Manager/Status/Category use the custom multi-select component.
-- `calcSkillCapacity(customerFilter)` accepts an optional customer argument to filter team members. Always pass the current customer filter from the view's dropdown.
+- `calcSkillCapacity(customerFilter)` returns base capacity per skill (no holiday adjustment). `calcSkillCapacityForSprint(customerFilter, sprintId)` wraps it with holiday-aware reduction — always prefer the sprint-aware version when a sprint ID is available.
 - localStorage auto-save. JSON export with timestamped filename.
 - Gantt milestones are generic grey diamonds (hover for detail) except Product Launch (green rocket SVG).
 - Gantt wrapper needs explicit width set in JS: `ganttWrapper.style.width = (totalWidth + 220) + 'px'`.
 
 ## What's Been Built (Complete)
-- Dashboard: sortable table, drag-priority, filters, search, summary cards, clipboard copy
+- Dashboard: sortable table, drag-priority, filters, search, summary cards with trend deltas, clipboard copy
+- **Attention Panel**: collapsible alert panel on Dashboard — blocked/at-risk, stale projects (7+ days), overdue risks, approaching deadlines, upcoming forums, overloaded sprints
+- **Stale project indicators**: grey clock icons on project names not updated in 7+ days
+- **Daily snapshots**: `data.daily_snapshots[]` captures portfolio metrics daily (max 30), drives trend deltas on summary cards
 - Detail panel: full editing, structured risks, data sourcing, scope, teams involved, delivery phases
 - Sprint Planning: swim lane view (default/only view) with draggable skill chips, click-to-move, per-skill capacity bars per sprint, split functionality, drag grip handles
-- Auto-Allocate engine: 4-phase delivery pipeline (Req → Eng/DS → Tab → UAT), capacity-constrained, priority-ordered, customer-scoped with settings modal
+- Auto-Allocate engine: 4-phase delivery pipeline (Req → Eng/DS → Tab → UAT), capacity-constrained, priority-ordered, customer-scoped with settings modal, holiday-aware
 - Roadmap/Gantt: zoom (day/week/month), skill-segmented bars, milestones, baseline toggle, FY markers, sprint lines, dependency arrows (SVG)
-- Capacity: sprint grid with per-skill bars, team member management (add/edit/delete), customer-filtered
-- Governance: forum calendar, project mapping, expandable cards
+- Capacity: sprint grid with per-skill bars, team member management (add/edit/delete), customer-filtered, **holiday-aware capacity** (reduces points based on holiday overlap)
+- Governance: forum calendar, project mapping, expandable cards, **Forums/Risks tabs**, **action items per forum** (inline editable), **briefing pack export** per forum
+- **Portfolio Risk Dashboard**: all risks across portfolio in one table, overdue highlighting, unowned flagging (Governance > Risks tab)
+- **Activity Feed**: slide-over panel showing audit log entries grouped by day with time filters (Today/24h/7d/All)
+- **Enhanced audit log**: per-project change history shows 50 entries with source badges (User/Auto/Drag)
+- **Executive Status Report**: auto-generated narrative, exceptions table (At Risk/Blocked/Red RAG), upcoming milestones, plus per-customer detail
+- **Portfolio Health Trends**: sparkline visualisations and table showing 14-day history of at-risk, blocked, in-progress, complete, risks
 - Mobile responsive (3 breakpoints + print)
 
 ## Sprint Planning — Swim Lane View
@@ -71,13 +79,11 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 2. Dependency lines on Gantt (data is string-based, needs migration to array format)
 3. Gantt drag-to-adjust dates
 4. Native PNG export
-5. Status report text generation
-6. Activity/change log per project
-7. What-if mode for sprint planning
-8. New project scheduling assistant
-9. Feature-level tracking (sub-items)
-10. Azure DevOps integration (FastAPI backend)
-11. Multi-editor support
+5. What-if mode for sprint planning
+6. New project scheduling assistant
+7. Feature-level tracking (sub-items)
+8. Azure DevOps integration (FastAPI backend)
+9. Multi-editor support
 
 ## Testing
 Open index.html in a browser. Click "Load JSON" and select portfolio-data.json (or click "Restore" if a localStorage session exists). Navigate between the 5 views. All data persists in localStorage. Always select a customer first — views show nothing without one.
