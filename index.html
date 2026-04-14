@@ -2963,23 +2963,62 @@ const DetailPanel = {
         '</div>' +
       '</div>' +
 
-      // Timeline
+      // Timeline (combined date + sprint per row)
       '<div class="panel-section">' +
         '<div class="panel-section-title">Timeline</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Start Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
-          '<div class="field-group"><div class="field-label">Target Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
-          '<div class="field-group"><div class="field-label">Sprint Start</div>' + sel('current_sprint', ['', ...sprints], p.current_sprint) + '</div>' +
-          '<div class="field-group"><div class="field-label">Sprint End</div>' + sel('target_sprint', ['', ...sprints], p.target_sprint) + '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:8px">' +
+          '<div style="display:flex;gap:8px;align-items:end">' +
+            '<div class="field-group" style="flex:1"><div class="field-label">Start Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
+            '<div class="field-group" style="flex:1"><div class="field-label">Sprint</div>' + sel('current_sprint', ['', ...sprints], p.current_sprint) + '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;align-items:end">' +
+            '<div class="field-group" style="flex:1"><div class="field-label">Target Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
+            '<div class="field-group" style="flex:1"><div class="field-label">Sprint</div>' + sel('target_sprint', ['', ...sprints], p.target_sprint) + '</div>' +
+          '</div>' +
           '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
         '</div>' +
       '</div>' +
 
-      // Stages
+      // Delivery Setup (before phases — drives which phases are active)
+      (function() {
+        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: [] };
+        const toggle = (field, label, checked) => '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + field + '\',this.checked)"> ' + label + '</label>';
+        const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
+          ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+        const isExternal = dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal';
+        const extFields = isExternal ? '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+          '<div class="field-group" style="flex:1;min-width:100px"><div class="field-label" style="font-size:10px">Team</div><input type="text" class="field-input" data-ds-field="team" value="' + Dashboard.esc(ds.team || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"' + (dc.data_sourcing_type === 'External (GDAS)' ? ' readonly style="background:#f5f7fa;font-size:11px"' : '') + '></div>' +
+          '<div class="field-group"><div class="field-label" style="font-size:10px">DT UAT Date</div><input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
+          '<div class="field-group"><div class="field-label" style="font-size:10px">DT Go-Live Date</div><input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
+        '</div>' : '';
+        const flowPills = (dc.phase_order || []).map(ph => {
+          const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
+          const c = colors[ph] || '#94a3b8';
+          return '<span style="padding:2px 8px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + ph + '</span>';
+        }).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
+        return '<div class="panel-section">' +
+          '<div class="panel-section-title">Delivery Setup</div>' +
+          '<div style="display:flex;flex-direction:column;gap:6px">' +
+            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
+            extFields +
+            '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+              toggle('include_de', 'Data Engineering', dc.include_de) +
+              toggle('include_ds', 'Data Science', dc.include_ds) +
+              toggle('include_tableau', 'Tableau', dc.include_tableau) +
+              toggle('include_hypercare', 'Hypercare', dc.include_hypercare) +
+            '</div>' +
+            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      })() +
+
+      // Stages (Delivery Phases — filtered by delivery_config)
       '<div class="panel-section">' +
         '<div class="panel-section-title">Delivery Phases</div>' +
         '<div class="stage-tracker">' +
-        this.PHASES.map(ph => {
+        (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; return order.length ? DetailPanel.PHASES.filter(ph => order.includes(ph.name)).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
           const val = ph.stageKey ? stageVal :
             (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
@@ -3027,23 +3066,6 @@ const DetailPanel = {
             (totalConsumed > 0 ? '<span style="color:var(--accent-blue);font-weight:600">' + totalConsumed + '/' + total + ' consumed (' + ptsPct + '%)</span>' : '') +
           '</div>';
         })() +
-      '</div>' +
-
-      // Data Sourcing (shown when Data Sourcing stage is not N/A)
-      '<div class="panel-section" id="dataSourcingSection"' + (((p.stages || {})['Data Sourcing'] === 'N/A') ? ' style="display:none"' : '') + '>' +
-        '<div class="panel-section-title">External Data Dependencies</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Source Type</div>' +
-            '<select class="field-input" data-ds-field="type" onchange="DetailPanel.onDataSourcingChange(this)">' +
-            this.DS_TYPES.map(t => '<option value="' + t + '"' + (t === ds.type ? ' selected' : '') + '>' + t + '</option>').join('') +
-            '</select></div>' +
-          '<div class="field-group" id="dsTeamGroup"' + (ds.type === 'Internal' ? ' style="display:none"' : '') + '><div class="field-label">Team</div>' +
-            '<input type="text" class="field-input" data-ds-field="team" value="' + Dashboard.esc(ds.team || '') + '" onchange="DetailPanel.onDataSourcingChange(this)"' + (ds.type === 'External (GDAS)' ? ' readonly style="background:#f5f7fa"' : '') + '></div>' +
-          '<div class="field-group" id="dsUatGroup"' + (ds.type === 'Internal' ? ' style="display:none"' : '') + '><div class="field-label">DT UAT Date</div>' +
-            '<input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)"></div>' +
-          '<div class="field-group" id="dsGoLiveGroup"' + (ds.type === 'Internal' ? ' style="display:none"' : '') + '><div class="field-label">DT Go-Live Date</div>' +
-            '<input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)"></div>' +
-        '</div>' +
       '</div>' +
 
       // Governance & Links
@@ -3098,34 +3120,6 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
       '</div>' +
 
-      // Delivery Setup
-      (function() {
-        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: [] };
-        const toggle = (field, label, checked) => '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + field + '\',this.checked)"> ' + label + '</label>';
-        const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
-          ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
-        const flowPills = (dc.phase_order || []).map(ph => {
-          const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
-          const c = colors[ph] || '#94a3b8';
-          return '<span style="padding:2px 8px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + ph + '</span>';
-        }).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
-        return '<div class="panel-section">' +
-          '<div class="panel-section-title">Delivery Setup</div>' +
-          '<div style="display:flex;flex-direction:column;gap:6px">' +
-            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
-            '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
-              toggle('include_de', 'Data Engineering', dc.include_de) +
-              toggle('include_ds', 'Data Science', dc.include_ds) +
-              toggle('include_tableau', 'Tableau', dc.include_tableau) +
-              toggle('include_hypercare', 'Hypercare', dc.include_hypercare) +
-            '</div>' +
-            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
-              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
-            '</div>' +
-          '</div>' +
-        '</div>';
-      })() +
-
       // Dependencies
       '<div class="panel-section">' +
         '<div class="panel-section-title">Dependencies</div>' +
@@ -3173,10 +3167,10 @@ const DetailPanel = {
   },
 
   addDependency() {
-    if (!this.currentProjectId || !App.data) return;
-    const p = App.data.projects.find(pr => pr.id === this.currentProjectId);
+    if (!this.currentId || !App.data) return;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
-    const otherProjects = App.data.projects.filter(pr => pr.id !== this.currentProjectId);
+    const otherProjects = App.data.projects.filter(pr => pr.id !== this.currentId);
     const typeSelect = '<select id="depType"><option value="blocked_by">Blocked by</option><option value="blocks">Blocks</option><option value="related">Related to</option></select>';
     const projectSelect = '<select id="depTarget">' + otherProjects.map(pr => '<option value="' + pr.id + '">' + Dashboard.esc(pr.name) + '</option>').join('') + '</select>';
     const modal = document.createElement('div');
@@ -3197,7 +3191,7 @@ const DetailPanel = {
   saveDependency() {
     const type = document.getElementById('depType').value;
     const targetId = document.getElementById('depTarget').value;
-    const p = App.data.projects.find(pr => pr.id === this.currentProjectId);
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
     if (!p.dependencies) p.dependencies = [];
     // Prevent duplicates
@@ -3207,14 +3201,14 @@ const DetailPanel = {
     }
     App.pushUndo('Add dependency');
     p.dependencies.push({ type, target_id: targetId });
-    App.logChange(this.currentProjectId, 'dependency_added', '', type + ':' + targetId, 'user');
+    App.logChange(this.currentId, 'dependency_added', '', type + ':' + targetId, 'user');
     // Add reverse dependency
     const target = App.data.projects.find(pr => pr.id === targetId);
     if (target) {
       if (!target.dependencies) target.dependencies = [];
       const reverseType = type === 'blocked_by' ? 'blocks' : type === 'blocks' ? 'blocked_by' : 'related';
-      if (!target.dependencies.some(d => d.target_id === this.currentProjectId && d.type === reverseType)) {
-        target.dependencies.push({ type: reverseType, target_id: this.currentProjectId });
+      if (!target.dependencies.some(d => d.target_id === this.currentId && d.type === reverseType)) {
+        target.dependencies.push({ type: reverseType, target_id: this.currentId });
       }
     }
     App.markDirty();
@@ -3225,11 +3219,11 @@ const DetailPanel = {
   },
 
   removeDependency(idx) {
-    const p = App.data.projects.find(pr => pr.id === this.currentProjectId);
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !p.dependencies) return;
     App.pushUndo('Remove dependency');
     const dep = p.dependencies[idx];
-    App.logChange(this.currentProjectId, 'dependency_removed', dep.type + ':' + dep.target_id, '', 'user');
+    App.logChange(this.currentId, 'dependency_removed', dep.type + ':' + dep.target_id, '', 'user');
     p.dependencies.splice(idx, 1);
     App.markDirty();
     App.saveToLocalStorage();
@@ -3671,7 +3665,31 @@ const Gantt = {
       seg.addEventListener('mouseenter', function(e) {
         this.classList.add('gantt-seg-hover');
         this.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== this) s.classList.add('gantt-seg-dim'); });
-        self.showTooltip(e, '<div style="font-weight:600">' + (this.dataset.skill || '') + ': ' + (this.dataset.pts || 0) + ' pts</div>');
+        const skillName = this.dataset.skill || '';
+        const pts = parseInt(this.dataset.pts) || 0;
+        const bar = this.closest('.gantt-bar');
+        const projId = bar ? bar.dataset.id : '';
+        const proj = projId ? App.data.projects.find(pr => pr.id === projId) : null;
+        const total = proj ? (proj.size_total || 1) : 1;
+        const pctOfTotal = Math.round((pts / total) * 100);
+        const skillKey = Object.keys(Sprint.SKILL_COLORS).find(k => (Sprint.SKILLS.find(s => s.key === k) || {}).short === skillName);
+        const color = skillKey ? Sprint.SKILL_COLORS[skillKey] : '#666';
+        // Check allocation status
+        let statusLine = '';
+        if (proj && proj.skill_splits && skillKey) {
+          const splits = proj.skill_splits[skillKey] || [];
+          const completed = splits.reduce((s, e) => s + (e.completed || 0), 0);
+          const inProg = splits.some(e => e.status === 'in_progress');
+          const allDone = splits.length > 0 && splits.every(e => e.status === 'complete');
+          statusLine = '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' +
+            (allDone ? '<span style="color:var(--status-green)">Complete</span>' : inProg ? '<span style="color:var(--accent-blue)">' + completed + '/' + pts + ' consumed</span>' : 'Not started') +
+            ' \u00B7 ' + splits.length + ' sprint' + (splits.length !== 1 ? 's' : '') + '</div>';
+        }
+        self.showTooltip(e,
+          '<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:' + color + '"></span><span style="font-weight:700">' + skillName + '</span></div>' +
+          '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' +
+          statusLine
+        );
       });
       seg.addEventListener('mouseleave', function() {
         this.classList.remove('gantt-seg-hover');
@@ -5036,18 +5054,18 @@ const Sprint = {
           '<strong>Customer:</strong> ' + Dashboard.esc(App.activeCustomer || 'None') + ' <span style="color:var(--text-muted)">(change via the customer filter on any view)</span>' +
         '</div>' +
         '<div class="field-grid" style="grid-template-columns:1fr 1fr;gap:8px">' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Max capacity target (%)<br>' +
+          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Max capacity target (%) <span title="Target ceiling for each skill per sprint. 85% leaves 15% headroom for unplanned work." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
             '<input type="number" id="asMaxCap" value="' + s.maxCapacityPct + '" min="50" max="100" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Priority weight (1-5)<br>' +
+          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Priority weight (1-5) <span title="1 = spread work evenly across sprints. 5 = front-load high-priority projects into earlier sprints." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
             '<input type="number" id="asPriWeight" value="' + s.priorityWeight + '" min="1" max="5" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Start from sprint<br>' +
+          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Start from sprint <span title="Only allocate into this sprint and later. Earlier sprints are left unchanged." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
             '<select id="asStartSprint" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + sprintOpts + '</select></label>' +
         '</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px">' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Respect delivery pipeline (Req \u2192 Eng/DS \u2192 Tableau \u2192 UAT)</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asSpread"' + (s.spreadWork ? ' checked' : '') + '> Spread work evenly across sprints</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockComplete"' + (s.lockCompleted ? ' checked' : '') + '> Lock completed/closed projects</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockInProg"' + (s.lockInProgress ? ' checked' : '') + '> Lock in-progress projects</label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Respect delivery pipeline <span title="Enforce phase sequence from each project\'s Delivery Setup. Requirements before build, build before UAT." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asSpread"' + (s.spreadWork ? ' checked' : '') + '> Spread work evenly <span title="Distribute points across sprints instead of packing into earliest available. Min 3pts per sprint to reduce context-switching." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockComplete"' + (s.lockCompleted ? ' checked' : '') + '> Lock completed/closed <span title="Don\'t move projects that are already Complete or Closed." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockInProg"' + (s.lockInProgress ? ' checked' : '') + '> Lock in-progress <span title="Don\'t move projects currently In Progress." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
         '</div>' +
         '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-top:4px">' +
           '<div style="font-size:10px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Delivery Pipeline</div>' +
@@ -5744,6 +5762,22 @@ const Capacity = {
 const Solver = {
   SKILL_PHASE: { 'size_requirements': 1, 'size_engineering': 2, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4 },
 
+  // Phase name → skill key mapping
+  PHASE_SKILL_MAP: { 'Requirements': 'size_requirements', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'Tableau': 'size_tableau', 'UAT': 'size_uat_adoption' },
+
+  // Derive phase numbers from a project's delivery_config.phase_order
+  getProjectPhaseMap(project) {
+    const order = (project.delivery_config && project.delivery_config.phase_order) || null;
+    if (!order) return this.SKILL_PHASE; // fallback to hardcoded
+    const map = {};
+    let phaseNum = 1;
+    order.forEach(name => {
+      const key = this.PHASE_SKILL_MAP[name];
+      if (key) map[key] = phaseNum++;
+    });
+    return map;
+  },
+
   // Map a date to the index of the sprint it falls within (or nearest)
   dateToSprintIdx(dateStr, sprints) {
     if (!dateStr) return -1;
@@ -5931,7 +5965,8 @@ const Solver = {
     const spreadWork = settings.spreadWork;
 
     projects.forEach(p => {
-      const skills = SKILLS.map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: this.SKILL_PHASE[sk.key] || 2 }))
+      const projectPhaseMap = this.getProjectPhaseMap(p);
+      const skills = SKILLS.map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: projectPhaseMap[sk.key] || 99 }))
         .filter(sk => sk.points > 0);
       if (!skills.length) { totalSkipped++; return; }
 
@@ -5959,7 +5994,8 @@ const Solver = {
               const remainingSprints = Math.max(1, sprints.length - si);
               const frontLoad = priorityWeight / 5; // 0.2 (even) to 1.0 (front-loaded)
               const target = Math.ceil(pointsLeft / remainingSprints * (1 + frontLoad));
-              maxAssign = Math.max(1, Math.min(pointsLeft, target));
+              const minAlloc = Math.min(pointsLeft, 3); // minimum 3pts per sprint to reduce context switching
+              maxAssign = Math.max(minAlloc, Math.min(pointsLeft, target));
             }
             const assign = Math.min(pointsLeft, cap, maxAssign);
             allocations[p.id][sk.key].push({ sprint: sid, points: assign });
@@ -6024,7 +6060,8 @@ const Solver = {
       });
 
       // Re-allocate with deadline ceiling
-      const skills = SKILLS.map(sk => ({ key: sk.key, points: p[sk.key] || 0, phase: this.SKILL_PHASE[sk.key] || 2 })).filter(sk => sk.points > 0);
+      const repairPhaseMap = this.getProjectPhaseMap(p);
+      const skills = SKILLS.map(sk => ({ key: sk.key, points: p[sk.key] || 0, phase: repairPhaseMap[sk.key] || 99 })).filter(sk => sk.points > 0);
       const phases = {};
       skills.forEach(sk => { if (!phases[sk.phase]) phases[sk.phase] = []; phases[sk.phase].push(sk); });
       const phaseNums = Object.keys(phases).map(Number).sort();
