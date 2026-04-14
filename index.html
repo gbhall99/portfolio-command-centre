@@ -637,7 +637,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-label-row .label-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 
 .gantt-chart-area { flex: 1 0 auto; position: relative; overflow: visible; }
-.gantt-header { height: 48px; display: flex; border-bottom: 2px solid var(--border-light); background: var(--bg-content); position: sticky; top: 0; z-index: 6; }
+.gantt-header { height: 48px; display: flex; border-bottom: 2px solid var(--border-light); background: var(--bg-content); position: sticky; top: 0; z-index: 10; isolation: isolate; }
 .gantt-header-cell { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--text-muted); border-right: 1px solid #f1f5f9; flex-shrink: 0; }
 .gantt-header-cell.month-cell { border-right: 1px solid var(--border-light); }
 .gantt-header-cell.weekend { background: rgba(0,0,0,0.02); }
@@ -661,7 +661,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-rose); z-index: 3; pointer-events: none; }
 .gantt-today-label { position: absolute; top: 4px; font-size: 9px; color: var(--accent-rose); font-weight: 700; transform: translateX(-50%); white-space: nowrap; z-index: 3; }
 .gantt-sprint-line { position: absolute; top: 0; bottom: 0; width: 1px; border-left: 1px dashed rgba(59,130,246,0.3); z-index: 2; pointer-events: none; }
-.gantt-sprint-label { position: absolute; top: 14px; font-size: 9px; color: var(--accent-blue); font-weight: 600; transform: translateX(4px); white-space: nowrap; opacity: 0.6; }
+.gantt-sprint-label { position: absolute; top: 20px; font-size: 8px; color: var(--accent-blue); font-weight: 600; transform: translateX(4px); white-space: nowrap; opacity: 0.5; }
 .gantt-milestone { position: absolute; top: 10px; width: 12px; height: 12px; background: var(--accent-amber); transform: rotate(45deg); z-index: 3; cursor: pointer; }
 .gantt-milestone:hover { background: var(--accent-rose); }
 .gantt-empty { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text-muted); font-size: 14px; }
@@ -4775,7 +4775,8 @@ const Sprint = {
       '</td>';
 
       sprints.forEach(s => {
-        const alloc = (allocation[p.id] || {})[s.sprint_id] || [];
+        const skillOrder = { 'size_requirements': 0, 'size_engineering': 1, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4 };
+        const alloc = ((allocation[p.id] || {})[s.sprint_id] || []).slice().sort((a, b) => (skillOrder[a.key] || 99) - (skillOrder[b.key] || 99));
         const cellClasses = 'sl-cell' + (alloc.length > 0 ? ' sl-cell-active' : '');
         let cellPts = 0;
         const chips = alloc.map(a => {
@@ -5317,45 +5318,57 @@ const Sprint = {
     const sprints = App.data.sprints || [];
     const today = new Date().toISOString().split('T')[0];
     const esc = Dashboard.esc;
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
-    const rows = sprints.map((s, i) => {
+    const cards = sprints.map((s, i) => {
       const isPast = s.end_date && s.end_date < today;
       const isCurrent = s.start_date <= today && s.end_date >= today;
-      const statusBadge = isCurrent ? '<span style="padding:1px 6px;border-radius:3px;background:#22c55e20;color:#22c55e;font-weight:600;font-size:10px">Current</span>' :
-        isPast ? '<span style="padding:1px 6px;border-radius:3px;background:#94a3b820;color:#94a3b8;font-size:10px">Past</span>' :
-        '<span style="padding:1px 6px;border-radius:3px;background:#3b82f620;color:#3b82f6;font-size:10px">Future</span>';
-      // Count allocated projects
+      const statusColor = isCurrent ? '#22c55e' : isPast ? '#94a3b8' : '#3b82f6';
+      const statusLabel = isCurrent ? 'Current' : isPast ? 'Past' : 'Future';
       const allocCount = (App.data.projects || []).filter(p => {
         if (!p.skill_splits) return false;
         return Object.values(p.skill_splits).some(arr => Array.isArray(arr) && arr.some(sp => sp.sprint === s.sprint_id));
       }).length;
       const canDelete = !isPast && !isCurrent && allocCount === 0;
-      return '<tr style="border-bottom:1px solid var(--border-light)">' +
-        '<td style="padding:6px 8px;font-weight:600;font-size:12px">' + esc(s.sprint_id) + '</td>' +
-        '<td style="padding:6px 8px"><input type="date" value="' + (s.start_date || '') + '" onchange="Sprint.onSprintDateChange(' + i + ',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"' + (isPast ? ' disabled' : '') + '></td>' +
-        '<td style="padding:6px 8px;font-size:11px;color:var(--text-muted)">' + (s.end_date || 'auto') + '</td>' +
-        '<td style="padding:6px 8px">' + statusBadge + '</td>' +
-        '<td style="padding:6px 8px;font-size:11px;color:var(--text-muted)">' + allocCount + ' projects</td>' +
-        '<td style="padding:6px 4px">' + (canDelete ? '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px" onclick="Sprint.removeSprint(' + i + ')" title="Delete sprint">&times;</button>' : '') + '</td>' +
-      '</tr>';
+      const devWeeks = '4 weeks dev + 1 week hardening';
+      const hardeningDate = s.hardening_start ? fmtDate(s.hardening_start) : '';
+
+      return '<div style="border:1px solid ' + (isCurrent ? '#22c55e40' : 'var(--border-light)') + ';border-radius:var(--radius-md);padding:12px;margin-bottom:8px' + (isCurrent ? ';background:#f0fdf4' : isPast ? ';opacity:0.6' : '') + '">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<span style="font-size:14px;font-weight:700;color:var(--text-dark)">' + esc(s.sprint_id) + '</span>' +
+          '<span style="padding:2px 8px;border-radius:4px;background:' + statusColor + '15;color:' + statusColor + ';font-size:10px;font-weight:600">' + statusLabel + '</span>' +
+          (allocCount > 0 ? '<span style="font-size:10px;color:var(--text-muted)">' + allocCount + ' project' + (allocCount !== 1 ? 's' : '') + ' allocated</span>' : '') +
+          (canDelete ? '<button style="margin-left:auto;border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:var(--radius-sm)" onclick="Sprint.removeSprint(' + i + ')" onmouseover="this.style.color=\'var(--status-red)\'" onmouseout="this.style.color=\'var(--text-muted)\'">Remove</button>' : '<span style="margin-left:auto"></span>') +
+        '</div>' +
+        '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+          '<div style="flex:1;min-width:130px">' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start Date</div>' +
+            '<input type="date" value="' + (s.start_date || '') + '" onchange="Sprint.onSprintDateChange(' + i + ',this.value)" style="width:100%;font-size:12px;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-family:var(--font-sans)"' + (isPast ? ' disabled style="opacity:0.5"' : '') + '>' +
+          '</div>' +
+          '<div style="flex:1;min-width:100px">' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hardening</div>' +
+            '<div style="font-size:12px;color:var(--text-dark-secondary);padding:5px 0">' + hardeningDate + '</div>' +
+          '</div>' +
+          '<div style="flex:1;min-width:100px">' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">End Date</div>' +
+            '<div style="font-size:12px;color:var(--text-dark-secondary);padding:5px 0">' + fmtDate(s.end_date) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:9px;color:var(--text-muted);margin-top:6px">' + devWeeks + '</div>' +
+      '</div>';
     }).join('');
 
-    document.getElementById('sprintMgmtBody').innerHTML =
-      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-        '<tr style="border-bottom:2px solid var(--border-light)"><th style="padding:4px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted)">Sprint</th>' +
-        '<th style="padding:4px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted)">Start Date</th>' +
-        '<th style="padding:4px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted)">End Date</th>' +
-        '<th style="padding:4px 8px;font-size:10px;font-weight:700;color:var(--text-muted)">Status</th>' +
-        '<th style="padding:4px 8px;font-size:10px;font-weight:700;color:var(--text-muted)">Allocated</th>' +
-        '<th></th></tr>' + rows +
-      '</table>';
+    document.getElementById('sprintMgmtBody').innerHTML = cards || '<div style="padding:20px;text-align:center;color:var(--text-muted)">No sprints configured. Add one to get started.</div>';
     document.getElementById('sprintMgmtOverlay').style.display = 'block';
-    document.getElementById('sprintMgmtModal').style.display = 'block';
+    document.getElementById('sprintMgmtModal').style.display = 'flex';
   },
 
   closeSprintMgmt() {
     document.getElementById('sprintMgmtOverlay').style.display = 'none';
     document.getElementById('sprintMgmtModal').style.display = 'none';
+    // Re-render sprint views to pick up any changes
+    if (App.currentView === 'sprint') this.render();
+    else if (App.currentView === 'roadmap') Gantt.init();
   },
 
   onSprintDateChange(idx, value) {
@@ -6798,12 +6811,15 @@ const TrendsModal = {
 </div>
 <!-- Sprint Management Modal -->
 <div class="team-edit-overlay" id="sprintMgmtOverlay" style="display:none" onclick="Sprint.closeSprintMgmt()"></div>
-<div class="team-edit-modal" id="sprintMgmtModal" style="display:none;max-width:600px;max-height:80vh;overflow:auto">
-  <h3 style="font-size:15px;font-weight:700;margin-bottom:14px">Sprint Configuration</h3>
-  <div id="sprintMgmtBody"></div>
-  <button class="risk-add-btn" onclick="Sprint.addSprint()" style="margin-top:10px">+ Add Sprint</button>
-  <div style="display:flex;justify-content:flex-end;margin-top:12px">
-    <button class="btn btn-outline btn-sm" onclick="Sprint.closeSprintMgmt()">Close</button>
+<div class="team-edit-modal" id="sprintMgmtModal" style="display:none;max-width:560px;max-height:85vh;overflow:hidden;display:none;flex-direction:column">
+  <div style="display:flex;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border-light)">
+    <h3 style="flex:1;font-size:15px;font-weight:700;margin:0">Sprint Configuration</h3>
+    <button style="border:none;background:none;cursor:pointer;color:var(--text-muted);font-size:18px" onclick="Sprint.closeSprintMgmt()">&times;</button>
+  </div>
+  <div id="sprintMgmtBody" style="flex:1;overflow-y:auto;padding:16px 20px"></div>
+  <div style="display:flex;gap:8px;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--border-light)">
+    <button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.addSprint()">+ Add Sprint</button>
+    <button class="btn btn-outline btn-sm" onclick="Sprint.closeSprintMgmt()">Done</button>
   </div>
 </div>
 <!-- Gantt Tooltip -->
