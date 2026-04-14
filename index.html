@@ -1427,6 +1427,16 @@ const App = {
       if (!p.baselines) p.baselines = {};
     });
     if (!data.daily_snapshots) data.daily_snapshots = [];
+    // Auto-compute sprint dates from start_date (4-week dev + 1-week hardening = 5 weeks)
+    (data.sprints || []).forEach(s => {
+      if (s.start_date) {
+        const start = new Date(s.start_date);
+        const hardening = new Date(start); hardening.setDate(hardening.getDate() + 28);
+        const end = new Date(start); end.setDate(end.getDate() + 34);
+        s.hardening_start = hardening.toISOString().split('T')[0];
+        s.end_date = end.toISOString().split('T')[0];
+      }
+    });
     (data.governance_forums || []).forEach(f => {
       if (!f.actions) f.actions = [];
       if (!f.last_date) f.last_date = null;
@@ -1465,6 +1475,39 @@ const App = {
       // Ensure baseline fields exist
       if (!p.estimate_baseline) p.estimate_baseline = null;
       if (!p.allocation_baseline) p.allocation_baseline = null;
+      // Build delivery_config from existing data
+      if (!p.delivery_config) {
+        const ds = p.data_sourcing || {};
+        const stages = p.stages || {};
+        const hasDE = (p.size_engineering || 0) > 0 || (p.teams_involved || []).includes('Data Engineering');
+        const hasDS = (p.size_data_science || 0) > 0 || (p.teams_involved || []).includes('Data Science');
+        const hasTab = (p.size_tableau || 0) > 0 || (p.teams_involved || []).includes('Tableau');
+        const hasHypercare = stages['Hypercare'] && stages['Hypercare'] !== 'N/A';
+        p.delivery_config = {
+          data_sourcing_type: ds.type || 'Internal',
+          include_de: hasDE || true,
+          include_ds: hasDS || false,
+          include_tableau: hasTab || true,
+          include_hypercare: hasHypercare !== false,
+          phase_order: ['Requirements']
+            .concat(ds.type && ds.type !== 'Internal' ? ['Data Sourcing'] : [])
+            .concat(hasDE || true ? ['Data Engineering'] : [])
+            .concat(hasDS ? ['Data Science'] : [])
+            .concat(hasTab || true ? ['Tableau'] : [])
+            .concat(['UAT'])
+            .concat(hasHypercare !== false ? ['Hypercare'] : [])
+        };
+        delete p.teams_involved;
+      }
+      // Migrate comms_status/date to comms_log
+      if (!p.comms_log) {
+        p.comms_log = [];
+        if (p.comms_status && p.comms_status !== 'Not Required') {
+          p.comms_log.push({ type: 'Status Update', date: p.comms_date || new Date().toISOString().split('T')[0], note: 'Status: ' + p.comms_status, created_at: new Date().toISOString() });
+        }
+        delete p.comms_status;
+        delete p.comms_date;
+      }
     });
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
@@ -2829,7 +2872,7 @@ const DetailPanel = {
   PHASES: [
     { name: 'Requirements', stageKey: 'Requirements', skillKey: 'size_requirements' },
     { name: 'Data Sourcing', stageKey: 'Data Sourcing', skillKey: null },
-    { name: 'Engineering', stageKey: 'Data Modeling', skillKey: 'size_engineering' },
+    { name: 'Data Engineering', stageKey: 'Data Modeling', skillKey: 'size_engineering' },
     { name: 'Data Science', stageKey: null, skillKey: 'size_data_science' },
     { name: 'Tableau', stageKey: null, skillKey: 'size_tableau' },
     { name: 'UAT', stageKey: 'UAT', skillKey: 'size_uat_adoption' },
@@ -3014,12 +3057,6 @@ const DetailPanel = {
                 '<option value="' + Dashboard.esc(f.name) + '"' + (p.governance_forum === f.name ? ' selected' : '') + '>' + Dashboard.esc(f.name) + '</option>'
               ).join('') +
             '</select></div>' +
-          '<div class="field-group"><div class="field-label">Comms Status</div>' +
-            '<select class="field-input" data-field="comms_status" onchange="DetailPanel.onFieldChange(this)">' +
-              ['Not Required', 'Pending', 'Sent'].map(v => '<option value="' + v + '"' + ((p.comms_status || 'Not Required') === v ? ' selected' : '') + '>' + v + '</option>').join('') +
-            '</select></div>' +
-          '<div class="field-group"><div class="field-label">Comms Date</div>' +
-            '<input type="date" class="field-input" data-field="comms_date" value="' + (p.comms_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
           '<div class="field-group"><div class="field-label">DevOps Link</div>' +
             inp('devops_link', p.devops_link || '') + '</div>' +
         '</div>' +
@@ -3028,18 +3065,66 @@ const DetailPanel = {
             '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' : '') +
       '</div>' +
 
-      // Teams Involved
+      // Communications
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Teams Involved</div>' +
-        '<div class="teams-checklist">' +
-        this.TEAMS.map(t => {
-          const isSelected = (p.teams_involved || []).includes(t);
-          return '<div class="team-chip' + (isSelected ? ' selected' : '') + '" onclick="DetailPanel.toggleTeam(this, \'' + t + '\')">' +
-            '<span class="chip-check">' + (isSelected ? '\u2713' : '') + '</span> ' + t +
-          '</div>';
-        }).join('') +
+        '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
+        '<div id="commsLog">' +
+          (p.comms_log || []).slice().reverse().map((c, i) => {
+            const idx = (p.comms_log || []).length - 1 - i;
+            const typeColors = { 'Status Update': '#3b82f6', 'Project Start': '#22c55e', 'Phase Gate': '#8b5cf6', 'Escalation': '#ef4444', 'Closure': '#64748b', 'Ad Hoc': '#f59e0b' };
+            const color = typeColors[c.type] || '#94a3b8';
+            return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
+              '<span style="padding:1px 6px;border-radius:3px;background:' + color + '15;color:' + color + ';font-weight:600;font-size:10px;white-space:nowrap">' + esc(c.type) + '</span>' +
+              '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (c.date || '') + '</span>' +
+              '<span style="flex:1;color:var(--text-dark-secondary)">' + esc(c.note || '') + '</span>' +
+              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px" onclick="DetailPanel.removeComm(' + idx + ')" title="Remove">&times;</button>' +
+            '</div>';
+          }).join('') +
+          (!(p.comms_log || []).length ? '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No communications recorded</div>' : '') +
         '</div>' +
+        '<div id="commsAddForm" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
+          '<div style="display:flex;gap:6px">' +
+            '<select id="commsType" class="field-input" style="width:140px;font-size:11px">' +
+              ['Status Update', 'Project Start', 'Phase Gate', 'Escalation', 'Closure', 'Ad Hoc'].map(t => '<option>' + t + '</option>').join('') +
+            '</select>' +
+            '<input type="date" id="commsDate" class="field-input" style="font-size:11px" value="' + new Date().toISOString().split('T')[0] + '">' +
+          '</div>' +
+          '<textarea id="commsNote" class="field-input" placeholder="Note..." style="font-size:11px;min-height:40px;resize:vertical"></textarea>' +
+          '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+            '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="document.getElementById(\'commsAddForm\').style.display=\'none\'">Cancel</button>' +
+            '<button class="btn btn-sm" style="font-size:10px;background:var(--accent-blue);color:white" onclick="DetailPanel.addComm()">Save</button>' +
+          '</div>' +
+        '</div>' +
+        '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
       '</div>' +
+
+      // Delivery Setup
+      (function() {
+        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: [] };
+        const toggle = (field, label, checked) => '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + field + '\',this.checked)"> ' + label + '</label>';
+        const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
+          ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+        const flowPills = (dc.phase_order || []).map(ph => {
+          const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
+          const c = colors[ph] || '#94a3b8';
+          return '<span style="padding:2px 8px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + ph + '</span>';
+        }).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
+        return '<div class="panel-section">' +
+          '<div class="panel-section-title">Delivery Setup</div>' +
+          '<div style="display:flex;flex-direction:column;gap:6px">' +
+            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
+            '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+              toggle('include_de', 'Data Engineering', dc.include_de) +
+              toggle('include_ds', 'Data Science', dc.include_ds) +
+              toggle('include_tableau', 'Tableau', dc.include_tableau) +
+              toggle('include_hypercare', 'Hypercare', dc.include_hypercare) +
+            '</div>' +
+            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      })() +
 
       // Dependencies
       '<div class="panel-section">' +
@@ -3370,6 +3455,84 @@ const DetailPanel = {
     }
   },
 
+  onDeliveryConfigToggle(field, checked) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.delivery_config) return;
+    p.delivery_config[field] = checked;
+    this.rebuildPhaseOrder(p);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.renderBody(p);
+  },
+
+  onDeliveryConfigChange(field, value) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.delivery_config) return;
+    p.delivery_config[field] = value;
+    // Update data_sourcing object too
+    if (field === 'data_sourcing_type') {
+      if (!p.data_sourcing) p.data_sourcing = { type: 'Internal', team: '', uat_release_date: null, go_live_date: null };
+      p.data_sourcing.type = value;
+      if (value === 'Internal') { p.data_sourcing.team = ''; p.data_sourcing.uat_release_date = null; p.data_sourcing.go_live_date = null; }
+      if (value === 'External (GDAS)') p.data_sourcing.team = 'GDAS';
+    }
+    this.rebuildPhaseOrder(p);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.renderBody(p);
+  },
+
+  rebuildPhaseOrder(p) {
+    const dc = p.delivery_config;
+    if (!dc) return;
+    const order = ['Requirements'];
+    if (dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal') order.push('Data Sourcing');
+    if (dc.include_de) order.push('Data Engineering');
+    if (dc.include_ds) order.push('Data Science');
+    if (dc.include_tableau) order.push('Tableau');
+    order.push('UAT');
+    if (dc.include_hypercare) order.push('Hypercare');
+    dc.phase_order = order;
+    // Auto-set inactive phase statuses to N/A
+    const allPhases = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT', 'Hypercare'];
+    if (!p.stages) p.stages = {};
+    allPhases.forEach(ph => {
+      const phDef = this.PHASES.find(x => x.name === ph);
+      if (phDef && phDef.stageKey && !order.includes(ph)) {
+        p.stages[phDef.stageKey] = 'N/A';
+      }
+    });
+  },
+
+  addComm() {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p) return;
+    if (!p.comms_log) p.comms_log = [];
+    const type = document.getElementById('commsType').value;
+    const date = document.getElementById('commsDate').value;
+    const note = document.getElementById('commsNote').value;
+    App.pushUndo('Add communication');
+    p.comms_log.push({ type, date, note, created_at: new Date().toISOString() });
+    App.logChange(p.id, 'comms_log', '', type + ' - ' + date, 'user');
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.renderBody(p);
+  },
+
+  removeComm(idx) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.comms_log) return;
+    App.pushUndo('Remove communication');
+    p.comms_log.splice(idx, 1);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.renderBody(p);
+  },
+
   quickAdd() {
     if (!App.data) return;
     const cust = App.activeCustomer || 'GCC';
@@ -3394,10 +3557,11 @@ const DetailPanel = {
       priority: App.data.projects.filter(p => p.customer === cust).length + 1,
       status: 'Not Started',
       governance_forum: '', dependencies: [],
+      delivery_config: { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT', 'Hypercare'] },
       notes: '',
       last_updated: new Date().toISOString(),
       devops_link: '',
-      comms_status: 'Not Required', comms_date: null,
+      comms_log: [],
       risks_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
       skill_splits: {},
@@ -3742,7 +3906,7 @@ const Gantt = {
     const skillLabels = {
       'size_requirements': 'Req',
       'size_tableau': 'Tab',
-      'size_engineering': 'Eng',
+      'size_engineering': 'DE',
       'size_data_science': 'DS',
       'size_uat_adoption': 'UAT'
     };
@@ -4103,7 +4267,7 @@ const Sprint = {
   SKILLS: [
     { key: 'size_requirements', label: 'Requirements', short: 'Req' },
     { key: 'size_tableau', label: 'Tableau', short: 'Tab' },
-    { key: 'size_engineering', label: 'Engineering', short: 'Eng' },
+    { key: 'size_engineering', label: 'Data Engineering', short: 'DE' },
     { key: 'size_data_science', label: 'Data Science', short: 'DS' },
     { key: 'size_uat_adoption', label: 'UAT', short: 'UAT' }
   ],
@@ -4291,8 +4455,9 @@ const Sprint = {
     // Capacity bars per skill
     let capacityHtml = '';
     if (!isBacklog) {
+      const colCapPct = (this.allocSettings.maxCapacityPct || 85) / 100;
       const bars = this.SKILLS.map(sk => {
-        const cap = skillCapacity[sk.key] || 0;
+        const cap = Math.floor((skillCapacity[sk.key] || 0) * colCapPct);
         const com = committed[sk.key] || 0;
         if (cap === 0 && com === 0) return '';
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
@@ -4480,7 +4645,7 @@ const Sprint = {
     const skillShort = {
       'size_requirements': 'Req',
       'size_tableau': 'Tab',
-      'size_engineering': 'Eng',
+      'size_engineering': 'DE',
       'size_data_science': 'DS',
       'size_uat_adoption': 'UAT'
     };
@@ -4532,9 +4697,10 @@ const Sprint = {
       let totalCommitted = 0;
       let totalCap = 0;
       const spCap = sprintCapCache[s.sprint_id] || {};
+      const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
       const capBars = this.SKILLS.map(sk => {
         const com = totals[sk.key] || 0;
-        const cap = spCap[sk.key] || 0;
+        const cap = Math.floor((spCap[sk.key] || 0) * capPct);
         totalCommitted += com;
         totalCap += cap;
         if (cap === 0 && com === 0) return '';
@@ -4551,7 +4717,7 @@ const Sprint = {
       }).filter(Boolean).join('');
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
-      const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load</div>' : '';
+      const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:8px;color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
       thead += '<th class="sl-sprint-hdr">' +
         '<div style="font-size:12px;font-weight:700">' + s.sprint_id.replace('CY26-', '') + '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
@@ -4889,7 +5055,7 @@ const Sprint = {
             '<span style="background:#6366f120;color:#6366f1;padding:2px 6px;border-radius:3px;font-weight:600">Req</span>' +
             '<span style="color:var(--text-muted)">\u2192</span>' +
             '<span style="display:flex;gap:2px">' +
-              '<span style="background:#2563eb20;color:#2563eb;padding:2px 6px;border-radius:3px;font-weight:600">Eng</span>' +
+              '<span style="background:#2563eb20;color:#2563eb;padding:2px 6px;border-radius:3px;font-weight:600">DE</span>' +
               '<span style="background:#7c3aed20;color:#7c3aed;padding:2px 6px;border-radius:3px;font-weight:600">DS</span>' +
             '</span>' +
             '<span style="color:var(--text-muted)">\u2192</span>' +
