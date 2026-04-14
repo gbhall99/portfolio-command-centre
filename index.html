@@ -3500,20 +3500,31 @@ const DetailPanel = {
   rebuildPhaseOrder(p) {
     const dc = p.delivery_config;
     if (!dc) return;
-    const order = ['Requirements'];
-    if (dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal') order.push('Data Sourcing');
-    if (dc.include_de) order.push('Data Engineering');
-    if (dc.include_ds) order.push('Data Science');
-    if (dc.include_tableau) order.push('Tableau');
-    order.push('UAT');
-    if (dc.include_hypercare) order.push('Hypercare');
-    dc.phase_order = order;
+    // Determine which phases should be active
+    const active = new Set(['Requirements', 'UAT']); // always included
+    if (dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal') active.add('Data Sourcing');
+    if (dc.include_de) active.add('Data Engineering');
+    if (dc.include_ds) active.add('Data Science');
+    if (dc.include_tableau) active.add('Tableau');
+    if (dc.include_hypercare) active.add('Hypercare');
+    // Preserve existing order: keep phases that are still active, in their current position
+    const existing = dc.phase_order || [];
+    const preserved = existing.filter(ph => active.has(ph));
+    // Add any newly activated phases not in the existing order (insert before UAT)
+    active.forEach(ph => {
+      if (!preserved.includes(ph)) {
+        const uatIdx = preserved.indexOf('UAT');
+        if (uatIdx >= 0) preserved.splice(uatIdx, 0, ph);
+        else preserved.push(ph);
+      }
+    });
+    dc.phase_order = preserved;
     // Auto-set inactive phase statuses to N/A
     const allPhases = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT', 'Hypercare'];
     if (!p.stages) p.stages = {};
     allPhases.forEach(ph => {
       const phDef = this.PHASES.find(x => x.name === ph);
-      if (phDef && phDef.stageKey && !order.includes(ph)) {
+      if (phDef && phDef.stageKey && !active.has(ph)) {
         p.stages[phDef.stageKey] = 'N/A';
       }
     });
@@ -4068,10 +4079,11 @@ const Gantt = {
         if (targetIdx === undefined) return;
         const srcIdx = projectRows[p.id];
         const targetP = projects[targetIdx];
+        const annotationH = 22; // annotation bar height
         const fromX = Math.max(0, dateToX(targetP.target_date));
-        const fromY = targetIdx * rowH + rowH / 2;
+        const fromY = annotationH + targetIdx * rowH + rowH / 2;
         const toX = Math.max(0, dateToX(p.start_date));
-        const toY = srcIdx * rowH + rowH / 2;
+        const toY = annotationH + srcIdx * rowH + rowH / 2;
         const span = Math.abs(srcIdx - targetIdx);
         const r = 8; // corner radius
 
@@ -4108,7 +4120,7 @@ const Gantt = {
     });
     let depSvg = '';
     if (depLines) {
-      const svgH = projects.length * rowH;
+      const svgH = 22 + projects.length * rowH; // +22 for annotation bar
       depSvg = '<svg style="position:absolute;top:0;left:0;width:' + (totalWidth + 100) + 'px;height:' + svgH + 'px;z-index:4;overflow:visible">' +
         '<defs><marker id="depArrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#ef4444" opacity="0.6"/></marker></defs>' +
         depLines + '</svg>';
