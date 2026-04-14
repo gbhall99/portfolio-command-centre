@@ -658,8 +658,8 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   position: absolute; top: 26px; height: 4px; border-radius: 2px;
   opacity: 0.35; border: 1px dashed rgba(0,0,0,0.3);
 }
-.gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-rose); z-index: 3; pointer-events: none; }
-.gantt-today-label { position: absolute; top: 4px; font-size: 9px; color: var(--accent-rose); font-weight: 700; transform: translateX(-50%); white-space: nowrap; z-index: 3; }
+.gantt-today-line { position: absolute; top: 0; bottom: 0; width: 1px; border-left: 2px dotted #1e293b; z-index: 3; pointer-events: none; background: none; }
+.gantt-today-label { position: absolute; top: 4px; font-size: 9px; color: #1e293b; font-weight: 700; transform: translateX(-50%); white-space: nowrap; z-index: 3; }
 .gantt-sprint-line { position: absolute; top: 0; bottom: 0; width: 1px; border-left: 1px dashed rgba(59,130,246,0.3); z-index: 2; pointer-events: none; }
 .gantt-sprint-label { position: absolute; top: 20px; font-size: 8px; color: var(--accent-blue); font-weight: 600; transform: translateX(4px); white-space: nowrap; opacity: 0.5; }
 .gantt-milestone { position: absolute; top: 10px; width: 12px; height: 12px; background: var(--accent-amber); transform: rotate(45deg); z-index: 3; cursor: pointer; }
@@ -2948,6 +2948,14 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
           '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
           '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
+          '<div class="field-group"><div class="field-label">Governance Forum</div>' +
+            '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
+              '<option value="">None</option>' +
+              (App.data.governance_forums || []).filter(f => f.customer === p.customer).map(f =>
+                '<option value="' + Dashboard.esc(f.name) + '"' + (p.governance_forum === f.name ? ' selected' : '') + '>' + Dashboard.esc(f.name) + '</option>'
+              ).join('') +
+            '</select></div>' +
+          '<div class="field-group"><div class="field-label">DevOps Link</div>' + inp('devops_link', p.devops_link || '') + '</div>' +
           productReleaseHtml +
         '</div>' +
       '</div>' +
@@ -2992,10 +3000,17 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label" style="font-size:10px">DT UAT Date</div><input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
           '<div class="field-group"><div class="field-label" style="font-size:10px">DT Go-Live Date</div><input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
         '</div>' : '';
-        const flowPills = (dc.phase_order || []).map(ph => {
+        const order = dc.phase_order || [];
+        const flowPills = order.map((ph, i) => {
           const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
           const c = colors[ph] || '#94a3b8';
-          return '<span style="padding:2px 8px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + ph + '</span>';
+          const isFirst = ph === 'Requirements'; // Can't move Requirements
+          const isLast = ph === 'Hypercare' || ph === 'UAT'; // Can't move UAT past Hypercare
+          const canUp = i > 0 && !isFirst && order[i - 1] !== 'Requirements';
+          const canDown = i < order.length - 1 && !(ph === 'UAT' && order[i + 1] === 'Hypercare');
+          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + i + ',-1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move earlier">\u25B2</span>' : '';
+          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + i + ',1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move later">\u25BC</span>' : '';
+          return '<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + upBtn + ph + dnBtn + '</span>';
         }).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
         return '<div class="panel-section">' +
           '<div class="panel-section-title">Delivery Setup</div>' +
@@ -3069,24 +3084,11 @@ const DetailPanel = {
         })() +
       '</div>' +
 
-      // Governance & Links
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Governance & Links</div>' +
-        '<div class="field-grid" style="grid-template-columns:1fr 1fr">' +
-          '<div class="field-group"><div class="field-label">Governance Forum</div>' +
-            '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
-              '<option value="">None</option>' +
-              (App.data.governance_forums || []).filter(f => f.customer === p.customer).map(f =>
-                '<option value="' + Dashboard.esc(f.name) + '"' + (p.governance_forum === f.name ? ' selected' : '') + '>' + Dashboard.esc(f.name) + '</option>'
-              ).join('') +
-            '</select></div>' +
-          '<div class="field-group"><div class="field-label">DevOps Link</div>' +
-            inp('devops_link', p.devops_link || '') + '</div>' +
-        '</div>' +
-        (p.status === 'Complete' || p.status === 'Closed' ?
-          '<div class="field-group" style="margin-top:8px"><div class="field-label">Actual Completion Date</div>' +
-            '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' : '') +
-      '</div>' +
+      (p.status === 'Complete' || p.status === 'Closed' ?
+        '<div class="panel-section"><div class="panel-section-title">Completion</div>' +
+          '<div class="field-group"><div class="field-label">Actual Completion Date</div>' +
+            '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
+        '</div>' : '') +
 
       // Communications
       '<div class="panel-section">' +
@@ -3448,6 +3450,22 @@ const DetailPanel = {
       const ds = document.getElementById('dataSourcingSection');
       if (ds) ds.style.display = value === 'N/A' ? 'none' : '';
     }
+  },
+
+  movePhaseOrder(idx, direction) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.delivery_config || !p.delivery_config.phase_order) return;
+    const order = p.delivery_config.phase_order;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= order.length) return;
+    // Swap
+    const tmp = order[idx];
+    order[idx] = order[newIdx];
+    order[newIdx] = tmp;
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.renderBody(p);
   },
 
   onDeliveryConfigToggle(field, checked) {
@@ -3894,6 +3912,7 @@ const Gantt = {
 
     // Render labels
     const labelsHtml = '<div class="gantt-label-header">Project</div>' +
+      '<div style="height:22px;border-bottom:1px solid var(--border-light);background:#f8fafc;display:flex;align-items:center;padding:0 12px;font-size:8px;color:var(--text-muted);font-weight:600">TIMELINE</div>' +
       projects.map(p => {
         const colorMap = { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Initech': '#8b5cf6' };
         const color = colorMap[p.customer] || '#94a3b8';
@@ -3996,27 +4015,39 @@ const Gantt = {
       '</div>';
     }).join('');
 
-    // Today line
+    // Annotation bar — dedicated row for sprint/FY/today labels (no project data)
+    let annotationItems = '';
     const today = new Date();
     const todayX = dateToX(today.toISOString().split('T')[0]);
-    const todayHtml = '<div class="gantt-today-line" style="left:' + todayX + 'px"><div class="gantt-today-label">Today</div></div>';
-
-    // Sprint lines
-    const sprintLines = (App.data.sprints || []).map(s => {
+    annotationItems += '<span style="position:absolute;left:' + (todayX - 1) + 'px;font-size:9px;font-weight:700;color:#1e293b;white-space:nowrap;transform:translateX(-50%)">Today</span>';
+    (App.data.sprints || []).forEach(s => {
       const sx = dateToX(s.start_date);
-      return '<div class="gantt-sprint-line" style="left:' + sx + 'px"><div class="gantt-sprint-label">' + s.sprint_id.replace('CY26-', '') + '</div></div>';
-    }).join('');
-
-    // FY boundary lines (1 June each year)
-    let fyLines = '';
+      annotationItems += '<span style="position:absolute;left:' + (sx + 4) + 'px;font-size:8px;font-weight:600;color:var(--accent-blue);opacity:0.7;white-space:nowrap">' + s.sprint_id.replace('CY26-', '') + '</span>';
+    });
     const fyStartYear = minDate.getFullYear();
     const fyEndYear = maxDate.getFullYear() + 1;
     for (let yr = fyStartYear; yr <= fyEndYear; yr++) {
-      const fyDate = new Date(yr, 5, 1); // June 1
+      const fyDate = new Date(yr, 5, 1);
       if (fyDate >= minDate && fyDate <= maxDate) {
         const fyx = dateToX(fyDate.toISOString().split('T')[0]);
         const fyLabel = 'FY' + String(yr).slice(2) + '/' + String(yr + 1).slice(2);
-        fyLines += '<div style="position:absolute;top:0;bottom:0;left:' + fyx + 'px;width:2px;background:#8b5cf6;z-index:2;pointer-events:none;opacity:0.6"><div style="position:absolute;top:2px;left:4px;font-size:9px;color:#8b5cf6;font-weight:700;white-space:nowrap">' + fyLabel + '</div></div>';
+        annotationItems += '<span style="position:absolute;left:' + (fyx + 4) + 'px;font-size:9px;font-weight:700;color:#8b5cf6;white-space:nowrap">' + fyLabel + '</span>';
+      }
+    }
+    const annotationRow = '<div style="height:22px;position:relative;border-bottom:1px solid var(--border-light);background:#f8fafc;width:' + totalWidth + 'px">' + annotationItems + '</div>';
+
+    // Vertical lines (span full height, no labels — labels are in annotation bar)
+    const todayHtml = '<div class="gantt-today-line" style="left:' + todayX + 'px"></div>';
+    const sprintLines = (App.data.sprints || []).map(s => {
+      const sx = dateToX(s.start_date);
+      return '<div class="gantt-sprint-line" style="left:' + sx + 'px"></div>';
+    }).join('');
+    let fyLines = '';
+    for (let yr = fyStartYear; yr <= fyEndYear; yr++) {
+      const fyDate = new Date(yr, 5, 1);
+      if (fyDate >= minDate && fyDate <= maxDate) {
+        const fyx = dateToX(fyDate.toISOString().split('T')[0]);
+        fyLines += '<div style="position:absolute;top:0;bottom:0;left:' + fyx + 'px;width:2px;background:#8b5cf6;z-index:2;pointer-events:none;opacity:0.4"></div>';
       }
     }
 
@@ -4084,9 +4115,9 @@ const Gantt = {
     }
 
     const ganttRowsEl = document.getElementById('ganttRows');
-    ganttRowsEl.innerHTML = rowsHtml + todayHtml + sprintLines + fyLines + depSvg;
+    ganttRowsEl.innerHTML = annotationRow + rowsHtml + todayHtml + sprintLines + fyLines + depSvg;
     ganttRowsEl.style.width = totalWidth + 'px';
-    ganttRowsEl.style.height = (projects.length * rowH) + 'px';
+    ganttRowsEl.style.height = (projects.length * rowH + 22) + 'px'; // +22 for annotation row
     const ganttChartEl = document.getElementById('ganttChartArea');
     ganttChartEl.style.width = totalWidth + 'px';
     ganttChartEl.style.minHeight = ((projects.length * rowH) + 50) + 'px';
@@ -5701,7 +5732,9 @@ const Capacity = {
       'UAT': 'size_uat_adoption'
     };
 
-    const html = teamMembers.map((tm, idx) => {
+    const allMembers = App.data.team_members || [];
+    const html = teamMembers.map((tm, _filteredIdx) => {
+      const idx = allMembers.indexOf(tm); // Use global index, not filtered index
       const colorMap = { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Both': '#8b5cf6', 'Initech': '#8b5cf6' };
       const custColor = colorMap[tm.customer] || '#94a3b8';
 
