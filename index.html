@@ -762,6 +762,31 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .risk-table .risk-project-link:hover { text-decoration: underline; }
 .risk-overdue-badge { font-size: 9px; font-weight: 700; color: var(--status-red); text-transform: uppercase; }
 
+/* --- Allocation Results Modal --- */
+.alloc-results-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1300; display: none; align-items: center; justify-content: center; }
+.alloc-results-overlay.open { display: flex; }
+.alloc-results-modal { background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); width: 720px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column; }
+.alloc-results-header { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
+.alloc-results-header h3 { flex: 1; margin: 0; font-size: 15px; font-weight: 700; color: var(--text-dark); }
+.alloc-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-light); flex-shrink: 0; padding: 0 20px; }
+.alloc-tab { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.alloc-tab:hover { color: var(--text-dark); }
+.alloc-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+.alloc-results-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.alloc-results-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--border-light); flex-shrink: 0; }
+.alloc-banner { border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; }
+.alloc-stat-row { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+.alloc-stat { text-align: center; }
+.alloc-stat-num { font-size: 20px; font-weight: 700; }
+.alloc-stat-label { font-size: 9px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.alloc-warn { display: flex; gap: 6px; padding: 4px 0; font-size: 11px; color: var(--text-dark-secondary); align-items: flex-start; }
+.alloc-warn-icon { font-weight: 700; width: 16px; text-align: center; flex-shrink: 0; }
+.alloc-plan-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.alloc-plan-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border-light); font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+.alloc-plan-table td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
+.alloc-plan-table tr:hover { background: rgba(59,130,246,0.03); }
+.alloc-sprint-badge { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 9px; font-weight: 600; margin: 1px; }
+
 /* --- Trends Modal --- */
 .trends-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1200; display: none; align-items: center; justify-content: center; }
 .trends-modal-overlay.open { display: flex; }
@@ -2445,11 +2470,24 @@ const Dashboard = {
   },
 
   calcProgress(p) {
-    const STAGES = ['Requirements', 'Data Sourcing', 'Data Modeling', 'Development', 'UAT', 'Hypercare'];
+    // Use unified phases: count phases that are applicable and complete
     const stages = p.stages || {};
-    const applicable = STAGES.filter(s => stages[s] && stages[s] !== 'N/A');
-    if (applicable.length === 0) return -1;
-    return Math.round((applicable.filter(s => stages[s] === 'Complete').length / applicable.length) * 100);
+    const overrides = p.phase_overrides || {};
+    const PHASES = DetailPanel.PHASES || [];
+    let applicable = 0;
+    let complete = 0;
+    PHASES.forEach(ph => {
+      let status = 'N/A';
+      if (ph.stageKey) status = stages[ph.stageKey] || 'Not Started';
+      else if (overrides[ph.name]) status = overrides[ph.name];
+      else if (ph.skillKey && (p[ph.skillKey] || 0) > 0) status = 'Not Started';
+      else return; // skip N/A phases
+      if (status === 'N/A') return;
+      applicable++;
+      if (status === 'Complete') complete++;
+    });
+    if (applicable === 0) return -1;
+    return Math.round((complete / applicable) * 100);
   },
 
   sprintRange(p) {
@@ -2739,6 +2777,16 @@ const DetailPanel = {
   STATUSES: ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'],
   DS_TYPES: ['Internal', 'External (GDAS)', 'External (Other)'],
   TEAMS: ['Data Engineering', 'Tableau', 'Data Science', 'GDAS', 'UAT', 'Platform', 'QA', 'Operations'],
+  // Unified phases: each has a status AND optionally story points (via skill key)
+  PHASES: [
+    { name: 'Requirements', stageKey: 'Requirements', skillKey: 'size_requirements' },
+    { name: 'Data Sourcing', stageKey: 'Data Sourcing', skillKey: null },
+    { name: 'Engineering', stageKey: 'Data Modeling', skillKey: 'size_engineering' },
+    { name: 'Data Science', stageKey: null, skillKey: 'size_data_science' },
+    { name: 'Tableau', stageKey: null, skillKey: 'size_tableau' },
+    { name: 'UAT', stageKey: 'UAT', skillKey: 'size_uat_adoption' },
+    { name: 'Hypercare', stageKey: 'Hypercare', skillKey: null }
+  ],
   STAGES: ['Requirements', 'Data Sourcing', 'Data Modeling', 'Development', 'UAT', 'Hypercare'],
   STAGE_VALS: ['Not Started', 'In Progress', 'Complete', 'N/A'],
 
@@ -2806,22 +2854,15 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Delivery Model</div>' + sel('ownership', this.OWNERSHIPS, p.ownership) + '</div>' +
           '<div class="field-group"><div class="field-label">Category</div>' + sel('category', this.CATEGORIES, p.category) + '</div>' +
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
+          '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
+          '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
           productReleaseHtml +
         '</div>' +
       '</div>' +
 
-      // People
+      // Status & Health
       '<div class="panel-section">' +
-        '<div class="panel-section-title">People</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
-          '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
-        '</div>' +
-      '</div>' +
-
-      // Status & RAG
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Status</div>' +
+        '<div class="panel-section-title">Status & Health</div>' +
         '<div class="field-grid">' +
           '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
           '<div class="field-group"><div class="field-label">Priority</div>' + inp('priority', p.priority, 'number') + '</div>' +
@@ -2847,14 +2888,27 @@ const DetailPanel = {
       '<div class="panel-section">' +
         '<div class="panel-section-title">Delivery Phases</div>' +
         '<div class="stage-tracker">' +
-        this.STAGES.map(s => {
-          const val = (p.stages || {})[s] || 'Not Started';
-          return '<div class="stage-item"><span class="stage-label">' + s + '</span>' +
-            '<select class="field-input" data-stage="' + s + '" onchange="DetailPanel.onStageChange(this)" style="width:120px">' +
+        this.PHASES.map(ph => {
+          const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
+          // For phases without a stageKey, derive status from the stages object or default
+          const val = ph.stageKey ? stageVal :
+            (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
+          // Check if this phase has allocated points in skill_splits
+          const allocated = ph.skillKey && p.skill_splits && p.skill_splits[ph.skillKey] && p.skill_splits[ph.skillKey].length > 0;
+          const allocBadge = allocated ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.1);color:var(--accent-blue);font-weight:600;margin-left:4px">Allocated</span>' : '';
+          const pointsInput = ph.skillKey ?
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" style="width:60px;text-align:center" onchange="DetailPanel.onFieldChange(this)">' : '';
+          return '<div class="stage-item" style="display:flex;align-items:center;gap:6px">' +
+            '<span class="stage-label" style="min-width:100px">' + ph.name + '</span>' +
+            '<select class="field-input" data-phase="' + ph.name + '" data-stage="' + (ph.stageKey || '') + '" onchange="DetailPanel.onPhaseChange(this)" style="width:120px">' +
             this.STAGE_VALS.map(v => '<option value="' + v + '"' + (v === val ? ' selected' : '') + '>' + v + '</option>').join('') +
-            '</select></div>';
+            '</select>' +
+            (ph.skillKey ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">pts:</span>' + pointsInput : '') +
+            allocBadge +
+          '</div>';
         }).join('') +
         '</div>' +
+        '<div style="padding:4px 0;font-size:11px;font-weight:600;color:var(--text-dark)">Total: ' + (p.size_total || 0) + ' pts</div>' +
       '</div>' +
 
       // Data Sourcing (shown when Data Sourcing stage is not N/A)
@@ -2919,38 +2973,21 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
       '</div>' +
 
-      // Sizing
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Sizing (Story Points)</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Requirements</div>' + inp('size_requirements', p.size_requirements, 'number') + '</div>' +
-          '<div class="field-group"><div class="field-label">Tableau</div>' + inp('size_tableau', p.size_tableau, 'number') + '</div>' +
-          '<div class="field-group"><div class="field-label">Engineering</div>' + inp('size_engineering', p.size_engineering, 'number') + '</div>' +
-          '<div class="field-group"><div class="field-label">Data Science</div>' + inp('size_data_science', p.size_data_science, 'number') + '</div>' +
-          '<div class="field-group"><div class="field-label">UAT / Adoption</div>' + inp('size_uat_adoption', p.size_uat_adoption, 'number') + '</div>' +
-          '<div class="field-group"><div class="field-label">Total</div><div style="padding:7px 10px;font-weight:700;color:var(--text-dark)">' + (p.size_total || 0) + '</div></div>' +
-        '</div>' +
-      '</div>' +
 
-      // Notes
+      // Notes & Risks
       '<div class="panel-section">' +
         '<div class="panel-section-title">Notes</div>' +
         textarea('notes', p.notes) +
+        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
+        textarea('assumptions', p.assumptions) + '</div>' +
       '</div>' +
 
-      // Risk Register
       '<div class="panel-section">' +
         '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
         '<div class="risk-list" id="riskList">' +
         this.renderRisks(p) +
         '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addRisk()">+ Add Risk</button>' +
-      '</div>' +
-
-      // Assumptions
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Assumptions</div>' +
-        textarea('assumptions', p.assumptions) +
       '</div>' +
 
       // Audit Log
@@ -3218,6 +3255,34 @@ const DetailPanel = {
     App.markDirty();
     App.saveToLocalStorage();
     Dashboard.applyFilters();
+  },
+
+  onPhaseChange(el) {
+    const phaseName = el.dataset.phase;
+    const stageKey = el.dataset.stage;
+    const value = el.value;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p) return;
+    // Update the stages object for phases that map to a stage
+    if (stageKey) {
+      if (!p.stages) p.stages = {};
+      App.logChange(p.id, 'stages.' + stageKey, p.stages[stageKey], value, 'user');
+      p.stages[stageKey] = value;
+    }
+    // For phases without a stageKey (Data Science, Tableau), store in a phases_status object
+    if (!stageKey) {
+      if (!p.phase_overrides) p.phase_overrides = {};
+      p.phase_overrides[phaseName] = value;
+    }
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    Dashboard.applyFilters();
+    // Toggle data sourcing section visibility
+    if (phaseName === 'Data Sourcing') {
+      const ds = document.getElementById('dataSourcingSection');
+      if (ds) ds.style.display = value === 'N/A' ? 'none' : '';
+    }
   },
 
   quickAdd() {
@@ -4607,83 +4672,138 @@ const Sprint = {
     App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
   },
 
+  allocResultsTab: 'summary',
+
   showAllocResults(result) {
+    this.allocResultsTab = 'summary';
+    document.getElementById('allocResultsOverlay').classList.add('open');
+    this.renderAllocTab(result);
+  },
+
+  switchAllocTab(tab) {
+    this.allocResultsTab = tab;
+    document.querySelectorAll('.alloc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    if (this.pendingAllocation) this.renderAllocTab(this.pendingAllocation);
+  },
+
+  renderAllocTab(result) {
+    const body = document.getElementById('allocResultsBody');
+    if (!body) return;
     const esc = Dashboard.esc;
     const s = result.stats;
     const w = result.warnings;
-    const hasBadWarnings = w.some(x => x.type === 'deadline_miss' || x.type === 'impossible');
-    const bannerColor = hasBadWarnings ? '#fef2f2' : w.length ? '#fffbeb' : '#f0fdf4';
-    const bannerBorder = hasBadWarnings ? '#ef4444' : w.length ? '#f59e0b' : '#22c55e';
-    const bannerText = hasBadWarnings ? 'Allocation has issues' : w.length ? 'Allocation completed with warnings' : 'Clean allocation';
+    const tab = this.allocResultsTab;
 
-    let html = '<div style="display:flex;flex-direction:column;gap:12px">';
-    // Summary banner
-    html += '<div style="background:' + bannerColor + ';border:1px solid ' + bannerBorder + '40;border-radius:var(--radius-sm);padding:12px">' +
-      '<div style="font-size:13px;font-weight:700;color:var(--text-dark)">' + bannerText + '</div>' +
-      '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:4px">' +
-        s.projectsAllocated + ' projects allocated | ' + s.totalPoints + ' total points | ' +
-        s.makespan + ' sprints | Avg utilisation ' + s.avgUtilization + '%' +
-        (s.projectsSkipped ? ' | <span style="color:var(--status-red);font-weight:600">' + s.projectsSkipped + ' skipped</span>' : '') +
-      '</div></div>';
+    if (tab === 'summary') {
+      const hasBad = w.some(x => x.type === 'deadline_miss' || x.type === 'impossible');
+      const bannerBg = hasBad ? '#fef2f2' : w.length ? '#fffbeb' : '#f0fdf4';
+      const bannerBdr = hasBad ? '#ef4444' : w.length ? '#f59e0b' : '#22c55e';
+      const bannerTxt = hasBad ? 'Allocation has issues' : w.length ? 'Completed with warnings' : 'Clean allocation';
 
-    // Warnings
-    if (w.length) {
-      html += '<div style="max-height:150px;overflow-y:auto">';
-      w.forEach(warn => {
-        const icon = warn.type === 'deadline_miss' || warn.type === 'impossible' ? '<span style="color:var(--status-red)">!</span>' :
-          warn.type === 'circular_dependency' ? '<span style="color:var(--accent-violet)">~</span>' : '<span style="color:var(--status-amber)">!</span>';
-        html += '<div style="display:flex;gap:6px;padding:3px 0;font-size:11px;color:var(--text-dark-secondary)">' +
-          '<span style="font-weight:700;width:14px;text-align:center">' + icon + '</span>' +
-          '<span>' + esc(warn.message) + '</span></div>';
-      });
-      html += '</div>';
-    }
+      let html = '<div class="alloc-banner" style="background:' + bannerBg + ';border:1px solid ' + bannerBdr + '40">' +
+        '<div style="font-size:14px;font-weight:700;color:var(--text-dark)">' + bannerTxt + '</div></div>';
 
-    // Utilization heat map
-    const grid = result.utilizationGrid;
-    const sprintIds = Object.keys(grid);
-    if (sprintIds.length) {
-      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:10px">';
-      html += '<tr><th style="padding:4px 6px;text-align:left;border-bottom:1px solid var(--border-light)">Skill</th>';
-      sprintIds.forEach(sid => { html += '<th style="padding:4px 6px;text-align:center;border-bottom:1px solid var(--border-light)">' + sid.replace(/CY\d+-/, '') + '</th>'; });
-      html += '</tr>';
-      this.SKILLS.forEach(sk => {
-        html += '<tr><td style="padding:3px 6px;font-weight:600;color:' + (Sprint.SKILL_COLORS[sk.key] || '#666') + '">' + sk.short + '</td>';
-        sprintIds.forEach(sid => {
-          const cell = grid[sid][sk.key];
-          if (!cell || (cell.capacity === 0 && cell.used === 0)) { html += '<td style="padding:3px 6px;text-align:center;color:var(--text-muted)">-</td>'; return; }
-          const bg = cell.pct <= 80 ? '#f0fdf4' : cell.pct <= 100 ? '#fffbeb' : '#fef2f2';
-          const color = cell.pct <= 80 ? 'var(--status-green)' : cell.pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
-          html += '<td style="padding:3px 6px;text-align:center;background:' + bg + ';color:' + color + ';font-weight:600">' + cell.used + '/' + cell.capacity + '</td>';
+      html += '<div class="alloc-stat-row">' +
+        '<div class="alloc-stat"><div class="alloc-stat-num" style="color:var(--accent-blue)">' + s.projectsAllocated + '</div><div class="alloc-stat-label">Projects</div></div>' +
+        '<div class="alloc-stat"><div class="alloc-stat-num">' + s.totalPoints + '</div><div class="alloc-stat-label">Total Points</div></div>' +
+        '<div class="alloc-stat"><div class="alloc-stat-num">' + s.makespan + '</div><div class="alloc-stat-label">Sprints</div></div>' +
+        '<div class="alloc-stat"><div class="alloc-stat-num" style="color:' + (s.avgUtilization > 90 ? 'var(--status-red)' : s.avgUtilization > 70 ? 'var(--status-amber)' : 'var(--status-green)') + '">' + s.avgUtilization + '%</div><div class="alloc-stat-label">Avg Utilisation</div></div>' +
+        (s.projectsSkipped ? '<div class="alloc-stat"><div class="alloc-stat-num" style="color:var(--status-red)">' + s.projectsSkipped + '</div><div class="alloc-stat-label">Skipped</div></div>' : '') +
+      '</div>';
+
+      if (w.length) {
+        html += '<div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:6px">Warnings (' + w.length + ')</div>';
+        w.forEach(warn => {
+          const isHard = warn.type === 'deadline_miss' || warn.type === 'impossible';
+          const icon = isHard ? '<span style="color:var(--status-red)">&#9888;</span>' :
+            warn.type === 'circular_dependency' ? '<span style="color:var(--accent-violet)">&#8634;</span>' : '<span style="color:var(--status-amber)">&#9888;</span>';
+          html += '<div class="alloc-warn"><span class="alloc-warn-icon">' + icon + '</span><span>' + esc(warn.message) + '</span></div>';
         });
+      } else {
+        html += '<div style="font-size:12px;color:var(--status-green);font-weight:600;padding:12px 0">No warnings - all constraints satisfied</div>';
+      }
+      body.innerHTML = html;
+
+    } else if (tab === 'plan') {
+      const alloc = result.allocations;
+      const projects = Object.keys(alloc);
+      if (!projects.length) { body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No projects allocated</div>'; return; }
+
+      const sprints = Object.keys(result.utilizationGrid);
+      let html = '<table class="alloc-plan-table"><thead><tr><th>Project</th><th>#</th>';
+      sprints.forEach(sid => { html += '<th style="text-align:center">' + sid.replace(/CY\d+-/, '') + '</th>'; });
+      html += '<th>Deadline</th></tr></thead><tbody>';
+
+      projects.forEach(pid => {
+        const p = (App.data.projects || []).find(pr => pr.id === pid);
+        if (!p) return;
+        const pAlloc = alloc[pid];
+        html += '<tr><td><span style="color:var(--accent-blue);cursor:pointer;font-weight:600" onclick="Sprint.closeAllocResults();DetailPanel.open(\'' + pid + '\')">' + esc(p.name) + '</span></td>';
+        html += '<td style="color:var(--text-muted)">' + (p.priority || '') + '</td>';
+        sprints.forEach(sid => {
+          const skills = [];
+          this.SKILLS.forEach(sk => {
+            const arr = pAlloc[sk.key] || [];
+            const entry = arr.find(a => a.sprint === sid);
+            if (entry) skills.push('<span class="alloc-sprint-badge" style="background:' + Sprint.SKILL_COLORS[sk.key] + '20;color:' + Sprint.SKILL_COLORS[sk.key] + '">' + sk.short + ' ' + entry.points + '</span>');
+          });
+          html += '<td style="text-align:center">' + (skills.length ? skills.join('') : '-') + '</td>';
+        });
+        // Deadline status
+        const dl = p.hard_deadline;
+        if (dl) {
+          const dlDate = new Date(dl).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+          const dlMissed = w.some(wn => wn.type === 'deadline_miss' && wn.message.includes(p.name));
+          html += '<td style="color:' + (dlMissed ? 'var(--status-red);font-weight:700' : 'var(--text-muted)') + '">' + dlDate + (dlMissed ? ' MISS' : '') + '</td>';
+        } else {
+          html += '<td style="color:var(--text-muted)">-</td>';
+        }
         html += '</tr>';
       });
-      html += '</table></div>';
+      html += '</tbody></table>';
+      body.innerHTML = html;
+
+    } else if (tab === 'capacity') {
+      const grid = result.utilizationGrid;
+      const sprintIds = Object.keys(grid);
+      if (!sprintIds.length) { body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No capacity data</div>'; return; }
+
+      let html = '<div style="overflow-x:auto"><table class="alloc-plan-table"><thead><tr><th>Skill</th>';
+      sprintIds.forEach(sid => { html += '<th style="text-align:center">' + sid.replace(/CY\d+-/, '') + '</th>'; });
+      html += '<th style="text-align:center">Total</th></tr></thead><tbody>';
+
+      this.SKILLS.forEach(sk => {
+        let totalUsed = 0, totalCap = 0;
+        html += '<tr><td style="font-weight:600;color:' + (Sprint.SKILL_COLORS[sk.key] || '#666') + '">' + sk.label + '</td>';
+        sprintIds.forEach(sid => {
+          const cell = grid[sid][sk.key];
+          if (!cell || (cell.capacity === 0 && cell.used === 0)) { html += '<td style="text-align:center;color:var(--text-muted)">-</td>'; return; }
+          totalUsed += cell.used; totalCap += cell.capacity;
+          const bg = cell.pct <= 80 ? '#f0fdf4' : cell.pct <= 100 ? '#fffbeb' : '#fef2f2';
+          const clr = cell.pct <= 80 ? 'var(--status-green)' : cell.pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+          html += '<td style="text-align:center;background:' + bg + ';color:' + clr + ';font-weight:600">' + cell.used + '/' + cell.capacity + '<div style="font-size:9px;font-weight:400">' + cell.pct + '%</div></td>';
+        });
+        const totalPct = totalCap > 0 ? Math.round((totalUsed / totalCap) * 100) : 0;
+        html += '<td style="text-align:center;font-weight:700">' + totalUsed + '/' + totalCap + ' (' + totalPct + '%)</td></tr>';
+      });
+
+      // Totals row
+      html += '<tr style="border-top:2px solid var(--border-light);font-weight:700"><td>Total</td>';
+      sprintIds.forEach(sid => {
+        let used = 0, cap = 0;
+        this.SKILLS.forEach(sk => { const c = grid[sid][sk.key]; if (c) { used += c.used; cap += c.capacity; } });
+        const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
+        html += '<td style="text-align:center">' + used + '/' + cap + '</td>';
+      });
+      html += '<td></td></tr>';
+      html += '</tbody></table></div>';
+      body.innerHTML = html;
     }
-
-    html += '</div>';
-
-    const body = document.getElementById('allocSettingsBody');
-    body.innerHTML = html;
-    // Replace footer buttons
-    const footer = body.parentElement.querySelector('.modal-footer') || body.parentElement;
-    const existing = document.getElementById('allocResultsFooter');
-    if (existing) existing.remove();
-    const footerDiv = document.createElement('div');
-    footerDiv.id = 'allocResultsFooter';
-    footerDiv.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border-light)';
-    footerDiv.innerHTML = '<button class="btn btn-outline btn-sm" onclick="Sprint.closeAllocResults()">Cancel</button>' +
-      '<button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply Allocation</button>';
-    body.parentElement.appendChild(footerDiv);
-    document.getElementById('allocSettingsOverlay').style.display = 'block';
-    document.getElementById('allocSettingsModal').style.display = 'block';
   },
 
   closeAllocResults() {
     this.pendingAllocation = null;
-    const footer = document.getElementById('allocResultsFooter');
-    if (footer) footer.remove();
-    this.closeAllocSettings();
+    document.getElementById('allocResultsOverlay').classList.remove('open');
   },
 
   attachDragHandlers() {
@@ -6012,6 +6132,25 @@ const TrendsModal = {
       <button class="audit-panel-close" onclick="TrendsModal.close()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="trends-modal-body" id="trendsModalBody"></div>
+  </div>
+</div>
+<!-- Allocation Results Modal -->
+<div class="alloc-results-overlay" id="allocResultsOverlay" onclick="if(event.target===this)Sprint.closeAllocResults()">
+  <div class="alloc-results-modal">
+    <div class="alloc-results-header">
+      <h3>Auto-Allocation Results</h3>
+      <button class="audit-panel-close" onclick="Sprint.closeAllocResults()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="alloc-tabs">
+      <div class="alloc-tab active" data-tab="summary" onclick="Sprint.switchAllocTab('summary')">Summary</div>
+      <div class="alloc-tab" data-tab="plan" onclick="Sprint.switchAllocTab('plan')">Allocation Plan</div>
+      <div class="alloc-tab" data-tab="capacity" onclick="Sprint.switchAllocTab('capacity')">Capacity Grid</div>
+    </div>
+    <div class="alloc-results-body" id="allocResultsBody"></div>
+    <div class="alloc-results-footer">
+      <button class="btn btn-outline btn-sm" onclick="Sprint.closeAllocResults()">Cancel</button>
+      <button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply Allocation</button>
+    </div>
   </div>
 </div>
 <!-- Audit Panel Overlay -->
