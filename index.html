@@ -666,6 +666,30 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-milestone:hover { background: var(--accent-rose); }
 .gantt-empty { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text-muted); font-size: 14px; }
 
+/* --- Gantt Legend --- */
+.gantt-legend { display: flex; gap: 12px; align-items: center; padding: 4px 0; flex-wrap: wrap; font-size: 10px; color: var(--text-muted); }
+.gantt-legend-group { display: flex; gap: 8px; align-items: center; padding: 0 8px; border-right: 1px solid var(--border-light); }
+.gantt-legend-group:last-child { border-right: none; }
+.gantt-legend-item { display: inline-flex; align-items: center; gap: 3px; }
+.gantt-legend-swatch { width: 14px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+/* --- Gantt Tooltip --- */
+.gantt-tooltip { position: fixed; z-index: 1500; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px 14px; font-size: 11px; max-width: 300px; pointer-events: none; display: none; }
+.gantt-tooltip.visible { display: block; }
+.gantt-tooltip-title { font-weight: 700; font-size: 12px; color: var(--text-dark); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.gantt-tooltip-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; color: var(--text-dark-secondary); }
+.gantt-tooltip-skills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.gantt-tooltip-skill { display: inline-flex; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+
+/* --- Gantt Hover Effects --- */
+.gantt-seg { transition: filter 0.15s, opacity 0.15s; }
+.gantt-seg-hover { filter: brightness(1.15); z-index: 3; }
+.gantt-seg-dim { opacity: 0.35; }
+.gantt-bar-highlight { box-shadow: 0 0 0 2px var(--accent-blue); z-index: 5; }
+.gantt-dep-path { transition: stroke-width 0.15s, opacity 0.15s; cursor: pointer; }
+.gantt-dep-path:hover { stroke-width: 2.5; opacity: 1; }
+.gantt-row-dep-highlight .gantt-label-row { background: rgba(239,68,68,0.06) !important; }
+
 /* --- Capacity View --- */
 .capacity-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; overflow: auto; }
 .capacity-section { background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); }
@@ -1137,13 +1161,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()" title="Export baseline variance report"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Variance Report</button>
           <button class="btn btn-outline btn-sm" onclick="Gantt.exportPNG()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg> Export PNG</button>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;padding:2px 0;flex-wrap:wrap;font-size:10px">
-          <span style="color:var(--text-dark-secondary);display:flex;align-items:center;gap:2px"><svg width="10" height="10" viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="#64748b" stroke="#475569" stroke-width="1"/></svg> Milestone</span>
-          <span style="color:var(--text-dark-secondary);display:flex;align-items:center;gap:2px"><svg width="12" height="12" viewBox="0 0 14 14"><path d="M7 1C7 1 3 5 3 9l2 2 4-4 4 4 2-2c0-4-4-8-4-8z" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/><path d="M5 11l-2 2M9 11l2 2" stroke="#15803d" stroke-width="1" fill="none"/></svg> Product Launch</span>
-          <span style="color:var(--text-dark-secondary);display:flex;align-items:center;gap:2px"><span style="width:10px;height:2px;background:#f43f5e;display:inline-block"></span> Today</span>
-          <span style="color:var(--text-dark-secondary);display:flex;align-items:center;gap:2px"><span style="width:10px;border-top:1px dashed #3b82f6;display:inline-block"></span> Sprint</span>
-          <span style="color:var(--text-dark-secondary);display:flex;align-items:center;gap:2px"><span style="width:10px;border-top:2px solid #8b5cf6;display:inline-block"></span> FY</span>
-        </div>
+        <div class="gantt-legend" id="ganttLegend"></div>
         <div class="gantt-scroll" id="ganttScroll">
           <div class="gantt-wrapper" id="ganttWrapper">
             <div class="gantt-labels" id="ganttLabels"></div>
@@ -3340,6 +3358,154 @@ const Gantt = {
   colWidth: 36, // pixels per unit (adjusted by zoom)
   multiSelections: {},
 
+  renderLegend() {
+    const el = document.getElementById('ganttLegend');
+    if (!el) return;
+    const esc = Dashboard.esc;
+    // Skill colours
+    let html = '<div class="gantt-legend-group">';
+    Sprint.SKILLS.forEach(sk => {
+      const c = Sprint.SKILL_COLORS[sk.key] || '#666';
+      html += '<span class="gantt-legend-item"><span class="gantt-legend-swatch" style="background:' + c + '"></span>' + sk.short + '</span>';
+    });
+    html += '</div>';
+    // Markers
+    html += '<div class="gantt-legend-group">' +
+      '<span class="gantt-legend-item"><svg width="10" height="10" viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="#64748b" stroke="#475569" stroke-width="1"/></svg> Milestone</span>' +
+      '<span class="gantt-legend-item"><svg width="12" height="12" viewBox="0 0 14 14"><path d="M7 1C7 1 3 5 3 9l2 2 4-4 4 4 2-2c0-4-4-8-4-8z" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/><path d="M5 11l-2 2M9 11l2 2" stroke="#15803d" stroke-width="1" fill="none"/></svg> Launch</span>' +
+      '</div>';
+    // Lines
+    html += '<div class="gantt-legend-group">' +
+      '<span class="gantt-legend-item"><span style="width:10px;height:2px;background:#f43f5e;display:inline-block"></span> Today</span>' +
+      '<span class="gantt-legend-item"><span style="width:10px;border-top:1px dashed #3b82f6;display:inline-block"></span> Sprint</span>' +
+      '<span class="gantt-legend-item"><span style="width:10px;border-top:2px solid #8b5cf6;display:inline-block"></span> FY</span>' +
+      '<span class="gantt-legend-item"><svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6"/><polygon points="13,2 16,4 13,6" fill="#ef4444" opacity="0.6"/></svg> Dependency</span>' +
+      '</div>';
+    el.innerHTML = html;
+  },
+
+  showTooltip(event, content) {
+    const tip = document.getElementById('ganttTooltip');
+    if (!tip) return;
+    tip.innerHTML = content;
+    tip.classList.add('visible');
+    const rect = event.target.getBoundingClientRect();
+    let left = rect.left + rect.width / 2 - 140;
+    let top = rect.top - tip.offsetHeight - 8;
+    if (top < 4) top = rect.bottom + 8;
+    if (left < 4) left = 4;
+    if (left + 280 > window.innerWidth) left = window.innerWidth - 284;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  },
+
+  hideTooltip() {
+    const tip = document.getElementById('ganttTooltip');
+    if (tip) tip.classList.remove('visible');
+  },
+
+  attachHoverHandlers() {
+    const scroll = document.getElementById('ganttScroll');
+    if (!scroll) return;
+    const esc = Dashboard.esc;
+    const self = this;
+
+    // Bar hover
+    scroll.querySelectorAll('.gantt-bar[data-id]').forEach(bar => {
+      bar.addEventListener('mouseenter', function(e) {
+        const p = App.data.projects.find(pr => pr.id === this.dataset.id);
+        if (!p) return;
+        const ragDot = (rag) => {
+          const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8';
+          return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + '"></span>';
+        };
+        const skills = Sprint.SKILLS.map(sk => {
+          const pts = p[sk.key] || 0;
+          if (!pts) return '';
+          return '<span class="gantt-tooltip-skill" style="background:' + Sprint.SKILL_COLORS[sk.key] + '20;color:' + Sprint.SKILL_COLORS[sk.key] + '">' + sk.short + ' ' + pts + '</span>';
+        }).filter(Boolean).join('');
+        const sprintRange = (p.current_sprint || '').replace(/CY\d+-/, '') + (p.target_sprint ? '\u2013' + (p.target_sprint || '').replace(/CY\d+-/, '') : '');
+        self.showTooltip(e,
+          '<div class="gantt-tooltip-title">' + esc(p.name) + ' <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>' +
+          '<div class="gantt-tooltip-row"><span style="padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + ';background:' + App.statusColor(p.status) + '15">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) + '</div>' +
+          (p.manager ? '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + esc(p.manager) + (sprintRange ? ' \u00B7 ' + sprintRange : '') + '</div>' : '') +
+          (skills ? '<div class="gantt-tooltip-skills">' + skills + '</div>' : '')
+        );
+      });
+      bar.addEventListener('mouseleave', () => self.hideTooltip());
+    });
+
+    // Segment hover
+    scroll.querySelectorAll('.gantt-seg').forEach(seg => {
+      seg.addEventListener('mouseenter', function(e) {
+        this.classList.add('gantt-seg-hover');
+        this.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== this) s.classList.add('gantt-seg-dim'); });
+        self.showTooltip(e, '<div style="font-weight:600">' + (this.dataset.skill || '') + ': ' + (this.dataset.pts || 0) + ' pts</div>');
+      });
+      seg.addEventListener('mouseleave', function() {
+        this.classList.remove('gantt-seg-hover');
+        this.parentElement.querySelectorAll('.gantt-seg-dim').forEach(s => s.classList.remove('gantt-seg-dim'));
+        self.hideTooltip();
+      });
+    });
+
+    // Milestone hover
+    scroll.querySelectorAll('.gantt-ms').forEach(ms => {
+      ms.addEventListener('mouseenter', function(e) {
+        const info = JSON.parse(this.dataset.info || '{}');
+        const d = info.date ? new Date(info.date) : null;
+        const dateStr = d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        const daysLeft = d ? Math.round((d - new Date()) / 86400000) : null;
+        const badge = daysLeft !== null ? (daysLeft < 0 ? '<span style="color:var(--status-red);font-weight:700"> Overdue</span>' : '<span style="color:var(--text-muted)"> ' + daysLeft + 'd</span>') : '';
+        self.showTooltip(e,
+          '<div class="gantt-tooltip-title">' + Dashboard.esc(info.type || 'Milestone') + '</div>' +
+          '<div class="gantt-tooltip-row">' + dateStr + badge + '</div>' +
+          (info.project ? '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + Dashboard.esc(info.project) + '</div>' : '')
+        );
+      });
+      ms.addEventListener('mouseleave', () => self.hideTooltip());
+    });
+
+    // Dependency arrow hover
+    scroll.querySelectorAll('.gantt-dep-path').forEach(path => {
+      path.addEventListener('mouseenter', function(e) {
+        this.style.strokeWidth = '2.5';
+        this.style.opacity = '1';
+        const fromId = this.dataset.from;
+        const toId = this.dataset.to;
+        document.querySelectorAll('.gantt-label-row').forEach(row => {
+          if (row.dataset.id === fromId || row.dataset.id === toId) row.style.background = 'rgba(239,68,68,0.06)';
+        });
+        const fromP = App.data.projects.find(p => p.id === fromId);
+        const toP = App.data.projects.find(p => p.id === toId);
+        self.showTooltip(e,
+          '<div class="gantt-tooltip-title" style="color:var(--status-red)">Dependency</div>' +
+          '<div class="gantt-tooltip-row">' + Dashboard.esc(toP ? toP.name : toId) + '</div>' +
+          '<div class="gantt-tooltip-row" style="color:var(--text-muted)">blocked by</div>' +
+          '<div class="gantt-tooltip-row">' + Dashboard.esc(fromP ? fromP.name : fromId) + '</div>'
+        );
+      });
+      path.addEventListener('mouseleave', function() {
+        this.style.strokeWidth = '';
+        this.style.opacity = '';
+        document.querySelectorAll('.gantt-label-row').forEach(row => row.style.background = '');
+        self.hideTooltip();
+      });
+    });
+
+    // Label-to-bar cross-highlight
+    document.querySelectorAll('.gantt-label-row[data-id]').forEach(row => {
+      row.addEventListener('mouseenter', function() {
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + this.dataset.id + '"]');
+        if (bar) bar.classList.add('gantt-bar-highlight');
+      });
+      row.addEventListener('mouseleave', function() {
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + this.dataset.id + '"]');
+        if (bar) bar.classList.remove('gantt-bar-highlight');
+      });
+    });
+  },
+
   init() {
     if (!this.initialized) {
       this.initFilter('ganttFilterManager', App.getUniqueValues('manager'));
@@ -3481,7 +3647,7 @@ const Gantt = {
       projects.map(p => {
         const colorMap = { 'GCC': '#3b82f6', 'KS': '#14b8a6', 'DR&I': '#8b5cf6' };
         const color = colorMap[p.customer] || '#94a3b8';
-        return '<div class="gantt-label-row" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+        return '<div class="gantt-label-row" data-id="' + p.id + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           '<div class="label-customer" style="background:' + color + '"></div>' +
           '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
         '</div>';
@@ -3533,7 +3699,7 @@ const Gantt = {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
           const segW = Math.max(2, Math.round((pts / total) * w));
-          segmentsHtml += '<div style="position:absolute;top:0;bottom:0;left:' + offset + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85" title="' + skillLabels[sk] + ': ' + pts + 'pts"></div>';
+          segmentsHtml += '<div class="gantt-seg" data-skill="' + skillLabels[sk] + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + offset + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
           offset += segW;
         });
       }
@@ -3559,19 +3725,20 @@ const Gantt = {
 
       // Milestones — generic diamond for most, rocket for product launch. Hover text explains type.
       let milestoneHtml = '';
-      const msDiamond = (x, title) => '<svg width="14" height="14" viewBox="0 0 14 14" style="position:absolute;top:9px;left:' + (x-7) + 'px;z-index:3;cursor:pointer"><title>' + title + '</title><polygon points="7,1 13,7 7,13 1,7" fill="#64748b" stroke="#475569" stroke-width="1"/></svg>';
-      const msLaunch = (x, title) => '<svg width="14" height="14" viewBox="0 0 14 14" style="position:absolute;top:9px;left:' + (x-7) + 'px;z-index:3;cursor:pointer"><title>' + title + '</title><path d="M7 1C7 1 3 5 3 9l2 2 4-4 4 4 2-2c0-4-4-8-4-8z" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/><path d="M5 11l-2 2M9 11l2 2" stroke="#15803d" stroke-width="1" fill="none"/></svg>';
+      const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
+      const msDiamond = (x, type, date) => '<span class="gantt-ms" data-info=\'' + msInfo(type, date, p.name) + '\' style="position:absolute;top:9px;left:' + (x-7) + 'px;z-index:3;cursor:pointer"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="#64748b" stroke="#475569" stroke-width="1"/></svg></span>';
+      const msLaunch = (x, type, date) => '<span class="gantt-ms" data-info=\'' + msInfo(type, date, p.name) + '\' style="position:absolute;top:9px;left:' + (x-7) + 'px;z-index:3;cursor:pointer"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1C7 1 3 5 3 9l2 2 4-4 4 4 2-2c0-4-4-8-4-8z" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/><path d="M5 11l-2 2M9 11l2 2" stroke="#15803d" stroke-width="1" fill="none"/></svg></span>';
 
-      if (p.hard_deadline) milestoneHtml += msDiamond(dateToX(p.hard_deadline), 'Hard Deadline: ' + p.hard_deadline);
-      if (p.category === 'Product Release' && p.product_release_date) milestoneHtml += msLaunch(dateToX(p.product_release_date), 'Product Launch: ' + p.product_release_date);
+      if (p.hard_deadline) milestoneHtml += msDiamond(dateToX(p.hard_deadline), 'Hard Deadline', p.hard_deadline);
+      if (p.category === 'Product Release' && p.product_release_date) milestoneHtml += msLaunch(dateToX(p.product_release_date), 'Product Launch', p.product_release_date);
       const ds = p.data_sourcing || {};
       if (ds.type && ds.type !== 'Internal') {
-        if (ds.uat_release_date) milestoneHtml += msDiamond(dateToX(ds.uat_release_date), 'DT UAT Release: ' + ds.uat_release_date + ' (' + (ds.team || ds.type) + ')');
-        if (ds.go_live_date) milestoneHtml += msDiamond(dateToX(ds.go_live_date), 'DT Go-Live: ' + ds.go_live_date + ' (' + (ds.team || ds.type) + ')');
+        if (ds.uat_release_date) milestoneHtml += msDiamond(dateToX(ds.uat_release_date), 'DT UAT Release', ds.uat_release_date);
+        if (ds.go_live_date) milestoneHtml += msDiamond(dateToX(ds.go_live_date), 'DT Go-Live', ds.go_live_date);
       }
 
       return '<div class="gantt-row" style="width:' + totalWidth + 'px">' +
-        '<div class="gantt-bar" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" title="' + Dashboard.esc(p.name) + ' (' + p.start_date + ' \u2192 ' + p.target_date + ')" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+        '<div class="gantt-bar" data-id="' + p.id + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent +
         '</div>' +
         baselineHtml +
@@ -3603,10 +3770,16 @@ const Gantt = {
       }
     }
 
-    // Dependency lines (SVG)
+    // Dependency lines (SVG) — smart routing for long spans
     let depLines = '';
     const projectRows = {};
     projects.forEach((p, i) => { projectRows[p.id] = i; });
+    // Pre-compute bar right edges for routing
+    const barRightEdges = projects.map(p => {
+      return Math.max(0, dateToX(p.target_date));
+    });
+    let routeOffset = 0; // stagger parallel routes
+
     projects.forEach(p => {
       const depIds = Solver.normalizeDeps(p);
       depIds.forEach(targetId => {
@@ -3614,20 +3787,48 @@ const Gantt = {
         if (targetIdx === undefined) return;
         const srcIdx = projectRows[p.id];
         const targetP = projects[targetIdx];
-        // Arrow from end of dependency to start of dependent
         const fromX = Math.max(0, dateToX(targetP.target_date));
         const fromY = targetIdx * rowH + rowH / 2;
         const toX = Math.max(0, dateToX(p.start_date));
         const toY = srcIdx * rowH + rowH / 2;
-        const midX = (fromX + toX) / 2;
-        depLines += '<path d="M' + fromX + ' ' + fromY + ' C' + midX + ' ' + fromY + ' ' + midX + ' ' + toY + ' ' + toX + ' ' + toY + '" ' +
-          'fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6" marker-end="url(#depArrow)"/>';
+        const span = Math.abs(srcIdx - targetIdx);
+        const r = 8; // corner radius
+
+        let path;
+        if (span <= 2) {
+          // Short span: simple Bezier
+          const midX = (fromX + toX) / 2;
+          path = 'M' + fromX + ' ' + fromY + ' C' + midX + ' ' + fromY + ' ' + midX + ' ' + toY + ' ' + toX + ' ' + toY;
+        } else {
+          // Long span: route to the right of all bars in the spanned rows
+          const minRow = Math.min(srcIdx, targetIdx);
+          const maxRow = Math.max(srcIdx, targetIdx);
+          let rightEdge = 0;
+          for (let ri = minRow; ri <= maxRow; ri++) {
+            if (barRightEdges[ri] > rightEdge) rightEdge = barRightEdges[ri];
+          }
+          const routeX = rightEdge + 25 + (routeOffset % 3) * 12;
+          routeOffset++;
+          // Path: from → right edge (horizontal), down/up (vertical), right edge → to (horizontal)
+          const dy = fromY < toY ? r : -r;
+          path = 'M' + fromX + ' ' + fromY +
+            ' H' + (routeX - r) +
+            ' Q' + routeX + ' ' + fromY + ' ' + routeX + ' ' + (fromY + dy) +
+            ' V' + (toY - dy) +
+            ' Q' + routeX + ' ' + toY + ' ' + (routeX - r) + ' ' + toY +
+            ' H' + toX;
+        }
+
+        const opacity = span <= 2 ? '0.6' : '0.4';
+        depLines += '<path class="gantt-dep-path" data-from="' + targetId + '" data-to="' + p.id + '" d="' + path + '" ' +
+          'fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 2" opacity="' + opacity + '" ' +
+          'style="pointer-events:stroke" marker-end="url(#depArrow)"/>';
       });
     });
     let depSvg = '';
     if (depLines) {
       const svgH = projects.length * rowH;
-      depSvg = '<svg style="position:absolute;top:0;left:0;width:' + totalWidth + 'px;height:' + svgH + 'px;pointer-events:none;z-index:4;overflow:visible">' +
+      depSvg = '<svg style="position:absolute;top:0;left:0;width:' + (totalWidth + 100) + 'px;height:' + svgH + 'px;z-index:4;overflow:visible">' +
         '<defs><marker id="depArrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#ef4444" opacity="0.6"/></marker></defs>' +
         depLines + '</svg>';
     }
@@ -3648,6 +3849,9 @@ const Gantt = {
     const scroll = document.getElementById('ganttScroll');
     const scrollTarget = todayX - 300;
     if (scrollTarget > 0) scroll.scrollLeft = scrollTarget;
+
+    this.renderLegend();
+    this.attachHoverHandlers();
     } catch(err) { console.error('Gantt render error:', err); document.getElementById('ganttRows').innerHTML = '<div style="padding:20px;color:red;font-weight:bold">Render error: ' + err.message + '</div>'; }
   },
 
@@ -6134,6 +6338,8 @@ const TrendsModal = {
     <div class="trends-modal-body" id="trendsModalBody"></div>
   </div>
 </div>
+<!-- Gantt Tooltip -->
+<div class="gantt-tooltip" id="ganttTooltip"></div>
 <!-- Allocation Results Modal -->
 <div class="alloc-results-overlay" id="allocResultsOverlay" onclick="if(event.target===this)Sprint.closeAllocResults()">
   <div class="alloc-results-modal">
