@@ -1137,6 +1137,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <div class="multi-select" id="sprintFilterManager" data-field="manager"></div>
           <div class="toolbar-spacer"></div>
           <button class="btn btn-add btn-sm" onclick="DetailPanel.quickAdd()">+ New Project</button>
+          <button class="btn btn-outline btn-sm" onclick="Sprint.setAllocationBaseline()" title="Capture current allocations as baseline for shift tracking"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Set Baseline</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.autoAllocate()" title="Auto-allocate projects to sprints based on capacity and priority"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Auto-Allocate</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()" title="Allocation settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
         </div>
@@ -1449,6 +1450,21 @@ const App = {
        'phase_status', 'current_phase', 'workflow_template', 'risks', 'governance_class',
        'factor_impact', 'factor_complexity', 'factor_value', 'factor_urgency', 'priority_score',
        'deadline_type', 'forum_cadence'].forEach(f => { delete p[f]; });
+      // Progress tracking: add status/completed to existing skill_splits entries
+      if (p.skill_splits) {
+        Object.keys(p.skill_splits).forEach(sk => {
+          const arr = p.skill_splits[sk];
+          if (Array.isArray(arr)) {
+            arr.forEach(entry => {
+              if (!entry.status) entry.status = 'pending';
+              if (entry.completed === undefined) entry.completed = 0;
+            });
+          }
+        });
+      }
+      // Ensure baseline fields exist
+      if (!p.estimate_baseline) p.estimate_baseline = null;
+      if (!p.allocation_baseline) p.allocation_baseline = null;
     });
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
@@ -2266,10 +2282,12 @@ const Dashboard = {
           const valCls = val === 'Complete' ? 'complete' : val === 'In Progress' ? 'in-progress' : 'not-started';
           return '<div class="stage-row"><span class="stage-name">' + s + '</span><span class="stage-val ' + valCls + '">' + val + '</span></div>';
         }).filter(Boolean).join('');
+        const ptsPct = this.calcPointsProgress(p);
+        const ptsLabel = ptsPct >= 0 ? '<div style="font-size:9px;color:var(--text-muted);margin-top:1px">' + ptsPct + '% pts consumed</div>' : '';
         progressHtml = '<div class="stage-tooltip"><div class="progress-bar">' +
           '<div class="progress-track">' + segments + '</div>' +
           '<span class="progress-pct' + pctCls + '">' + pct + '%</span>' +
-          '</div><div class="stage-detail">' + tooltipRows + '</div></div>';
+          '</div>' + ptsLabel + '<div class="stage-detail">' + tooltipRows + '</div></div>';
       }
 
       const staleDays = p.last_updated ? Math.floor((Date.now() - new Date(p.last_updated).getTime()) / 86400000) : -1;
@@ -2506,6 +2524,18 @@ const Dashboard = {
     });
     if (applicable === 0) return -1;
     return Math.round((complete / applicable) * 100);
+  },
+
+  calcPointsProgress(p) {
+    const total = p.size_total || 0;
+    if (total <= 0) return -1;
+    let completed = 0;
+    const splits = p.skill_splits || {};
+    Object.values(splits).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(entry => { completed += (entry.completed || 0); });
+    });
+    return Math.round((completed / total) * 100);
   },
 
   sprintRange(p) {
@@ -2908,25 +2938,52 @@ const DetailPanel = {
         '<div class="stage-tracker">' +
         this.PHASES.map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
-          // For phases without a stageKey, derive status from the stages object or default
           const val = ph.stageKey ? stageVal :
             (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
-          // Check if this phase has allocated points in skill_splits
           const allocated = ph.skillKey && p.skill_splits && p.skill_splits[ph.skillKey] && p.skill_splits[ph.skillKey].length > 0;
-          const allocBadge = allocated ? '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.1);color:var(--accent-blue);font-weight:600;margin-left:4px">Allocated</span>' : '';
           const pointsInput = ph.skillKey ?
-            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" style="width:60px;text-align:center" onchange="DetailPanel.onFieldChange(this)">' : '';
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' : '';
+          // Variance columns (only for phases with points and when baseline exists)
+          let varianceHtml = '';
+          if (ph.skillKey && p.estimate_baseline) {
+            const original = p.estimate_baseline[ph.skillKey] || 0;
+            const current = p[ph.skillKey] || 0;
+            const consumed = (p.skill_splits && p.skill_splits[ph.skillKey] || []).reduce((s, e) => s + (e.completed || 0), 0);
+            const remaining = current - consumed;
+            const variance = current - original;
+            const varColor = variance > 0 ? 'var(--status-amber)' : variance < 0 ? 'var(--status-green)' : 'var(--text-muted)';
+            const varSign = variance > 0 ? '+' : '';
+            varianceHtml = '<span style="font-size:9px;color:var(--text-muted);margin-left:auto;display:flex;gap:6px;align-items:center">' +
+              '<span title="Consumed">' + consumed + '/' + current + '</span>' +
+              '<span title="Remaining" style="color:' + (remaining <= 0 && current > 0 ? 'var(--status-green)' : 'var(--text-dark-secondary)') + '">' + remaining + ' rem</span>' +
+              (variance !== 0 ? '<span title="Variance from estimate" style="color:' + varColor + ';font-weight:600">' + varSign + variance + '</span>' : '') +
+            '</span>';
+          } else if (ph.skillKey && allocated) {
+            const consumed = (p.skill_splits[ph.skillKey] || []).reduce((s, e) => s + (e.completed || 0), 0);
+            varianceHtml = '<span style="font-size:9px;color:var(--text-muted);margin-left:auto">' + consumed + '/' + (p[ph.skillKey] || 0) + ' consumed</span>';
+          }
           return '<div class="stage-item" style="display:flex;align-items:center;gap:6px">' +
-            '<span class="stage-label" style="min-width:100px">' + ph.name + '</span>' +
-            '<select class="field-input" data-phase="' + ph.name + '" data-stage="' + (ph.stageKey || '') + '" onchange="DetailPanel.onPhaseChange(this)" style="width:120px">' +
+            '<span class="stage-label" style="min-width:90px">' + ph.name + '</span>' +
+            '<select class="field-input" data-phase="' + ph.name + '" data-stage="' + (ph.stageKey || '') + '" onchange="DetailPanel.onPhaseChange(this)" style="width:110px;font-size:11px">' +
             this.STAGE_VALS.map(v => '<option value="' + v + '"' + (v === val ? ' selected' : '') + '>' + v + '</option>').join('') +
             '</select>' +
-            (ph.skillKey ? '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">pts:</span>' + pointsInput : '') +
-            allocBadge +
+            (ph.skillKey ? '<span style="font-size:9px;color:var(--text-muted)">pts</span>' + pointsInput : '') +
+            varianceHtml +
           '</div>';
         }).join('') +
         '</div>' +
-        '<div style="padding:4px 0;font-size:11px;font-weight:600;color:var(--text-dark)">Total: ' + (p.size_total || 0) + ' pts</div>' +
+        (function() {
+          // Summary row
+          const total = p.size_total || 0;
+          const totalConsumed = Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0);
+          const ptsPct = total > 0 ? Math.round((totalConsumed / total) * 100) : 0;
+          const baseTotal = p.estimate_baseline ? Object.values(p.estimate_baseline).reduce((s, v) => s + (v || 0), 0) : null;
+          const varLine = baseTotal !== null && baseTotal !== total ? ' <span style="color:var(--status-amber);font-weight:600">(est: ' + baseTotal + ', var: ' + (total > baseTotal ? '+' : '') + (total - baseTotal) + ')</span>' : '';
+          return '<div style="padding:4px 0;font-size:11px;display:flex;gap:12px;align-items:center">' +
+            '<span style="font-weight:600;color:var(--text-dark)">Total: ' + total + ' pts' + varLine + '</span>' +
+            (totalConsumed > 0 ? '<span style="color:var(--accent-blue);font-weight:600">' + totalConsumed + '/' + total + ' consumed (' + ptsPct + '%)</span>' : '') +
+          '</div>';
+        })() +
       '</div>' +
 
       // Data Sourcing (shown when Data Sourcing stage is not N/A)
@@ -3188,6 +3245,16 @@ const DetailPanel = {
       const p = App.data.projects.find(pr => pr.id === this.currentId);
       if (p) {
         p.size_total = (p.size_requirements || 0) + (p.size_tableau || 0) + (p.size_engineering || 0) + (p.size_data_science || 0) + (p.size_uat_adoption || 0);
+        // Capture estimate baseline on first non-zero sizing
+        if (p.size_total > 0 && !p.estimate_baseline) {
+          p.estimate_baseline = {
+            size_requirements: p.size_requirements || 0,
+            size_tableau: p.size_tableau || 0,
+            size_engineering: p.size_engineering || 0,
+            size_data_science: p.size_data_science || 0,
+            size_uat_adoption: p.size_uat_adoption || 0
+          };
+        }
         App.markDirty();
         App.saveToLocalStorage();
       }
@@ -4431,12 +4498,12 @@ const Sprint = {
           skillSplits.forEach(sp => {
             const sid = sp.sprint || '_backlog';
             if (!allocation[p.id][sid]) allocation[p.id][sid] = [];
-            allocation[p.id][sid].push({ key: sk.key, points: sp.points });
+            allocation[p.id][sid].push({ key: sk.key, points: sp.points, status: sp.status || 'pending', completed: sp.completed || 0 });
           });
         } else {
           const sid = p.current_sprint || '_backlog';
           if (!allocation[p.id][sid]) allocation[p.id][sid] = [];
-          allocation[p.id][sid].push({ key: sk.key, points: totalPts });
+          allocation[p.id][sid].push({ key: sk.key, points: totalPts, status: 'pending', completed: 0 });
         }
       });
     });
@@ -4529,9 +4596,31 @@ const Sprint = {
         const chips = alloc.map(a => {
           cellPts += a.points;
           const splitSvg = a.points > 1 ? '<svg class="sl-split-btn" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" onclick="event.stopPropagation();Sprint.openSplit(\'' + p.id + '\',\'' + a.key + '\')" title="Split across sprints" style="opacity:0.4;cursor:pointer;margin-left:1px"><path d="M6 4v16M18 4v16"/></svg>' : '';
-          return '<span class="sl-skill-chip" draggable="true" data-project="' + p.id + '" data-skill="' + a.key + '" data-sprint="' + s.sprint_id + '" data-points="' + a.points + '" style="color:' + skillColors[a.key] + ';background:' + skillColors[a.key] + '12" title="Drag to move, or click to select then click a sprint cell">' +
+          const statusDot = a.status === 'complete' ? '<span onclick="event.stopPropagation();Sprint.cycleChipStatus(\'' + p.id + '\',\'' + a.key + '\',\'' + s.sprint_id + '\')" style="cursor:pointer;margin-right:2px" title="Click to change status"><svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg></span>' :
+            a.status === 'in_progress' ? '<span onclick="event.stopPropagation();Sprint.cycleChipStatus(\'' + p.id + '\',\'' + a.key + '\',\'' + s.sprint_id + '\')" style="cursor:pointer;margin-right:2px" title="Click to change status"><svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#3b82f6"/><circle cx="5" cy="5" r="2.5" fill="none" stroke="white" stroke-width="1" stroke-dasharray="4 2"/></svg></span>' :
+            '<span onclick="event.stopPropagation();Sprint.cycleChipStatus(\'' + p.id + '\',\'' + a.key + '\',\'' + s.sprint_id + '\')" style="cursor:pointer;margin-right:2px" title="Click to change status"><svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3"/></svg></span>';
+          const chipLabel = a.status === 'in_progress' ? skillShort[a.key] + ' <strong>' + a.completed + '/' + a.points + '</strong>' :
+            a.status === 'complete' ? '<s style="opacity:0.6">' + skillShort[a.key] + ' ' + a.points + '</s>' :
+            skillShort[a.key] + ' <strong>' + a.points + '</strong>';
+          const chipOpacity = a.status === 'complete' ? ';opacity:0.5' : '';
+          // Shift badge: compare to allocation baseline
+          let shiftBadge = '';
+          if (p.allocation_baseline && p.allocation_baseline[a.key]) {
+            const baseEntries = p.allocation_baseline[a.key];
+            const wasInThisSprint = baseEntries.some(b => b.sprint === s.sprint_id);
+            if (!wasInThisSprint) {
+              // This chip was moved here from somewhere else — find where it was
+              const origSprint = baseEntries.length > 0 ? baseEntries[0].sprint : null;
+              if (origSprint) {
+                const fromLabel = origSprint.replace(/CY\d+-/, '');
+                shiftBadge = '<span style="font-size:7px;padding:0 3px;border-radius:2px;background:var(--status-amber);color:white;font-weight:700;margin-left:2px" title="Shifted from ' + fromLabel + '">' + fromLabel + '\u2192</span>';
+              }
+            }
+          }
+          return '<span class="sl-skill-chip" draggable="true" data-project="' + p.id + '" data-skill="' + a.key + '" data-sprint="' + s.sprint_id + '" data-points="' + a.points + '" style="color:' + skillColors[a.key] + ';background:' + skillColors[a.key] + '12' + chipOpacity + '" title="Drag to move, or click to select then click a sprint cell">' +
+            statusDot +
             '<svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" opacity="0.3" style="flex-shrink:0"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="5" r="1.2"/><circle cx="6" cy="5" r="1.2"/><circle cx="2" cy="8" r="1.2"/><circle cx="6" cy="8" r="1.2"/></svg>' +
-            skillShort[a.key] + ' <strong>' + a.points + '</strong>' + splitSvg + '</span>';
+            chipLabel + shiftBadge + splitSvg + '</span>';
         }).join('');
         const totalLine = alloc.length > 1 ? '<div class="sl-total">' + cellPts + 'pts</div>' : '';
         const emptyHint = alloc.length === 0 ? '<div class="sl-empty-hint">Drop here</div>' : '';
@@ -4855,7 +4944,18 @@ const Sprint = {
     Object.keys(alloc).forEach(projectId => {
       const p = App.data.projects.find(pr => pr.id === projectId);
       if (!p) return;
+      // Add status/completed to each allocation entry
+      Object.keys(alloc[projectId]).forEach(sk => {
+        (alloc[projectId][sk] || []).forEach(entry => {
+          if (!entry.status) entry.status = 'pending';
+          if (entry.completed === undefined) entry.completed = 0;
+        });
+      });
       p.skill_splits = alloc[projectId];
+      // Capture allocation baseline on first allocation
+      if (!p.allocation_baseline) {
+        p.allocation_baseline = JSON.parse(JSON.stringify(alloc[projectId]));
+      }
       // Set current_sprint to earliest, target_sprint to latest
       let earliest = null, latest = null;
       Object.values(alloc[projectId]).forEach(splits => {
@@ -5008,6 +5108,43 @@ const Sprint = {
   closeAllocResults() {
     this.pendingAllocation = null;
     document.getElementById('allocResultsOverlay').classList.remove('open');
+  },
+
+  setAllocationBaseline() {
+    if (!App.data) return;
+    const customer = App.activeCustomer;
+    if (!customer) { App.toast('Select a customer first', 'error'); return; }
+    App.pushUndo('Set allocation baseline (' + customer + ')');
+    let count = 0;
+    App.data.projects.forEach(p => {
+      if (p.customer !== customer) return;
+      if (!p.skill_splits || !Object.keys(p.skill_splits).length) return;
+      p.allocation_baseline = JSON.parse(JSON.stringify(p.skill_splits));
+      count++;
+    });
+    App.markDirty();
+    App.saveToLocalStorage();
+    App.toast('Allocation baseline set for ' + count + ' ' + customer + ' projects', 'success');
+  },
+
+  cycleChipStatus(projectId, skillKey, sprintId) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p || !p.skill_splits || !p.skill_splits[skillKey]) return;
+    const entry = p.skill_splits[skillKey].find(sp => sp.sprint === sprintId);
+    if (!entry) return;
+    const cycle = { 'pending': 'in_progress', 'in_progress': 'complete', 'complete': 'pending' };
+    const oldStatus = entry.status || 'pending';
+    entry.status = cycle[oldStatus] || 'pending';
+    // Auto-set completed based on status
+    if (entry.status === 'complete') entry.completed = entry.points;
+    else if (entry.status === 'pending') entry.completed = 0;
+    // in_progress keeps current completed value (or sets to half if transitioning from pending)
+    else if (entry.status === 'in_progress' && oldStatus === 'pending') entry.completed = Math.ceil(entry.points / 2);
+    App.logChange(projectId, skillKey + '.' + sprintId + '.status', oldStatus, entry.status, 'user');
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.render();
   },
 
   attachDragHandlers() {
