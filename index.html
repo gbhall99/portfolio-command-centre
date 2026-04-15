@@ -1115,7 +1115,8 @@ textarea.field-input { resize: vertical; min-height: 60px; }
                 <th style="width:80px">RAG</th>
                 <th data-sort="progress" onclick="Dashboard.sortBy('progress')" style="width:150px">Progress <span class="sort-arrow">▲</span></th>
                 <th data-sort="current_sprint" onclick="Dashboard.sortBy('current_sprint')" style="width:90px">Sprints <span class="sort-arrow">▲</span></th>
-                <th data-sort="size_total" onclick="Dashboard.sortBy('size_total')" style="width:55px">Size <span class="sort-arrow">▲</span></th>
+                <th data-sort="size_total" onclick="Dashboard.sortBy('size_total')" style="width:45px">Est <span class="sort-arrow">▲</span></th>
+                <th style="width:45px">Done</th>
               </tr>
             </thead>
             <tbody id="projectTableBody"></tbody>
@@ -1840,33 +1841,31 @@ const App = {
       const custProjects = projects.filter(p => p.customer === cust).sort((a, b) => (a.priority || 999) - (b.priority || 999));
       if (!custProjects.length) return;
       html += '<h2 style="color:' + colorMap[cust] + '">' + cust + ' (' + custProjects.length + ' projects)</h2>';
-      html += '<table><tr><th>#</th><th>Project</th><th>Role</th><th>Status</th><th>RAG</th><th>Manager</th><th>Phases</th><th>Sprint</th><th>Size</th><th>Progress</th></tr>';
+      html += '<table><tr><th>#</th><th>Project</th><th>Role</th><th>Status</th><th>RAG</th><th>Manager</th><th>Start</th><th>End</th><th>Est</th><th>Done</th></tr>';
       custProjects.forEach(p => {
-        const phases = (p.delivery_config && p.delivery_config.phase_order || []).join(' \u2192 ');
         const ptsDone = Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0);
-        const ptsPct = (p.size_total || 0) > 0 ? Math.round((ptsDone / p.size_total) * 100) + '%' : '-';
+        const startSp = (p.current_sprint || '').replace('CY26-', '');
+        const endSp = (p.target_sprint || '').replace('CY26-', '');
+        const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
         html += '<tr><td>' + (p.priority || '') + '</td>' +
           '<td>' + esc(p.name) + '</td>' +
           '<td style="font-size:10px">' + esc(p.ownership || '') + '</td>' +
           '<td>' + esc(p.status) + '</td>' +
           '<td>' + ragDot(p.rag_schedule) + ' ' + ragDot(p.rag_resourcing) + ' ' + ragDot(p.rag_scope) + '</td>' +
           '<td>' + esc(p.manager || '') + '</td>' +
-          '<td style="font-size:9px;max-width:150px;overflow:hidden;text-overflow:ellipsis">' + esc(phases) + '</td>' +
-          '<td>' + esc(p.current_sprint || '') + '</td>' +
+          '<td style="font-size:10px">' + startSp + (p.start_date ? '<br>' + fmtD(p.start_date) : '') + '</td>' +
+          '<td style="font-size:10px">' + endSp + (p.target_date ? '<br>' + fmtD(p.target_date) : '') + '</td>' +
           '<td>' + (p.size_total || '') + '</td>' +
-          '<td>' + ptsPct + '</td></tr>';
+          '<td>' + (ptsDone || '') + '</td></tr>';
       });
       html += '</table>';
     });
 
-    html += '</body></html>';
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'portfolio-status-report-' + new Date().toISOString().split('T')[0] + '.html';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    this.toast('Status report exported', 'success');
+    html += '<script>window.onload=function(){window.print()}<\/script></body></html>';
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    this.toast('Status report opened — use Print > Save as PDF', 'success');
   },
 
   navigate(viewName) {
@@ -2362,6 +2361,7 @@ const Dashboard = {
         '<td class="progress-bar-cell">' + progressHtml + '</td>' +
         '<td class="sprint-cell">' + this.sprintRange(p) + '</td>' +
         '<td class="size-cell">' + (p.size_total || '\u2014') + '</td>' +
+        '<td class="size-cell">' + (Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0) || '\u2014') + '</td>' +
       '</tr>';
     });
 
@@ -3008,6 +3008,7 @@ const DetailPanel = {
             '<div class="field-group" style="flex:1.2"><div class="field-label">End Sprint</div>' + sprintSel('target_sprint', p.target_sprint) + '</div>' +
             '<div class="field-group" style="flex:0.8"><div class="field-label">Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
           '</div>' +
+          (p.category === 'Product Release' ? '<div class="field-group"><div class="field-label">Product Release Date</div>' + inp('product_release_date', p.product_release_date, 'date') + '</div>' : '') +
           '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
         '</div>' +
       '</div>' +
@@ -3785,94 +3786,72 @@ const Gantt = {
     const esc = Dashboard.esc;
     const self = this;
 
-    // Bar hover — rich phase timeline
-    scroll.querySelectorAll('.gantt-bar[data-id]').forEach(bar => {
-      bar.addEventListener('mouseenter', function(e) {
-        const p = App.data.projects.find(pr => pr.id === this.dataset.id);
-        if (!p) return;
-        const ragDot = (rag) => {
-          const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8';
-          return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + '"></span>';
-        };
-        const sprintRange = (p.current_sprint || '').replace(/CY\d+-/, '') + (p.target_sprint ? '\u2013' + (p.target_sprint || '').replace(/CY\d+-/, '') : '');
-        // Build phase timeline rows
-        const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
-        const phases = phaseOrder.length ? DetailPanel.PHASES.filter(ph => phaseOrder.includes(ph.name)).sort((a, b) => phaseOrder.indexOf(a.name) - phaseOrder.indexOf(b.name)) : DetailPanel.PHASES;
-        const phaseRows = phases.map(ph => {
-          if (!ph.skillKey) return ''; // skip status-only phases in tooltip
-          const pts = p[ph.skillKey] || 0;
-          if (pts <= 0) return '';
-          const color = Sprint.SKILL_COLORS[ph.skillKey] || '#94a3b8';
-          const splits = (p.skill_splits && p.skill_splits[ph.skillKey]) || [];
-          const sprintIds = splits.map(sp => (sp.sprint || '').replace(/CY\d+-/, '')).filter(Boolean);
-          const sprintStr = sprintIds.length ? sprintIds.join(',') : '\u2014';
-          const consumed = splits.reduce((s, e) => s + (e.completed || 0), 0);
-          const allDone = splits.length > 0 && splits.every(e => e.status === 'complete');
-          const inProg = splits.some(e => e.status === 'in_progress');
-          const statusIcon = allDone ? '<span style="color:#22c55e">\u2713</span>' : inProg ? '<span style="color:#3b82f6">\u25D0</span>' : '<span style="color:var(--text-muted)">\u25CB</span>';
-          const statusText = allDone ? 'Complete' : inProg ? consumed + '/' + pts + ' consumed' : 'Pending';
-          return '<div style="display:flex;gap:6px;align-items:center;font-size:10px;padding:1px 0">' +
-            '<span style="width:10px;text-align:center">' + statusIcon + '</span>' +
-            '<span style="min-width:28px;font-weight:600;color:' + color + '">' + (Sprint.SKILLS.find(s => s.key === ph.skillKey) || {}).short + '</span>' +
-            '<span style="min-width:28px;color:var(--text-dark)">' + pts + 'pts</span>' +
-            '<span style="color:var(--text-muted)">' + sprintStr + '</span>' +
-            '<span style="margin-left:auto;color:var(--text-muted)">' + statusText + '</span>' +
-          '</div>';
-        }).filter(Boolean).join('');
+    // Unified hover via event delegation — handles bars, segments, milestones
+    scroll.addEventListener('mouseover', function(e) {
+      const seg = e.target.closest('.gantt-seg');
+      const bar = e.target.closest('.gantt-bar[data-id]');
+      const ms = e.target.closest('.gantt-ms');
 
-        self.showTooltip(this,
-          '<div class="gantt-tooltip-title">' + esc(p.name) + ' <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>' +
-          '<div class="gantt-tooltip-row"><span style="padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + ';background:' + App.statusColor(p.status) + '15">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) +
-          (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
-          (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') +
-          '</div>' +
-          (phaseRows ? '<div style="margin-top:6px;border-top:1px solid var(--border-light);padding-top:4px">' + phaseRows + '</div>' : '')
-        );
-      });
-      bar.addEventListener('mouseleave', () => self.hideTooltip());
-    });
-
-    // Segment hover
-    scroll.querySelectorAll('.gantt-seg').forEach(seg => {
-      seg.addEventListener('mouseenter', function(e) {
-        this.classList.add('gantt-seg-hover');
-        this.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== this) s.classList.add('gantt-seg-dim'); });
-        const skillName = this.dataset.skill || '';
-        const pts = parseInt(this.dataset.pts) || 0;
-        const bar = this.closest('.gantt-bar');
-        const projId = bar ? bar.dataset.id : '';
+      if (seg) {
+        // Segment hover — show project + segment detail
+        seg.classList.add('gantt-seg-hover');
+        seg.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== seg) s.classList.add('gantt-seg-dim'); });
+        const parentBar = seg.closest('.gantt-bar');
+        const projId = parentBar ? parentBar.dataset.id : '';
         const proj = projId ? App.data.projects.find(pr => pr.id === projId) : null;
+        const skillName = seg.dataset.skill || '';
+        const pts = parseInt(seg.dataset.pts) || 0;
         const total = proj ? (proj.size_total || 1) : 1;
         const pctOfTotal = Math.round((pts / total) * 100);
         const skillKey = Object.keys(Sprint.SKILL_COLORS).find(k => (Sprint.SKILLS.find(s => s.key === k) || {}).short === skillName);
         const color = skillKey ? Sprint.SKILL_COLORS[skillKey] : '#666';
-        // Check allocation status
         let statusLine = '';
         if (proj && proj.skill_splits && skillKey) {
           const splits = proj.skill_splits[skillKey] || [];
-          const completed = splits.reduce((s, e) => s + (e.completed || 0), 0);
-          const inProg = splits.some(e => e.status === 'in_progress');
-          const allDone = splits.length > 0 && splits.every(e => e.status === 'complete');
+          const completed = splits.reduce((s2, en) => s2 + (en.completed || 0), 0);
+          const inProg = splits.some(en => en.status === 'in_progress');
+          const allDone = splits.length > 0 && splits.every(en => en.status === 'complete');
           statusLine = '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' +
-            (allDone ? '<span style="color:var(--status-green)">Complete</span>' : inProg ? '<span style="color:var(--accent-blue)">' + completed + '/' + pts + ' consumed</span>' : 'Not started') +
+            (allDone ? '<span style="color:var(--status-green)">Complete</span>' : inProg ? '<span style="color:var(--accent-blue)">' + completed + '/' + pts + ' consumed</span>' : 'Pending') +
             ' \u00B7 ' + splits.length + ' sprint' + (splits.length !== 1 ? 's' : '') + '</div>';
         }
-        // Project context header
-        const projHeader = proj ? '<div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:4px">' + Dashboard.esc(proj.name) +
-          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(proj.customer) + '20;color:' + App.customerColor(proj.customer) + '">' + Dashboard.esc(proj.customer) + '</span>' +
-          ' <span style="font-size:9px;color:var(--text-muted)">' + Dashboard.esc(proj.status || '') + (proj.manager ? ' \u00B7 ' + Dashboard.esc(proj.manager) : '') + '</span></div>' : '';
-        self.showTooltip(this,
-          projHeader +
+        const projHeader = proj ? '<div style="font-size:12px;font-weight:700;color:var(--text-dark);margin-bottom:4px">' + esc(proj.name) +
+          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(proj.customer) + '20;color:' + App.customerColor(proj.customer) + '">' + esc(proj.customer) + '</span>' +
+          ' <span style="font-size:9px;color:var(--text-muted)">' + esc(proj.status || '') + (proj.manager ? ' \u00B7 ' + esc(proj.manager) : '') + '</span></div>' : '';
+        self.showTooltip(seg, projHeader +
           '<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:' + color + '"></span><span style="font-weight:700">' + skillName + '</span></div>' +
-          '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' +
-          statusLine
-        );
-      });
-      seg.addEventListener('mouseleave', function() {
-        this.classList.remove('gantt-seg-hover');
-        this.parentElement.querySelectorAll('.gantt-seg-dim').forEach(s => s.classList.remove('gantt-seg-dim'));
+          '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' + statusLine);
+      } else if (bar && !seg) {
+        // Bar hover (no segments — solid bar)
+        const p = App.data.projects.find(pr => pr.id === bar.dataset.id);
+        if (!p) return;
+        const ragDot = (rag) => { const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8'; return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + '"></span>'; };
+        const sprintRange = (p.current_sprint || '').replace(/CY\d+-/, '') + (p.target_sprint ? '\u2013' + (p.target_sprint || '').replace(/CY\d+-/, '') : '');
+        self.showTooltip(bar,
+          '<div class="gantt-tooltip-title">' + esc(p.name) + ' <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>' +
+          '<div class="gantt-tooltip-row"><span style="font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + '">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) +
+          (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
+          (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>');
+      } else if (ms) {
+        const info = JSON.parse(ms.dataset.info || '{}');
+        const d = info.date ? new Date(info.date) : null;
+        const dateStr = d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        const daysLeft = d ? Math.round((d - new Date()) / 86400000) : null;
+        const badge = daysLeft !== null ? (daysLeft < 0 ? '<span style="color:var(--status-red);font-weight:700"> Overdue</span>' : '<span style="color:var(--text-muted)"> ' + daysLeft + 'd</span>') : '';
+        self.showTooltip(ms, '<div class="gantt-tooltip-title">' + esc(info.type || 'Milestone') + '</div><div class="gantt-tooltip-row">' + dateStr + badge + '</div>' + (info.project ? '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + esc(info.project) + '</div>' : ''));
+      }
+    });
+    scroll.addEventListener('mouseout', function(e) {
+      const seg = e.target.closest('.gantt-seg');
+      if (seg) {
+        seg.classList.remove('gantt-seg-hover');
+        seg.parentElement.querySelectorAll('.gantt-seg-dim').forEach(s => s.classList.remove('gantt-seg-dim'));
+      }
+      // Hide tooltip if mouse leaves the scroll area or moves to a non-interactive element
+      if (!e.relatedTarget || !e.relatedTarget.closest('.gantt-bar, .gantt-seg, .gantt-ms, .gantt-dep-path')) {
         self.hideTooltip();
-      });
+      }
     });
 
     // Milestone hover
@@ -4403,13 +4382,10 @@ const Gantt = {
         '<td>' + ptsPct + '</td>' +
         '<td class="' + cls + '">' + v.trend + '</td></tr>';
     });
-    html += '</table></body></html>';
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'baseline-variance-' + new Date().toISOString().split('T')[0] + '.html';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    html += '</table><script>window.onload=function(){window.print()}<\/script></body></html>';
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
     App.toast('Baseline variance report exported', 'success');
   }
 };
@@ -4998,7 +4974,10 @@ const Sprint = {
         } else {
           Object.assign(skillOrder, { 'size_requirements': 0, 'size_engineering': 1, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4, 'size_hypercare': 5 });
         }
-        const alloc = ((allocation[p.id] || {})[s.sprint_id] || []).slice().sort((a, b) => (skillOrder[a.key] || 99) - (skillOrder[b.key] || 99));
+        const rawAlloc = (allocation[p.id] || {})[s.sprint_id] || [];
+        // Filter to only skills in the project's delivery flow, then sort by flow order
+        const activeSkillKeys = phaseOrder.length ? new Set(phaseOrder.map(ph => Solver.PHASE_SKILL_MAP[ph]).filter(Boolean)) : null;
+        const alloc = rawAlloc.filter(a => !activeSkillKeys || activeSkillKeys.has(a.key)).sort((a, b) => (skillOrder[a.key] !== undefined ? skillOrder[a.key] : 99) - (skillOrder[b.key] !== undefined ? skillOrder[b.key] : 99));
         const cellClasses = 'sl-cell' + (alloc.length > 0 ? ' sl-cell-active' : '');
         let cellPts = 0;
         const chips = alloc.map(a => {
@@ -6411,14 +6390,12 @@ const Solver = {
             const sid = sprints[si].sprint_id;
             const cap = remaining[sid][sk.key];
             if (cap <= 0) continue;
-            // Spread work: limit per-sprint to distribute evenly, weighted by priority
+            // Fill sprint capacity before spreading to next sprint
             let maxAssign = pointsLeft;
-            if (spreadWork) {
-              const remainingSprints = Math.max(1, sprints.length - si);
-              const frontLoad = priorityWeight / 5; // 0.2 (even) to 1.0 (front-loaded)
-              const target = Math.ceil(pointsLeft / remainingSprints * (1 + frontLoad));
-              const minAlloc = Math.min(pointsLeft, 3); // minimum 3pts per sprint to reduce context switching
-              maxAssign = Math.max(minAlloc, Math.min(pointsLeft, target));
+            if (spreadWork && pointsLeft > cap) {
+              // Only spread if there's more work than this sprint can hold
+              // Still fill this sprint to capacity before moving on
+              maxAssign = cap;
             }
             const assign = Math.min(pointsLeft, cap, maxAssign);
             allocations[p.id][sk.key].push({ sprint: sid, points: assign });
@@ -6928,14 +6905,11 @@ const Governance = {
       html += '</table>';
     }
 
-    html += '</body></html>';
-    const blob = new Blob([html], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'briefing-pack-' + f.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase() + '-' + new Date().toISOString().split('T')[0] + '.html';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    App.toast('Briefing pack exported for ' + f.name, 'success');
+    html += '<script>window.onload=function(){window.print()}<\/script></body></html>';
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    App.toast('Briefing pack opened — use Print > Save as PDF', 'success');
   }
 };
 /* ============================================================
