@@ -3001,7 +3001,9 @@ const DetailPanel = {
 
       // Delivery Setup (before phases — drives which phases are active)
       (function() {
-        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: [] };
+        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, include_hypercare: true, phase_order: [] };
+        if (dc.include_req === undefined) dc.include_req = true;
+        if (dc.include_uat === undefined) dc.include_uat = true;
         const toggle = (field, label, checked) => '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + field + '\',this.checked)"> ' + label + '</label>';
         const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
           ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
@@ -3015,26 +3017,30 @@ const DetailPanel = {
         const allPhaseNames = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT', 'Hypercare'];
         const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
         const order = dc.phase_order || [];
-        // Map phase name to toggle field
-        const phaseToggleMap = { 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'Hypercare': 'include_hypercare' };
-        // Build flow with checkboxes + reorder arrows
-        const flowItems = allPhaseNames.map((ph, ai) => {
+        // Map ALL phase names to toggle fields
+        const phaseToggleMap = { 'Requirements': 'include_req', 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'UAT': 'include_uat', 'Hypercare': 'include_hypercare' };
+        // Build flow with checkboxes + reorder arrows for ALL phases
+        const flowItems = allPhaseNames.map((ph) => {
           const c = colors[ph] || '#94a3b8';
           const isInOrder = order.includes(ph);
-          const isMandatory = ph === 'Requirements' || ph === 'UAT'; // always on
-          const isDataSourcing = ph === 'Data Sourcing'; // driven by data source type
+          const isDataSourcing = ph === 'Data Sourcing';
           const toggleField = phaseToggleMap[ph];
           const orderIdx = order.indexOf(ph);
-          const canUp = isInOrder && orderIdx > 0 && order[orderIdx - 1] !== 'Requirements';
-          const canDown = isInOrder && orderIdx < order.length - 1 && orderIdx >= 0 && !(ph === 'UAT' && order[orderIdx + 1] === 'Hypercare');
-          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move earlier">\u25B2</span>' : '';
-          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move later">\u25BC</span>' : '';
-          if (isDataSourcing && !isExternal) return ''; // hide Data Sourcing when internal
-          const checkbox = (isMandatory || isDataSourcing) ? '' :
-            '<input type="checkbox" ' + (isInOrder ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + toggleField + '\',this.checked)" style="margin:0;cursor:pointer">';
+          // Arrows only for phases that are in the order
+          const canUp = isInOrder && orderIdx > 0;
+          const canDown = isInOrder && orderIdx >= 0 && orderIdx < order.length - 1;
+          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move earlier">\u25C0</span>' : '';
+          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move later">\u25B6</span>' : '';
+          // Data Sourcing: hidden when internal, no checkbox (driven by data source type)
+          if (isDataSourcing && !isExternal) return '';
+          if (isDataSourcing) {
+            return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + upBtn + ph + dnBtn + '</span>';
+          }
+          // All other phases get a checkbox
           const opacity = isInOrder ? '' : ';opacity:0.35';
           return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600' + opacity + '">' +
-            checkbox + upBtn + ph + dnBtn + '</span>';
+            '<input type="checkbox" ' + (isInOrder ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + toggleField + '\',this.checked)" style="margin:0;cursor:pointer;accent-color:' + c + '">' +
+            upBtn + ph + dnBtn + '</span>';
         }).filter(Boolean).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
 
         return '<div class="panel-section">' +
@@ -3531,12 +3537,14 @@ const DetailPanel = {
   rebuildPhaseOrder(p) {
     const dc = p.delivery_config;
     if (!dc) return;
-    // Determine which phases should be active
-    const active = new Set(['Requirements', 'UAT']); // always included
+    // Determine which phases should be active based on all toggle fields
+    const active = new Set();
+    if (dc.include_req !== false) active.add('Requirements');
     if (dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal') active.add('Data Sourcing');
     if (dc.include_de) active.add('Data Engineering');
     if (dc.include_ds) active.add('Data Science');
     if (dc.include_tableau) active.add('Tableau');
+    if (dc.include_uat !== false) active.add('UAT');
     if (dc.include_hypercare) active.add('Hypercare');
     // Preserve existing order: keep phases that are still active, in their current position
     const existing = dc.phase_order || [];
@@ -3612,7 +3620,7 @@ const DetailPanel = {
       priority: App.data.projects.filter(p => p.customer === cust).length + 1,
       status: 'Not Started',
       governance_forum: '', dependencies: [],
-      delivery_config: { data_sourcing_type: 'Internal', include_de: true, include_ds: false, include_tableau: true, include_hypercare: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT', 'Hypercare'] },
+      delivery_config: { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, include_hypercare: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT', 'Hypercare'] },
       notes: '',
       last_updated: new Date().toISOString(),
       devops_link: '',
