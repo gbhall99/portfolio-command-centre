@@ -628,7 +628,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 
 .gantt-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); position: relative; min-height: 0; }
 .gantt-wrapper { display: flex; min-height: 100%; min-width: max-content; }
-.gantt-labels { flex-shrink: 0; width: 220px; border-right: 1px solid var(--border-light); background: white; z-index: 5; position: sticky; left: 0; }
+.gantt-labels { flex-shrink: 0; width: 220px; border-right: 1px solid var(--border-light); background: white; z-index: 12; position: sticky; left: 0; }
 .gantt-label-header { height: 48px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); background: var(--bg-content); }
 .gantt-label-row { height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
 .gantt-label-row:hover { background: #f8fafc; }
@@ -682,7 +682,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-tooltip-skill { display: inline-flex; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
 
 /* --- Gantt Hover Effects --- */
-.gantt-seg { transition: filter 0.15s, opacity 0.15s; }
+.gantt-seg { transition: filter 0.15s, opacity 0.15s; pointer-events: auto !important; cursor: pointer; z-index: 1; }
 .gantt-seg-hover { filter: brightness(1.15); z-index: 3; }
 .gantt-seg-dim { opacity: 0.35; }
 .gantt-bar-highlight { box-shadow: 0 0 0 2px var(--accent-blue); z-index: 5; }
@@ -1649,6 +1649,9 @@ const App = {
       localStorage.setItem(this.LS_KEY, json);
       localStorage.setItem(this.LS_META_KEY, JSON.stringify({ savedAt: new Date().toISOString(), projectCount: this.data.projects.length }));
       this.checkStorageQuota();
+      // Flash save indicator
+      const badge = document.getElementById('modeBadge');
+      if (badge) { badge.style.transition = 'background 0.3s'; badge.style.background = '#22c55e20'; setTimeout(() => { badge.style.background = ''; }, 800); }
     } catch (e) {
       console.warn('[PCC] localStorage save failed:', e);
       if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
@@ -6203,8 +6206,8 @@ const Solver = {
 
     projects.forEach(p => {
       const projectPhaseMap = this.getProjectPhaseMap(p);
-      const skills = SKILLS.map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: projectPhaseMap[sk.key] || 99 }))
-        .filter(sk => sk.points > 0);
+      const skills = SKILLS.map(sk => ({ key: sk.key, label: sk.label, points: p[sk.key] || 0, phase: projectPhaseMap[sk.key] || 0 }))
+        .filter(sk => sk.points > 0 && sk.phase > 0); // phase=0 means not in delivery_config
       if (!skills.length) { totalSkipped++; return; }
 
       allocations[p.id] = {};
@@ -6298,7 +6301,7 @@ const Solver = {
 
       // Re-allocate with deadline ceiling
       const repairPhaseMap = this.getProjectPhaseMap(p);
-      const skills = SKILLS.map(sk => ({ key: sk.key, points: p[sk.key] || 0, phase: repairPhaseMap[sk.key] || 99 })).filter(sk => sk.points > 0);
+      const skills = SKILLS.map(sk => ({ key: sk.key, points: p[sk.key] || 0, phase: repairPhaseMap[sk.key] || 0 })).filter(sk => sk.points > 0 && sk.phase > 0);
       const phases = {};
       skills.forEach(sk => { if (!phases[sk.phase]) phases[sk.phase] = []; phases[sk.phase].push(sk); });
       const phaseNums = Object.keys(phases).map(Number).sort();
