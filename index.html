@@ -2867,7 +2867,7 @@ const Dashboard = {
 const DetailPanel = {
   currentId: null,
   CUSTOMERS: ['Acme Industries', 'Globex', 'Initech'],
-  OWNERSHIPS: ['We Own', 'Requirements Received'],
+  OWNERSHIPS: ['Lead & Delivery', 'Delivery'],
   CATEGORIES: ['General', 'Internal', 'Mandatory', 'BAU', 'Innovation', 'Product Release'],
   STATUSES: ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'],
   DS_TYPES: ['Internal', 'External (GDAS)', 'External (Other)'],
@@ -2880,7 +2880,7 @@ const DetailPanel = {
     { name: 'Data Science', stageKey: null, skillKey: 'size_data_science' },
     { name: 'Tableau', stageKey: null, skillKey: 'size_tableau' },
     { name: 'UAT', stageKey: 'UAT', skillKey: 'size_uat_adoption' },
-    { name: 'Hypercare', stageKey: 'Hypercare', skillKey: null }
+    { name: 'Hypercare', stageKey: 'Hypercare', skillKey: 'size_hypercare' }
   ],
   STAGES: ['Requirements', 'Data Sourcing', 'Data Modeling', 'Development', 'UAT', 'Hypercare'],
   STAGE_VALS: ['Not Started', 'In Progress', 'Complete', 'N/A'],
@@ -2956,7 +2956,7 @@ const DetailPanel = {
         '<div class="field-grid">' +
           '<div class="field-group full-width"><div class="field-label">Name</div>' + inp('name', p.name) + '</div>' +
           '<div class="field-group"><div class="field-label">Customer</div>' + sel('customer', this.CUSTOMERS, p.customer) + '</div>' +
-          '<div class="field-group"><div class="field-label">Delivery Model</div>' + sel('ownership', this.OWNERSHIPS, p.ownership) + '</div>' +
+          '<div class="field-group"><div class="field-label">Delivery Role</div>' + sel('ownership', this.OWNERSHIPS, p.ownership) + '</div>' +
           '<div class="field-group"><div class="field-label">Category</div>' + sel('category', this.CATEGORIES, p.category) + '</div>' +
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
           '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
@@ -3346,7 +3346,7 @@ const DetailPanel = {
     if (field.startsWith('size_') && field !== 'size_total') {
       const p = App.data.projects.find(pr => pr.id === this.currentId);
       if (p) {
-        p.size_total = (p.size_requirements || 0) + (p.size_tableau || 0) + (p.size_engineering || 0) + (p.size_data_science || 0) + (p.size_uat_adoption || 0);
+        p.size_total = (p.size_requirements || 0) + (p.size_tableau || 0) + (p.size_engineering || 0) + (p.size_data_science || 0) + (p.size_uat_adoption || 0) + (p.size_hypercare || 0);
         // Capture estimate baseline on first non-zero sizing
         if (p.size_total > 0 && !p.estimate_baseline) {
           p.estimate_baseline = {
@@ -3354,7 +3354,8 @@ const DetailPanel = {
             size_tableau: p.size_tableau || 0,
             size_engineering: p.size_engineering || 0,
             size_data_science: p.size_data_science || 0,
-            size_uat_adoption: p.size_uat_adoption || 0
+            size_uat_adoption: p.size_uat_adoption || 0,
+            size_hypercare: p.size_hypercare || 0
           };
         }
         App.markDirty();
@@ -3615,7 +3616,7 @@ const DetailPanel = {
       assumptions: '',
       rag_schedule: null, rag_resourcing: null, rag_scope: null,
       size_requirements: 0, size_tableau: 0, size_engineering: 0,
-      size_data_science: 0, size_uat_adoption: 0, size_total: 0,
+      size_data_science: 0, size_uat_adoption: 0, size_hypercare: 0, size_total: 0,
       start_date: null, target_date: null, hard_deadline: null,
       actual_date: null,
       baseline_start: null, baseline_end: null,
@@ -3779,7 +3780,12 @@ const Gantt = {
             (allDone ? '<span style="color:var(--status-green)">Complete</span>' : inProg ? '<span style="color:var(--accent-blue)">' + completed + '/' + pts + ' consumed</span>' : 'Not started') +
             ' \u00B7 ' + splits.length + ' sprint' + (splits.length !== 1 ? 's' : '') + '</div>';
         }
+        // Project context header
+        const projHeader = proj ? '<div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:4px">' + Dashboard.esc(proj.name) +
+          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(proj.customer) + '20;color:' + App.customerColor(proj.customer) + '">' + Dashboard.esc(proj.customer) + '</span>' +
+          ' <span style="font-size:9px;color:var(--text-muted)">' + Dashboard.esc(proj.status || '') + (proj.manager ? ' \u00B7 ' + Dashboard.esc(proj.manager) : '') + '</span></div>' : '';
         self.showTooltip(this,
+          projHeader +
           '<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:' + color + '"></span><span style="font-weight:700">' + skillName + '</span></div>' +
           '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' +
           statusLine
@@ -4021,7 +4027,8 @@ const Gantt = {
       'size_tableau': 'Tab',
       'size_engineering': 'DE',
       'size_data_science': 'DS',
-      'size_uat_adoption': 'UAT'
+      'size_uat_adoption': 'UAT',
+      'size_hypercare': 'HC'
     };
 
     // Render rows
@@ -4395,7 +4402,8 @@ const Sprint = {
     { key: 'size_tableau', label: 'Tableau', short: 'Tab' },
     { key: 'size_engineering', label: 'Data Engineering', short: 'DE' },
     { key: 'size_data_science', label: 'Data Science', short: 'DS' },
-    { key: 'size_uat_adoption', label: 'UAT', short: 'UAT' }
+    { key: 'size_uat_adoption', label: 'UAT', short: 'UAT' },
+    { key: 'size_hypercare', label: 'Hypercare', short: 'HC' }
   ],
 
   // Skill colors — intentionally avoid green/amber/red to prevent RAG confusion
@@ -4404,7 +4412,8 @@ const Sprint = {
     'size_tableau': '#0891b2',       // Cyan
     'size_engineering': '#2563eb',   // Blue
     'size_data_science': '#7c3aed',  // Violet
-    'size_uat_adoption': '#ec4899'   // Pink
+    'size_uat_adoption': '#ec4899',  // Pink
+    'size_hypercare': '#94a3b8'     // Slate
   },
 
   render() {
@@ -4485,7 +4494,8 @@ const Sprint = {
       'Tableau': 'size_tableau',
       'Data Engineering': 'size_engineering',
       'Data Science': 'size_data_science',
-      'UAT': 'size_uat_adoption'
+      'UAT': 'size_uat_adoption',
+      'Hypercare': 'size_hypercare'
     };
 
     teamMembers.forEach(tm => {
@@ -4495,13 +4505,12 @@ const Sprint = {
         if (tmCust !== customerFilter.toLowerCase() && tmCust !== 'both') return;
       }
       const pts = tm.available_points_per_sprint || 0;
-      const primary = tm.primary_skills || [];
-      if (!primary.length) return;
-      // Split capacity equally across primary skills
-      const ptsPerSkill = pts / primary.length;
-      primary.forEach(sk => {
+      const allSkills = [...(tm.primary_skills || []), ...(tm.secondary_skills || [])];
+      if (!allSkills.length) return;
+      // Full capacity available for any skill the member can supply
+      allSkills.forEach(sk => {
         const key = skillKeyMap[sk];
-        if (key) cap[key] = (cap[key] || 0) + ptsPerSkill;
+        if (key) cap[key] = (cap[key] || 0) + pts;
       });
     });
     return cap;
@@ -4517,13 +4526,14 @@ const Sprint = {
     const spEnd = new Date(sprint.end_date);
     const spDays = 20; // business days per sprint
 
-    const skillKeyMap = {
+    const skillKeyMap2 = {
       'Requirements': 'size_requirements', 'Tableau': 'size_tableau',
-      'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'UAT': 'size_uat_adoption'
+      'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science',
+      'UAT': 'size_uat_adoption', 'Hypercare': 'size_hypercare'
     };
 
-    const teamMembers = App.data.team_members || [];
-    teamMembers.forEach(tm => {
+    const teamMembers2 = App.data.team_members || [];
+    teamMembers2.forEach(tm => {
       if (customerFilter) {
         const tmCust = (tm.customer || '').toLowerCase();
         if (tmCust !== customerFilter.toLowerCase() && tmCust !== 'both') return;
@@ -4538,19 +4548,18 @@ const Sprint = {
         const overlapStart = hStart > spStart ? hStart : spStart;
         const overlapEnd = hEnd < spEnd ? hEnd : spEnd;
         if (overlapStart <= overlapEnd) {
-          // Count business days in overlap (approximate: total days * 5/7)
           const totalDays = Math.ceil((overlapEnd - overlapStart) / 86400000) + 1;
           overlapDays += Math.round(totalDays * 5 / 7);
         }
       });
       if (overlapDays <= 0) return;
       const pts = tm.available_points_per_sprint || 0;
-      const primary = tm.primary_skills || [];
-      if (!primary.length) return;
-      const reductionPerSkill = (pts / primary.length) * (overlapDays / spDays);
-      primary.forEach(sk => {
-        const key = skillKeyMap[sk];
-        if (key && cap[key]) cap[key] = Math.max(0, cap[key] - reductionPerSkill);
+      const allSkills2 = [...(tm.primary_skills || []), ...(tm.secondary_skills || [])];
+      if (!allSkills2.length) return;
+      const reduction = pts * (overlapDays / spDays);
+      allSkills2.forEach(sk => {
+        const key = skillKeyMap2[sk];
+        if (key && cap[key]) cap[key] = Math.max(0, cap[key] - reduction);
       });
     });
     return cap;
@@ -4773,7 +4782,8 @@ const Sprint = {
       'size_tableau': 'Tab',
       'size_engineering': 'DE',
       'size_data_science': 'DS',
-      'size_uat_adoption': 'UAT'
+      'size_uat_adoption': 'UAT',
+      'size_hypercare': 'HC'
     };
 
     // Build allocation map: projectId -> sprintId -> [{ key, points }]
@@ -6003,7 +6013,7 @@ const Solver = {
   SKILL_PHASE: { 'size_requirements': 1, 'size_engineering': 2, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4 },
 
   // Phase name → skill key mapping
-  PHASE_SKILL_MAP: { 'Requirements': 'size_requirements', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'Tableau': 'size_tableau', 'UAT': 'size_uat_adoption' },
+  PHASE_SKILL_MAP: { 'Requirements': 'size_requirements', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'Tableau': 'size_tableau', 'UAT': 'size_uat_adoption', 'Hypercare': 'size_hypercare' },
 
   // Derive phase numbers from a project's delivery_config.phase_order
   getProjectPhaseMap(project) {
