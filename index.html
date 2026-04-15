@@ -1119,6 +1119,8 @@ textarea.field-input { resize: vertical; min-height: 60px; }
                 <th style="width:80px">RAG</th>
                 <th data-sort="progress" onclick="Dashboard.sortBy('progress')" style="width:150px">Progress <span class="sort-arrow">▲</span></th>
                 <th data-sort="current_sprint" onclick="Dashboard.sortBy('current_sprint')" style="width:90px">Sprints <span class="sort-arrow">▲</span></th>
+                <th data-sort="target_date" onclick="Dashboard.sortBy('target_date')" style="width:70px">Target <span class="sort-arrow">▲</span></th>
+                <th style="width:65px">Deadline</th>
                 <th data-sort="size_total" onclick="Dashboard.sortBy('size_total')" style="width:45px">Est <span class="sort-arrow">▲</span></th>
                 <th style="width:45px">Done</th>
               </tr>
@@ -1976,6 +1978,7 @@ const App = {
           '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
           '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
           '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()">Allocation Settings</button>' +
         '</div>' +
       '</div>';
   },
@@ -2440,6 +2443,8 @@ const Dashboard = {
         '<td>' + ragDots + '</td>' +
         '<td class="progress-bar-cell">' + progressHtml + '</td>' +
         '<td class="sprint-cell">' + this.sprintRange(p) + '</td>' +
+        '<td style="font-size:10px;color:var(--text-dark-secondary)">' + (p.target_date ? new Date(p.target_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '\u2014') + '</td>' +
+        '<td style="font-size:10px">' + (p.hard_deadline ? '<span style="color:var(--status-red)">' + new Date(p.hard_deadline).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) + '</span>' : (p.product_release_date ? '<span style="color:var(--status-green)">' + new Date(p.product_release_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) + '</span>' : '\u2014')) + '</td>' +
         '<td class="size-cell">' + (p.size_total || '\u2014') + '</td>' +
         '<td class="size-cell">' + (Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0) || '\u2014') + '</td>' +
       '</tr>';
@@ -3060,7 +3065,6 @@ const DetailPanel = {
             '</select></div>' +
           '<div class="field-group"><div class="field-label">DevOps Link</div>' + inp('devops_link', p.devops_link || '') + '</div>' +
           '<div class="field-group"><div class="field-label">WFA Link</div>' + inp('wfa_link', p.wfa_link || '') + '</div>' +
-          productReleaseHtml +
         '</div>' +
       '</div>' +
 
@@ -3816,6 +3820,11 @@ const Gantt = {
       '<span class="gantt-legend-item"><span style="width:10px;border-top:1px dashed #3b82f6;display:inline-block"></span> Sprint</span>' +
       '<span class="gantt-legend-item"><span style="width:10px;border-top:2px solid #8b5cf6;display:inline-block"></span> FY</span>' +
       '<span class="gantt-legend-item"><svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6"/><polygon points="13,2 16,4 13,6" fill="#ef4444" opacity="0.6"/></svg> Dependency</span>' +
+      '</div>' +
+      '<div class="gantt-legend-group">' +
+        '<span class="gantt-legend-item"><span style="width:8px;height:8px;border-radius:2px;background:#3b82f6;display:inline-block"></span> GCC</span>' +
+        '<span class="gantt-legend-item"><span style="width:8px;height:8px;border-radius:2px;background:#14b8a6;display:inline-block"></span> KS</span>' +
+        '<span class="gantt-legend-item"><span style="width:8px;height:8px;border-radius:2px;background:#8b5cf6;display:inline-block"></span> DR&I</span>' +
       '</div>';
     el.innerHTML = html;
   },
@@ -3847,6 +3856,21 @@ const Gantt = {
     if (!scroll) return;
     const esc = Dashboard.esc;
     const self = this;
+
+    // Helper: build risk/issue summary for tooltip
+    const buildProjectSummary = (proj) => {
+      if (!proj) return '';
+      let summary = '';
+      const risks = proj.risks_register || [];
+      const issues = proj.issues_register || [];
+      if (risks.length || issues.length) {
+        summary += '<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--border-light);font-size:10px">';
+        if (risks.length) summary += '<div style="color:var(--status-amber)"><strong>' + risks.length + ' risk' + (risks.length > 1 ? 's' : '') + '</strong>' + (risks[0].description ? ': ' + esc(risks[0].description.substring(0, 50)) + (risks.length > 1 ? '...' : '') : '') + '</div>';
+        if (issues.length) summary += '<div style="color:var(--status-red)"><strong>' + issues.length + ' issue' + (issues.length > 1 ? 's' : '') + '</strong>' + (issues[0].description ? ': ' + esc(issues[0].description.substring(0, 50)) + (issues.length > 1 ? '...' : '') : '') + '</div>';
+        summary += '</div>';
+      }
+      return summary;
+    };
 
     // Unified hover via event delegation — handles bars, segments, milestones
     scroll.addEventListener('mouseover', function(e) {
@@ -3882,7 +3906,7 @@ const Gantt = {
           ' <span style="font-size:9px;color:var(--text-muted)">' + esc(proj.status || '') + (proj.manager ? ' \u00B7 ' + esc(proj.manager) : '') + '</span></div>' : '';
         self.showTooltip(seg, projHeader +
           '<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:' + color + '"></span><span style="font-weight:700">' + skillName + '</span></div>' +
-          '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' + statusLine);
+          '<div style="font-size:12px;font-weight:600;margin-top:2px">' + pts + ' pts <span style="font-weight:400;color:var(--text-muted)">(' + pctOfTotal + '% of project)</span></div>' + statusLine + buildProjectSummary(proj));
       } else if (bar && !seg) {
         // Bar hover (no segments — solid bar)
         const p = App.data.projects.find(pr => pr.id === bar.dataset.id);
@@ -3894,7 +3918,7 @@ const Gantt = {
           '<div class="gantt-tooltip-row"><span style="font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + '">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) +
           (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
           (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
-          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>');
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' + buildProjectSummary(p));
       } else if (ms) {
         const info = JSON.parse(ms.dataset.info || '{}');
         const d = info.date ? new Date(info.date) : null;
@@ -4989,7 +5013,7 @@ const Sprint = {
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
       const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:8px;color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
-      thead += '<th class="sl-sprint-hdr">' +
+      thead += '<th class="sl-sprint-hdr" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="font-size:12px;font-weight:700">' + s.sprint_id.replace('CY26-', '') + '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
         '<div style="margin-top:4px;display:flex;flex-direction:column;gap:1px">' + capBars + '</div>' +
@@ -6135,6 +6159,41 @@ const Capacity = {
     App.saveToLocalStorage();
     this.render();
     App.toast('Removed ' + tm.name, 'success');
+  },
+
+  showSprintCapacityDetail(sprintId) {
+    if (!App.data) return;
+    const customer = App.activeCustomer;
+    const teamMembers = (App.data.team_members || []).filter(tm => {
+      if (!customer) return true;
+      const c = (tm.customer || '').toLowerCase();
+      return c === customer.toLowerCase() || c === 'both';
+    });
+    const esc = Dashboard.esc;
+
+    const rows = teamMembers.map((tm, i) => {
+      const globalIdx = App.data.team_members.indexOf(tm);
+      const override = (tm.sprint_overrides || {})[sprintId];
+      const pts = override && override.available_points !== undefined ? override.available_points : (tm.available_points_per_sprint || 0);
+      const holidays = (override && override.holidays) || (tm.holidays || []);
+      const holStr = holidays.length ? holidays.map(h => h.start + '\u2013' + h.end).join(', ') : 'None';
+      return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
+        '<span style="min-width:120px;font-weight:600;font-size:11px">' + esc(tm.name) + '</span>' +
+        '<span style="font-size:10px;color:var(--text-muted);min-width:80px">' + (tm.primary_skills || []).join(', ') + '</span>' +
+        '<input type="number" value="' + pts + '" min="0" style="width:55px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + globalIdx + ',\'' + sprintId + '\',\'available_points\',parseInt(this.value)||0)">' +
+        '<span style="font-size:10px;color:var(--text-muted)">pts</span>' +
+        '<span style="font-size:9px;color:var(--text-muted);flex:1">' + holStr + '</span>' +
+      '</div>';
+    }).join('');
+
+    const body = document.getElementById('teamEditFields');
+    document.getElementById('teamEditTitle').textContent = 'Sprint Capacity: ' + sprintId.replace('CY26-', '');
+    body.innerHTML =
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + teamMembers.length + ' team member' + (teamMembers.length !== 1 ? 's' : '') + ' for ' + (customer || 'all') + '</div>' +
+      rows +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="Capacity.closeEdit();Sprint.render()">Done</button></div>';
+    document.getElementById('teamEditOverlay').style.display = 'block';
+    document.getElementById('teamEditModal').style.display = 'block';
   },
 
   editSprintCapacity(idx) {
