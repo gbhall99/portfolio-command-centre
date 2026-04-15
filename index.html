@@ -2926,8 +2926,18 @@ const DetailPanel = {
     // Build managers list from team data
     const managers = App.getUniqueValues('manager');
 
-    // Sprint options
-    const sprints = (App.data.sprints || []).map(s => s.sprint_id);
+    // Sprint options with date ranges
+    const sprintData = (App.data.sprints || []);
+    const sprints = sprintData.map(s => s.sprint_id);
+    const sprintSel = (name, current) => {
+      const fmtShort = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+      return '<select class="field-input" data-field="' + name + '" onchange="DetailPanel.onFieldChange(this)">' +
+        '<option value="">-- Select --</option>' +
+        sprintData.map(s => {
+          const label = s.sprint_id.replace('CY26-', '') + ' (' + fmtShort(s.start_date) + ' \u2013 ' + fmtShort(s.end_date) + ')';
+          return '<option value="' + s.sprint_id + '"' + (s.sprint_id === current ? ' selected' : '') + '>' + label + '</option>';
+        }).join('') + '</select>';
+    };
 
     // Data sourcing config
     const ds = p.data_sourcing || { type: 'Internal', team: '', uat_release_date: null, go_live_date: null };
@@ -2972,17 +2982,17 @@ const DetailPanel = {
         '</div>' +
       '</div>' +
 
-      // Timeline (combined date + sprint per row)
+      // Timeline
       '<div class="panel-section">' +
         '<div class="panel-section-title">Timeline</div>' +
         '<div style="display:flex;flex-direction:column;gap:8px">' +
           '<div style="display:flex;gap:8px;align-items:end">' +
-            '<div class="field-group" style="flex:1"><div class="field-label">Start Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
-            '<div class="field-group" style="flex:1"><div class="field-label">Sprint</div>' + sel('current_sprint', ['', ...sprints], p.current_sprint) + '</div>' +
+            '<div class="field-group" style="flex:1.2"><div class="field-label">Start Sprint</div>' + sprintSel('current_sprint', p.current_sprint) + '</div>' +
+            '<div class="field-group" style="flex:0.8"><div class="field-label">Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
           '</div>' +
           '<div style="display:flex;gap:8px;align-items:end">' +
-            '<div class="field-group" style="flex:1"><div class="field-label">Target Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
-            '<div class="field-group" style="flex:1"><div class="field-label">Sprint</div>' + sel('target_sprint', ['', ...sprints], p.target_sprint) + '</div>' +
+            '<div class="field-group" style="flex:1.2"><div class="field-label">End Sprint</div>' + sprintSel('target_sprint', p.target_sprint) + '</div>' +
+            '<div class="field-group" style="flex:0.8"><div class="field-label">Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
           '</div>' +
           '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
         '</div>' +
@@ -3032,7 +3042,7 @@ const DetailPanel = {
 
       // Stages (Delivery Phases — filtered by delivery_config)
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Delivery Phases</div>' +
+        '<div class="panel-section-title">Delivery Phases <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;color:var(--text-muted)">(based on setup above)</span></div>' +
         '<div class="stage-tracker">' +
         (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; return order.length ? DetailPanel.PHASES.filter(ph => order.includes(ph.name)).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
@@ -3171,33 +3181,25 @@ const DetailPanel = {
 
   addDependency() {
     if (!this.currentId || !App.data) return;
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p) return;
     const otherProjects = App.data.projects.filter(pr => pr.id !== this.currentId);
-    const typeSelect = '<select id="depType"><option value="blocked_by">Blocked by</option><option value="blocks">Blocks</option><option value="related">Related to</option></select>';
-    const projectSelect = '<select id="depTarget">' + otherProjects.map(pr => '<option value="' + pr.id + '">' + Dashboard.esc(pr.name) + '</option>').join('') + '</select>';
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3)';
-    modal.innerHTML = '<div style="background:white;border-radius:8px;padding:20px;max-width:400px;width:90%;box-shadow:0 8px 24px rgba(0,0,0,0.2)">' +
-      '<div style="font-weight:700;font-size:14px;margin-bottom:12px">Add Dependency</div>' +
-      '<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Type</div>' + typeSelect + '</div>' +
-      '<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Project</div>' + projectSelect + '</div>' +
-      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
-        '<button class="btn btn-outline btn-sm" onclick="this.closest(\'div[style]\').parentElement.remove()">Cancel</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="DetailPanel.saveDependency()">Add</button>' +
-      '</div></div>';
-    document.body.appendChild(modal);
-    modal._ref = modal;
-    window._depModal = modal;
+    const targetEl = document.getElementById('depTarget');
+    targetEl.innerHTML = otherProjects.map(pr => '<option value="' + pr.id + '">' + Dashboard.esc(pr.name) + ' (' + pr.id + ')</option>').join('');
+    document.getElementById('depType').value = 'blocked_by';
+    document.getElementById('depModalOverlay').style.display = 'block';
+    document.getElementById('depModalModal').style.display = 'block';
+  },
+
+  closeDependencyModal() {
+    document.getElementById('depModalOverlay').style.display = 'none';
+    document.getElementById('depModalModal').style.display = 'none';
   },
 
   saveDependency() {
     const type = document.getElementById('depType').value;
     const targetId = document.getElementById('depTarget').value;
     const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p) return;
+    if (!p || !targetId) return;
     if (!p.dependencies) p.dependencies = [];
-    // Prevent duplicates
     if (p.dependencies.some(d => d.target_id === targetId && d.type === type)) {
       App.toast('Dependency already exists', 'error');
       return;
@@ -3205,7 +3207,6 @@ const DetailPanel = {
     App.pushUndo('Add dependency');
     p.dependencies.push({ type, target_id: targetId });
     App.logChange(this.currentId, 'dependency_added', '', type + ':' + targetId, 'user');
-    // Add reverse dependency
     const target = App.data.projects.find(pr => pr.id === targetId);
     if (target) {
       if (!target.dependencies) target.dependencies = [];
@@ -3216,7 +3217,7 @@ const DetailPanel = {
     }
     App.markDirty();
     App.saveToLocalStorage();
-    if (window._depModal) { window._depModal.remove(); window._depModal = null; }
+    this.closeDependencyModal();
     document.getElementById('depList').innerHTML = this.renderDependencies(p);
     App.toast('Dependency added', 'success');
   },
@@ -3665,7 +3666,7 @@ const Gantt = {
     const esc = Dashboard.esc;
     const self = this;
 
-    // Bar hover
+    // Bar hover — rich phase timeline
     scroll.querySelectorAll('.gantt-bar[data-id]').forEach(bar => {
       bar.addEventListener('mouseenter', function(e) {
         const p = App.data.projects.find(pr => pr.id === this.dataset.id);
@@ -3674,17 +3675,39 @@ const Gantt = {
           const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8';
           return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c + '"></span>';
         };
-        const skills = Sprint.SKILLS.map(sk => {
-          const pts = p[sk.key] || 0;
-          if (!pts) return '';
-          return '<span class="gantt-tooltip-skill" style="background:' + Sprint.SKILL_COLORS[sk.key] + '20;color:' + Sprint.SKILL_COLORS[sk.key] + '">' + sk.short + ' ' + pts + '</span>';
-        }).filter(Boolean).join('');
         const sprintRange = (p.current_sprint || '').replace(/CY\d+-/, '') + (p.target_sprint ? '\u2013' + (p.target_sprint || '').replace(/CY\d+-/, '') : '');
+        // Build phase timeline rows
+        const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+        const phases = phaseOrder.length ? DetailPanel.PHASES.filter(ph => phaseOrder.includes(ph.name)).sort((a, b) => phaseOrder.indexOf(a.name) - phaseOrder.indexOf(b.name)) : DetailPanel.PHASES;
+        const phaseRows = phases.map(ph => {
+          if (!ph.skillKey) return ''; // skip status-only phases in tooltip
+          const pts = p[ph.skillKey] || 0;
+          if (pts <= 0) return '';
+          const color = Sprint.SKILL_COLORS[ph.skillKey] || '#94a3b8';
+          const splits = (p.skill_splits && p.skill_splits[ph.skillKey]) || [];
+          const sprintIds = splits.map(sp => (sp.sprint || '').replace(/CY\d+-/, '')).filter(Boolean);
+          const sprintStr = sprintIds.length ? sprintIds.join(',') : '\u2014';
+          const consumed = splits.reduce((s, e) => s + (e.completed || 0), 0);
+          const allDone = splits.length > 0 && splits.every(e => e.status === 'complete');
+          const inProg = splits.some(e => e.status === 'in_progress');
+          const statusIcon = allDone ? '<span style="color:#22c55e">\u2713</span>' : inProg ? '<span style="color:#3b82f6">\u25D0</span>' : '<span style="color:var(--text-muted)">\u25CB</span>';
+          const statusText = allDone ? 'Complete' : inProg ? consumed + '/' + pts + ' consumed' : 'Pending';
+          return '<div style="display:flex;gap:6px;align-items:center;font-size:10px;padding:1px 0">' +
+            '<span style="width:10px;text-align:center">' + statusIcon + '</span>' +
+            '<span style="min-width:28px;font-weight:600;color:' + color + '">' + (Sprint.SKILLS.find(s => s.key === ph.skillKey) || {}).short + '</span>' +
+            '<span style="min-width:28px;color:var(--text-dark)">' + pts + 'pts</span>' +
+            '<span style="color:var(--text-muted)">' + sprintStr + '</span>' +
+            '<span style="margin-left:auto;color:var(--text-muted)">' + statusText + '</span>' +
+          '</div>';
+        }).filter(Boolean).join('');
+
         self.showTooltip(this,
           '<div class="gantt-tooltip-title">' + esc(p.name) + ' <span style="font-size:10px;padding:1px 5px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>' +
-          '<div class="gantt-tooltip-row"><span style="padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + ';background:' + App.statusColor(p.status) + '15">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) + '</div>' +
-          (p.manager ? '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + esc(p.manager) + (sprintRange ? ' \u00B7 ' + sprintRange : '') + '</div>' : '') +
-          (skills ? '<div class="gantt-tooltip-skills">' + skills + '</div>' : '')
+          '<div class="gantt-tooltip-row"><span style="padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + ';background:' + App.statusColor(p.status) + '15">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) +
+          (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
+          (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') +
+          '</div>' +
+          (phaseRows ? '<div style="margin-top:6px;border-top:1px solid var(--border-light);padding-top:4px">' + phaseRows + '</div>' : '')
         );
       });
       bar.addEventListener('mouseleave', () => self.hideTooltip());
@@ -6852,6 +6875,27 @@ const TrendsModal = {
       <button class="audit-panel-close" onclick="TrendsModal.close()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="trends-modal-body" id="trendsModalBody"></div>
+  </div>
+</div>
+<!-- Dependency Modal -->
+<div class="team-edit-overlay" id="depModalOverlay" style="display:none" onclick="DetailPanel.closeDependencyModal()"></div>
+<div class="team-edit-modal" id="depModalModal" style="display:none;max-width:400px">
+  <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">Add Dependency</h3>
+  <div style="margin-bottom:10px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Type</div>
+    <select id="depType" class="field-input" style="width:100%">
+      <option value="blocked_by">Blocked by</option>
+      <option value="blocks">Blocks</option>
+      <option value="related">Related to</option>
+    </select>
+  </div>
+  <div style="margin-bottom:14px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Project</div>
+    <select id="depTarget" class="field-input" style="width:100%"></select>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button class="btn btn-outline btn-sm" onclick="DetailPanel.closeDependencyModal()">Cancel</button>
+    <button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="DetailPanel.saveDependency()">Add</button>
   </div>
 </div>
 <!-- Sprint Management Modal -->
