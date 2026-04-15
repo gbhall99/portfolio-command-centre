@@ -1045,9 +1045,13 @@ textarea.field-input { resize: vertical; min-height: 60px; }
       <div class="nav-item" data-view="governance" onclick="App.navigate('governance')">
         <span class="nav-icon">◈</span> Forums <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
+      <div class="nav-section-label">System</div>
+      <div class="nav-item" data-view="config" onclick="App.navigate('config')">
+        <span class="nav-icon">&#9881;</span> Configuration
+      </div>
     </div>
     <div class="sidebar-footer">
-      <div class="version">v1.0 — Production Ready</div>
+      <div class="version">v2.0</div>
     </div>
   </nav>
 
@@ -1206,6 +1210,12 @@ textarea.field-input { resize: vertical; min-height: 60px; }
         </div>
         <div id="govForumsContent"></div>
         <div id="govRisksContent" class="risk-dashboard" style="display:none"></div>
+      </div>
+    </div>
+    <div class="view" id="viewConfig">
+      <div class="governance-container" id="configContainer">
+        <h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin-bottom:16px">Configuration</h2>
+        <div id="configBody"></div>
       </div>
     </div>
   </main>
@@ -1884,6 +1894,7 @@ const App = {
     if (viewName === 'sprint' && this.data) Sprint.init();
     if (viewName === 'capacity' && this.data) Capacity.render();
     if (viewName === 'governance' && this.data) Governance.render();
+    if (viewName === 'config') this.renderConfig();
   },
 
   setActiveCustomer(customer) {
@@ -1898,6 +1909,75 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+  },
+
+  renderConfig() {
+    const body = document.getElementById('configBody');
+    if (!body) return;
+    const s = Sprint.allocSettings;
+    const esc = Dashboard.esc;
+    const customers = this.data ? [...new Set(this.data.projects.map(p => p.customer).filter(Boolean))].sort() : [];
+    const sprintCount = this.data ? (this.data.sprints || []).length : 0;
+    const teamCount = this.data ? (this.data.team_members || []).length : 0;
+    const projectCount = this.data ? this.data.projects.length : 0;
+
+    body.innerHTML =
+      // Data summary
+      '<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">' +
+        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-blue)">' + projectCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Projects</div></div>' +
+        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-teal)">' + teamCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Team Members</div></div>' +
+        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-violet)">' + sprintCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Sprints</div></div>' +
+        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700">' + customers.length + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Customers</div></div>' +
+      '</div>' +
+
+      // Allocation settings
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Auto-Allocation Settings</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max Capacity %</div><input type="number" value="' + s.maxCapacityPct + '" min="50" max="100" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.allocSettings.maxCapacityPct=parseInt(this.value)||85"></div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Priority Weight (1-5)</div><input type="number" value="' + s.priorityWeight + '" min="1" max="5" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.allocSettings.priorityWeight=parseInt(this.value)||3"></div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Default Customer</div><div style="font-size:13px;font-weight:600;padding:5px 0">' + esc(this.activeCustomer || 'None') + '</div></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap">' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.respectSkillOrder ? 'checked' : '') + ' onchange="Sprint.allocSettings.respectSkillOrder=this.checked"> Respect delivery pipeline</label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.spreadWork ? 'checked' : '') + ' onchange="Sprint.allocSettings.spreadWork=this.checked"> Spread work across sprints</label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.lockCompleted ? 'checked' : '') + ' onchange="Sprint.allocSettings.lockCompleted=this.checked"> Lock completed projects</label>' +
+          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.lockInProgress ? 'checked' : '') + ' onchange="Sprint.allocSettings.lockInProgress=this.checked"> Lock in-progress projects</label>' +
+        '</div>' +
+      '</div>' +
+
+      // Skill colours reference
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Skill Colours & Phases</h3>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+        Sprint.SKILLS.map(sk => {
+          const c = Sprint.SKILL_COLORS[sk.key] || '#666';
+          return '<div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="width:14px;height:14px;border-radius:3px;background:' + c + '"></span><span style="font-weight:600">' + sk.short + '</span> <span style="color:var(--text-muted)">' + sk.label + '</span></div>';
+        }).join('') +
+        '</div>' +
+      '</div>' +
+
+      // Sprint cycle info
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Cycle</h3>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);line-height:1.6">' +
+          '4 weeks development + 1 week hardening = 5-week sprint cycle<br>' +
+          '20 business days per sprint<br>' +
+          '1 story point = 8 hours focused work<br>' +
+          'FY boundary: 1 June each year' +
+        '</div>' +
+      '</div>' +
+
+      // Data actions
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Data Management</h3>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
+        '</div>' +
+      '</div>';
   },
 
   setupKeyboardShortcuts() {
@@ -3498,24 +3578,6 @@ const DetailPanel = {
     App.saveToLocalStorage();
   },
 
-  toggleTeam(el, teamName) {
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p) return;
-    if (!p.teams_involved) p.teams_involved = [];
-    const idx = p.teams_involved.indexOf(teamName);
-    if (idx > -1) {
-      p.teams_involved.splice(idx, 1);
-      el.classList.remove('selected');
-      el.querySelector('.chip-check').textContent = '';
-    } else {
-      p.teams_involved.push(teamName);
-      el.classList.add('selected');
-      el.querySelector('.chip-check').textContent = '\u2713';
-    }
-    p.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-  },
 
   onRagClick(el) {
     const field = el.dataset.field;
@@ -5899,7 +5961,7 @@ const Capacity = {
     const skillKeyMap = {
       'Requirements': 'size_requirements', 'Tableau': 'size_tableau',
       'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science',
-      'UAT': 'size_uat_adoption'
+      'UAT': 'size_uat_adoption', 'Hypercare': 'size_hypercare'
     };
 
     const allMembers = App.data.team_members || [];
@@ -5980,7 +6042,7 @@ const Capacity = {
   },
 
   showEditModal(tm, title) {
-    const allSkills = ['Requirements', 'Tableau', 'Data Engineering', 'Data Science', 'UAT'];
+    const allSkills = ['Requirements', 'Tableau', 'Data Engineering', 'Data Science', 'UAT', 'Hypercare'];
     const customers = ['Acme Industries', 'Globex', 'Initech', 'Both'];
 
     const skillCheckboxes = (fieldName, selected) => {
