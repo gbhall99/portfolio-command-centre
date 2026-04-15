@@ -2966,6 +2966,7 @@ const DetailPanel = {
               ).join('') +
             '</select></div>' +
           '<div class="field-group"><div class="field-label">DevOps Link</div>' + inp('devops_link', p.devops_link || '') + '</div>' +
+          '<div class="field-group"><div class="field-label">WFA Link</div>' + inp('wfa_link', p.wfa_link || '') + '</div>' +
           productReleaseHtml +
         '</div>' +
       '</div>' +
@@ -3027,14 +3028,14 @@ const DetailPanel = {
           '<div style="display:flex;flex-direction:column;gap:6px">' +
             '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
             extFields +
-            '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
+            '</div>' +
+            '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:4px 0">' +
               toggle('include_de', 'Data Engineering', dc.include_de) +
               toggle('include_ds', 'Data Science', dc.include_ds) +
               toggle('include_tableau', 'Tableau', dc.include_tableau) +
               toggle('include_hypercare', 'Hypercare', dc.include_hypercare) +
-            '</div>' +
-            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
-              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
             '</div>' +
           '</div>' +
         '</div>';
@@ -3347,6 +3348,26 @@ const DetailPanel = {
     if (field === 'category') {
       const p = App.data.projects.find(pr => pr.id === this.currentId);
       if (p) this.renderBody(p);
+    }
+
+    // Auto-fill date when sprint changes
+    if (field === 'current_sprint' || field === 'target_sprint') {
+      const p = App.data.projects.find(pr => pr.id === this.currentId);
+      const sprint = (App.data.sprints || []).find(s => s.sprint_id === value);
+      if (p && sprint) {
+        if (field === 'current_sprint' && sprint.start_date) {
+          p.start_date = sprint.start_date;
+          const dateEl = document.querySelector('.field-input[data-field="start_date"]');
+          if (dateEl) dateEl.value = sprint.start_date;
+        }
+        if (field === 'target_sprint' && sprint.end_date) {
+          p.target_date = sprint.end_date;
+          const dateEl = document.querySelector('.field-input[data-field="target_date"]');
+          if (dateEl) dateEl.value = sprint.end_date;
+        }
+        App.markDirty();
+        App.saveToLocalStorage();
+      }
     }
 
     Dashboard.applyFilters();
