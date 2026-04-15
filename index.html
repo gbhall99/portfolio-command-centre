@@ -3011,39 +3011,48 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label" style="font-size:10px">DT UAT Date</div><input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
           '<div class="field-group"><div class="field-label" style="font-size:10px">DT Go-Live Date</div><input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
         '</div>' : '';
+        // All possible phases as checkboxes in flow order
+        const allPhaseNames = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT', 'Hypercare'];
+        const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
         const order = dc.phase_order || [];
-        const flowPills = order.map((ph, i) => {
-          const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899', 'Hypercare': '#94a3b8' };
+        // Map phase name to toggle field
+        const phaseToggleMap = { 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'Hypercare': 'include_hypercare' };
+        // Build flow with checkboxes + reorder arrows
+        const flowItems = allPhaseNames.map((ph, ai) => {
           const c = colors[ph] || '#94a3b8';
-          const isFirst = ph === 'Requirements'; // Can't move Requirements
-          const isLast = ph === 'Hypercare' || ph === 'UAT'; // Can't move UAT past Hypercare
-          const canUp = i > 0 && !isFirst && order[i - 1] !== 'Requirements';
-          const canDown = i < order.length - 1 && !(ph === 'UAT' && order[i + 1] === 'Hypercare');
-          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + i + ',-1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move earlier">\u25B2</span>' : '';
-          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + i + ',1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move later">\u25BC</span>' : '';
-          return '<span style="display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + upBtn + ph + dnBtn + '</span>';
-        }).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
+          const isInOrder = order.includes(ph);
+          const isMandatory = ph === 'Requirements' || ph === 'UAT'; // always on
+          const isDataSourcing = ph === 'Data Sourcing'; // driven by data source type
+          const toggleField = phaseToggleMap[ph];
+          const orderIdx = order.indexOf(ph);
+          const canUp = isInOrder && orderIdx > 0 && order[orderIdx - 1] !== 'Requirements';
+          const canDown = isInOrder && orderIdx < order.length - 1 && orderIdx >= 0 && !(ph === 'UAT' && order[orderIdx + 1] === 'Hypercare');
+          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move earlier">\u25B2</span>' : '';
+          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',1)" style="cursor:pointer;opacity:0.4;font-size:8px" title="Move later">\u25BC</span>' : '';
+          if (isDataSourcing && !isExternal) return ''; // hide Data Sourcing when internal
+          const checkbox = (isMandatory || isDataSourcing) ? '' :
+            '<input type="checkbox" ' + (isInOrder ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + toggleField + '\',this.checked)" style="margin:0;cursor:pointer">';
+          const opacity = isInOrder ? '' : ';opacity:0.35';
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600' + opacity + '">' +
+            checkbox + upBtn + ph + dnBtn + '</span>';
+        }).filter(Boolean).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
+
         return '<div class="panel-section">' +
           '<div class="panel-section-title">Delivery Setup</div>' +
           '<div style="display:flex;flex-direction:column;gap:6px">' +
             '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
             extFields +
-            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
-              '<span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-right:4px">Flow:</span>' + flowPills +
-            '</div>' +
-            '<div style="display:flex;gap:16px;flex-wrap:wrap;padding:4px 0">' +
-              toggle('include_de', 'Data Engineering', dc.include_de) +
-              toggle('include_ds', 'Data Science', dc.include_ds) +
-              toggle('include_tableau', 'Tableau', dc.include_tableau) +
-              toggle('include_hypercare', 'Hypercare', dc.include_hypercare) +
+            '<div style="padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+              '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Flow <span style="font-weight:400">(check to include, arrows to reorder)</span></div>' +
+              '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' + flowItems + '</div>' +
             '</div>' +
           '</div>' +
         '</div>';
       })() +
 
-      // Stages (Delivery Phases — filtered by delivery_config)
+      // Delivery Phases (only checked phases from the flow above)
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Delivery Phases <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;color:var(--text-muted)">(based on setup above)</span></div>' +
+        '<div class="panel-section-title">Delivery Phases</div>' +
         '<div class="stage-tracker">' +
         (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; return order.length ? DetailPanel.PHASES.filter(ph => order.includes(ph.name)).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
