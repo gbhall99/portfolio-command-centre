@@ -1510,6 +1510,10 @@ const App = {
         delete p.comms_date;
       }
     });
+    // Ensure team members have sprint_overrides
+    (data.team_members || []).forEach(tm => {
+      if (!tm.sprint_overrides) tm.sprint_overrides = {};
+    });
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
     return data;
@@ -1836,15 +1840,21 @@ const App = {
       const custProjects = projects.filter(p => p.customer === cust).sort((a, b) => (a.priority || 999) - (b.priority || 999));
       if (!custProjects.length) return;
       html += '<h2 style="color:' + colorMap[cust] + '">' + cust + ' (' + custProjects.length + ' projects)</h2>';
-      html += '<table><tr><th>#</th><th>Project</th><th>Status</th><th>RAG</th><th>Manager</th><th>Sprint</th><th>Size</th></tr>';
+      html += '<table><tr><th>#</th><th>Project</th><th>Role</th><th>Status</th><th>RAG</th><th>Manager</th><th>Phases</th><th>Sprint</th><th>Size</th><th>Progress</th></tr>';
       custProjects.forEach(p => {
+        const phases = (p.delivery_config && p.delivery_config.phase_order || []).join(' \u2192 ');
+        const ptsDone = Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0);
+        const ptsPct = (p.size_total || 0) > 0 ? Math.round((ptsDone / p.size_total) * 100) + '%' : '-';
         html += '<tr><td>' + (p.priority || '') + '</td>' +
           '<td>' + esc(p.name) + '</td>' +
+          '<td style="font-size:10px">' + esc(p.ownership || '') + '</td>' +
           '<td>' + esc(p.status) + '</td>' +
           '<td>' + ragDot(p.rag_schedule) + ' ' + ragDot(p.rag_resourcing) + ' ' + ragDot(p.rag_scope) + '</td>' +
           '<td>' + esc(p.manager || '') + '</td>' +
+          '<td style="font-size:9px;max-width:150px;overflow:hidden;text-overflow:ellipsis">' + esc(phases) + '</td>' +
           '<td>' + esc(p.current_sprint || '') + '</td>' +
-          '<td>' + (p.size_total || '') + '</td></tr>';
+          '<td>' + (p.size_total || '') + '</td>' +
+          '<td>' + ptsPct + '</td></tr>';
       });
       html += '</table>';
     });
@@ -2964,7 +2974,7 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Governance Forum</div>' +
             '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
               '<option value="">None</option>' +
-              (App.data.governance_forums || []).filter(f => f.customer === p.customer).map(f =>
+              (App.data.governance_forums || []).filter(f => f.customer === p.customer && f.name !== 'GCC ELT' && !f.name.startsWith('MD Connect')).map(f =>
                 '<option value="' + Dashboard.esc(f.name) + '"' + (p.governance_forum === f.name ? ' selected' : '') + '>' + Dashboard.esc(f.name) + '</option>'
               ).join('') +
             '</select></div>' +
@@ -3686,10 +3696,12 @@ const Gantt = {
     const tip = document.getElementById('ganttTooltip');
     if (!tip) return;
     tip.innerHTML = content;
+    tip.style.left = '-9999px'; // position off-screen first to measure
     tip.classList.add('visible');
     const rect = el.getBoundingClientRect();
+    const tipH = tip.offsetHeight || 60;
     let left = rect.left + rect.width / 2 - 140;
-    let top = rect.top - tip.offsetHeight - 8;
+    let top = rect.top - tipH - 8;
     if (top < 4) top = rect.bottom + 8;
     if (left < 4) left = 4;
     if (left + 280 > window.innerWidth) left = window.innerWidth - 284;
@@ -3945,7 +3957,11 @@ const Gantt = {
 
     // Add padding — generous for month view
     minDate.setDate(minDate.getDate() - 14);
-    maxDate.setDate(maxDate.getDate() + 45);
+    // Extend to at least 6 months beyond last project or end of FY
+    const sixMonthsOut = new Date(maxDate); sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+    const fyEnd = new Date(maxDate.getFullYear(), 5, 30); // June 30
+    if (fyEnd < maxDate) fyEnd.setFullYear(fyEnd.getFullYear() + 1);
+    maxDate = new Date(Math.max(sixMonthsOut.getTime(), fyEnd.getTime()));
 
     // Snap to week start (Monday) for day/week, month start for month
     if (this.zoom === 'month') {
@@ -4306,13 +4322,18 @@ const Gantt = {
       '.slip{color:#ef4444;font-weight:600}.ahead{color:#22c55e;font-weight:600}.track{color:#64748b}' +
       '</style></head><body>' +
       '<h1>Baseline Variance Report</h1><p>Generated: ' + today + '</p>' +
-      '<table><tr><th>Project</th><th>Customer</th><th>Start Drift (days)</th><th>End Drift (days)</th><th>Duration Variance</th><th>Trend</th></tr>';
+      '<table><tr><th>Project</th><th>Customer</th><th>Role</th><th>Start Drift</th><th>End Drift</th><th>Duration Var</th><th>Points Progress</th><th>Trend</th></tr>';
     variance.forEach(v => {
       const cls = v.trend === 'slipping' ? 'slip' : v.trend === 'ahead' ? 'ahead' : 'track';
+      const p = App.data.projects.find(pr => pr.name === v.name);
+      const ptsDone = p ? Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0) : 0;
+      const ptsPct = p && (p.size_total || 0) > 0 ? Math.round((ptsDone / p.size_total) * 100) + '%' : '-';
       html += '<tr><td>' + esc(v.name) + '</td><td>' + esc(v.customer) + '</td>' +
-        '<td class="' + (v.startDrift > 0 ? 'slip' : v.startDrift < 0 ? 'ahead' : 'track') + '">' + (v.startDrift > 0 ? '+' : '') + v.startDrift + '</td>' +
-        '<td class="' + (v.endDrift > 0 ? 'slip' : v.endDrift < 0 ? 'ahead' : 'track') + '">' + (v.endDrift > 0 ? '+' : '') + v.endDrift + '</td>' +
+        '<td style="font-size:10px">' + esc(p ? (p.ownership || '') : '') + '</td>' +
+        '<td class="' + (v.startDrift > 0 ? 'slip' : v.startDrift < 0 ? 'ahead' : 'track') + '">' + (v.startDrift > 0 ? '+' : '') + v.startDrift + 'd</td>' +
+        '<td class="' + (v.endDrift > 0 ? 'slip' : v.endDrift < 0 ? 'ahead' : 'track') + '">' + (v.endDrift > 0 ? '+' : '') + v.endDrift + 'd</td>' +
         '<td>' + (v.durationVariance > 0 ? '+' : '') + v.durationVariance + 'd</td>' +
+        '<td>' + ptsPct + '</td>' +
         '<td class="' + cls + '">' + v.trend + '</td></tr>';
     });
     html += '</table></body></html>';
@@ -4517,20 +4538,22 @@ const Sprint = {
   },
 
   calcSkillCapacityForSprint(customerFilter, sprintId) {
-    // Holiday-aware capacity: reduces available points based on holiday overlap with the sprint
-    const cap = this.calcSkillCapacity(customerFilter);
-    if (!sprintId || !App.data) return cap;
+    // Sprint-aware capacity: uses per-sprint overrides if available, then holiday reduction
+    if (!sprintId || !App.data) return this.calcSkillCapacity(customerFilter);
     const sprint = (App.data.sprints || []).find(s => s.sprint_id === sprintId);
-    if (!sprint || !sprint.start_date || !sprint.end_date) return cap;
-    const spStart = new Date(sprint.start_date);
-    const spEnd = new Date(sprint.end_date);
-    const spDays = 20; // business days per sprint
+    if (!sprint || !sprint.start_date || !sprint.end_date) return this.calcSkillCapacity(customerFilter);
 
+    // Build capacity from scratch for this sprint (respecting overrides)
+    const cap = {};
+    this.SKILLS.forEach(sk => { cap[sk.key] = 0; });
     const skillKeyMap2 = {
       'Requirements': 'size_requirements', 'Tableau': 'size_tableau',
       'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science',
       'UAT': 'size_uat_adoption', 'Hypercare': 'size_hypercare'
     };
+    const spStart = new Date(sprint.start_date);
+    const spEnd = new Date(sprint.end_date);
+    const spDays = 20;
 
     const teamMembers2 = App.data.team_members || [];
     teamMembers2.forEach(tm => {
@@ -4538,7 +4561,17 @@ const Sprint = {
         const tmCust = (tm.customer || '').toLowerCase();
         if (tmCust !== customerFilter.toLowerCase() && tmCust !== 'both') return;
       }
-      const holidays = tm.holidays || [];
+      // Check for sprint-specific override
+      const override = (tm.sprint_overrides || {})[sprintId];
+      const pts = override && override.available_points !== undefined ? override.available_points : (tm.available_points_per_sprint || 0);
+      const allSkills2 = [...(tm.primary_skills || []), ...(tm.secondary_skills || [])];
+      if (!allSkills2.length) return;
+      allSkills2.forEach(sk => {
+        const key = skillKeyMap2[sk];
+        if (key) cap[key] = (cap[key] || 0) + pts;
+      });
+      // Holiday reduction (use sprint-level holidays from override, or global holidays)
+      const holidays = (override && override.holidays) ? override.holidays : (tm.holidays || []);
       if (!holidays.length) return;
       let overlapDays = 0;
       holidays.forEach(h => {
@@ -4553,9 +4586,6 @@ const Sprint = {
         }
       });
       if (overlapDays <= 0) return;
-      const pts = tm.available_points_per_sprint || 0;
-      const allSkills2 = [...(tm.primary_skills || []), ...(tm.secondary_skills || [])];
-      if (!allSkills2.length) return;
       const reduction = pts * (overlapDays / spDays);
       allSkills2.forEach(sk => {
         const key = skillKeyMap2[sk];
@@ -4892,7 +4922,15 @@ const Sprint = {
       '</td>';
 
       sprints.forEach(s => {
-        const skillOrder = { 'size_requirements': 0, 'size_engineering': 1, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4 };
+        // Derive skill order from project's delivery flow
+        const skillOrder = {};
+        const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+        if (phaseOrder.length) {
+          const psm = Solver.PHASE_SKILL_MAP;
+          phaseOrder.forEach((ph, i) => { if (psm[ph]) skillOrder[psm[ph]] = i; });
+        } else {
+          Object.assign(skillOrder, { 'size_requirements': 0, 'size_engineering': 1, 'size_data_science': 2, 'size_tableau': 3, 'size_uat_adoption': 4, 'size_hypercare': 5 });
+        }
         const alloc = ((allocation[p.id] || {})[s.sprint_id] || []).slice().sort((a, b) => (skillOrder[a.key] || 99) - (skillOrder[b.key] || 99));
         const cellClasses = 'sl-cell' + (alloc.length > 0 ? ' sl-cell-active' : '');
         let cellPts = 0;
