@@ -3129,7 +3129,40 @@ const DetailPanel = {
             '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
         '</div>' : '') +
 
-      // Communications
+      // Dependencies
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Dependencies</div>' +
+        '<div id="depList">' + this.renderDependencies(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
+      '</div>' +
+
+
+      // Notes & Risks
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Notes</div>' +
+        textarea('notes', p.notes) +
+        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
+        textarea('assumptions', p.assumptions) + '</div>' +
+      '</div>' +
+
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
+        '<div class="risk-list" id="riskList">' +
+        this.renderRisks(p) +
+        '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addRisk()">+ Add Risk</button>' +
+      '</div>' +
+
+      // Issues (same structure as Risks)
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Issues <span class="risk-count" id="issueCount">' + ((p.issues_register || []).length || 0) + '</span></div>' +
+        '<div class="risk-list" id="issueList">' +
+        this.renderIssues(p) +
+        '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addIssue()">+ Add Issue</button>' +
+      '</div>' +
+
+      // Communications (moved to end)
       '<div class="panel-section">' +
         '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
         '<div id="commsLog">' +
@@ -3160,30 +3193,6 @@ const DetailPanel = {
           '</div>' +
         '</div>' +
         '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
-      '</div>' +
-
-      // Dependencies
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Dependencies</div>' +
-        '<div id="depList">' + this.renderDependencies(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
-      '</div>' +
-
-
-      // Notes & Risks
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Notes</div>' +
-        textarea('notes', p.notes) +
-        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
-        textarea('assumptions', p.assumptions) + '</div>' +
-      '</div>' +
-
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
-        '<div class="risk-list" id="riskList">' +
-        this.renderRisks(p) +
-        '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addRisk()">+ Add Risk</button>' +
       '</div>' +
 
       // Audit Log
@@ -3341,6 +3350,61 @@ const DetailPanel = {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !p.risks_register || !p.risks_register[idx]) return;
     p.risks_register[idx][field] = value;
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // Issues (same pattern as Risks)
+  renderIssues(p) {
+    const issues = p.issues_register || [];
+    if (!issues.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No issues registered</div>';
+    return issues.map((r, i) => {
+      return '<div class="risk-item" data-issue-idx="' + i + '">' +
+        '<button class="risk-remove" onclick="DetailPanel.removeIssue(' + i + ')" title="Remove issue">&times;</button>' +
+        '<div class="risk-fields">' +
+          '<div class="full"><div class="risk-field-label">Description</div>' +
+            '<textarea data-issue-idx="' + i + '" data-issue-field="description" onchange="DetailPanel.onIssueChange(this)">' + Dashboard.esc(r.description || '') + '</textarea></div>' +
+          '<div class="full"><div class="risk-field-label">Action / Resolution</div>' +
+            '<textarea data-issue-idx="' + i + '" data-issue-field="action" onchange="DetailPanel.onIssueChange(this)">' + Dashboard.esc(r.action || '') + '</textarea></div>' +
+          '<div><div class="risk-field-label">Owner</div>' +
+            '<input type="text" data-issue-idx="' + i + '" data-issue-field="owner" value="' + Dashboard.esc(r.owner || '') + '" onchange="DetailPanel.onIssueChange(this)"></div>' +
+          '<div><div class="risk-field-label">Resolution Date</div>' +
+            '<input type="date" data-issue-idx="' + i + '" data-issue-field="resolution_date" value="' + (r.resolution_date || '') + '" onchange="DetailPanel.onIssueChange(this)"></div>' +
+        '</div></div>';
+    }).join('');
+  },
+
+  addIssue() {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p) return;
+    if (!p.issues_register) p.issues_register = [];
+    p.issues_register.push({ description: '', action: '', owner: '', resolution_date: null });
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('issueList').innerHTML = this.renderIssues(p);
+    document.getElementById('issueCount').textContent = p.issues_register.length;
+  },
+
+  removeIssue(idx) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.issues_register) return;
+    p.issues_register.splice(idx, 1);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('issueList').innerHTML = this.renderIssues(p);
+    document.getElementById('issueCount').textContent = (p.issues_register || []).length;
+  },
+
+  onIssueChange(el) {
+    const idx = parseInt(el.dataset.issueIdx);
+    const field = el.dataset.issueField;
+    const value = el.value;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.issues_register || !p.issues_register[idx]) return;
+    p.issues_register[idx][field] = value;
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
@@ -3640,6 +3704,7 @@ const DetailPanel = {
       devops_link: '',
       comms_log: [],
       risks_register: [],
+      issues_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
       skill_splits: {},
       stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started', 'Hypercare': 'Not Started' }
@@ -4056,9 +4121,11 @@ const Gantt = {
       const colorMap = { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Initech': '#8b5cf6' };
       const color = colorMap[p.customer] || '#94a3b8';
 
-      // Build skill segments within the bar
+      // Build skill segments in the project's delivery flow order
       const total = p.size_total || 0;
-      const skills = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'];
+      const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+      const psm = Solver.PHASE_SKILL_MAP;
+      const skills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : Sprint.SKILLS.map(sk => sk.key);
       let segmentsHtml = '';
       if (total > 0 && w > 20) {
         let offset = 0;
@@ -5901,6 +5968,7 @@ const Capacity = {
         '<div class="team-skills">' + (skillBars || '<span style="font-size:11px;color:var(--text-muted)">No assignments</span>') + '</div>' +
         (holidayHtml ? '<div style="display:flex;flex-direction:column;gap:2px;min-width:120px">' + holidayHtml + '</div>' : '') +
         '<div class="team-actions">' +
+          '<button onclick="Capacity.editSprintCapacity(' + idx + ')" title="Sprint capacity" style="font-size:10px">Sprints</button>' +
           '<button onclick="Capacity.editMember(' + idx + ')" title="Edit">\u270E</button>' +
           '<button class="delete" onclick="Capacity.deleteMember(' + idx + ')" title="Remove">\u2715</button>' +
         '</div>' +
@@ -6026,6 +6094,73 @@ const Capacity = {
     App.saveToLocalStorage();
     this.render();
     App.toast('Removed ' + tm.name, 'success');
+  },
+
+  editSprintCapacity(idx) {
+    const tm = App.data.team_members[idx];
+    if (!tm) return;
+    if (!tm.sprint_overrides) tm.sprint_overrides = {};
+    const sprints = App.data.sprints || [];
+    const esc = Dashboard.esc;
+    const defaultPts = tm.available_points_per_sprint || 0;
+    const today = new Date().toISOString().split('T')[0];
+
+    const rows = sprints.map(s => {
+      const override = tm.sprint_overrides[s.sprint_id];
+      const pts = override && override.available_points !== undefined ? override.available_points : defaultPts;
+      const holidays = override && override.holidays ? override.holidays : [];
+      const isPast = s.end_date < today;
+      const holStr = holidays.map(h => h.start + ' to ' + h.end).join(', ') || 'None';
+      return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9' + (isPast ? ';opacity:0.5' : '') + '">' +
+        '<span style="min-width:60px;font-weight:600;font-size:11px">' + s.sprint_id.replace('CY26-', '') + '</span>' +
+        '<input type="number" value="' + pts + '" min="0" style="width:60px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + idx + ',\'' + s.sprint_id + '\',\'available_points\',parseInt(this.value)||0)">' +
+        '<span style="font-size:10px;color:var(--text-muted);flex:1">pts</span>' +
+        '<span style="font-size:10px;color:var(--text-muted)">' + holStr + '</span>' +
+      '</div>';
+    }).join('');
+
+    const body = document.getElementById('teamEditFields');
+    document.getElementById('teamEditTitle').textContent = 'Sprint Capacity: ' + tm.name;
+    body.innerHTML =
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Default: ' + defaultPts + ' pts/sprint. Override per sprint below.</div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-bottom:8px;font-size:10px" onclick="Capacity.copyPreviousSprintCapacity(' + idx + ')">Copy from previous sprint</button>' +
+      rows +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button class="btn btn-outline btn-sm" onclick="Capacity.closeEdit()">Done</button>' +
+      '</div>';
+    document.getElementById('teamEditOverlay').style.display = 'block';
+    document.getElementById('teamEditModal').style.display = 'block';
+  },
+
+  setSprintOverride(tmIdx, sprintId, field, value) {
+    const tm = App.data.team_members[tmIdx];
+    if (!tm) return;
+    if (!tm.sprint_overrides) tm.sprint_overrides = {};
+    if (!tm.sprint_overrides[sprintId]) tm.sprint_overrides[sprintId] = {};
+    tm.sprint_overrides[sprintId][field] = value;
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  copyPreviousSprintCapacity(tmIdx) {
+    const tm = App.data.team_members[tmIdx];
+    if (!tm) return;
+    const sprints = App.data.sprints || [];
+    if (sprints.length < 2) { App.toast('Need at least 2 sprints', 'error'); return; }
+    if (!tm.sprint_overrides) tm.sprint_overrides = {};
+    App.pushUndo('Copy sprint capacity for ' + tm.name);
+    // Copy each sprint's config from the previous sprint
+    for (let i = 1; i < sprints.length; i++) {
+      const prevId = sprints[i - 1].sprint_id;
+      const currId = sprints[i].sprint_id;
+      if (tm.sprint_overrides[prevId] && !tm.sprint_overrides[currId]) {
+        tm.sprint_overrides[currId] = JSON.parse(JSON.stringify(tm.sprint_overrides[prevId]));
+      }
+    }
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.editSprintCapacity(tmIdx); // Re-render
+    App.toast('Copied capacity forward', 'success');
   },
 
   getCurrentSprint() {
