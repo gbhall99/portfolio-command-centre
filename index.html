@@ -663,7 +663,10 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .team-chip .chip-check { font-size: 10px; }
 
 /* --- Sprint Board --- */
-.sprint-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.sprint-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1; width: 100%; }
+.sprint-container > .sprint-board { flex: 1; min-height: 0; }
+.sprint-container > .sprint-swimlane-wrap, .sprint-container .sprint-swimlane-wrap { width: 100%; }
+.velocity-panel { max-width: 100%; }
 .sprint-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 .sprint-toolbar .toolbar-spacer { flex: 1; }
 
@@ -866,14 +869,18 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
-  position: absolute; top: 8px; height: 20px; border-radius: 4px;
-  display: flex; align-items: center; padding: 0 6px;
-  font-size: 10px; font-weight: 600; color: white; overflow: hidden;
+  position: absolute; top: 6px; height: 24px; border-radius: 5px;
+  display: flex; align-items: center; padding: 0 8px;
+  font-size: 11px; font-weight: 700; color: white; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
   transition: opacity 0.15s; min-width: 4px; z-index: 2;
+  box-shadow: 0 2px 4px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(255,255,255,0.10);
+  letter-spacing: 0.2px;
 }
-.gantt-bar:hover { opacity: 0.85; }
+.gantt-bar:hover { opacity: 0.92; box-shadow: 0 3px 6px rgba(15,23,42,0.24), inset 0 0 0 1px rgba(255,255,255,0.14); }
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
+.gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
+html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
 .gantt-forecast-cone { position: absolute; top: 9px; height: 22px; border-radius: 0 6px 6px 0; opacity: 0.55; pointer-events: auto; z-index: 2; }
 .gantt-forecast-cone:hover { opacity: 0.85; }
 .gantt-forecast-p50 { position: absolute; top: 7px; width: 2px; height: 26px; opacity: 0.8; z-index: 3; pointer-events: auto; }
@@ -1615,10 +1622,10 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
           <div class="multi-select" id="ganttFilterRAG" data-field="rag"></div>
           <span class="filter-label">Category</span>
           <div class="multi-select" id="ganttFilterCategory" data-field="category"></div>
+          <span class="filter-label">Jump to</span>
+          <select class="filter-select" id="ganttSprintJump" onchange="Gantt.jumpToSprintFromSelect(this)" style="min-width:120px"><option value="">Sprint…</option></select>
           <div class="toolbar-spacer"></div>
           <input type="text" class="gantt-search-input" id="ganttSearch" placeholder="Search projects..." oninput="Gantt.onSearch(this.value)">
-          <div class="gantt-sprint-links" id="ganttSprintLinks"></div>
-          <button class="btn btn-add btn-sm" onclick="DetailPanel.quickAdd()">+ New Project</button>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttBaseline" onchange="Gantt.render()"> Baseline</label>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttCriticalPath" onchange="Gantt.toggleCriticalPath(this.checked)"> Critical Path</label>
@@ -4875,19 +4882,19 @@ const Dashboard = {
   lastFilters: null,
 
   init() {
-    this.populateFilters();
+    try { this.populateFilters(); } catch (e) { console.error('[PCC] Dashboard.populateFilters failed:', e); }
     // Restore last filter state if available
     if (this.lastFilters) {
-      this.restoreFilterState(this.lastFilters);
+      try { this.restoreFilterState(this.lastFilters); } catch (e) { console.warn('[PCC] restoreFilterState failed', e); }
     }
-    this.applyFilters();
-    this.renderSummaryCards();
-    this.renderFilterPresets();
+    try { this.applyFilters(); } catch (e) { console.error('[PCC] Dashboard.applyFilters failed in init:', e); }
+    try { this.renderSummaryCards(); } catch (e) { console.error('[PCC] Dashboard.renderSummaryCards failed:', e); }
+    try { this.renderFilterPresets(); } catch (e) { /* ignore */ }
   },
 
   render() {
-    this.applyFilters();
-    this.renderSummaryCards();
+    try { this.applyFilters(); } catch (e) { console.error('[PCC] Dashboard.render -> applyFilters failed:', e); }
+    try { this.renderSummaryCards(); } catch (e) { console.error('[PCC] Dashboard.render -> renderSummaryCards failed:', e); }
   },
 
   populateFilters() {
@@ -5647,7 +5654,7 @@ const Dashboard = {
 
   renderSummaryCards() {
     if (!App.data) return;
-    this.renderExecSummary();
+    try { this.renderExecSummary(); } catch (e) { console.error('[PCC] renderExecSummary failed:', e); }
     const projects = App.data.projects;
     const byCustomer = {};
     const byStatus = {};
@@ -8188,20 +8195,14 @@ const Gantt = {
         '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
       '</div>';
       if (isDetailed) {
-        // Sub-rows for each active phase — full phase label for readability
+        // Keep sub-row spacing in the left panel but without duplicate phase labels —
+        // the phase label is placed on the actual bar in the chart area (see sub-row render below).
         const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
         const psm = Solver.PHASE_SKILL_MAP;
         phaseOrder.forEach(ph => {
           const sk = psm[ph];
           if (!sk || !(p[sk] > 0)) return;
-          const c = Sprint.SKILL_COLORS[sk] || '#94a3b8';
-          const skillMeta = Sprint.SKILLS.find(s => s.key === sk) || {};
-          const skillLabel = skillMeta.label || skillMeta.short || sk;
-          labelsHtml += '<div style="height:' + subRowH + 'px;display:flex;align-items:center;padding:0 12px 0 24px;border-bottom:1px solid #f8fafc;font-size:10px;color:' + c + ';font-weight:600;gap:6px" title="' + Dashboard.esc(skillLabel) + '">' +
-            '<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + c + '"></span>' +
-            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Dashboard.esc(skillLabel) + '</span>' +
-            '<span style="color:var(--text-muted);font-weight:500">' + p[sk] + 'pts</span>' +
-          '</div>';
+          labelsHtml += '<div style="height:' + subRowH + 'px;border-bottom:1px solid #f8fafc"></div>';
         });
       }
     });
@@ -8337,6 +8338,8 @@ const Gantt = {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
           const c = skillColors[sk] || '#94a3b8';
+          const skillMeta = Sprint.SKILLS.find(s => s.key === sk) || {};
+          const skillLabel = skillMeta.label || skillMeta.short || sk;
           // Calculate sub-bar position from skill_splits if available
           const splits = (p.skill_splits && p.skill_splits[sk]) || [];
           let subX1 = x1, subX2 = x2;
@@ -8351,11 +8354,18 @@ const Gantt = {
             }
           }
           const subW = Math.max(4, subX2 - subX1);
+          // Only show the label inline if the bar is wide enough to fit it
+          const inlineLabel = subW > 90
+            ? '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#fff;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.25)">' + Dashboard.esc(skillLabel) + ' · ' + pts + 'pts</span>'
+            : (subW > 40 ? '<span style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.25)">' + pts + '</span>' : '');
+          // Floating label to the right for narrow bars
+          const floatLabel = subW <= 90 ? '<span style="position:absolute;left:' + (subX2 + 6) + 'px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:600;color:' + c + ';white-space:nowrap;pointer-events:none">' + Dashboard.esc(skillLabel) + (subW <= 40 ? ' · ' + pts + 'pts' : '') + '</span>' : '';
           // Connector line from previous phase end to this phase start
           const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:' + (subRowH / 2) + 'px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
-          mainRow += '<div style="height:' + subRowH + 'px;position:relative;border-bottom:1px solid #f8fafc;width:' + totalWidth + 'px">' +
+          mainRow += '<div class="gantt-sub-row" style="height:' + subRowH + 'px;position:relative;border-bottom:1px solid #f8fafc;width:' + totalWidth + 'px">' +
             connector +
-            '<div style="position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.7"></div>' +
+            '<div style="position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.9" title="' + Dashboard.esc(skillLabel) + ' · ' + pts + ' pts">' + inlineLabel + '</div>' +
+            floatLabel +
           '</div>';
           prevEnd = subX1 + subW;
         });
@@ -8671,15 +8681,31 @@ const Gantt = {
 
   // ---- REQ-GANTT-03: Navigation Enhancements ----
   renderSprintLinks() {
-    const el = document.getElementById('ganttSprintLinks');
-    if (!el || !App.data) return;
+    const sel = document.getElementById('ganttSprintJump');
+    if (!sel || !App.data) return;
     const sprints = App.data.sprints || [];
-    let html = '';
+    const now = new Date();
+    let html = '<option value="">Sprint…</option>';
     sprints.forEach(s => {
-      const label = s.sprint_id.replace(/CY\d+-/, '');
-      html += '<button class="gantt-sprint-link" onclick="Gantt.jumpToSprint(\'' + s.sprint_id + '\')" title="Jump to ' + Dashboard.esc(s.sprint_id) + '">' + Dashboard.esc(label) + '</button>';
+      const shortLabel = s.sprint_id.replace(/CY\d+-/, '');
+      const sd = s.start_date ? new Date(s.start_date) : null;
+      const ed = s.end_date ? new Date(s.end_date) : null;
+      let badge = '';
+      if (sd && ed) {
+        if (ed < now) badge = ' · past';
+        else if (sd <= now && ed >= now) badge = ' · current';
+        else badge = ' · upcoming';
+      }
+      html += '<option value="' + Dashboard.esc(s.sprint_id) + '">' + Dashboard.esc(shortLabel) + badge + '</option>';
     });
-    el.innerHTML = html;
+    sel.innerHTML = html;
+  },
+
+  jumpToSprintFromSelect(el) {
+    const id = el.value;
+    if (id) this.jumpToSprint(id);
+    // reset so repeated selection of the same sprint still fires
+    el.value = '';
   },
 
   jumpToSprint(sprintId) {
@@ -9712,8 +9738,8 @@ const Sprint = {
     this.attachSwimLaneDragHandlers(board);
   },
 
-  // REQ-SPRINT-02: Velocity tracking
-  _velocityCollapsed: false,
+  // REQ-SPRINT-02: Velocity tracking — collapsed by default so the planning board claims the vertical space
+  _velocityCollapsed: true,
 
   renderVelocity(projects, sprints, allocation, skillColors) {
     if (!sprints.length) return '';
@@ -11100,7 +11126,11 @@ const Capacity = {
     }
     let projects = App.data.projects;
     if (customerFilter) projects = projects.filter(p => p.customer === customerFilter);
-    const currentSprint = this.getCurrentSprint();
+    const allSprints = App.data.sprints || [];
+    const now = new Date();
+    // Overall management window: upcoming sprints (next 8 by default) + all remaining FY sprints
+    const futureSprints = allSprints.filter(s => !s.end_date || new Date(s.end_date) >= now);
+    const horizonSprints = futureSprints.slice(0, 8);
 
     // Dynamic skill label-to-key map from config
     const skillKeyMap = {};
@@ -11115,22 +11145,64 @@ const Capacity = {
       const colorMap = {}; App.getCustomers().forEach(function(c) { colorMap[c] = App.getCustomerColor(c); }); colorMap['Both'] = '#8b5cf6';
       const custColor = colorMap[tm.customer] || '#94a3b8';
 
-      const assignedPts = {};
-      this.SKILLS.forEach(sk => { assignedPts[sk.key] = 0; });
+      const primary = tm.primary_skills || [];
+
+      // Overall (next-8-sprint) demand assigned to this person from skill_splits with assignee, falling back to manager match.
+      const demandBySkill = {}; this.SKILLS.forEach(sk => { demandBySkill[sk.key] = 0; });
+      let totalDemandPts = 0;
+      const horizonIds = new Set(horizonSprints.map(s => s.sprint_id));
       projects.forEach(p => {
-        if (p.manager !== tm.name) return;
-        if (p.current_sprint !== currentSprint) return;
-        this.SKILLS.forEach(sk => { assignedPts[sk.key] += (p[sk.key] || 0); });
+        const managerMatch = p.manager === tm.name;
+        this.SKILLS.forEach(sk => {
+          const arr = (p.skill_splits || {})[sk.key];
+          if (Array.isArray(arr) && arr.length) {
+            arr.forEach(sp => {
+              if (!horizonIds.has(sp.sprint)) return;
+              const assigneeMatch = sp.assignee === tm.name;
+              if (assigneeMatch || (managerMatch && !sp.assignee)) {
+                demandBySkill[sk.key] += sp.points || 0;
+                totalDemandPts += sp.points || 0;
+              }
+            });
+          } else if (managerMatch && horizonIds.has(p.current_sprint) && (p[sk.key] || 0) > 0) {
+            demandBySkill[sk.key] += p[sk.key];
+            totalDemandPts += p[sk.key];
+          }
+        });
       });
 
-      const primary = tm.primary_skills || [];
-      const ptsPerSkill = primary.length > 0 ? (tm.available_points_per_sprint || 0) / primary.length : 0;
+      // Overall capacity over the horizon with ramp + contract accounted for.
+      let totalCapacityPts = 0;
+      horizonSprints.forEach(s => {
+        let pts = tm.available_points_per_sprint || 0;
+        const override = (tm.sprint_overrides || {})[s.sprint_id];
+        if (override && override.available_points !== undefined) pts = override.available_points;
+        // Ramp-up scaling
+        if (tm.start_date && tm.ramp_profile && tm.ramp_profile !== 'none') {
+          const tmStart = new Date(tm.start_date);
+          const rampWeeks = Math.max(1, parseInt(tm.ramp_weeks) || 4);
+          const rampEnd = new Date(tmStart); rampEnd.setDate(rampEnd.getDate() + rampWeeks * 7);
+          const sprintMid = new Date(((new Date(s.start_date)).getTime() + (new Date(s.end_date)).getTime()) / 2);
+          if (sprintMid < tmStart) pts = 0;
+          else if (sprintMid < rampEnd) {
+            const pos = (sprintMid - tmStart) / (rampEnd - tmStart);
+            if (tm.ramp_profile === 'linear') pts = pts * pos;
+            else if (tm.ramp_profile === 'step') pts = pts * Math.min(1, Math.floor(pos * 4 + 1) * 0.25);
+          }
+        }
+        if (tm.contract_end_date && new Date(s.start_date) > new Date(tm.contract_end_date)) pts = 0;
+        totalCapacityPts += pts;
+      });
+      const utilPct = totalCapacityPts > 0 ? Math.round((totalDemandPts / totalCapacityPts) * 100) : 0;
+      const utilCls = utilPct <= 80 ? 'green' : utilPct <= 100 ? 'amber' : 'red';
 
+      // Per-skill bars are now against total demand vs member's share of capacity across the horizon.
+      const ptsPerSkill = primary.length > 0 ? (totalCapacityPts / primary.length) : 0;
       const skillBars = this.SKILLS.map(sk => {
         const isPrimary = primary.some(ps => skillKeyMap[ps] === sk.key);
-        if (!isPrimary && assignedPts[sk.key] === 0) return '';
+        if (!isPrimary && demandBySkill[sk.key] === 0) return '';
         const cap = isPrimary ? ptsPerSkill : 0;
-        const com = assignedPts[sk.key];
+        const com = demandBySkill[sk.key];
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
         const cls = pct <= 80 ? 'green' : pct <= 100 ? 'amber' : 'red';
         return '<div class="team-skill-row">' +
@@ -11140,9 +11212,28 @@ const Capacity = {
         '</div>';
       }).filter(Boolean).join('');
 
+      // Overall status column: join/ramp/contract, total holiday days
       const holidays = tm.holidays || [];
-      const holidayHtml = holidays.length ?
-        holidays.map(h => '<div class="team-holiday"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2" style="flex-shrink:0"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ' + h.start + ' \u2013 ' + h.end + '</div>').join('') : '';
+      let holidayDays = 0;
+      holidays.forEach(h => {
+        if (!h.start || !h.end) return;
+        holidayDays += Math.max(0, Math.round((new Date(h.end) - new Date(h.start)) / 86400000) + 1);
+      });
+      const joinInfo = tm.start_date ? 'Joined ' + tm.start_date : '';
+      const rampInfo = (tm.ramp_profile && tm.ramp_profile !== 'none') ? (tm.ramp_profile + ' ramp · ' + (tm.ramp_weeks || 4) + 'w') : '';
+      const contractInfo = tm.contract_end_date ? 'Contract ends ' + tm.contract_end_date : '';
+      const overallBits = [joinInfo, rampInfo, contractInfo].filter(Boolean).map(t =>
+        '<div style="font-size:10px;color:var(--text-muted)">' + Dashboard.esc(t) + '</div>').join('');
+      const holidayLine = holidayDays > 0
+        ? '<div style="font-size:10px;color:var(--text-muted)">' + holidayDays + ' holiday day' + (holidayDays === 1 ? '' : 's') + ' booked</div>'
+        : '';
+      const overallCol = '<div style="display:flex;flex-direction:column;gap:2px;min-width:150px">' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-dark)">' + totalDemandPts + ' / ' + Math.round(totalCapacityPts) + ' pts</div>' +
+        '<div style="font-size:10px;color:var(--' + (utilCls === 'red' ? 'status-red' : utilCls === 'amber' ? 'status-amber' : 'status-green') + ');font-weight:600">' + utilPct + '% utilised · next ' + horizonSprints.length + ' sprints</div>' +
+        overallBits +
+        holidayLine +
+      '</div>';
+      const holidayHtml = '';
 
       // Person-level detail sub-table
       const sprints = App.data.sprints || [];
@@ -11186,11 +11277,11 @@ const Capacity = {
             '<div class="tm-role">' + Dashboard.esc(tm.role) + '</div>' +
             '<span class="tm-customer" style="background:' + custColor + '">' + tm.customer + '</span>' +
           '</div>' +
-          '<div class="team-pts">' + Math.round(tm.available_points_per_sprint || 0) + '</div>' +
-          '<div class="team-skills">' + (skillBars || '<span style="font-size:11px;color:var(--text-muted)">No assignments</span>') + '</div>' +
-          (holidayHtml ? '<div style="display:flex;flex-direction:column;gap:2px;min-width:120px">' + holidayHtml + '</div>' : '') +
+          '<div class="team-pts" title="Points per sprint (before ramp/contract adjustments)">' + Math.round(tm.available_points_per_sprint || 0) + ' <span style="font-size:9px;color:var(--text-muted);font-weight:500">pts/sp</span></div>' +
+          '<div class="team-skills">' + (skillBars || '<span style="font-size:11px;color:var(--text-muted)">No assignments in horizon</span>') + '</div>' +
+          overallCol +
           '<div class="team-actions">' +
-            '<button onclick="event.stopPropagation();Capacity.editSprintCapacity(' + idx + ')" title="Sprint capacity" style="font-size:10px">Sprints</button>' +
+            '<button onclick="event.stopPropagation();Capacity.editSprintCapacity(' + idx + ')" title="Per-sprint capacity overrides" style="font-size:10px">Sprint overrides</button>' +
             '<button onclick="event.stopPropagation();Capacity.editMember(' + idx + ')" title="Edit">\u270E</button>' +
             '<button class="delete" onclick="event.stopPropagation();Capacity.deleteMember(' + idx + ')" title="Remove">\u2715</button>' +
           '</div>' +
