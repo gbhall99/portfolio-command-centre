@@ -1166,6 +1166,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <div class="toolbar-spacer"></div>
           <button class="btn btn-add btn-sm" onclick="DetailPanel.quickAdd()">+ New Project</button>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttBaseline" onchange="Gantt.render()"> Baseline</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
           <div class="zoom-btns">
             <button class="zoom-btn" onclick="Gantt.setZoom('day')">Day</button>
             <button class="zoom-btn active" onclick="Gantt.setZoom('week')">Week</button>
@@ -4153,18 +4154,32 @@ const Gantt = {
     }
 
     const rowH = 36;
+    const isDetailed = document.getElementById('ganttDetailed') && document.getElementById('ganttDetailed').checked;
+    const subRowH = isDetailed ? 24 : 0;
 
     // Render labels
-    const labelsHtml = '<div class="gantt-label-header">Project</div>' +
-      '<div style="height:22px;border-bottom:1px solid var(--border-light);background:#f8fafc;display:flex;align-items:center;padding:0 12px;font-size:8px;color:var(--text-muted);font-weight:600">TIMELINE</div>' +
-      projects.map(p => {
-        const colorMap = { 'GCC': '#3b82f6', 'KS': '#14b8a6', 'DR&I': '#8b5cf6' };
-        const color = colorMap[p.customer] || '#94a3b8';
-        return '<div class="gantt-label-row" data-id="' + p.id + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
-          '<div class="label-customer" style="background:' + color + '"></div>' +
-          '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
-        '</div>';
-      }).join('');
+    let labelsHtml = '<div class="gantt-label-header">Project</div>' +
+      '<div style="height:22px;border-bottom:1px solid var(--border-light);background:#f8fafc;display:flex;align-items:center;padding:0 12px;font-size:8px;color:var(--text-muted);font-weight:600">TIMELINE</div>';
+    projects.forEach(p => {
+      const colorMap = { 'GCC': '#3b82f6', 'KS': '#14b8a6', 'DR&I': '#8b5cf6' };
+      const color = colorMap[p.customer] || '#94a3b8';
+      labelsHtml += '<div class="gantt-label-row" data-id="' + p.id + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+        '<div class="label-customer" style="background:' + color + '"></div>' +
+        '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+      '</div>';
+      if (isDetailed) {
+        // Sub-rows for each active phase
+        const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+        const psm = Solver.PHASE_SKILL_MAP;
+        phaseOrder.forEach(ph => {
+          const sk = psm[ph];
+          if (!sk || !(p[sk] > 0)) return;
+          const c = Sprint.SKILL_COLORS[sk] || '#94a3b8';
+          labelsHtml += '<div style="height:' + subRowH + 'px;display:flex;align-items:center;padding:0 12px 0 28px;border-bottom:1px solid #f8fafc;font-size:9px;color:' + c + ';font-weight:600">' +
+            (Sprint.SKILLS.find(s => s.key === sk) || {}).short + ' ' + p[sk] + 'pts</div>';
+        });
+      }
+    });
     document.getElementById('ganttLabels').innerHTML = labelsHtml;
 
     // Render header
@@ -4253,13 +4268,47 @@ const Gantt = {
         if (ds.go_live_date) milestoneHtml += msDiamond(dateToX(ds.go_live_date), 'DT Go-Live', ds.go_live_date);
       }
 
-      return '<div class="gantt-row" style="width:' + totalWidth + 'px">' +
+      let mainRow = '<div class="gantt-row" style="width:' + totalWidth + 'px">' +
         '<div class="gantt-bar" data-id="' + p.id + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent +
         '</div>' +
         baselineHtml +
         milestoneHtml +
       '</div>';
+
+      // Detailed sub-rows per phase
+      if (isDetailed) {
+        const activeSkills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : skills;
+        let prevEnd = x1;
+        activeSkills.forEach(sk => {
+          const pts = p[sk] || 0;
+          if (pts <= 0) return;
+          const c = skillColors[sk] || '#94a3b8';
+          // Calculate sub-bar position from skill_splits if available
+          const splits = (p.skill_splits && p.skill_splits[sk]) || [];
+          let subX1 = x1, subX2 = x2;
+          if (splits.length) {
+            const sprintDates = splits.map(sp => {
+              const spr = (App.data.sprints || []).find(s => s.sprint_id === sp.sprint);
+              return spr ? { start: dateToX(spr.start_date), end: dateToX(spr.end_date) } : null;
+            }).filter(Boolean);
+            if (sprintDates.length) {
+              subX1 = Math.min(...sprintDates.map(d => d.start));
+              subX2 = Math.max(...sprintDates.map(d => d.end));
+            }
+          }
+          const subW = Math.max(4, subX2 - subX1);
+          // Connector line from previous phase end to this phase start
+          const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:' + (subRowH / 2) + 'px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
+          mainRow += '<div style="height:' + subRowH + 'px;position:relative;border-bottom:1px solid #f8fafc;width:' + totalWidth + 'px">' +
+            connector +
+            '<div style="position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.7"></div>' +
+          '</div>';
+          prevEnd = subX1 + subW;
+        });
+      }
+
+      return mainRow;
     }).join('');
 
     // Annotation bar — dedicated row for sprint/FY/today labels (no project data)
@@ -4365,7 +4414,16 @@ const Gantt = {
     const ganttRowsEl = document.getElementById('ganttRows');
     ganttRowsEl.innerHTML = annotationRow + rowsHtml + todayHtml + sprintLines + fyLines + depSvg;
     ganttRowsEl.style.width = totalWidth + 'px';
-    ganttRowsEl.style.height = (projects.length * rowH + 22) + 'px'; // +22 for annotation row
+    // Calculate total height including sub-rows in detailed mode
+    let totalRowH = projects.length * rowH + 22; // +22 for annotation row
+    if (isDetailed) {
+      projects.forEach(p => {
+        const po = (p.delivery_config && p.delivery_config.phase_order) || [];
+        const psm2 = Solver.PHASE_SKILL_MAP;
+        po.forEach(ph => { const sk = psm2[ph]; if (sk && (p[sk] || 0) > 0) totalRowH += subRowH; });
+      });
+    }
+    ganttRowsEl.style.height = totalRowH + 'px';
     const ganttChartEl = document.getElementById('ganttChartArea');
     ganttChartEl.style.width = totalWidth + 'px';
     ganttChartEl.style.minHeight = ((projects.length * rowH) + 50) + 'px';
