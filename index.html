@@ -2546,20 +2546,28 @@ const App = {
     this.pushUndo('Fix data integrity issue');
 
     if (issue.fixAction === 'remove_dependency' && p) {
+      const removed = p.dependencies[issue.depIndex];
       p.dependencies.splice(issue.depIndex, 1);
+      this.logChange(p.id, 'integrity_autofix', removed ? 'dep:' + removed.type + ':' + removed.target_id : '', '', 'auto-fix: orphan dependency');
       this.toast('Removed orphaned dependency from ' + p.name, 'success');
     } else if (issue.fixAction === 'clear_forum' && p) {
+      const oldForum = p.governance_forum;
       p.governance_forum = '';
+      this.logChange(p.id, 'integrity_autofix', oldForum || '', '', 'auto-fix: orphan forum reference');
       this.toast('Cleared orphaned forum reference from ' + p.name, 'success');
     } else if (issue.fixAction === 'clear_split_sprint' && p && p.skill_splits && p.skill_splits[issue.skillKey]) {
+      const oldSprint = p.skill_splits[issue.skillKey][issue.splitIndex].sprint;
       p.skill_splits[issue.skillKey][issue.splitIndex].sprint = '_backlog';
+      this.logChange(p.id, 'integrity_autofix', 'sprint:' + oldSprint, '_backlog', 'auto-fix: orphan sprint allocation');
       this.toast('Moved orphaned sprint allocation to backlog for ' + p.name, 'success');
     } else if (issue.fixAction === 'dedupe_project') {
       // Rename duplicate to make unique
       const dupes = this.data.projects.filter(pr => pr.id === issue.projectId);
       if (dupes.length > 1) {
         for (let i = 1; i < dupes.length; i++) {
+          const oldId = dupes[i].id;
           dupes[i].id = dupes[i].id + '_dup' + i;
+          this.logChange(dupes[i].id, 'integrity_autofix', oldId, dupes[i].id, 'auto-fix: dedupe project id');
         }
         this.toast('Renamed duplicate project IDs', 'success');
       }
@@ -2580,16 +2588,24 @@ const App = {
       const issue = issues[i];
       const p = this.data.projects.find(pr => pr.id === issue.projectId);
       if (issue.fixAction === 'remove_dependency' && p) {
+        const removed = p.dependencies[issue.depIndex];
         p.dependencies.splice(issue.depIndex, 1);
+        this.logChange(p.id, 'integrity_autofix', removed ? 'dep:' + removed.type + ':' + removed.target_id : '', '', 'auto-fix: orphan dependency');
       } else if (issue.fixAction === 'clear_forum' && p) {
+        const oldForum = p.governance_forum;
         p.governance_forum = '';
+        this.logChange(p.id, 'integrity_autofix', oldForum || '', '', 'auto-fix: orphan forum reference');
       } else if (issue.fixAction === 'clear_split_sprint' && p && p.skill_splits && p.skill_splits[issue.skillKey]) {
+        const oldSprint = p.skill_splits[issue.skillKey][issue.splitIndex].sprint;
         p.skill_splits[issue.skillKey][issue.splitIndex].sprint = '_backlog';
+        this.logChange(p.id, 'integrity_autofix', 'sprint:' + oldSprint, '_backlog', 'auto-fix: orphan sprint allocation');
       } else if (issue.fixAction === 'dedupe_project') {
         const dupes = this.data.projects.filter(pr => pr.id === issue.projectId);
         if (dupes.length > 1) {
           for (let j = 1; j < dupes.length; j++) {
+            const oldId = dupes[j].id;
             dupes[j].id = dupes[j].id + '_dup' + j;
+            this.logChange(dupes[j].id, 'integrity_autofix', oldId, dupes[j].id, 'auto-fix: dedupe project id');
           }
         }
       }
@@ -3149,15 +3165,16 @@ const App = {
       // Annual Holidays (REQ-CAP-02)
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
         '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Company-wide holidays that reduce capacity for all team members. Recurring holidays apply every year.</div>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Holidays reduce capacity for team members in-scope. Leave scope blank (All) to apply company-wide, or pick specific customers (e.g. UK-only bank holidays).</div>' +
         (function() {
           var hols = (App.data && App.data.annual_holidays) || [];
           var html = '';
           if (hols.length) {
             html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
-            html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:center;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
+            html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Scope</th><th style="text-align:center;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
             hols.forEach(function(h, i) {
-              html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
+              var scopeLabel = (h.customers && h.customers.length) ? h.customers.join(', ') : '<span style="color:var(--text-muted);font-style:italic">All</span>';
+              html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;font-size:10px">' + scopeLabel + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
             });
             html += '</tbody></table>';
           } else {
@@ -3729,12 +3746,21 @@ const App = {
     const date = prompt('Date (YYYY-MM-DD):');
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { App.toast('Invalid date format. Use YYYY-MM-DD', 'error'); return; }
     const recurring = confirm('Make this a recurring annual holiday?');
+    const customers = this.getCustomers();
+    const scopePrompt = 'Scope — which customers does this holiday apply to?\n' +
+      'Leave blank for ALL (global). Or enter comma-separated customer names from:\n' +
+      customers.join(', ');
+    const scopeRaw = prompt(scopePrompt, '');
+    const scope = (scopeRaw || '').split(',').map(s => s.trim()).filter(Boolean);
+    // Validate that all entered scope values are actual customers
+    const unknown = scope.filter(c => customers.indexOf(c) < 0);
+    if (unknown.length) { App.toast('Unknown customer(s): ' + unknown.join(', ') + '. Holiday not added.', 'error'); return; }
     this.pushUndo('Add annual holiday');
-    this.data.annual_holidays.push({ name: name.trim(), date, recurring });
+    this.data.annual_holidays.push({ name: name.trim(), date, recurring, customers: scope });
     this.markDirty();
     this.saveToLocalStorage();
     this.renderConfig();
-    App.toast('Annual holiday added', 'success');
+    App.toast('Annual holiday added' + (scope.length ? ' (' + scope.join(', ') + ' only)' : ' (all customers)'), 'success');
   },
 
   removeAnnualHoliday(idx) {
@@ -5822,10 +5848,37 @@ const DetailPanel = {
     const targetId = document.getElementById('depTarget').value;
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !targetId) return;
+    if (targetId === this.currentId) {
+      App.toast('A project cannot depend on itself', 'error');
+      return;
+    }
     if (!p.dependencies) p.dependencies = [];
     if (p.dependencies.some(d => d.target_id === targetId && d.type === type)) {
       App.toast('Dependency already exists', 'error');
       return;
+    }
+    // Cycle detection: tentatively add and check, revert if cycle introduced.
+    if (type === 'blocked_by' || type === 'blocks') {
+      const originalDeps = p.dependencies.slice();
+      const target = App.data.projects.find(pr => pr.id === targetId);
+      const originalTargetDeps = target && target.dependencies ? target.dependencies.slice() : null;
+      p.dependencies.push({ type, target_id: targetId });
+      if (target) {
+        if (!target.dependencies) target.dependencies = [];
+        const reverseType = type === 'blocked_by' ? 'blocks' : 'blocked_by';
+        if (!target.dependencies.some(d => d.target_id === this.currentId && d.type === reverseType)) {
+          target.dependencies.push({ type: reverseType, target_id: this.currentId });
+        }
+      }
+      const { cycles } = Solver.topoSort(App.data.projects);
+      // Revert tentative add before the real save flow below
+      p.dependencies = originalDeps;
+      if (target) target.dependencies = originalTargetDeps || [];
+      if (cycles.length) {
+        const cycleNames = cycles.slice(0, 5).map(id => { const pr = App.data.projects.find(x => x.id === id); return pr ? pr.name : id; });
+        App.toast('Cycle detected: ' + cycleNames.join(' → ') + '. Dependency not added.', 'error');
+        return;
+      }
     }
     App.pushUndo('Add dependency');
     p.dependencies.push({ type, target_id: targetId });
@@ -5922,9 +5975,60 @@ const DetailPanel = {
             })() + '</div>' +
           '<div><div class="risk-field-label">Resolution Date</div>' +
             '<input type="date" data-risk-idx="' + i + '" data-risk-field="resolution_date" value="' + (r.resolution_date || '') + '" onchange="DetailPanel.onRiskChange(this)"></div>' +
+          '<div class="full"><div class="risk-field-label">Escalation</div>' +
+            (function() {
+              const sev = r.escalation_severity || null;
+              const sevColors = { Amber: '#f59e0b', Red: '#ef4444', Critical: '#7f1d1d' };
+              const logCount = (r.escalation_log || []).length;
+              const badge = sev ? '<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:' + sevColors[sev] + ';color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px">' + sev.toUpperCase() + (logCount ? ' · ' + logCount : '') + '</span>' : '<span style="font-size:10px;color:var(--text-muted)">Not escalated</span>';
+              const btns = '<span style="display:inline-flex;gap:4px;margin-left:8px">' +
+                ['Amber', 'Red', 'Critical'].filter(s => s !== sev).map(s =>
+                  '<button onclick="DetailPanel.escalateRisk(' + i + ',\'' + s + '\')" style="font-size:9px;padding:1px 6px;border:1px solid ' + sevColors[s] + ';color:' + sevColors[s] + ';background:transparent;border-radius:3px;cursor:pointer;font-weight:600">Escalate · ' + s + '</button>'
+                ).join('') +
+                (sev ? '<button onclick="DetailPanel.clearEscalation(' + i + ')" style="font-size:9px;padding:1px 6px;border:1px solid var(--text-muted);color:var(--text-muted);background:transparent;border-radius:3px;cursor:pointer">Clear</button>' : '') +
+              '</span>';
+              return '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">' + badge + btns + '</div>';
+            })() + '</div>' +
         '</div>' +
       '</div>';
     }).join('') + '<datalist id="riskOwnerList">' + (App.data.team_members || []).map(tm => '<option value="' + Dashboard.esc(tm.name || '') + '">').join('') + '</datalist>';
+  },
+
+  escalateRisk(idx, severity) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.risks_register || !p.risks_register[idx]) return;
+    const r = p.risks_register[idx];
+    const reason = prompt('Reason for escalation (optional):', '');
+    if (reason === null) return;
+    const forum = prompt('Escalate to forum (optional, leave blank):', p.governance_forum || '');
+    if (forum === null) return;
+    App.pushUndo('Escalate risk');
+    r.escalation_severity = severity;
+    if (!r.escalation_log) r.escalation_log = [];
+    r.escalation_log.push({ at: new Date().toISOString(), severity, reason: (reason || '').trim(), forum: (forum || '').trim() });
+    p.last_updated = new Date().toISOString();
+    App.logChange(p.id, 'risk_escalated', '', severity + (forum ? ' → ' + forum : '') + (reason ? ' · ' + reason.substring(0, 60) : ''), 'user');
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('riskList').innerHTML = this.renderRisks(p);
+    App.toast('Risk escalated: ' + severity, 'success');
+  },
+
+  clearEscalation(idx) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !p.risks_register || !p.risks_register[idx]) return;
+    const r = p.risks_register[idx];
+    if (!r.escalation_severity) return;
+    App.pushUndo('Clear risk escalation');
+    const prior = r.escalation_severity;
+    r.escalation_severity = null;
+    if (!r.escalation_log) r.escalation_log = [];
+    r.escalation_log.push({ at: new Date().toISOString(), severity: null, reason: 'cleared', forum: '' });
+    App.logChange(p.id, 'risk_escalation_cleared', prior, '', 'user');
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('riskList').innerHTML = this.renderRisks(p);
+    App.toast('Escalation cleared', 'success');
   },
 
   addRisk() {
@@ -8006,7 +8110,14 @@ const Sprint = {
         }
       });
       // Add annual holidays (REQ-CAP-02) without double-counting
+      // Per-customer scope: ah.customers = [] (empty/missing) means global; otherwise filter to matching
       var annualHols = (App.data && App.data.annual_holidays) || [];
+      var activeCust = customerFilter;
+      annualHols = annualHols.filter(function(ah) {
+        if (!ah.customers || !Array.isArray(ah.customers) || ah.customers.length === 0) return true;
+        if (!activeCust) return true; // all-customers view — apply all
+        return ah.customers.indexOf(activeCust) >= 0;
+      });
       annualHols.forEach(function(ah) {
         if (!ah.date) return;
         var ahDate = new Date(ah.date);
@@ -11184,9 +11295,15 @@ const Governance = {
           '<span class="forum-toggle" id="forumToggle' + idx + '">\u25B6</span>' +
         '</div>' +
         '<div class="forum-body" id="forumBody' + idx + '">' + projectRows +
+          Governance.renderForumRoster(f, realIdx) +
           Governance.renderForumActions(f, realIdx) +
           Governance.renderForumDecisions(f, realIdx, forumProjects) +
-          (forumProjects.length ? '<div style="padding:8px 0;text-align:right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.exportBriefingPack(' + realIdx + ')" style="font-size:10px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Briefing Pack</button></div>' : '') +
+          Governance.renderForumMinutes(f, realIdx) +
+          '<div style="padding:8px 0;text-align:right;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">' +
+            '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.editRoster(' + realIdx + ')" style="font-size:10px">Roster / RACI</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.startMeeting(' + realIdx + ')" style="font-size:10px">Start Meeting</button>' +
+            (forumProjects.length ? '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.exportBriefingPack(' + realIdx + ')" style="font-size:10px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Briefing Pack</button>' : '') +
+          '</div>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -11293,14 +11410,29 @@ const Governance = {
         const pr = (App.data.projects || []).find(p => p.id === pid);
         return pr ? '<span onclick="event.stopPropagation();DetailPanel.open(\'' + pid + '\')">' + esc(pr.name) + '</span>' : '';
       }).filter(Boolean).join('');
+      const state = d.state || 'Proposed';
+      const stateColors = { Proposed: '#64748b', Discussed: '#3b82f6', Approved: '#22c55e', Deferred: '#f59e0b', Rejected: '#ef4444' };
+      const stateColor = stateColors[state] || '#64748b';
+      const isLocked = state === 'Approved';
+      const approverLine = d.approver ? '<span style="font-size:10px;color:var(--text-muted);margin-left:6px">· approved by ' + esc(d.approver) + '</span>' : '';
+      const transitionBtns = isLocked ? '<span style="font-size:10px;color:var(--status-green);font-weight:700" title="Locked — cannot edit">LOCKED</span>' :
+        '<span style="display:inline-flex;gap:4px;flex-wrap:wrap">' +
+          ['Discussed', 'Approved', 'Deferred', 'Rejected'].filter(s => s !== state).map(s =>
+            '<button class="decision-state-btn" data-state="' + s + '" onclick="event.stopPropagation();Governance.setDecisionState(' + forumIdx + ',' + origIdx + ',\'' + s + '\')" style="font-size:9px;padding:1px 6px;border:1px solid ' + stateColors[s] + ';color:' + stateColors[s] + ';background:transparent;border-radius:3px;cursor:pointer;font-weight:600" title="Transition to ' + s + '">' + s + '</button>'
+          ).join('') +
+        '</span>';
       html += '<div class="forum-decision-row">' +
         '<span class="forum-decision-date">' + esc(d.date || '') + '</span>' +
         '<div style="flex:1">' +
-          '<div class="forum-decision-text">' + esc(d.text || '') + '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+            '<span style="font-size:9px;font-weight:700;letter-spacing:0.5px;padding:2px 8px;border-radius:999px;background:' + stateColor + '22;color:' + stateColor + '">' + state.toUpperCase() + '</span>' +
+            '<div class="forum-decision-text" style="flex:1">' + esc(d.text || '') + '</div>' +
+          '</div>' +
           (linkedNames ? '<div class="forum-decision-projects">' + linkedNames + '</div>' : '') +
-          (d.recordedBy ? '<div class="forum-decision-by">Recorded by: ' + esc(d.recordedBy) + '</div>' : '') +
+          (d.recordedBy ? '<div class="forum-decision-by">Recorded by: ' + esc(d.recordedBy) + approverLine + '</div>' : approverLine) +
+          '<div style="margin-top:4px">' + transitionBtns + '</div>' +
         '</div>' +
-        '<button class="forum-decision-remove" onclick="event.stopPropagation();Governance.removeDecision(' + forumIdx + ',' + origIdx + ')" title="Remove">&times;</button>' +
+        (isLocked ? '' : '<button class="forum-decision-remove" onclick="event.stopPropagation();Governance.removeDecision(' + forumIdx + ',' + origIdx + ')" title="Remove">&times;</button>') +
       '</div>';
     });
 
@@ -11309,6 +11441,147 @@ const Governance = {
       '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Decision</button>';
     html += '</div>';
     return html;
+  },
+
+  RACI_ROLES: ['Sponsor', 'Chair', 'Decision-maker', 'Contributor', 'Informed'],
+
+  renderForumRoster(forum, forumIdx) {
+    const roster = forum.roster || [];
+    if (!roster.length) return '';
+    const esc = Dashboard.esc;
+    const byRole = {};
+    roster.forEach(m => { (byRole[m.role] || (byRole[m.role] = [])).push(m.name); });
+    const bits = this.RACI_ROLES.filter(r => byRole[r] && byRole[r].length).map(r =>
+      '<span style="font-size:10px"><strong style="color:var(--accent-blue)">' + r + ':</strong> ' + esc(byRole[r].join(', ')) + '</span>'
+    );
+    if (!bits.length) return '';
+    return '<div style="padding:6px 8px;background:#f8fafc;border-left:3px solid var(--accent-blue);margin:4px 0;font-size:10px;display:flex;gap:12px;flex-wrap:wrap">' + bits.join('') + '</div>';
+  },
+
+  renderForumMinutes(forum, forumIdx) {
+    const minutes = forum.minutes || [];
+    if (!minutes.length) return '';
+    const esc = Dashboard.esc;
+    const latest = minutes[minutes.length - 1];
+    const dateStr = latest.date || '';
+    const presentCount = (latest.attendees_present || []).length;
+    const apologiesCount = (latest.attendees_apologies || []).length;
+    const attendancePct = (presentCount + apologiesCount) > 0 ? Math.round((presentCount / (presentCount + apologiesCount)) * 100) : 0;
+    const notes = esc((latest.notes || '').substring(0, 160));
+    return '<div style="padding:6px 8px;background:#f1f5f9;border-radius:4px;margin:4px 0;font-size:10px">' +
+      '<strong>Last meeting:</strong> ' + esc(dateStr) +
+      ' · ' + presentCount + ' present, ' + apologiesCount + ' apologies' +
+      (presentCount + apologiesCount > 0 ? ' (' + attendancePct + '% attendance)' : '') +
+      (latest.chair ? ' · Chair: ' + esc(latest.chair) : '') +
+      ' · ' + minutes.length + ' meeting' + (minutes.length === 1 ? '' : 's') + ' logged' +
+      (notes ? '<div style="margin-top:3px;color:var(--text-dark-secondary);font-style:italic">' + notes + (latest.notes && latest.notes.length > 160 ? '…' : '') + '</div>' : '') +
+    '</div>';
+  },
+
+  editRoster(forumIdx) {
+    const forum = (App.data.governance_forums || [])[forumIdx];
+    if (!forum) return;
+    const roles = this.RACI_ROLES;
+    const current = forum.roster || [];
+    const preview = current.length ? current.map(m => (m.name || '') + ' — ' + (m.role || 'Contributor')).join('\n') : '(no members yet)';
+    const input = prompt(
+      'Edit forum roster — one per line, format "Name — Role".\n\nRoles: ' + roles.join(', ') + '.\n\nCurrent roster:\n' + preview + '\n\nReplace with:',
+      current.map(m => (m.name || '') + ' — ' + (m.role || 'Contributor')).join('\n')
+    );
+    if (input === null) return;
+    const lines = input.split('\n').map(l => l.trim()).filter(Boolean);
+    const next = lines.map(l => {
+      const parts = l.split(/\s*[—-]\s+/);
+      const name = parts[0] ? parts[0].trim() : '';
+      let role = parts[1] ? parts[1].trim() : 'Contributor';
+      // Normalise role (case-insensitive match)
+      const match = roles.find(r => r.toLowerCase() === role.toLowerCase());
+      role = match || 'Contributor';
+      return name ? { name, role } : null;
+    }).filter(Boolean);
+    App.pushUndo('Edit forum roster');
+    forum.roster = next;
+    App.logChange(null, 'forum_roster', 'forum:' + forum.name, next.length + ' members', 'user');
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.render();
+    App.toast('Roster updated — ' + next.length + ' member(s)', 'success');
+  },
+
+  startMeeting(forumIdx) {
+    const forum = (App.data.governance_forums || [])[forumIdx];
+    if (!forum) return;
+    const esc = Dashboard.esc;
+    const today = new Date().toISOString().split('T')[0];
+    const roster = forum.roster || [];
+    if (!roster.length) {
+      if (!confirm('No roster set for this forum. Continue and log attendance as free text?')) return;
+    }
+
+    let present = [], apologies = [];
+    if (roster.length) {
+      const names = roster.map(m => m.name);
+      const presentRaw = prompt(
+        'Mark attendees present — comma-separated names (or blank for none):\n\nRoster: ' + names.join(', '),
+        names.join(', ')
+      );
+      if (presentRaw === null) return;
+      present = presentRaw.split(',').map(s => s.trim()).filter(Boolean);
+      apologies = names.filter(n => !present.includes(n));
+    } else {
+      const presentRaw = prompt('Attendees present (comma-separated):', '');
+      if (presentRaw === null) return;
+      present = presentRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const apoRaw = prompt('Apologies (comma-separated, blank for none):', '');
+      if (apoRaw === null) return;
+      apologies = apoRaw.split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    const chair = prompt('Chair / minute-taker:', (present[0] || ''));
+    if (chair === null) return;
+
+    // Auto-generate agenda from forum state
+    const forumProjects = (App.data.projects || []).filter(p => p.governance_forum === forum.name);
+    const todayIso = new Date().toISOString().split('T')[0];
+    const overdueActions = (forum.actions || []).filter(a => a.status !== 'Done' && a.due_date && a.due_date < todayIso);
+    const proposedDecisions = (forum.decisions || []).filter(d => (d.state || 'Proposed') === 'Proposed' || d.state === 'Discussed');
+    const escalatedRiskCount = forumProjects.reduce((n, p) => n + ((p.risks_register || []).filter(r => r.escalation_severity).length), 0);
+
+    const agenda = [
+      '1. Welcome & attendance',
+      '2. Review overdue actions (' + overdueActions.length + ')',
+      '3. Project status (' + forumProjects.length + ' projects)',
+      '4. Escalated risks (' + escalatedRiskCount + ')',
+      '5. Decisions requiring approval (' + proposedDecisions.length + ')',
+      '6. New business',
+      '7. Actions & owners',
+      '8. AOB / close'
+    ].join('\n');
+
+    const notes = prompt('Meeting notes (free text):', '');
+    if (notes === null) return;
+
+    if (!forum.minutes) forum.minutes = [];
+    App.pushUndo('Start meeting / log minutes');
+    forum.minutes.push({
+      date: today,
+      chair: (chair || '').trim(),
+      attendees_present: present,
+      attendees_apologies: apologies,
+      agenda,
+      notes: (notes || '').trim(),
+      overdue_action_count_at_start: overdueActions.length,
+      escalated_risk_count_at_start: escalatedRiskCount,
+      proposed_decision_count_at_start: proposedDecisions.length,
+      created_at: new Date().toISOString()
+    });
+    // Advance last/next date (reuse existing pattern)
+    forum.last_date = today;
+    App.logChange(null, 'forum_meeting_logged', 'forum:' + forum.name, today + ' · ' + present.length + ' present', 'user');
+    App.markDirty();
+    App.saveToLocalStorage();
+    this.render();
+    App.toast('Meeting logged · ' + present.length + ' present', 'success');
   },
 
   showDecisionForm(forumIdx) {
@@ -11353,17 +11626,47 @@ const Governance = {
 
     if (!forum.decisions) forum.decisions = [];
     App.pushUndo('Add forum decision');
-    forum.decisions.push({ date: date, text: text.trim(), linkedProjects: linkedProjects, recordedBy: recordedBy.trim(), created_at: new Date().toISOString() });
+    const decision = { date: date, text: text.trim(), linkedProjects: linkedProjects, recordedBy: recordedBy.trim(), created_at: new Date().toISOString(), state: 'Proposed', state_history: [{ state: 'Proposed', at: new Date().toISOString(), by: recordedBy.trim() || 'user' }] };
+    forum.decisions.push(decision);
+    App.logChange(null, 'decision_added', '', 'forum:' + forum.name + ':' + text.trim().substring(0, 60), 'user');
     App.markDirty();
     App.saveToLocalStorage();
-    App.toast('Decision recorded', 'success');
+    App.toast('Decision recorded (Proposed)', 'success');
+    this.render();
+  },
+
+  setDecisionState(forumIdx, decIdx, newState) {
+    const forum = (App.data.governance_forums || [])[forumIdx];
+    if (!forum || !forum.decisions) return;
+    const d = forum.decisions[decIdx];
+    if (!d) return;
+    if (d.state === 'Approved') { App.toast('Approved decisions are locked', 'error'); return; }
+    if (!['Proposed', 'Discussed', 'Approved', 'Deferred', 'Rejected'].includes(newState)) return;
+    let approver = null;
+    if (newState === 'Approved') {
+      approver = prompt('Approver name (required to lock decision):');
+      if (!approver || !approver.trim()) { App.toast('Approver required', 'error'); return; }
+    }
+    App.pushUndo('Change decision state');
+    const prior = d.state || 'Proposed';
+    d.state = newState;
+    if (!d.state_history) d.state_history = [];
+    d.state_history.push({ state: newState, at: new Date().toISOString(), by: approver || 'user' });
+    if (approver) d.approver = approver.trim();
+    App.logChange(null, 'decision_state', 'forum:' + forum.name + ':' + prior, newState + (approver ? ' by ' + approver : ''), 'user');
+    App.markDirty();
+    App.saveToLocalStorage();
+    App.toast('Decision → ' + newState + (newState === 'Approved' ? ' (locked)' : ''), 'success');
     this.render();
   },
 
   removeDecision(forumIdx, decIdx) {
     const forum = (App.data.governance_forums || [])[forumIdx];
     if (!forum || !forum.decisions) return;
+    const d = forum.decisions[decIdx];
+    if (d && d.state === 'Approved') { App.toast('Approved decisions are locked and cannot be removed', 'error'); return; }
     App.pushUndo('Remove forum decision');
+    if (d) App.logChange(null, 'decision_removed', 'forum:' + forum.name + ':' + (d.text || '').substring(0, 60), '', 'user');
     forum.decisions.splice(decIdx, 1);
     App.markDirty();
     App.saveToLocalStorage();
@@ -11628,6 +11931,36 @@ const Governance = {
       sections.push({ id: 'forum-exec', title: 'Executive Summary', html: Report.execSummaryHtml(f.customer) });
     }
 
+    // Section: Roster / RACI (if defined)
+    if (f.roster && f.roster.length) {
+      const rolesOrder = Governance.RACI_ROLES;
+      const byRole = {};
+      f.roster.forEach(m => { (byRole[m.role] || (byRole[m.role] = [])).push(m.name); });
+      let html = '<table><tr><th>Role</th><th>Members</th></tr>';
+      rolesOrder.forEach(role => {
+        if (!byRole[role] || !byRole[role].length) return;
+        html += '<tr><td style="font-weight:700;color:var(--rp-primary);width:140px">' + esc(role) + '</td>' +
+          '<td>' + byRole[role].map(n => esc(n)).join(', ') + '</td></tr>';
+      });
+      html += '</table>';
+      sections.push({ id: 'forum-raci', title: 'Roster & RACI', html });
+    }
+
+    // Section: Last Meeting Minutes (if logged)
+    if (f.minutes && f.minutes.length) {
+      const latest = f.minutes[f.minutes.length - 1];
+      const present = latest.attendees_present || [];
+      const apologies = latest.attendees_apologies || [];
+      let html = '<table><tr><th style="width:140px">Meeting date</th><td>' + esc(latest.date || '') + '</td></tr>' +
+        '<tr><th>Chair</th><td>' + esc(latest.chair || '') + '</td></tr>' +
+        '<tr><th>Present (' + present.length + ')</th><td>' + present.map(n => esc(n)).join(', ') + '</td></tr>' +
+        '<tr><th>Apologies (' + apologies.length + ')</th><td>' + apologies.map(n => esc(n)).join(', ') + '</td></tr>' +
+        '</table>';
+      if (latest.agenda) html += '<h3>Agenda</h3><pre style="font-family:inherit;white-space:pre-wrap;font-size:11px">' + esc(latest.agenda) + '</pre>';
+      if (latest.notes) html += '<h3>Notes</h3><p>' + esc(latest.notes) + '</p>';
+      sections.push({ id: 'forum-minutes', title: 'Last Meeting Minutes', html });
+    }
+
     // Section: Escalations (overdue actions)
     const overdueActions = (f.actions || []).filter(a => a.status !== 'Done' && a.due_date && a.due_date < bpTodayStr);
     if (overdueActions.length) {
@@ -11672,10 +12005,39 @@ const Governance = {
       sections.push({ id: 'forum-status', title: 'Project Status · ' + projects.length, html });
     }
 
+    // Section: Escalated Risks (surfaced at top for governance attention)
+    const escalatedRisks = [];
+    projects.forEach(p => (p.risks_register || []).forEach(r => {
+      if (r.escalation_severity) escalatedRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, escalation: r.escalation_severity, log: r.escalation_log || [] });
+    }));
+    if (escalatedRisks.length) {
+      const sevOrder = { Critical: 3, Red: 2, Amber: 1 };
+      escalatedRisks.sort((a, b) => (sevOrder[b.escalation] || 0) - (sevOrder[a.escalation] || 0));
+      let html = '<table><tr><th>Severity</th><th>Project</th><th>Risk</th><th>Escalated</th><th>Reason</th><th>Mitigation</th><th>Owner</th></tr>';
+      escalatedRisks.forEach(r => {
+        const sevColors = { Amber: '#f59e0b', Red: '#ef4444', Critical: '#7f1d1d' };
+        const sevColor = sevColors[r.escalation] || '#64748b';
+        const latest = r.log.length ? r.log[r.log.length - 1] : null;
+        const escDate = latest ? new Date(latest.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+        const reason = latest ? esc(latest.reason || '') : '';
+        const rowCls = r.escalation === 'Critical' || r.escalation === 'Red' ? 'row-red' : 'row-amber';
+        html += '<tr class="' + rowCls + '">' +
+          '<td><span style="padding:2px 10px;border-radius:999px;background:' + sevColor + ';color:#fff;font-weight:700;font-size:10px">' + r.escalation.toUpperCase() + '</span></td>' +
+          '<td>' + esc(r.project) + '</td>' +
+          '<td>' + esc((r.description || '').substring(0, 80)) + '</td>' +
+          '<td>' + escDate + '</td>' +
+          '<td>' + reason + '</td>' +
+          '<td>' + esc((r.action || '').substring(0, 60)) + '</td>' +
+          '<td>' + esc(r.owner || '') + '</td></tr>';
+      });
+      html += '</table>';
+      sections.push({ id: 'forum-escalated-risks', title: 'Escalated Risks · ' + escalatedRisks.length, html });
+    }
+
     // Section: Risks
     const allRisks = [];
     projects.forEach(p => (p.risks_register || []).forEach(r => {
-      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date });
+      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date, escalation: r.escalation_severity || null });
     }));
     if (allRisks.length) {
       allRisks.sort((a, b) => (b.impact * b.probability) - (a.impact * a.probability));
@@ -12139,7 +12501,7 @@ const Report = {
     // Section 4: Risks
     const allRisks = [];
     active.forEach(p => (p.risks_register || []).forEach(r => {
-      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date });
+      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date, escalation: r.escalation_severity || null });
     }));
     if (allRisks.length) {
       allRisks.sort((a, b) => (b.impact * b.probability) - (a.impact * a.probability));
