@@ -101,6 +101,43 @@ html[data-theme="dark"] .cmdk-item { color: var(--text-dark); }
 html[data-theme="dark"] .cmdk-kbd { background: #0b1220; color: var(--text-dark-secondary); border-color: #1f2937; }
 html[data-theme="dark"] .filter-select, html[data-theme="dark"] .multi-select, html[data-theme="dark"] .search-input { background: var(--bg-card); color: var(--text-dark); border-color: #1f2937; }
 html[data-theme="dark"] .sprint-swimlane tr:hover td, html[data-theme="dark"] .sprint-swimlane tr:hover .sl-project-cell { background: #1e293b; }
+/* Second-pass dark overrides: audit feed, trends, capacity, config panel, sprint columns */
+html[data-theme="dark"] .audit-panel { background: var(--bg-card); }
+html[data-theme="dark"] .audit-panel-header { border-bottom-color: #1f2937; }
+html[data-theme="dark"] .audit-panel-header h3 { color: var(--text-dark); }
+html[data-theme="dark"] .audit-entry { border-bottom-color: #1f2937; color: var(--text-dark); }
+html[data-theme="dark"] .audit-entry-change { color: var(--text-dark-secondary); }
+html[data-theme="dark"] .audit-empty { color: var(--text-muted); }
+html[data-theme="dark"] .audit-entry-source.user { background: rgba(59,130,246,0.20); color: #93c5fd; }
+html[data-theme="dark"] .audit-entry-source.auto { background: rgba(139,92,246,0.20); color: #c4b5fd; }
+html[data-theme="dark"] .audit-entry-source.drag { background: rgba(20,184,166,0.20); color: #5eead4; }
+html[data-theme="dark"] .trends-modal-overlay > div, html[data-theme="dark"] .trends-modal { background: var(--bg-card); color: var(--text-dark); }
+html[data-theme="dark"] .trends-table th { background: #0b1220; color: var(--text-muted); border-color: #1f2937; }
+html[data-theme="dark"] .trends-table td { border-color: #1f2937; color: var(--text-dark); }
+html[data-theme="dark"] .sparkline-bar { background: #334155; }
+html[data-theme="dark"] .sparkline-label { color: var(--text-dark-secondary); }
+html[data-theme="dark"] .team-row { border-bottom-color: #1f2937; }
+html[data-theme="dark"] .team-row-wrapper { border-bottom-color: #1f2937; }
+html[data-theme="dark"] .team-row-wrapper .team-row:hover { background: #1e293b; }
+html[data-theme="dark"] .team-row-detail td { border-bottom-color: #1f2937; }
+html[data-theme="dark"] .team-row-detail th { border-bottom-color: #1f2937; }
+html[data-theme="dark"] .sprint-column { background: var(--bg-card); border-color: #1f2937; color: var(--text-dark); }
+html[data-theme="dark"] .sprint-column.backlog { background: #1f1b0c; border-color: rgba(245,158,11,0.35); }
+html[data-theme="dark"] .sprint-capacity-grid .cap-card { background: var(--bg-card); border-color: #1f2937; color: var(--text-dark); }
+/* Configuration view: generic card backgrounds use inline "background:white" — override globally */
+html[data-theme="dark"] #viewConfig [style*="background:white"],
+html[data-theme="dark"] #viewConfig [style*="background: white"],
+html[data-theme="dark"] #viewConfig [style*="background:#fff"],
+html[data-theme="dark"] #viewConfig [style*="background: #fff"] { background: var(--bg-card) !important; color: var(--text-dark); }
+html[data-theme="dark"] #viewConfig h3, html[data-theme="dark"] #viewConfig h4 { color: var(--text-dark); }
+html[data-theme="dark"] #viewConfig table td, html[data-theme="dark"] #viewConfig table th { border-color: #1f2937; color: var(--text-dark); }
+html[data-theme="dark"] #viewConfig table th { color: var(--text-muted); }
+html[data-theme="dark"] #viewConfig tr { border-bottom-color: #1f2937 !important; }
+/* Restore banner, import modal, and other inline-styled modals */
+html[data-theme="dark"] [id="importModeModal"], html[data-theme="dark"] [id="teamEditModal"] { background: var(--bg-card) !important; color: var(--text-dark); }
+html[data-theme="dark"] .drop-zone { background: var(--bg-card); border-color: #1f2937; color: var(--text-dark); }
+html[data-theme="dark"] .drop-zone .drop-title { color: var(--text-dark); }
+html[data-theme="dark"] .drop-zone .drop-subtitle { color: var(--text-dark-secondary); }
 /* Boardroom (presentation) mode: larger fonts, higher contrast, hides secondary chrome */
 html[data-presentation="on"] { --fs-scale: 1.18; }
 html[data-presentation="on"] html, html[data-presentation="on"] body { font-size: calc(14px * var(--fs-scale)); }
@@ -816,7 +853,6 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .gantt-label-header { height: 48px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); background: var(--bg-content); }
 .gantt-label-row { height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
 .gantt-label-row:hover { background: #f8fafc; }
-.gantt-label-row .label-customer { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .gantt-label-row .label-name { font-size: 12px; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .gantt-label-row .label-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
 
@@ -4973,82 +5009,91 @@ const Dashboard = {
 
   applyFilters() {
     if (!App.data) return;
+    try {
+      // Auto-pick the first customer on first render so the dashboard isn't empty
+      if (!App.activeCustomer) {
+        const firstCustomer = (App.getCustomers() || [])[0];
+        if (firstCustomer) App.setActiveCustomer(firstCustomer);
+      }
+      const search = document.getElementById('searchInput').value.toLowerCase().trim();
+      const customer = App.activeCustomer;
+      const managers = this.getFilterValues('filterManager');
+      const statuses = this.getFilterValues('filterStatus');
+      const categories = this.getFilterValues('filterCategory');
 
-    // Auto-pick the first customer on first render so the dashboard isn't empty
-    if (!App.activeCustomer) {
-      const firstCustomer = (App.getCustomers() || [])[0];
-      if (firstCustomer) App.setActiveCustomer(firstCustomer);
+      let projects = App.data.projects.slice();
+
+      if (search) {
+        projects = projects.filter(p =>
+          (p.name || '').toLowerCase().includes(search) ||
+          (p.id || '').toLowerCase().includes(search) ||
+          (p.manager || '').toLowerCase().includes(search) ||
+          (p.notes || '').toLowerCase().includes(search)
+        );
+      }
+      // Customer is always required
+      if (customer) projects = projects.filter(p => p.customer === customer);
+      else projects = [];
+      if (managers.length) projects = projects.filter(p => managers.includes(p.manager));
+      if (statuses.length) projects = projects.filter(p => statuses.includes(p.status));
+      if (categories.length) projects = projects.filter(p => categories.includes(p.category));
+
+      // Evaluate RAG auto-scoring rules (per-project failures are isolated)
+      projects.forEach(p => {
+        if (p.status === 'Complete' || p.status === 'Closed') return;
+        try { App.evaluateRagRules(p); } catch (e) {
+          console.warn('[PCC] RAG rule eval failed for', p.id, e);
+        }
+      });
+
+      // Sort
+      projects.sort((a, b) => {
+        let va, vb;
+        if (this.sortField === 'progress') {
+          try { va = this.calcProgress(a); vb = this.calcProgress(b); }
+          catch (e) { va = 0; vb = 0; }
+        } else {
+          va = a[this.sortField];
+          vb = b[this.sortField];
+        }
+
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+
+        if (typeof va === 'number' && typeof vb === 'number') {
+          return this.sortDir === 'asc' ? va - vb : vb - va;
+        }
+
+        va = String(va).toLowerCase();
+        vb = String(vb).toLowerCase();
+        if (va < vb) return this.sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return this.sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      this.filteredProjects = projects;
+      this.renderTable(projects);
+
+      const total = App.data.projects.length;
+      const shown = projects.length;
+      const countEl = document.getElementById('filterCount');
+      const clearEl = document.getElementById('filterClear');
+      const hasFilter = search || customer || managers.length || statuses.length || categories.length;
+
+      if (countEl) countEl.textContent = hasFilter ? (shown + ' of ' + total) : (total + ' projects');
+      if (clearEl) clearEl.style.display = hasFilter ? 'inline' : 'none';
+      // Accessibility: announce filter results to screen readers
+      const announceEl = document.getElementById('filterAnnounce');
+      if (announceEl) announceEl.textContent = 'Showing ' + shown + ' of ' + total + ' projects';
+    } catch (e) {
+      // Hard failure in the filter pipeline must not leave the dashboard blank forever.
+      console.error('[PCC] Dashboard.applyFilters failed:', e);
+      window._pccLastError = { message: 'Dashboard filter failed: ' + (e && e.message || e), source: 'Dashboard.applyFilters', stack: (e && e.stack) || '' };
+      App.toast('Dashboard filter hit an error — see diagnostics', 'error');
+      // Render whatever we can (empty) so the user still sees the UI chrome
+      try { this.filteredProjects = []; this.renderTable([]); } catch (e2) {}
     }
-    const search = document.getElementById('searchInput').value.toLowerCase().trim();
-    const customer = App.activeCustomer;
-    const managers = this.getFilterValues('filterManager');
-    const statuses = this.getFilterValues('filterStatus');
-    const categories = this.getFilterValues('filterCategory');
-
-    let projects = App.data.projects.slice();
-
-    if (search) {
-      projects = projects.filter(p =>
-        (p.name || '').toLowerCase().includes(search) ||
-        (p.id || '').toLowerCase().includes(search) ||
-        (p.manager || '').toLowerCase().includes(search) ||
-        (p.notes || '').toLowerCase().includes(search)
-      );
-    }
-    // Customer is always required
-    if (customer) projects = projects.filter(p => p.customer === customer);
-    else projects = [];
-    if (managers.length) projects = projects.filter(p => managers.includes(p.manager));
-    if (statuses.length) projects = projects.filter(p => statuses.includes(p.status));
-    if (categories.length) projects = projects.filter(p => categories.includes(p.category));
-
-    // Evaluate RAG auto-scoring rules
-    projects.forEach(p => {
-      if (p.status !== 'Complete' && p.status !== 'Closed') {
-        App.evaluateRagRules(p);
-      }
-    });
-
-    // Sort
-    projects.sort((a, b) => {
-      let va, vb;
-      if (this.sortField === 'progress') {
-        va = this.calcProgress(a);
-        vb = this.calcProgress(b);
-      } else {
-        va = a[this.sortField];
-        vb = b[this.sortField];
-      }
-
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return this.sortDir === 'asc' ? va - vb : vb - va;
-      }
-
-      va = String(va).toLowerCase();
-      vb = String(vb).toLowerCase();
-      if (va < vb) return this.sortDir === 'asc' ? -1 : 1;
-      if (va > vb) return this.sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    this.filteredProjects = projects;
-    this.renderTable(projects);
-
-    const total = App.data.projects.length;
-    const shown = projects.length;
-    const countEl = document.getElementById('filterCount');
-    const clearEl = document.getElementById('filterClear');
-    const hasFilter = search || customer || managers.length || statuses.length || categories.length;
-
-    countEl.textContent = hasFilter ? (shown + ' of ' + total) : (total + ' projects');
-    clearEl.style.display = hasFilter ? 'inline' : 'none';
-    // Accessibility: announce filter results to screen readers
-    const announceEl = document.getElementById('filterAnnounce');
-    if (announceEl) announceEl.textContent = 'Showing ' + shown + ' of ' + total + ' projects';
   },
 
   clearFilters() {
@@ -11312,19 +11357,6 @@ const Capacity = {
     App.saveToLocalStorage();
     this.render();
     App.toast('Removed ' + tm.name, 'success');
-  },
-
-  sprintView: 'projects',
-
-  setSprintView(view) {
-    this.sprintView = view;
-    document.getElementById('sprintViewProjects').className = view === 'projects' ? 'btn btn-sm' : 'btn btn-outline btn-sm';
-    document.getElementById('sprintViewProjects').style.background = view === 'projects' ? 'var(--accent-blue)' : '';
-    document.getElementById('sprintViewProjects').style.color = view === 'projects' ? 'white' : '';
-    document.getElementById('sprintViewResources').className = view === 'resources' ? 'btn btn-sm' : 'btn btn-outline btn-sm';
-    document.getElementById('sprintViewResources').style.background = view === 'resources' ? 'var(--accent-blue)' : '';
-    document.getElementById('sprintViewResources').style.color = view === 'resources' ? 'white' : '';
-    this.render();
   },
 
   renderResourceView(board) {
