@@ -1175,6 +1175,43 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   .gantt-labels { width: 80px; }
   .gantt-label-row .label-name { font-size: 9px; }
 }
+
+/* REQ-SPRINT-02: Velocity tracking */
+.velocity-panel { background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 12px; }
+.velocity-panel-header { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.velocity-panel-header h3 { font-size: 13px; font-weight: 700; color: var(--text-dark); margin: 0; }
+.velocity-panel-toggle { transition: transform 0.2s; }
+.velocity-panel-toggle.collapsed { transform: rotate(-90deg); }
+.velocity-bars { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; padding: 0 4px; }
+.velocity-bar-group { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1; min-width: 60px; }
+.velocity-bar-stack { display: flex; flex-direction: column-reverse; width: 100%; gap: 1px; }
+.velocity-bar { border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.3s ease; }
+.velocity-bar-label { font-size: 9px; color: var(--text-muted); font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.velocity-legend { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+.velocity-legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--text-dark-secondary); }
+.velocity-legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+/* REQ-SPRINT-03: Multi-select chips */
+.sl-skill-chip.sl-chip-multi-selected { border-color: var(--accent-blue); box-shadow: 0 0 0 2px var(--accent-blue); transform: translateY(-1px); background: rgba(59,130,246,0.12) !important; }
+.sl-multi-move-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--accent-blue); color: white; border-radius: var(--radius-sm); margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+.sl-multi-move-bar select { padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.15); color: white; font-size: 11px; font-weight: 600; }
+.sl-multi-move-bar select option { color: var(--text-dark); background: white; }
+.sl-multi-move-bar button { padding: 4px 10px; border-radius: var(--radius-sm); border: none; font-size: 11px; font-weight: 600; cursor: pointer; }
+
+/* REQ-SPRINT-04: Assignee badge on chips */
+.sl-chip-assignee { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--bg-tertiary); color: white; font-size: 7px; font-weight: 700; margin-left: 2px; flex-shrink: 0; line-height: 1; letter-spacing: -0.3px; }
+.sl-assignee-dropdown { position: absolute; z-index: 200; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 4px 0; min-width: 180px; max-height: 220px; overflow-y: auto; }
+.sl-assignee-dropdown .sl-assignee-option { padding: 6px 12px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.sl-assignee-dropdown .sl-assignee-option:hover { background: var(--bg-content); }
+.sl-assignee-dropdown .sl-assignee-option.selected { background: rgba(59,130,246,0.08); font-weight: 600; }
+
+/* REQ-UX-02: Data Integrity */
+.integrity-panel { background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 16px; margin-bottom: 16px; }
+.integrity-panel.has-issues { border-color: var(--status-amber); }
+.integrity-issue-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 11px; }
+.integrity-issue-type { padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.integrity-issue-type.error { background: rgba(239,68,68,0.1); color: var(--status-red); }
+.integrity-issue-type.warning { background: rgba(245,158,11,0.1); color: var(--status-amber); }
 </style>
 </head>
 <body>
@@ -1744,6 +1781,7 @@ const App = {
             arr.forEach(entry => {
               if (!entry.status) entry.status = 'pending';
               if (entry.completed === undefined) entry.completed = 0;
+              if (entry.assignee === undefined) entry.assignee = '';
             });
           }
         });
@@ -2267,6 +2305,128 @@ const App = {
     if (!localStorage.getItem('pcc-onboarding-complete')) {
       setTimeout(function() { Onboarding.start(); }, 600);
     }
+    // REQ-UX-02: Run data integrity check on load
+    this._integrityIssues = this.validateDataIntegrity();
+    if (this._integrityIssues.length > 0) {
+      console.warn('[PCC] Data integrity issues found:', this._integrityIssues.length);
+    }
+  },
+
+  // REQ-UX-02: Data Integrity Validation
+  _integrityIssues: [],
+
+  validateDataIntegrity() {
+    if (!this.data) return [];
+    const issues = [];
+    const projects = this.data.projects || [];
+    const sprints = this.data.sprints || [];
+    const forums = this.data.governance_forums || [];
+
+    const projectIds = new Set(projects.map(p => p.id));
+    const sprintIds = new Set(sprints.map(s => s.sprint_id));
+    const forumNames = new Set(forums.map(f => f.name));
+
+    // Check for duplicate project IDs
+    const seenIds = {};
+    projects.forEach(p => {
+      if (seenIds[p.id]) {
+        issues.push({ type: 'error', message: 'Duplicate project ID: ' + p.id, fixAction: 'dedupe_project', projectId: p.id });
+      }
+      seenIds[p.id] = true;
+    });
+
+    // Check dependency target_ids
+    projects.forEach(p => {
+      (p.dependencies || []).forEach((dep, idx) => {
+        if (dep.target_id && !projectIds.has(dep.target_id)) {
+          issues.push({ type: 'warning', message: 'Project "' + p.name + '" has dependency on non-existent project ID: ' + dep.target_id, fixAction: 'remove_dependency', projectId: p.id, depIndex: idx });
+        }
+      });
+    });
+
+    // Check governance_forum references
+    projects.forEach(p => {
+      if (p.governance_forum && !forumNames.has(p.governance_forum)) {
+        issues.push({ type: 'warning', message: 'Project "' + p.name + '" references non-existent forum: ' + p.governance_forum, fixAction: 'clear_forum', projectId: p.id });
+      }
+    });
+
+    // Check sprint_ids in skill_splits
+    projects.forEach(p => {
+      if (!p.skill_splits) return;
+      Object.keys(p.skill_splits).forEach(sk => {
+        (p.skill_splits[sk] || []).forEach((entry, idx) => {
+          if (entry.sprint && entry.sprint !== '_backlog' && !sprintIds.has(entry.sprint)) {
+            issues.push({ type: 'warning', message: 'Project "' + p.name + '" skill ' + sk + ' references non-existent sprint: ' + entry.sprint, fixAction: 'clear_split_sprint', projectId: p.id, skillKey: sk, splitIndex: idx });
+          }
+        });
+      });
+    });
+
+    this._integrityIssues = issues;
+    return issues;
+  },
+
+  fixIntegrityIssue(index) {
+    const issue = this._integrityIssues[index];
+    if (!issue) return;
+    const p = this.data.projects.find(pr => pr.id === issue.projectId);
+    this.pushUndo('Fix data integrity issue');
+
+    if (issue.fixAction === 'remove_dependency' && p) {
+      p.dependencies.splice(issue.depIndex, 1);
+      this.toast('Removed orphaned dependency from ' + p.name, 'success');
+    } else if (issue.fixAction === 'clear_forum' && p) {
+      p.governance_forum = '';
+      this.toast('Cleared orphaned forum reference from ' + p.name, 'success');
+    } else if (issue.fixAction === 'clear_split_sprint' && p && p.skill_splits && p.skill_splits[issue.skillKey]) {
+      p.skill_splits[issue.skillKey][issue.splitIndex].sprint = '_backlog';
+      this.toast('Moved orphaned sprint allocation to backlog for ' + p.name, 'success');
+    } else if (issue.fixAction === 'dedupe_project') {
+      // Rename duplicate to make unique
+      const dupes = this.data.projects.filter(pr => pr.id === issue.projectId);
+      if (dupes.length > 1) {
+        for (let i = 1; i < dupes.length; i++) {
+          dupes[i].id = dupes[i].id + '_dup' + i;
+        }
+        this.toast('Renamed duplicate project IDs', 'success');
+      }
+    }
+
+    this.markDirty();
+    this.saveToLocalStorage();
+    this._integrityIssues = this.validateDataIntegrity();
+    this.renderConfig();
+  },
+
+  fixAllIntegrityIssues() {
+    if (!this._integrityIssues.length) return;
+    this.pushUndo('Fix all data integrity issues');
+    const issues = this._integrityIssues.slice();
+    // Process in reverse to maintain valid indices
+    for (let i = issues.length - 1; i >= 0; i--) {
+      const issue = issues[i];
+      const p = this.data.projects.find(pr => pr.id === issue.projectId);
+      if (issue.fixAction === 'remove_dependency' && p) {
+        p.dependencies.splice(issue.depIndex, 1);
+      } else if (issue.fixAction === 'clear_forum' && p) {
+        p.governance_forum = '';
+      } else if (issue.fixAction === 'clear_split_sprint' && p && p.skill_splits && p.skill_splits[issue.skillKey]) {
+        p.skill_splits[issue.skillKey][issue.splitIndex].sprint = '_backlog';
+      } else if (issue.fixAction === 'dedupe_project') {
+        const dupes = this.data.projects.filter(pr => pr.id === issue.projectId);
+        if (dupes.length > 1) {
+          for (let j = 1; j < dupes.length; j++) {
+            dupes[j].id = dupes[j].id + '_dup' + j;
+          }
+        }
+      }
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    this._integrityIssues = this.validateDataIntegrity();
+    this.toast('Fixed ' + issues.length + ' integrity issues', 'success');
+    this.renderConfig();
   },
 
   setupDropZone() {
@@ -2768,6 +2928,28 @@ const App = {
         '<button class="btn btn-outline btn-sm" onclick="App.navigate(\'capacity\')">Go to Capacity View</button>' +
       '</div>' +
 
+      // Annual Holidays (REQ-CAP-02)
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Company-wide holidays that reduce capacity for all team members. Recurring holidays apply every year.</div>' +
+        (function() {
+          var hols = (App.data && App.data.annual_holidays) || [];
+          var html = '';
+          if (hols.length) {
+            html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
+            html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:center;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
+            hols.forEach(function(h, i) {
+              html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
+            });
+            html += '</tbody></table>';
+          } else {
+            html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No annual holidays configured</div>';
+          }
+          return html;
+        })() +
+        '<button class="btn btn-outline btn-sm" onclick="App.addAnnualHoliday()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Holiday</button>' +
+      '</div>' +
+
       // Data actions
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
         '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Data Management</h3>' +
@@ -2777,8 +2959,35 @@ const App = {
           '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
           '<button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()">Variance Report (PDF)</button>' +
           '<button class="btn btn-outline btn-sm" onclick="App.showAuditExportModal()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Export Audit Log</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="App._integrityIssues=App.validateDataIntegrity();App.renderConfig()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Integrity Check</button>' +
         '</div>' +
       '</div>' +
+
+      // REQ-UX-02: Data Integrity
+      (function() {
+        var issues = App._integrityIssues || [];
+        var hasCls = issues.length ? ' has-issues' : '';
+        var html = '<div class="integrity-panel' + hasCls + '">' +
+          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="' + (issues.length ? 'var(--status-amber)' : 'var(--status-green)') + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            'Data Integrity' +
+            (issues.length ? '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.12);color:var(--status-amber)">' + issues.length + ' issue' + (issues.length > 1 ? 's' : '') + ' found</span>' : '<span style="font-size:11px;font-weight:400;color:var(--status-green)">All clear</span>') +
+          '</h3>';
+        if (issues.length) {
+          html += '<div style="max-height:200px;overflow-y:auto;margin-bottom:8px">';
+          issues.forEach(function(issue, idx) {
+            html += '<div class="integrity-issue-row">' +
+              '<span class="integrity-issue-type ' + issue.type + '">' + issue.type + '</span>' +
+              '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(issue.message) + '</span>' +
+              '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px" onclick="App.fixIntegrityIssue(' + idx + ')">Fix</button>' +
+            '</div>';
+          });
+          html += '</div>';
+          html += '<button class="btn btn-outline btn-sm" onclick="App.fixAllIntegrityIssues()" style="font-size:10px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Fix All Issues</button>';
+        }
+        html += '</div>';
+        return html;
+      })() +
 
       // RAG Auto-Scoring Rules
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
@@ -3291,6 +3500,35 @@ const App = {
     this.saveToLocalStorage();
     this.renderConfig();
     App.toast('RAG rule added', 'success');
+  },
+
+  // --- Annual Holiday Management (REQ-CAP-02) ---
+  addAnnualHoliday() {
+    if (!this.data) return;
+    if (!this.data.annual_holidays) this.data.annual_holidays = [];
+    const name = prompt('Holiday name (e.g. Christmas Day):');
+    if (!name) return;
+    const date = prompt('Date (YYYY-MM-DD):');
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { App.toast('Invalid date format. Use YYYY-MM-DD', 'error'); return; }
+    const recurring = confirm('Make this a recurring annual holiday?');
+    this.pushUndo('Add annual holiday');
+    this.data.annual_holidays.push({ name: name.trim(), date, recurring });
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.renderConfig();
+    App.toast('Annual holiday added', 'success');
+  },
+
+  removeAnnualHoliday(idx) {
+    if (!this.data || !this.data.annual_holidays) return;
+    const h = this.data.annual_holidays[idx];
+    if (!confirm('Remove holiday "' + (h.name || '') + '"?')) return;
+    this.pushUndo('Remove annual holiday');
+    this.data.annual_holidays.splice(idx, 1);
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.renderConfig();
+    App.toast('Holiday removed', 'success');
   },
 
   // --- Template Management ---
@@ -7364,12 +7602,12 @@ const Sprint = {
           skillSplits.forEach(sp => {
             const sid = sp.sprint || '_backlog';
             if (!allocation[p.id][sid]) allocation[p.id][sid] = [];
-            allocation[p.id][sid].push({ key: sk.key, points: sp.points, status: sp.status || 'pending', completed: sp.completed || 0 });
+            allocation[p.id][sid].push({ key: sk.key, points: sp.points, status: sp.status || 'pending', completed: sp.completed || 0, assignee: sp.assignee || '' });
           });
         } else {
           const sid = p.current_sprint || '_backlog';
           if (!allocation[p.id][sid]) allocation[p.id][sid] = [];
-          allocation[p.id][sid].push({ key: sk.key, points: totalPts, status: 'pending', completed: 0 });
+          allocation[p.id][sid].push({ key: sk.key, points: totalPts, status: 'pending', completed: 0, assignee: '' });
         }
       });
     });
@@ -7496,10 +7734,17 @@ const Sprint = {
               }
             }
           }
-          return '<span class="sl-skill-chip" draggable="true" data-project="' + p.id + '" data-skill="' + a.key + '" data-sprint="' + s.sprint_id + '" data-points="' + a.points + '" style="color:' + skillColors[a.key] + ';background:' + skillColors[a.key] + '12' + chipOpacity + '" title="Drag to move, or click to select then click a sprint cell" role="option" aria-label="' + (skillShort[a.key] || '') + ' ' + a.points + ' points">' +
+          // REQ-SPRINT-04: Assignee badge
+          var assigneeBadge = '';
+          if (a.assignee) {
+            var parts = a.assignee.split(' ');
+            var initials = parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (parts[0] || '').substring(0, 2).toUpperCase();
+            assigneeBadge = '<span class="sl-chip-assignee" title="' + Dashboard.esc(a.assignee) + '">' + initials + '</span>';
+          }
+          return '<span class="sl-skill-chip" draggable="true" data-project="' + p.id + '" data-skill="' + a.key + '" data-sprint="' + s.sprint_id + '" data-points="' + a.points + '" data-assignee="' + Dashboard.esc(a.assignee || '') + '" style="color:' + skillColors[a.key] + ';background:' + skillColors[a.key] + '12' + chipOpacity + '" title="Drag to move, click to select, double-click to assign" role="option" aria-label="' + (skillShort[a.key] || '') + ' ' + a.points + ' points">' +
             statusDot + Sprint.skillShape(a.key) +
             '<svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" opacity="0.3" style="flex-shrink:0"><circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/><circle cx="2" cy="5" r="1.2"/><circle cx="6" cy="5" r="1.2"/><circle cx="2" cy="8" r="1.2"/><circle cx="6" cy="8" r="1.2"/></svg>' +
-            chipLabel + shiftBadge + splitSvg + '</span>';
+            chipLabel + shiftBadge + assigneeBadge + splitSvg + '</span>';
         }).join('');
         const totalLine = alloc.length > 1 ? '<div class="sl-total">' + cellPts + 'pts</div>' : '';
         const emptyHint = alloc.length === 0 ? '<div class="sl-empty-hint">Drop here</div>' : '';
@@ -7529,7 +7774,13 @@ const Sprint = {
     });
     tfoot += '</tr>';
 
-    board.innerHTML = '<div class="sprint-swimlane-wrap"><table class="sprint-swimlane">' +
+    // REQ-SPRINT-02: Velocity summary
+    const velocityHtml = this.renderVelocity(projects, sprints, allocation, skillColors);
+
+    // REQ-SPRINT-03: Multi-select bar
+    const multiBar = this.renderMultiSelectBar(sprints);
+
+    board.innerHTML = velocityHtml + multiBar + '<div class="sprint-swimlane-wrap"><table class="sprint-swimlane">' +
       '<thead>' + thead + '</thead>' +
       '<tbody>' + tbody + '</tbody>' +
       '<tfoot>' + tfoot + '</tfoot>' +
@@ -7537,6 +7788,145 @@ const Sprint = {
 
     // Attach drag and drop handlers for skill chips
     this.attachSwimLaneDragHandlers(board);
+  },
+
+  // REQ-SPRINT-02: Velocity tracking
+  _velocityCollapsed: false,
+
+  renderVelocity(projects, sprints, allocation, skillColors) {
+    if (!sprints.length) return '';
+    // Calculate completed and committed per sprint
+    var velocityData = [];
+    var maxVal = 0;
+    sprints.forEach(function(s) {
+      var committed = 0;
+      var completed = 0;
+      projects.forEach(function(p) {
+        var sprintAlloc = (allocation[p.id] || {})[s.sprint_id] || [];
+        sprintAlloc.forEach(function(a) {
+          committed += a.points || 0;
+          if (a.status === 'complete') completed += a.points || 0;
+          else completed += a.completed || 0;
+        });
+      });
+      velocityData.push({ sprintId: s.sprint_id, committed: committed, completed: completed });
+      if (committed > maxVal) maxVal = committed;
+      if (completed > maxVal) maxVal = completed;
+    });
+
+    if (maxVal === 0) return '';
+    var barHeight = 60;
+    var collapsedCls = this._velocityCollapsed ? ' style="display:none"' : '';
+    var toggleCls = this._velocityCollapsed ? ' collapsed' : '';
+
+    var html = '<div class="velocity-panel">' +
+      '<div class="velocity-panel-header" onclick="Sprint._velocityCollapsed=!Sprint._velocityCollapsed;var body=this.nextElementSibling;body.style.display=body.style.display===\'none\'?\'\':\'none\';this.querySelector(\'.velocity-panel-toggle\').classList.toggle(\'collapsed\')">' +
+        '<svg class="velocity-panel-toggle' + toggleCls + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
+        '<h3>Sprint Velocity</h3>' +
+        '<span style="font-size:10px;color:var(--text-muted);margin-left:auto">Completed vs Committed points per sprint</span>' +
+      '</div>' +
+      '<div' + collapsedCls + '>' +
+        '<div class="velocity-bars" style="height:' + (barHeight + 30) + 'px">';
+
+    velocityData.forEach(function(d) {
+      var commitH = maxVal > 0 ? Math.round((d.committed / maxVal) * barHeight) : 0;
+      var completeH = maxVal > 0 ? Math.round((d.completed / maxVal) * barHeight) : 0;
+      var label = d.sprintId.replace(/CY\d+-/, '');
+      html += '<div class="velocity-bar-group">' +
+        '<div style="display:flex;align-items:flex-end;gap:2px;height:' + barHeight + 'px;width:100%">' +
+          '<div style="flex:1;height:' + commitH + 'px;background:#e2e8f0;border-radius:3px 3px 0 0;position:relative" title="Committed: ' + d.committed + 'pts">' +
+            (d.committed > 0 ? '<span style="position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--text-muted);font-weight:600;white-space:nowrap">' + d.committed + '</span>' : '') +
+          '</div>' +
+          '<div style="flex:1;height:' + completeH + 'px;background:var(--accent-blue);border-radius:3px 3px 0 0;position:relative" title="Completed: ' + d.completed + 'pts">' +
+            (d.completed > 0 ? '<span style="position:absolute;top:-14px;left:50%;transform:translateX(-50%);font-size:8px;color:var(--accent-blue);font-weight:700;white-space:nowrap">' + d.completed + '</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="velocity-bar-label">' + label + '</div>' +
+      '</div>';
+    });
+
+    html += '</div>' +
+      '<div class="velocity-legend">' +
+        '<div class="velocity-legend-item"><div class="velocity-legend-swatch" style="background:#e2e8f0"></div> Committed</div>' +
+        '<div class="velocity-legend-item"><div class="velocity-legend-swatch" style="background:var(--accent-blue)"></div> Completed</div>' +
+      '</div>' +
+      '</div></div>';
+    return html;
+  },
+
+  // REQ-SPRINT-03: Multi-select chip state
+  _multiSelectedChips: [],
+
+  renderMultiSelectBar(sprints) {
+    if (!this._multiSelectedChips.length) return '';
+    var count = this._multiSelectedChips.length;
+    var opts = sprints.map(function(s) {
+      return '<option value="' + s.sprint_id + '">' + s.sprint_id.replace(/CY\d+-/, '') + '</option>';
+    }).join('');
+    return '<div class="sl-multi-move-bar">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>' +
+      count + ' chip' + (count > 1 ? 's' : '') + ' selected' +
+      '<span style="margin-left:auto;display:flex;align-items:center;gap:6px">' +
+        'Move to: <select id="slMultiMoveSprint" onchange="Sprint.moveMultipleChips(this.value)">' +
+          '<option value="">-- Select Sprint --</option>' + opts +
+        '</select>' +
+        '<button style="background:rgba(255,255,255,0.2);color:white" onclick="Sprint.clearMultiSelection()">Cancel</button>' +
+      '</span>' +
+    '</div>';
+  },
+
+  clearMultiSelection() {
+    this._multiSelectedChips = [];
+    document.querySelectorAll('.sl-chip-multi-selected').forEach(function(el) { el.classList.remove('sl-chip-multi-selected'); });
+    this.render();
+  },
+
+  moveMultipleChips(toSprint) {
+    if (!toSprint || !this._multiSelectedChips.length) return;
+    App.pushUndo('Move ' + this._multiSelectedChips.length + ' chips to sprint');
+    var self = this;
+    this._multiSelectedChips.forEach(function(chip) {
+      self._moveSkillToSprintSilent(chip.projectId, chip.skillKey, chip.fromSprint, toSprint, chip.points);
+    });
+    App.markDirty();
+    App.saveToLocalStorage();
+    var count = this._multiSelectedChips.length;
+    this._multiSelectedChips = [];
+    App.toast('Moved ' + count + ' chips to ' + toSprint.replace(/CY\d+-/, ''), 'success');
+    this.render();
+  },
+
+  // Silent version of moveSkillToSprint (no undo push, no re-render)
+  _moveSkillToSprintSilent(projectId, skillKey, fromSprint, toSprint, points) {
+    var p = App.data.projects.find(function(pr) { return pr.id === projectId; });
+    if (!p) return;
+    if (!p.skill_splits) p.skill_splits = {};
+    this.SKILLS.forEach(function(sk) {
+      if (!p.skill_splits[sk.key] || p.skill_splits[sk.key].length === 0) {
+        var totalPts = p[sk.key] || 0;
+        if (totalPts > 0) {
+          p.skill_splits[sk.key] = [{ sprint: p.current_sprint || '_backlog', points: totalPts, status: 'pending', completed: 0, assignee: '' }];
+        }
+      }
+    });
+    var splits = p.skill_splits[skillKey] || [];
+    var srcIdx = splits.findIndex(function(sp) { return sp.sprint === fromSprint && sp.points === points; });
+    if (srcIdx >= 0) {
+      splits.splice(srcIdx, 1);
+    } else {
+      var partialIdx = splits.findIndex(function(sp) { return sp.sprint === fromSprint; });
+      if (partialIdx >= 0) {
+        splits[partialIdx].points -= points;
+        if (splits[partialIdx].points <= 0) splits.splice(partialIdx, 1);
+      }
+    }
+    var tgtIdx = splits.findIndex(function(sp) { return sp.sprint === toSprint; });
+    if (tgtIdx >= 0) {
+      splits[tgtIdx].points += points;
+    } else {
+      splits.push({ sprint: toSprint, points: points, status: 'pending', completed: 0, assignee: '' });
+    }
+    p.skill_splits[skillKey] = splits.filter(function(sp) { return sp.points > 0; });
   },
 
   // Click-to-move state
@@ -7548,6 +7938,7 @@ const Sprint = {
       document.querySelectorAll('.sl-click-target').forEach(el => el.classList.remove('sl-click-target'));
       this._selectedChip = null;
     }
+    // Also clear multi-selection visual (but not the array — that's handled separately)
   },
 
   attachSwimLaneDragHandlers(board) {
@@ -7576,12 +7967,46 @@ const Sprint = {
       });
 
       // ── CLICK-TO-MOVE: select chip, then click target cell ──
+      // REQ-SPRINT-03: Shift+click for multi-select
       chip.addEventListener('click', (e) => {
         e.stopPropagation();
         const projectId = chip.dataset.project;
         const skillKey = chip.dataset.skill;
         const fromSprint = chip.dataset.sprint;
         const points = parseInt(chip.dataset.points);
+
+        if (e.shiftKey) {
+          // Multi-select mode: toggle this chip
+          self.clearChipSelection(); // clear single selection
+          const idx = self._multiSelectedChips.findIndex(function(c) {
+            return c.projectId === projectId && c.skillKey === skillKey && c.fromSprint === fromSprint;
+          });
+          if (idx >= 0) {
+            self._multiSelectedChips.splice(idx, 1);
+            chip.classList.remove('sl-chip-multi-selected');
+          } else {
+            self._multiSelectedChips.push({ el: chip, projectId: projectId, skillKey: skillKey, fromSprint: fromSprint, points: points });
+            chip.classList.add('sl-chip-multi-selected');
+          }
+          // Re-render the multi-select bar
+          var existingBar = board.querySelector('.sl-multi-move-bar');
+          var barHtml = self.renderMultiSelectBar(App.data.sprints || []);
+          if (existingBar) {
+            if (barHtml) existingBar.outerHTML = barHtml;
+            else existingBar.remove();
+          } else if (barHtml) {
+            board.insertAdjacentHTML('afterbegin', barHtml);
+          }
+          return;
+        }
+
+        // Clear multi-selection on regular click
+        if (self._multiSelectedChips.length) {
+          self._multiSelectedChips = [];
+          board.querySelectorAll('.sl-chip-multi-selected').forEach(function(el) { el.classList.remove('sl-chip-multi-selected'); });
+          var bar = board.querySelector('.sl-multi-move-bar');
+          if (bar) bar.remove();
+        }
 
         // If already selected, deselect
         if (self._selectedChip && self._selectedChip.el === chip) {
@@ -7600,6 +8025,14 @@ const Sprint = {
             c.classList.add('sl-click-target');
           }
         });
+      });
+
+      // REQ-SPRINT-04: Double-click to assign team member
+      chip.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        self.clearChipSelection();
+        self.openAssigneeDropdown(chip, chip.dataset.project, chip.dataset.skill, chip.dataset.sprint);
       });
     });
 
@@ -7686,6 +8119,115 @@ const Sprint = {
     });
   },
 
+  // REQ-SPRINT-04: Assignee dropdown
+  openAssigneeDropdown(chipEl, projectId, skillKey, sprintId) {
+    // Close any existing dropdown
+    this.closeAssigneeDropdown();
+
+    const p = App.data.projects.find(function(pr) { return pr.id === projectId; });
+    if (!p) return;
+
+    // Find skill label from key
+    const skillObj = this.SKILLS.find(function(s) { return s.key === skillKey; });
+    const skillLabel = skillObj ? skillObj.label : '';
+
+    // Get team members with this skill
+    const teamMembers = (App.data.team_members || []).filter(function(tm) {
+      const allSkills = (tm.primary_skills || []).concat(tm.secondary_skills || []);
+      return allSkills.includes(skillLabel);
+    });
+
+    // Current assignee
+    var currentAssignee = '';
+    if (p.skill_splits && p.skill_splits[skillKey]) {
+      var entry = p.skill_splits[skillKey].find(function(sp) { return sp.sprint === sprintId; });
+      if (entry) currentAssignee = entry.assignee || '';
+    }
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'sl-assignee-dropdown';
+    dropdown.id = 'slAssigneeDropdown';
+
+    var html = '<div class="sl-assignee-option' + (!currentAssignee ? ' selected' : '') + '" data-assignee="">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Unassign</div>';
+
+    teamMembers.forEach(function(tm) {
+      var sel = currentAssignee === tm.name ? ' selected' : '';
+      var parts = tm.name.split(' ');
+      var initials = parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (parts[0] || '').substring(0, 2).toUpperCase();
+      html += '<div class="sl-assignee-option' + sel + '" data-assignee="' + Dashboard.esc(tm.name) + '">' +
+        '<span class="sl-chip-assignee" style="background:var(--accent-blue)">' + initials + '</span> ' + Dashboard.esc(tm.name) +
+        '<span style="font-size:9px;color:var(--text-muted);margin-left:auto">' + Dashboard.esc(tm.role || '') + '</span></div>';
+    });
+
+    if (!teamMembers.length) {
+      html += '<div style="padding:8px 12px;font-size:11px;color:var(--text-muted)">No team members with ' + Dashboard.esc(skillLabel) + ' skill</div>';
+    }
+
+    dropdown.innerHTML = html;
+
+    // Position near the chip
+    var rect = chipEl.getBoundingClientRect();
+    dropdown.style.position = 'fixed';
+    dropdown.style.left = rect.left + 'px';
+    dropdown.style.top = (rect.bottom + 4) + 'px';
+
+    document.body.appendChild(dropdown);
+
+    // Handle clicks on options
+    var self = this;
+    dropdown.querySelectorAll('.sl-assignee-option').forEach(function(opt) {
+      opt.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var assignee = opt.dataset.assignee;
+        self.setAssignee(projectId, skillKey, sprintId, assignee);
+        self.closeAssigneeDropdown();
+      });
+    });
+
+    // Close on outside click
+    var closeHandler = function(e) {
+      if (!dropdown.contains(e.target) && e.target !== chipEl) {
+        self.closeAssigneeDropdown();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(function() { document.addEventListener('click', closeHandler); }, 0);
+    this._assigneeCloseHandler = closeHandler;
+  },
+
+  closeAssigneeDropdown() {
+    var dd = document.getElementById('slAssigneeDropdown');
+    if (dd) dd.remove();
+    if (this._assigneeCloseHandler) {
+      document.removeEventListener('click', this._assigneeCloseHandler);
+      this._assigneeCloseHandler = null;
+    }
+  },
+
+  setAssignee(projectId, skillKey, sprintId, assignee) {
+    var p = App.data.projects.find(function(pr) { return pr.id === projectId; });
+    if (!p) return;
+    App.pushUndo('Assign team member');
+    if (!p.skill_splits) p.skill_splits = {};
+    if (!p.skill_splits[skillKey]) {
+      var totalPts = p[skillKey] || 0;
+      if (totalPts > 0) {
+        p.skill_splits[skillKey] = [{ sprint: sprintId, points: totalPts, status: 'pending', completed: 0, assignee: '' }];
+      }
+    }
+    var entry = (p.skill_splits[skillKey] || []).find(function(sp) { return sp.sprint === sprintId; });
+    if (entry) {
+      var oldAssignee = entry.assignee || '';
+      entry.assignee = assignee || '';
+      App.logChange(projectId, skillKey + '.' + sprintId + '.assignee', oldAssignee, assignee || '', 'user');
+    }
+    App.markDirty();
+    App.saveToLocalStorage();
+    App.toast(assignee ? 'Assigned ' + assignee : 'Unassigned', 'success');
+    this.render();
+  },
+
   moveSkillToSprint(projectId, skillKey, fromSprint, toSprint, points) {
     const p = App.data.projects.find(pr => pr.id === projectId);
     if (!p) return;
@@ -7698,7 +8240,7 @@ const Sprint = {
       if (!p.skill_splits[sk.key] || p.skill_splits[sk.key].length === 0) {
         const totalPts = p[sk.key] || 0;
         if (totalPts > 0) {
-          p.skill_splits[sk.key] = [{ sprint: p.current_sprint || '_backlog', points: totalPts }];
+          p.skill_splits[sk.key] = [{ sprint: p.current_sprint || '_backlog', points: totalPts, status: 'pending', completed: 0, assignee: '' }];
         }
       }
     });
@@ -7708,12 +8250,15 @@ const Sprint = {
 
     // Find and remove the source split entry
     const srcIdx = splits.findIndex(sp => sp.sprint === fromSprint && sp.points === points);
+    let movedAssignee = '';
     if (srcIdx >= 0) {
+      movedAssignee = splits[srcIdx].assignee || '';
       splits.splice(srcIdx, 1);
     } else {
       // Partial match — find any entry in fromSprint and reduce it
       const partialIdx = splits.findIndex(sp => sp.sprint === fromSprint);
       if (partialIdx >= 0) {
+        movedAssignee = splits[partialIdx].assignee || '';
         splits[partialIdx].points -= points;
         if (splits[partialIdx].points <= 0) splits.splice(partialIdx, 1);
       }
@@ -7724,7 +8269,7 @@ const Sprint = {
     if (tgtIdx >= 0) {
       splits[tgtIdx].points += points;
     } else {
-      splits.push({ sprint: toSprint, points: points });
+      splits.push({ sprint: toSprint, points: points, status: 'pending', completed: 0, assignee: movedAssignee });
     }
 
     // Clean up: remove zero-point splits
