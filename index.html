@@ -47,7 +47,47 @@
   --header-height: 56px;
   --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  --fs-scale: 1;
+  --bg-card: #ffffff;
 }
+/* Dark theme overrides: flip the light content area to dark while preserving the existing dark chrome */
+html[data-theme="dark"] {
+  --bg-content: #0b1220;
+  --bg-white: #111827;
+  --bg-card: #111827;
+  --text-dark: #e8ecf1;
+  --text-dark-secondary: #cbd5e1;
+  --border-light: #1f2937;
+  --status-grey: #94a3b8;
+}
+html[data-theme="dark"] body { background: var(--bg-content); color: var(--text-dark); }
+html[data-theme="dark"] .btn-outline { color: var(--text-dark-secondary); border-color: var(--border-light); }
+html[data-theme="dark"] .btn-outline:hover { background: #1e293b; border-color: #334155; color: #f1f5f9; }
+html[data-theme="dark"] .drop-zone { background: var(--bg-card); }
+html[data-theme="dark"] .exec-summary { background: #111827; color: var(--text-dark); }
+html[data-theme="dark"] .exec-summary strong { color: #f1f5f9; }
+html[data-theme="dark"] .summary-card, html[data-theme="dark"] .kpi-card { background: var(--bg-card); color: var(--text-dark); }
+html[data-theme="dark"] table { color: var(--text-dark); }
+/* Boardroom (presentation) mode: larger fonts, higher contrast, hides secondary chrome */
+html[data-presentation="on"] { --fs-scale: 1.18; }
+html[data-presentation="on"] html, html[data-presentation="on"] body { font-size: calc(14px * var(--fs-scale)); }
+html[data-presentation="on"] .summary-card .card-value { font-size: calc(28px * var(--fs-scale)); }
+html[data-presentation="on"] .exec-summary { font-size: calc(14px * var(--fs-scale)); line-height: 1.65; }
+html[data-presentation="on"] .storage-info, html[data-presentation="on"] .version, html[data-presentation="on"] .mode-badge { display: none !important; }
+html[data-presentation="on"] .btn { padding: 10px 18px; font-size: 14px; }
+html[data-presentation="on"] .btn-sm { padding: 7px 14px; font-size: 13px; }
+html[data-presentation="on"] .exec-summary { padding: 18px 22px; border-left-width: 6px; }
+html[data-presentation="on"] h1, html[data-presentation="on"] h2 { letter-spacing: -0.3px; }
+/* Honour prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+/* High-contrast focus for keyboard users - apply in both themes */
+:focus-visible { outline: 3px solid var(--accent-blue) !important; outline-offset: 2px; }
+/* Pattern-fill RAG dots for colour-blind accessibility when enabled */
+html[data-rag-pattern="on"] .rag-dot.red, html[data-rag-pattern="on"] .rag-dot.status-red { background-image: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255,255,255,0.6) 2px, rgba(255,255,255,0.6) 4px); }
+html[data-rag-pattern="on"] .rag-dot.amber, html[data-rag-pattern="on"] .rag-dot.status-amber { background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.55) 2px, rgba(255,255,255,0.55) 4px); }
+html[data-rag-pattern="on"] .rag-dot.green, html[data-rag-pattern="on"] .rag-dot.status-green { background-image: radial-gradient(rgba(255,255,255,0.55) 1px, transparent 1.5px); background-size: 4px 4px; }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 14px; }
 body {
@@ -98,6 +138,41 @@ body {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .unsaved-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-amber); display: none; }
 .unsaved-dot.visible { display: inline-block; }
+.saved-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); padding: 3px 8px; border-radius: 999px; background: transparent; transition: opacity 0.25s ease, color 0.25s ease; }
+.saved-indicator.saving { color: var(--accent-amber); }
+.saved-indicator.saved { color: var(--status-green); }
+.saved-indicator .si-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.saved-indicator.hidden { opacity: 0; pointer-events: none; }
+/* Field validation */
+.evm-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; background: #f8fafc; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 12px; }
+html[data-theme="dark"] .evm-strip { background: #111827; }
+.evm-cell { display: flex; flex-direction: column; gap: 2px; }
+.evm-cell .evm-label { font-size: 9px; letter-spacing: 0.6px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+.evm-cell .evm-val { font-size: 16px; font-weight: 700; color: var(--text-dark); font-variant-numeric: tabular-nums; }
+.evm-cell .evm-sub { font-size: 10px; color: var(--text-muted); }
+.evm-strip .evm-insufficient { grid-column: 1 / -1; font-size: 11px; color: var(--text-muted); font-style: italic; }
+.field-invalid { border-color: var(--status-red) !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
+.field-error-msg { display: block; color: var(--status-red); font-size: 11px; margin-top: 3px; font-weight: 600; }
+.field-error-msg[hidden] { display: none; }
+/* Long-operation progress overlay */
+.progress-overlay { position: fixed; inset: 0; background: rgba(15,20,25,0.55); display: none; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(2px); }
+.progress-overlay.visible { display: flex; }
+.progress-card { background: var(--bg-card, #fff); border-radius: var(--radius-lg); padding: 22px 26px; min-width: 360px; max-width: 520px; box-shadow: var(--shadow-lg); }
+.progress-card h3 { font-size: 14px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-dark); }
+.progress-card .progress-msg { font-size: 12px; color: var(--text-dark-secondary); margin-bottom: 12px; min-height: 16px; }
+.progress-bar-outer { width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; position: relative; }
+.progress-bar-inner { height: 100%; background: var(--accent-blue); border-radius: 4px; width: 0%; transition: width 0.15s linear; }
+.progress-card.indeterminate .progress-bar-inner { width: 40% !important; animation: progIndet 1.2s ease-in-out infinite; }
+@keyframes progIndet { 0%{transform:translateX(-100%)}100%{transform:translateX(250%)} }
+.progress-card .progress-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; color: var(--text-muted); }
+.progress-card .progress-cancel { background: transparent; border: 1px solid var(--border-light); color: var(--text-dark-secondary); font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+.progress-card .progress-cancel:hover { background: var(--bg-tertiary); }
+/* Error boundary banner */
+.error-banner { position: fixed; top: 0; left: 0; right: 0; background: #fef2f2; color: #7f1d1d; border-bottom: 2px solid var(--status-red); padding: 10px 16px; z-index: 9999; display: none; align-items: center; gap: 12px; font-size: 12px; }
+.error-banner.visible { display: flex; }
+.error-banner .err-msg { flex: 1; font-weight: 600; }
+.error-banner button { background: var(--status-red); color: #fff; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.error-banner button.secondary { background: transparent; color: #7f1d1d; border: 1px solid #7f1d1d; }
 
 .app-body { display: flex; flex: 1; overflow: hidden; }
 .sidebar { width: var(--sidebar-width); background: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; border-right: 1px solid var(--border-color); }
@@ -147,6 +222,17 @@ body {
 .dashboard-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; overflow: auto; }
 
 .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.exec-summary { background: var(--bg-card, #fff); border: 1px solid var(--border-light); border-left: 4px solid var(--accent-blue); border-radius: var(--radius-md); padding: 12px 16px; color: var(--text-primary, #1e293b); font-size: 13px; line-height: 1.55; }
+.exec-summary:empty { display: none; }
+.exec-summary-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-muted, #64748b); }
+.exec-summary-header .es-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue); }
+.exec-summary p { margin: 0; }
+.exec-summary p + p { margin-top: 6px; }
+.exec-summary strong { color: var(--text-primary, #1e293b); }
+.exec-summary .es-red { color: var(--status-red, #ef4444); font-weight: 700; }
+.exec-summary .es-amber { color: var(--status-amber, #f59e0b); font-weight: 700; }
+.exec-summary .es-green { color: var(--status-green, #22c55e); font-weight: 700; }
+.exec-summary .es-meta { display: inline-block; font-size: 11px; color: var(--text-muted, #64748b); margin-left: 8px; }
 .summary-card { background: white; border-radius: var(--radius-md); padding: 14px 16px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-light); }
 .summary-card .card-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 4px; }
 .summary-card .card-value { font-size: 26px; font-weight: 700; color: var(--text-dark); line-height: 1.1; }
@@ -696,6 +782,10 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 }
 .gantt-bar:hover { opacity: 0.85; }
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
+.gantt-forecast-cone { position: absolute; top: 9px; height: 22px; border-radius: 0 6px 6px 0; opacity: 0.55; pointer-events: auto; z-index: 2; }
+.gantt-forecast-cone:hover { opacity: 0.85; }
+.gantt-forecast-p50 { position: absolute; top: 7px; width: 2px; height: 26px; opacity: 0.8; z-index: 3; pointer-events: auto; }
+.gantt-forecast-p50::after { content: 'P50'; position: absolute; top: -12px; left: -8px; font-size: 8px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.3px; }
 .gantt-bar-baseline {
   position: absolute; top: 26px; height: 4px; border-radius: 2px;
   opacity: 0.35; border: 1px dashed rgba(0,0,0,0.3);
@@ -1224,13 +1314,31 @@ textarea.field-input { resize: vertical; min-height: 60px; }
   <div class="header-spacer"></div>
   <div class="header-actions">
     <span class="storage-info" id="storageInfo"></span>
+    <button class="btn btn-ghost btn-sm" id="btnTheme" aria-pressed="false" onclick="App.toggleTheme()" oncontextmenu="event.preventDefault();App.togglePresentation();" title="Toggle light/dark (right-click: Boardroom mode)" aria-label="Toggle colour theme"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Theme</title><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
+    <button class="btn btn-ghost btn-sm" id="btnPresent" onclick="App.togglePresentation()" title="Boardroom / Presentation mode — larger fonts, bigger numbers" aria-label="Boardroom mode"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Boardroom mode</title><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
     <button class="btn btn-ghost btn-sm" id="btnUndo" disabled onclick="App.undo()" title="Undo (Ctrl+Z)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
     <button class="btn btn-ghost btn-sm" id="btnRedo" disabled onclick="App.redo()" title="Redo (Ctrl+Shift+Z)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg></button>
     <button class="btn btn-add btn-sm" id="btnAddProject" disabled onclick="DetailPanel.quickAdd()">+ New Project</button>
     <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes"></span>
+    <span class="saved-indicator hidden" id="savedIndicator" aria-live="polite" title="Last save"><span class="si-dot"></span><span id="savedIndicatorText">Saved</span></span>
     <button class="btn btn-primary btn-sm" id="btnExport" disabled onclick="App.exportJSON()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export JSON</button>
   </div>
 </header>
+<div class="error-banner" id="errorBanner" role="alert">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span class="err-msg" id="errorBannerMsg">Something went wrong.</span>
+  <button onclick="App.copyErrorDiagnostics()">Copy diagnostics</button>
+  <button class="secondary" onclick="App.exportJSON()">Export backup</button>
+  <button class="secondary" onclick="document.getElementById('errorBanner').classList.remove('visible')">Dismiss</button>
+</div>
+<div class="progress-overlay" id="progressOverlay" role="status" aria-live="polite">
+  <div class="progress-card" id="progressCard">
+    <h3 id="progressTitle">Working…</h3>
+    <div class="progress-msg" id="progressMsg"></div>
+    <div class="progress-bar-outer"><div class="progress-bar-inner" id="progressBar"></div></div>
+    <div class="progress-footer"><span id="progressMeta"></span><button class="progress-cancel" id="progressCancel" onclick="Progress.cancel()">Cancel</button></div>
+  </div>
+</div>
 <div class="storage-warning" id="storageWarning">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
   <span id="storageWarningMsg">localStorage is full or unavailable. Changes may be lost.</span>
@@ -1290,6 +1398,8 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 
     <div class="view" id="viewDashboard">
       <div class="dashboard-container">
+        <!-- Exec Summary narrative -->
+        <div class="exec-summary" id="execSummary" aria-live="polite"></div>
         <!-- Summary Cards -->
         <div class="summary-cards" id="summaryCards"></div>
         <!-- KPI Cards -->
@@ -1324,6 +1434,8 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()" title="Auto-prioritise by risk score"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> Auto-Prioritise</button>
           <button class="btn btn-outline btn-sm" onclick="App.exportCSV()" title="Export as CSV"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> CSV</button>
           <button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()" title="Generate PDF status report"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Status Report</button>
+          <button class="btn btn-outline btn-sm" onclick="Report.exportPortfolioPack(App.activeCustomer)" title="Branded portfolio pack with exec summary, milestones, risks, governance"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><polyline points="8 10 12 10 12 10 16 10"/><line x1="8" y1="14" x2="16" y2="14"/></svg> Portfolio Pack</button>
+          <button class="btn btn-outline btn-sm" onclick="Report.configureBranding(App.activeCustomer)" title="Set logo, colour, and classification for this customer's reports"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Branding</button>
           <button class="btn btn-outline btn-sm" onclick="Dashboard.copyTable()" title="Copy filtered table to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy Table</button>
         </div>
         <div class="view-help-panel" id="helpDashboard"></div>
@@ -1402,6 +1514,7 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttBaseline" onchange="Gantt.render()"> Baseline</label>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer"><input type="checkbox" id="ganttCriticalPath" onchange="Gantt.toggleCriticalPath(this.checked)"> Critical Path</label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:var(--text-dark-secondary);cursor:pointer" title="Monte Carlo P50 and P80 completion markers"><input type="checkbox" id="ganttForecast" onchange="Gantt.render()"> Forecast cone</label>
           <div class="zoom-btns">
             <button class="zoom-btn" onclick="Gantt.setZoom('day')">Day</button>
             <button class="zoom-btn active" onclick="Gantt.setZoom('week')">Week</button>
@@ -1573,6 +1686,7 @@ const App = {
   MAX_UNDO: 50,
 
   init() {
+    this.loadThemePreferences();
     this.checkStorageAvailability();
     this.setupDropZone();
     this.checkLocalStorage();
@@ -1584,6 +1698,64 @@ const App = {
     });
     Onboarding.init();
     console.log('[PCC] Portfolio Command Centre v1.0 initialised');
+  },
+
+  // --- Theme / Presentation Mode ---
+  THEME_KEY: 'pcc-theme',
+  PRESENTATION_KEY: 'pcc-presentation',
+  RAG_PATTERN_KEY: 'pcc-rag-pattern',
+  loadThemePreferences() {
+    let theme;
+    try { theme = localStorage.getItem(this.THEME_KEY); } catch (e) { theme = null; }
+    if (!theme) {
+      const mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+      theme = (mql && mql.matches) ? 'dark' : 'light';
+    }
+    this.applyTheme(theme);
+    try {
+      if (localStorage.getItem(this.PRESENTATION_KEY) === 'on') this.applyPresentation(true);
+      if (localStorage.getItem(this.RAG_PATTERN_KEY) === 'on') this.applyRagPattern(true);
+    } catch (e) { /* ignore */ }
+  },
+  applyTheme(theme) {
+    const t = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem(this.THEME_KEY, t); } catch (e) {}
+    this._updateThemeBtn();
+  },
+  toggleTheme() {
+    const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    this.applyTheme(cur === 'dark' ? 'light' : 'dark');
+    this.toast('Theme: ' + (cur === 'dark' ? 'Light' : 'Dark'), 'info');
+  },
+  applyPresentation(on) {
+    if (on) document.documentElement.setAttribute('data-presentation', 'on');
+    else document.documentElement.removeAttribute('data-presentation');
+    try { localStorage.setItem(this.PRESENTATION_KEY, on ? 'on' : 'off'); } catch (e) {}
+    this._updateThemeBtn();
+  },
+  togglePresentation() {
+    const on = document.documentElement.getAttribute('data-presentation') === 'on';
+    this.applyPresentation(!on);
+    this.toast('Boardroom mode ' + (!on ? 'on' : 'off'), 'info');
+  },
+  applyRagPattern(on) {
+    if (on) document.documentElement.setAttribute('data-rag-pattern', 'on');
+    else document.documentElement.removeAttribute('data-rag-pattern');
+    try { localStorage.setItem(this.RAG_PATTERN_KEY, on ? 'on' : 'off'); } catch (e) {}
+  },
+  toggleRagPattern() {
+    const on = document.documentElement.getAttribute('data-rag-pattern') === 'on';
+    this.applyRagPattern(!on);
+    this.toast('RAG patterns ' + (!on ? 'on' : 'off'), 'info');
+  },
+  _updateThemeBtn() {
+    const btn = document.getElementById('btnTheme');
+    if (!btn) return;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const isPres = document.documentElement.getAttribute('data-presentation') === 'on';
+    btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+    btn.title = 'Theme: ' + (isDark ? 'Dark' : 'Light') + (isPres ? ' · Boardroom mode on' : '') + ' (toggle: dark/light, long-press: boardroom)';
   },
 
   // --- Storage Availability ---
@@ -2469,6 +2641,7 @@ const App = {
   saveToLocalStorage() {
     if (!this.data) return;
     if (!this.storageAvailable) return;
+    this._updateSavedIndicator('saving', 'Saving…');
     try {
       const json = JSON.stringify(this.data);
       localStorage.setItem(this.LS_KEY, json);
@@ -2477,7 +2650,11 @@ const App = {
       // Flash save indicator
       const badge = document.getElementById('modeBadge');
       if (badge) { badge.style.transition = 'background 0.3s'; badge.style.background = '#22c55e20'; setTimeout(() => { badge.style.background = ''; }, 800); }
+      const now = new Date();
+      const stamp = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      this._updateSavedIndicator('saved', 'Saved ' + stamp);
     } catch (e) {
+      this._updateSavedIndicator('error', 'Save failed');
       console.warn('[PCC] localStorage save failed:', e);
       if (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014) {
         this.showStorageWarning('localStorage quota exceeded. Triggering backup export...');
@@ -2496,6 +2673,47 @@ const App = {
   },
 
   markDirty() { this.isDirty = true; document.getElementById('unsavedDot').classList.add('visible'); },
+
+  _updateSavedIndicator(state, text) {
+    const el = document.getElementById('savedIndicator');
+    const txt = document.getElementById('savedIndicatorText');
+    if (!el || !txt) return;
+    el.classList.remove('saving', 'saved', 'hidden');
+    if (state === 'saving') el.classList.add('saving');
+    else if (state === 'saved') el.classList.add('saved');
+    else el.classList.add('hidden');
+    txt.textContent = text;
+    if (state === 'saved') {
+      clearTimeout(this._savedFadeTimer);
+      this._savedFadeTimer = setTimeout(() => {
+        const e2 = document.getElementById('savedIndicator');
+        if (e2) e2.classList.add('hidden');
+      }, 4000);
+    }
+  },
+
+  copyErrorDiagnostics() {
+    const diag = (window._pccLastError || {});
+    const version = (this.data && this.data.schema_version) || '1.0';
+    const txt = 'Portfolio Command Centre diagnostics\n' +
+      'Time: ' + new Date().toISOString() + '\n' +
+      'Version: ' + version + '\n' +
+      'UA: ' + navigator.userAgent + '\n' +
+      'Active customer: ' + (this.activeCustomer || '—') + '\n' +
+      'View: ' + (this.currentView || '—') + '\n' +
+      'Projects: ' + ((this.data && this.data.projects) ? this.data.projects.length : 0) + '\n' +
+      'Error: ' + (diag.message || '(none)') + '\n' +
+      'Source: ' + (diag.source || '') + '\n' +
+      'Line: ' + (diag.lineno || '') + ':' + (diag.colno || '') + '\n' +
+      'Stack:\n' + (diag.stack || '(none)');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => this.toast('Diagnostics copied', 'success'), () => {
+        prompt('Copy diagnostics:', txt);
+      });
+    } else {
+      prompt('Copy diagnostics:', txt);
+    }
+  },
   markClean() { this.isDirty = false; document.getElementById('unsavedDot').classList.remove('visible'); },
 
   updateProject(projectId, field, value) {
@@ -3556,7 +3774,148 @@ const App = {
 // Global sanitisation helper
 function esc(str) { if (str == null) return ''; const d = document.createElement('div'); d.textContent = String(str); return d.innerHTML; }
 
+/* ============================================================
+   Validator — field-level validation helper
+   Usage: Validator.bind(inputEl, [{type:'required'},{type:'numeric',min:0}])
+   ============================================================ */
+const Validator = {
+  rules: {
+    required: (v) => (v != null && String(v).trim() !== '') || 'Required',
+    numeric: (v, r) => {
+      if (v === '' || v == null) return true;
+      const n = Number(v);
+      if (!Number.isFinite(n)) return 'Must be a number';
+      if (r.min != null && n < r.min) return 'Min ' + r.min;
+      if (r.max != null && n > r.max) return 'Max ' + r.max;
+      return true;
+    },
+    integer: (v) => (v === '' || v == null || /^-?\d+$/.test(String(v).trim())) || 'Must be a whole number',
+    date: (v) => (v === '' || v == null || !isNaN(new Date(v).getTime())) || 'Invalid date',
+    url: (v) => { if (!v) return true; try { new URL(v); return true; } catch (e) { return 'Invalid URL'; } },
+    regex: (v, r) => (v === '' || v == null || r.pattern.test(v)) || (r.message || 'Invalid format'),
+    custom: (v, r) => r.fn(v)
+  },
+  validate(value, rules) {
+    const errors = [];
+    (rules || []).forEach(r => {
+      const fn = this.rules[r.type];
+      if (!fn) return;
+      const res = fn(value, r);
+      if (res !== true) errors.push(r.message || res);
+    });
+    return { valid: errors.length === 0, errors };
+  },
+  bind(input, rules, opts) {
+    if (!input || input._validatorBound) return;
+    input._validatorBound = true;
+    opts = opts || {};
+    const errEl = document.createElement('div');
+    errEl.className = 'field-error-msg';
+    errEl.hidden = true;
+    input.insertAdjacentElement('afterend', errEl);
+    const run = (showError) => {
+      const result = this.validate(input.value, rules);
+      if (result.valid) {
+        input.classList.remove('field-invalid');
+        input.removeAttribute('aria-invalid');
+        errEl.hidden = true;
+        errEl.textContent = '';
+      } else if (showError) {
+        input.classList.add('field-invalid');
+        input.setAttribute('aria-invalid', 'true');
+        errEl.hidden = false;
+        errEl.textContent = result.errors.join(' · ');
+      }
+      return result.valid;
+    };
+    input.addEventListener('blur', () => run(true));
+    input.addEventListener('input', () => { if (input.classList.contains('field-invalid')) run(true); });
+    input._validatorRun = run;
+  },
+  bindScope(scopeEl) {
+    if (!scopeEl) return;
+    scopeEl.querySelectorAll('[data-validate]').forEach(input => {
+      let rules;
+      try { rules = JSON.parse(input.dataset.validate); } catch (e) { return; }
+      this.bind(input, rules);
+    });
+  },
+  validateScope(scopeEl) {
+    if (!scopeEl) return true;
+    let ok = true;
+    scopeEl.querySelectorAll('[data-validate]').forEach(input => {
+      if (input._validatorRun && !input._validatorRun(true)) ok = false;
+    });
+    return ok;
+  }
+};
+
+/* ============================================================
+   Progress — long-operation overlay
+   ============================================================ */
+const Progress = {
+  _cancelRequested: false,
+  _cancelCallback: null,
+  start(title, opts) {
+    opts = opts || {};
+    this._cancelRequested = false;
+    this._cancelCallback = opts.onCancel || null;
+    const overlay = document.getElementById('progressOverlay');
+    const card = document.getElementById('progressCard');
+    if (!overlay || !card) return;
+    document.getElementById('progressTitle').textContent = title || 'Working…';
+    document.getElementById('progressMsg').textContent = opts.msg || '';
+    document.getElementById('progressMeta').textContent = '';
+    document.getElementById('progressBar').style.width = '0%';
+    const cancelBtn = document.getElementById('progressCancel');
+    if (cancelBtn) cancelBtn.style.display = opts.cancelable === false ? 'none' : '';
+    if (opts.indeterminate) card.classList.add('indeterminate'); else card.classList.remove('indeterminate');
+    overlay.classList.add('visible');
+  },
+  update(pct, msg, meta) {
+    const bar = document.getElementById('progressBar');
+    if (bar) bar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    if (msg != null) { const m = document.getElementById('progressMsg'); if (m) m.textContent = msg; }
+    if (meta != null) { const me = document.getElementById('progressMeta'); if (me) me.textContent = meta; }
+  },
+  done(successToast) {
+    const overlay = document.getElementById('progressOverlay');
+    if (overlay) overlay.classList.remove('visible');
+    this._cancelCallback = null;
+    if (successToast) App.toast(successToast, 'success');
+  },
+  cancel() {
+    this._cancelRequested = true;
+    if (this._cancelCallback) {
+      try { this._cancelCallback(); } catch (e) { /* ignore */ }
+    }
+    this.done();
+  },
+  isCanceled() { return this._cancelRequested; }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
+  // Install error boundary
+  window._pccLastError = null;
+  const showError = (msg, src, ln, col, err) => {
+    window._pccLastError = { message: msg || 'Unknown error', source: src || '', lineno: ln || 0, colno: col || 0, stack: (err && err.stack) || '' };
+    const banner = document.getElementById('errorBanner');
+    const msgEl = document.getElementById('errorBannerMsg');
+    if (banner && msgEl) {
+      msgEl.textContent = 'An unexpected error occurred: ' + (msg || 'Unknown error') + '. Your data is safe — export a backup to be certain.';
+      banner.classList.add('visible');
+    }
+    return false;
+  };
+  window.addEventListener('error', (e) => {
+    if (e && e.error) showError(e.message, e.filename, e.lineno, e.colno, e.error);
+    else showError(e && e.message || 'Unknown error', '', 0, 0, null);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    showError((r && r.message) || String(r || 'Unhandled promise rejection'), '', 0, 0, r);
+  });
+
   App.init();
 
   // Event delegation for navigation
@@ -4207,8 +4566,151 @@ const Dashboard = {
     return ss + '\u2013' + se;
   },
 
+  renderExecSummary() {
+    const el = document.getElementById('execSummary');
+    if (!el) return;
+    if (!App.data) { el.innerHTML = ''; return; }
+    const customer = App.activeCustomer;
+    if (!customer) { el.innerHTML = ''; return; }
+
+    const all = App.data.projects.filter(p => p.customer === customer);
+    const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    const atRisk = active.filter(p => p.status === 'At Risk').length;
+    const blocked = active.filter(p => p.status === 'Blocked').length;
+    const onTrack = active.filter(p =>
+      (p.rag_schedule === 'Green' || !p.rag_schedule) &&
+      (p.rag_resourcing === 'Green' || !p.rag_resourcing) &&
+      (p.rag_scope === 'Green' || !p.rag_scope)
+    ).length;
+    const onTrackPct = active.length > 0 ? Math.round((onTrack / active.length) * 100) : 0;
+
+    const todayIso = new Date().toISOString().split('T')[0];
+
+    // Velocity (last 3 completed sprints that have any commitment)
+    const sprints = (App.data.sprints || []).slice();
+    const todayDate = new Date();
+    const velData = [];
+    sprints.forEach(s => {
+      if (s.end_date && new Date(s.end_date) > todayDate) return;
+      let committed = 0, completed = 0;
+      all.forEach(p => {
+        const splits = p.skill_splits || {};
+        Object.values(splits).forEach(arr => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (sp.sprint !== s.sprint_id) return;
+            committed += sp.points || 0;
+            if (sp.status === 'complete') completed += sp.points || 0;
+            else completed += sp.completed || 0;
+          });
+        });
+      });
+      if (committed > 0) velData.push({ id: s.sprint_id, committed, completed });
+    });
+    const last3 = velData.slice(-3);
+    const velCommitted = last3.reduce((a, d) => a + d.committed, 0);
+    const velCompleted = last3.reduce((a, d) => a + d.completed, 0);
+    const velPct = velCommitted > 0 ? Math.round((velCompleted / velCommitted) * 100) : 0;
+    let velTrend = 'flat';
+    if (last3.length >= 2) {
+      const firstRatio = last3[0].committed ? last3[0].completed / last3[0].committed : 0;
+      const lastRatio = last3[last3.length - 1].committed ? last3[last3.length - 1].completed / last3[last3.length - 1].committed : 0;
+      if (lastRatio > firstRatio + 0.05) velTrend = 'up';
+      else if (lastRatio < firstRatio - 0.05) velTrend = 'down';
+    }
+
+    // 30-day milestone window
+    const in30 = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      const diff = (d - todayDate) / 86400000;
+      return diff >= 0 && diff <= 30;
+    };
+    const milestones30 = active.filter(p => in30(p.hard_deadline) || in30(p.target_date)).length;
+
+    // Upcoming forums within 7 days
+    const forums = (App.data.governance_forums || []).filter(f => f.customer === customer);
+    const forums7 = forums.filter(f => {
+      if (!f.next_date) return false;
+      const diff = (new Date(f.next_date) - todayDate) / 86400000;
+      return diff >= -1 && diff <= 7;
+    }).length;
+    let overdueActions = 0;
+    forums.forEach(f => (f.actions || []).forEach(a => {
+      if (a.status !== 'Done' && a.due_date && a.due_date < todayIso) overdueActions++;
+    }));
+
+    // Risk posture (score = impact * probability, severe = score >= 15)
+    let openRisks = 0, severeRisks = 0;
+    active.forEach(p => (p.risks_register || []).forEach(r => {
+      openRisks++;
+      const score = (r.impact || 3) * (r.probability || 3);
+      if (score >= 15) severeRisks++;
+    }));
+
+    // RAG class chooser for overall portfolio health word
+    const healthWord = blocked > 0 || severeRisks >= 3 ? 'es-red' : (atRisk > 0 || severeRisks > 0) ? 'es-amber' : 'es-green';
+    const healthLabel = blocked > 0 ? 'Red' : (atRisk > 0 ? 'Amber' : 'Green');
+
+    // Build the narrative
+    const esc = Dashboard.esc;
+    const parts = [];
+
+    // Sentence 1: health
+    let s1 = '<strong>' + esc(customer) + ' portfolio</strong> carries <strong>' + active.length + '</strong> active ' +
+      (active.length === 1 ? 'project' : 'projects') + ' with a headline health of <span class="' + healthWord + '">' + healthLabel + '</span>';
+    if (active.length > 0) {
+      s1 += ' — <strong>' + onTrackPct + '%</strong> fully on-track, ';
+      s1 += '<span class="es-amber">' + atRisk + ' at risk</span>, ';
+      s1 += '<span class="es-red">' + blocked + ' blocked</span>';
+    }
+    s1 += '.';
+    parts.push(s1);
+
+    // Sentence 2: velocity + forecast
+    if (last3.length > 0) {
+      const trendWord = velTrend === 'up' ? '<span class="es-green">improving</span>' : velTrend === 'down' ? '<span class="es-red">slipping</span>' : 'stable';
+      let s2 = 'Over the last ' + last3.length + ' completed sprint' + (last3.length === 1 ? '' : 's') +
+        ', teams delivered <strong>' + velCompleted + ' of ' + velCommitted + ' pts</strong> (' + velPct + '%), trend ' + trendWord + '.';
+      parts.push(s2);
+    } else {
+      parts.push('No completed sprints with committed work yet — velocity baseline pending.');
+    }
+
+    // Sentence 3: risks + forward look
+    const forwardBits = [];
+    if (milestones30) forwardBits.push('<strong>' + milestones30 + '</strong> milestone' + (milestones30 === 1 ? '' : 's') + ' within 30 days');
+    if (forums7) forwardBits.push('<strong>' + forums7 + '</strong> governance forum' + (forums7 === 1 ? '' : 's') + ' within 7 days');
+    if (overdueActions) forwardBits.push('<span class="es-red">' + overdueActions + ' overdue governance action' + (overdueActions === 1 ? '' : 's') + '</span>');
+    const riskBits = [];
+    if (openRisks) {
+      riskBits.push('<strong>' + openRisks + '</strong> open risk' + (openRisks === 1 ? '' : 's'));
+      if (severeRisks) riskBits.push('of which <span class="es-red">' + severeRisks + ' severe</span>');
+    }
+    const s3Pieces = [];
+    if (riskBits.length) s3Pieces.push(riskBits.join(' '));
+    if (forwardBits.length) s3Pieces.push('Forward: ' + forwardBits.join(' · '));
+    if (s3Pieces.length) parts.push(s3Pieces.join('. ') + '.');
+
+    // Sentence 4: explicit attention call
+    const attention = [];
+    if (blocked > 0) attention.push(blocked + ' blocked project' + (blocked === 1 ? '' : 's'));
+    if (severeRisks >= 3) attention.push(severeRisks + ' severe risks');
+    if (overdueActions > 0) attention.push(overdueActions + ' overdue action' + (overdueActions === 1 ? '' : 's'));
+    if (attention.length) {
+      parts.push('<strong>Attention required:</strong> ' + attention.join('; ') + '.');
+    }
+
+    el.innerHTML =
+      '<div class="exec-summary-header"><span class="es-dot"></span> Executive Summary <span class="es-meta">as at ' +
+      todayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      '</span></div>' +
+      parts.map(p => '<p>' + p + '</p>').join('');
+  },
+
   renderSummaryCards() {
     if (!App.data) return;
+    this.renderExecSummary();
     const projects = App.data.projects;
     const byCustomer = {};
     const byStatus = {};
@@ -4334,6 +4836,70 @@ const Dashboard = {
     const burnSpark = recentSnaps.length >= 2 ? recentSnaps.map(s => s.totalPoints || 0) : [];
     const prevBurn = burnSpark.length >= 2 ? burnSpark[burnSpark.length - 2] : undefined;
 
+    // 5. Rolling velocity (last 3 completed sprints) — completed pts per sprint
+    let rollingVelocity = 0, rollingLabel = '—', velocityDelta = undefined;
+    try {
+      const hist = (typeof Forecast !== 'undefined') ? Forecast.velocityHistory(customer) : [];
+      if (hist.length) {
+        const last3 = hist.slice(-3);
+        const prior3 = hist.slice(-6, -3);
+        rollingVelocity = Math.round(last3.reduce((a, h) => a + h.completed, 0) / last3.length);
+        if (prior3.length) {
+          const priorAvg = prior3.reduce((a, h) => a + h.completed, 0) / prior3.length;
+          velocityDelta = rollingVelocity - Math.round(priorAvg);
+        }
+        rollingLabel = rollingVelocity + ' pts';
+      }
+    } catch (e) { /* ignore */ }
+
+    // 6. Capacity vs Demand next 4 sprints — aggregate ratio
+    let capDemandLabel = '—', capDemandColor = 'var(--accent-blue)', capDemandSub = 'next 4 sprints';
+    try {
+      const cvd = (typeof Forecast !== 'undefined') ? Forecast.capacityVsDemand(customer, 4) : [];
+      if (cvd.length) {
+        const cap = cvd.reduce((a, s) => a + s.capacity, 0);
+        const dem = cvd.reduce((a, s) => a + s.demand, 0);
+        if (cap > 0) {
+          const ratio = dem / cap;
+          capDemandLabel = Math.round(ratio * 100) + '%';
+          capDemandColor = ratio <= 0.85 ? 'var(--status-green)' : ratio <= 1.0 ? 'var(--status-amber)' : 'var(--status-red)';
+          capDemandSub = dem + ' of ' + cap + ' pts · next 4 sprints';
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // 7. Forecast completion — P80 sprints to clear remaining work (portfolio-level Monte Carlo)
+    let forecastLabel = '—', forecastColor = 'var(--accent-violet)', forecastSub = 'insufficient history';
+    try {
+      if (typeof Forecast !== 'undefined') {
+        const pf = Forecast.portfolioForecast(customer);
+        if (pf.insufficient) {
+          forecastLabel = '—';
+          forecastSub = 'need ' + Forecast.MIN_HISTORY + '+ completed sprints';
+        } else if (pf.distribution) {
+          forecastLabel = pf.distribution.p80 + ' sp';
+          forecastSub = 'P80 to clear ' + pf.remaining + ' pts';
+          forecastColor = pf.distribution.p80 <= 4 ? 'var(--status-green)' : pf.distribution.p80 <= 8 ? 'var(--status-amber)' : 'var(--status-red)';
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // 8. Forecast delivery confidence — last-3 delivery ratio
+    let deliveryLabel = '—', deliveryColor = 'var(--accent-blue)';
+    try {
+      const hist = (typeof Forecast !== 'undefined') ? Forecast.velocityHistory(customer) : [];
+      if (hist.length) {
+        const last3 = hist.slice(-3);
+        const commit = last3.reduce((a, h) => a + h.committed, 0);
+        const comp = last3.reduce((a, h) => a + h.completed, 0);
+        if (commit > 0) {
+          const r = Math.round((comp / commit) * 100);
+          deliveryLabel = r + '%';
+          deliveryColor = r >= 85 ? 'var(--status-green)' : r >= 65 ? 'var(--status-amber)' : 'var(--status-red)';
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     const kpis = [
       {
         label: '% On Track',
@@ -4363,7 +4929,46 @@ const Dashboard = {
         color: remaining > 0 ? 'var(--accent-violet)' : 'var(--status-green)',
         trend: trendArrow(prevBurn, remaining),
         spark: sparklineSvg(burnSpark)
-      }
+      },
+      {
+        label: 'Rolling Velocity',
+        value: rollingLabel,
+        color: 'var(--accent-blue)',
+        trend: velocityDelta !== undefined ? trendArrow(rollingVelocity, rollingVelocity - velocityDelta) : '',
+        sub: 'last 3 sprints avg'
+      },
+      {
+        label: 'Capacity vs Demand',
+        value: capDemandLabel,
+        color: capDemandColor,
+        sub: capDemandSub
+      },
+      {
+        label: 'Forecast Completion',
+        value: forecastLabel,
+        color: forecastColor,
+        sub: forecastSub
+      },
+      {
+        label: 'Delivery Confidence',
+        value: deliveryLabel,
+        color: deliveryColor,
+        sub: 'completed / committed · 3 sp'
+      },
+      (() => {
+        let label = '—', color = 'var(--accent-blue)', sub = 'insufficient history';
+        try {
+          if (typeof Forecast !== 'undefined') {
+            const a = Forecast.accuracyStats(customer);
+            if (a && !a.insufficient && a.accuracyPct != null) {
+              label = a.accuracyPct + '%';
+              sub = 'mean ±' + a.meanErrorPct + '% · ' + a.sampleCount + ' sp';
+              color = a.accuracyPct >= 80 ? 'var(--status-green)' : a.accuracyPct >= 60 ? 'var(--status-amber)' : 'var(--status-red)';
+            }
+          }
+        } catch (e) {}
+        return { label: 'Forecast Accuracy', value: label, color, sub };
+      })()
     ];
 
     el.innerHTML = kpis.map(k =>
@@ -4785,6 +5390,37 @@ const DetailPanel = {
     }
   },
 
+  renderEvmStrip(p) {
+    if (typeof Forecast === 'undefined' || !p) return '';
+    const ev = Forecast.earnedValue(p);
+    if (!ev) return '';
+    if (ev.insufficient && ev.BAC === 0) {
+      return '<div class="evm-strip"><div class="evm-insufficient">Earned Value unavailable — set size_total to enable SPI / CPI / EAC.</div></div>';
+    }
+    const fmt = (n) => n == null ? '—' : (Math.abs(n) >= 100 ? Math.round(n) : (Math.round(n * 10) / 10));
+    const spi = Forecast.evRag(ev.SPI, 'SPI');
+    const cpi = Forecast.evRag(ev.CPI, 'CPI');
+    const pct = (ev.BAC > 0) ? Math.round((ev.EV / ev.BAC) * 100) : 0;
+
+    const cells = [
+      { label: 'BAC', val: fmt(ev.BAC), sub: 'Budget (pts)' },
+      { label: 'EV', val: fmt(ev.EV), sub: pct + '% complete' },
+      { label: 'PV', val: ev.PV == null ? '—' : fmt(ev.PV), sub: ev.PV == null ? 'no schedule' : 'planned to date' },
+      { label: 'AC', val: fmt(ev.AC), sub: 'committed pts' },
+      { label: 'SPI', val: spi.label, sub: ev.SPI == null ? 'no PV' : (ev.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'), color: spi.color },
+      { label: 'CPI', val: cpi.label, sub: ev.CPI == null ? 'no AC' : (ev.CPI >= 1 ? 'efficient' : 'over-consuming'), color: cpi.color },
+      { label: 'EAC', val: ev.EAC == null ? '—' : fmt(ev.EAC), sub: 'forecast total' },
+      { label: 'ETC', val: ev.ETC == null ? '—' : fmt(ev.ETC), sub: 'pts remaining' }
+    ];
+    return '<div class="evm-strip" aria-label="Earned Value metrics">' + cells.map(c =>
+      '<div class="evm-cell">' +
+        '<div class="evm-label">' + c.label + '</div>' +
+        '<div class="evm-val"' + (c.color ? ' style="color:' + c.color + '"' : '') + '>' + c.val + '</div>' +
+        '<div class="evm-sub">' + c.sub + '</div>' +
+      '</div>'
+    ).join('') + '</div>';
+  },
+
   renderBody(p) {
     const sel = (name, options, current) => {
       return '<select class="field-input" data-field="' + name + '" onchange="DetailPanel.onFieldChange(this)">' +
@@ -4843,6 +5479,8 @@ const DetailPanel = {
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.cloneProject()" title="Clone this project"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Clone Project</button>' +
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.saveAsTemplate()" title="Save delivery config as template"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save as Template</button>' +
       '</div>' +
+      // EVM metrics strip
+      this.renderEvmStrip(p) +
       // Identity
       '<div class="panel-section">' +
         '<div class="panel-section-title">Identity</div>' +
@@ -6327,6 +6965,8 @@ const Gantt = {
     };
 
     const showBaseline = document.getElementById('ganttBaseline').checked;
+    const forecastEl = document.getElementById('ganttForecast');
+    const showForecast = forecastEl && forecastEl.checked;
 
     // Skill colors for Gantt segments (dynamic from config)
     const skillColors = Sprint.SKILL_COLORS;
@@ -6378,6 +7018,29 @@ const Gantt = {
         baselineHtml = '<div class="gantt-bar-baseline" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px;background:' + color + '"></div>';
       }
 
+      // Forecast cone — translucent band from current end to P80 finish, marker at P50
+      let forecastHtml = '';
+      if (showForecast && typeof Forecast !== 'undefined' && p.status !== 'Complete' && p.status !== 'Closed') {
+        try {
+          const fc = Forecast.projectForecast(p);
+          if (fc && !fc.insufficient && fc.distribution && fc.distribution.p80 > 0) {
+            const SPRINT_DAYS = 35; // 5-week cycle
+            const endDate = new Date(p.target_date || p.hard_deadline || new Date());
+            const p50Date = new Date(endDate.getTime() + fc.distribution.p50 * SPRINT_DAYS * 86400000);
+            const p80Date = new Date(endDate.getTime() + fc.distribution.p80 * SPRINT_DAYS * 86400000);
+            const xEnd = x2;
+            const xP50 = dateToX(p50Date.toISOString().split('T')[0]);
+            const xP80 = dateToX(p80Date.toISOString().split('T')[0]);
+            const bandW = Math.max(2, xP80 - xEnd);
+            const tipInfo = 'Forecast · P50 +' + fc.distribution.p50 + 'sp · P80 +' + fc.distribution.p80 + 'sp · P95 +' + fc.distribution.p95 + 'sp · ' + fc.remaining + ' pts remaining';
+            forecastHtml = '<div class="gantt-forecast-cone" title="' + Dashboard.esc(tipInfo) + '" style="left:' + xEnd + 'px;width:' + bandW + 'px;background:linear-gradient(to right,' + color + '55,' + color + '0a);border-right:2px dashed ' + color + '"></div>';
+            if (xP50 > xEnd) {
+              forecastHtml += '<div class="gantt-forecast-p50" title="' + Dashboard.esc('P50 forecast +' + fc.distribution.p50 + ' sprints') + '" style="left:' + (xP50 - 1) + 'px;background:' + color + '"></div>';
+            }
+          }
+        } catch (e) { /* ignore */ }
+      }
+
       // Milestones — generic diamond for most, rocket for product launch. Hover text explains type.
       let milestoneHtml = '';
       const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
@@ -6404,6 +7067,7 @@ const Gantt = {
         '<div class="gantt-bar' + critClass + '" data-id="' + p.id + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
+        forecastHtml +
         baselineHtml +
         milestoneHtml +
       '</div>';
@@ -9713,6 +10377,284 @@ const Capacity = {
 };
 
 /* ============================================================
+   Forecast — Monte Carlo completion forecasting
+   Samples historical velocity with bootstrap replacement to
+   produce probabilistic completion estimates per project and
+   portfolio. P50 / P80 / P95 outputs feed Gantt cone, KPIs,
+   and reports.
+   ============================================================ */
+const Forecast = {
+  DEFAULT_RUNS: 500,
+  MIN_HISTORY: 2,           // need at least this many completed sprints to forecast
+  _cache: { key: null, value: null },
+
+  // Aggregate points per completed sprint for a given customer.
+  // Returns [{ sprintId, committed, completed, ratio }]
+  velocityHistory(customer) {
+    if (!App.data) return [];
+    const now = new Date();
+    const sprints = (App.data.sprints || []).slice();
+    const projects = App.data.projects.filter(p => p.customer === customer);
+    const out = [];
+    sprints.forEach(s => {
+      if (s.end_date && new Date(s.end_date) > now) return;
+      let committed = 0, completed = 0;
+      projects.forEach(p => Object.values(p.skill_splits || {}).forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (sp.sprint !== s.sprint_id) return;
+          committed += sp.points || 0;
+          completed += (sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0));
+        });
+      }));
+      if (committed > 0) {
+        const ratio = completed / committed;
+        out.push({ sprintId: s.sprint_id, committed, completed, ratio });
+      }
+    });
+    return out;
+  },
+
+  // Stats over a velocity history. mean, stddev, count of completed pts per sprint
+  velocityStats(history) {
+    if (!history.length) return { meanCompleted: 0, stddevCompleted: 0, meanRatio: 0, stddevRatio: 0, count: 0, values: [] };
+    const values = history.map(h => h.completed);
+    const ratios = history.map(h => h.ratio);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const ratioMean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / Math.max(1, values.length - 1);
+    const ratioVar = ratios.reduce((a, b) => a + Math.pow(b - ratioMean, 2), 0) / Math.max(1, ratios.length - 1);
+    return {
+      meanCompleted: mean,
+      stddevCompleted: Math.sqrt(variance),
+      meanRatio: ratioMean,
+      stddevRatio: Math.sqrt(ratioVar),
+      count: values.length,
+      values
+    };
+  },
+
+  // Remaining points for a project (total size minus completed in skill_splits)
+  remainingPoints(project) {
+    const total = project.size_total || 0;
+    let completed = 0;
+    Object.values(project.skill_splits || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => {
+        completed += (sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0));
+      });
+    });
+    return Math.max(0, total - completed);
+  },
+
+  // Project-level share of customer capacity derived from its skill_splits last commitments.
+  projectShare(project, customerTotal) {
+    if (!customerTotal || customerTotal <= 0) return 0;
+    let projectCommit = 0;
+    Object.values(project.skill_splits || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => { projectCommit += sp.points || 0; });
+    });
+    if (projectCommit <= 0) {
+      // Fallback: equal share if unallocated
+      return 1 / Math.max(1, customerTotal);
+    }
+    return projectCommit / customerTotal;
+  },
+
+  // Monte Carlo: given remaining pts, samples velocity per sprint to estimate sprints needed.
+  // Returns { p50, p80, p95, mean, min, max, samples[] } — each "samples[i]" is sprints needed.
+  simulateSprintsNeeded(remaining, velocityValues, runs) {
+    if (remaining <= 0) return { p50: 0, p80: 0, p95: 0, mean: 0, min: 0, max: 0, samples: [] };
+    if (!velocityValues.length) return null;
+    runs = runs || this.DEFAULT_RUNS;
+    const samples = new Array(runs);
+    for (let i = 0; i < runs; i++) {
+      let pts = remaining;
+      let sprintsUsed = 0;
+      const cap = 200; // safety cap
+      while (pts > 0 && sprintsUsed < cap) {
+        const v = velocityValues[Math.floor(Math.random() * velocityValues.length)];
+        pts -= Math.max(0, v);
+        sprintsUsed++;
+      }
+      samples[i] = sprintsUsed;
+    }
+    samples.sort((a, b) => a - b);
+    const pick = (p) => samples[Math.min(samples.length - 1, Math.floor(p * samples.length))];
+    const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+    return {
+      p50: pick(0.5),
+      p80: pick(0.8),
+      p95: pick(0.95),
+      mean,
+      min: samples[0],
+      max: samples[samples.length - 1],
+      samples
+    };
+  },
+
+  // Portfolio-level forecast: how many sprints to clear all remaining active work given customer velocity.
+  // Assumes work can be parallelised — uses total remaining / mean sprint throughput as bootstrap sample.
+  portfolioForecast(customer, opts) {
+    opts = opts || {};
+    const history = this.velocityHistory(customer);
+    const stats = this.velocityStats(history);
+    const active = (App.data ? App.data.projects : []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+    const totalRemaining = active.reduce((s, p) => s + this.remainingPoints(p), 0);
+    if (stats.count < this.MIN_HISTORY || totalRemaining <= 0) {
+      return { remaining: totalRemaining, history, stats, insufficient: stats.count < this.MIN_HISTORY, distribution: null };
+    }
+    const distribution = this.simulateSprintsNeeded(totalRemaining, stats.values, opts.runs);
+    return { remaining: totalRemaining, history, stats, insufficient: false, distribution };
+  },
+
+  // Per-project forecast that apportions customer velocity by project's current share of commitments.
+  projectForecast(project, opts) {
+    opts = opts || {};
+    const customer = project.customer;
+    const history = this.velocityHistory(customer);
+    const stats = this.velocityStats(history);
+    if (stats.count < this.MIN_HISTORY) return { insufficient: true, remaining: this.remainingPoints(project), history, stats };
+    const remaining = this.remainingPoints(project);
+    if (remaining <= 0) return { done: true, remaining: 0, history, stats };
+
+    // Estimate customer avg committed per sprint across recent history
+    const totalCustomerCommitted = history.reduce((s, h) => s + h.committed, 0) / Math.max(1, history.length);
+    const share = this.projectShare(project, totalCustomerCommitted);
+    // Effective per-sprint velocity for this project (share-scaled).
+    const perProjectVelocity = stats.values.map(v => Math.max(0.5, v * Math.min(1, share)));
+
+    // If share is effectively zero (no commitments), treat project as using full customer velocity pessimistically
+    const useValues = (perProjectVelocity.reduce((a, b) => a + b, 0) > 0) ? perProjectVelocity : stats.values;
+    const distribution = this.simulateSprintsNeeded(remaining, useValues, opts.runs);
+    return { remaining, share, history, stats, distribution };
+  },
+
+  // Convert "sprints from now" to an actual sprint ID based on current_sprint / next future sprint.
+  sprintsFromNow(customer, offset) {
+    if (!App.data) return null;
+    const sprints = (App.data.sprints || []).slice();
+    const now = new Date();
+    const firstFuture = sprints.findIndex(s => !s.end_date || new Date(s.end_date) >= now);
+    const idx = (firstFuture < 0 ? sprints.length - 1 : firstFuture) + Math.max(0, Math.round(offset) - 1);
+    const s = sprints[Math.min(sprints.length - 1, Math.max(0, idx))];
+    return s ? s.sprint_id : null;
+  },
+
+  // Capacity vs demand over next N sprints. Returns [{ sprintId, capacity, demand, ratio }]
+  capacityVsDemand(customer, nextN) {
+    if (!App.data || typeof Sprint === 'undefined') return [];
+    nextN = nextN || 4;
+    const now = new Date();
+    const sprints = (App.data.sprints || []).filter(s => !s.end_date || new Date(s.end_date) >= now).slice(0, nextN);
+    const projects = App.data.projects.filter(p => p.customer === customer);
+    return sprints.map(s => {
+      const capMap = Sprint.calcSkillCapacityForSprint(customer, s.sprint_id) || {};
+      let capacity = 0;
+      Object.values(capMap).forEach(v => { capacity += v || 0; });
+      let demand = 0;
+      projects.forEach(p => Object.values(p.skill_splits || {}).forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => { if (sp.sprint === s.sprint_id) demand += sp.points || 0; });
+      }));
+      return { sprintId: s.sprint_id, capacity: Math.round(capacity), demand, ratio: capacity > 0 ? demand / capacity : null };
+    });
+  },
+
+  // Short human label for a sprint-offset forecast, e.g. "~4 sprints (P80 · 6)"
+  formatDistributionLabel(dist) {
+    if (!dist) return '—';
+    return 'P50 ' + dist.p50 + ' · P80 ' + dist.p80 + ' · P95 ' + dist.p95;
+  },
+
+  // Earned Value metrics for a project. Points are the cost/size unit.
+  // PV: planned value at "now" based on baseline schedule (or current schedule if no baseline)
+  // EV: earned value = completed points
+  // AC: actual consumed capacity = committed points (proxy for effort spent)
+  // SPI = EV / PV (schedule performance; >1 ahead, <1 behind)
+  // CPI = EV / AC (cost performance; >1 efficient, <1 burning capacity without output)
+  // EAC = AC + (BAC - EV) / CPI — forecast total cost at completion
+  // ETC = EAC - AC — remaining cost to complete
+  earnedValue(project) {
+    if (!project) return null;
+    const BAC = project.size_total || 0;
+    if (BAC <= 0) return { BAC: 0, EV: 0, PV: 0, AC: 0, SPI: null, CPI: null, EAC: null, ETC: null, insufficient: true, reason: 'No budget (size_total)' };
+
+    const startStr = project.baseline_start || project.start_date;
+    const endStr = project.baseline_end || project.target_date || project.hard_deadline;
+    const now = new Date();
+    let PV = null;
+    if (startStr && endStr) {
+      const start = new Date(startStr).getTime();
+      const end = new Date(endStr).getTime();
+      if (end > start) {
+        const t = now.getTime();
+        if (t <= start) PV = 0;
+        else if (t >= end) PV = BAC;
+        else PV = BAC * ((t - start) / (end - start));
+      }
+    }
+
+    let EV = 0, AC = 0;
+    Object.values(project.skill_splits || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => {
+        AC += sp.points || 0;
+        EV += (sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0));
+      });
+    });
+
+    const SPI = (PV != null && PV > 0) ? EV / PV : null;
+    const CPI = AC > 0 ? EV / AC : null;
+    const EAC = (CPI != null && CPI > 0) ? AC + (BAC - EV) / CPI : null;
+    const ETC = EAC != null ? Math.max(0, EAC - AC) : null;
+
+    return {
+      BAC, PV, EV, AC,
+      SPI, CPI, EAC, ETC,
+      insufficient: PV == null && AC === 0,
+      reason: PV == null ? 'No schedule dates — cannot compute SPI' : null
+    };
+  },
+
+  // Forecast accuracy: for each completed sprint, how well did the *prior mean* predict the actual?
+  // Returns { accuracyPct (mean 1-absErr), meanErrorPct, sampleCount, recent: [{sprintId, expected, actual, errorPct}] }
+  accuracyStats(customer) {
+    const history = this.velocityHistory(customer);
+    if (history.length < this.MIN_HISTORY + 1) {
+      return { accuracyPct: null, meanErrorPct: null, sampleCount: 0, recent: [], insufficient: true };
+    }
+    const recent = [];
+    for (let i = this.MIN_HISTORY; i < history.length; i++) {
+      const prior = history.slice(0, i);
+      const expected = prior.reduce((a, h) => a + h.completed, 0) / prior.length;
+      const actual = history[i].completed;
+      const err = expected > 0 ? Math.abs(actual - expected) / expected : null;
+      recent.push({ sprintId: history[i].sprintId, expected: Math.round(expected), actual, errorPct: err == null ? null : Math.round(err * 100) });
+    }
+    const errs = recent.map(r => r.errorPct).filter(v => v != null);
+    const meanError = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null;
+    return {
+      accuracyPct: meanError == null ? null : Math.max(0, Math.round(100 - meanError)),
+      meanErrorPct: meanError == null ? null : Math.round(meanError),
+      sampleCount: recent.length,
+      recent: recent.slice(-8)
+    };
+  },
+
+  // Convenience: classify SPI/CPI into RAG
+  evRag(value, kind) {
+    if (value == null) return { label: '—', color: 'var(--text-muted)' };
+    const green = kind === 'SPI' ? 0.95 : 0.95;
+    const amber = kind === 'SPI' ? 0.80 : 0.80;
+    if (value >= green) return { label: value.toFixed(2), color: 'var(--status-green)' };
+    if (value >= amber) return { label: value.toFixed(2), color: 'var(--status-amber)' };
+    return { label: value.toFixed(2), color: 'var(--status-red)' };
+  }
+};
+
+/* ============================================================
    Solver — Constraint-Aware Resource Scheduler
    ============================================================ */
 const Solver = {
@@ -10674,117 +11616,108 @@ const Governance = {
     const forums = App.data.governance_forums || [];
     const f = forums[forumIdx];
     if (!f) return;
+    Progress.start('Building Briefing Pack', { msg: 'Gathering forum data…', indeterminate: true, cancelable: false });
     const esc = Dashboard.esc;
     const projects = App.data.projects.filter(p => p.governance_forum === f.name);
-    const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-    const ragDot = (rag) => {
-      const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8';
-      return '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + c + '"></span>';
-    };
-
-    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Briefing Pack - ' + esc(f.name) + '</title>' +
-      '<style>body{font-family:Segoe UI,system-ui,sans-serif;margin:40px;color:#1e293b;font-size:12px}' +
-      'h1{font-size:18px;border-bottom:2px solid #3b82f6;padding-bottom:8px}' +
-      'h2{font-size:14px;margin-top:20px;color:#475569}' +
-      'table{width:100%;border-collapse:collapse;margin:8px 0}' +
-      'th{background:#f1f5f9;font-size:11px;text-align:left;padding:6px 8px;border:1px solid #e2e8f0}' +
-      'td{padding:5px 8px;border:1px solid #e2e8f0;font-size:11px}' +
-      '.meta{color:#64748b;font-size:11px;margin-bottom:16px}' +
-      '@media print{body{margin:20px}}</style></head><body>';
-
-    html += '<h1>' + esc(f.name) + ' - Briefing Pack</h1>';
-    html += '<div class="meta">Generated: ' + today + ' | Cadence: ' + (f.cadence || 'N/A') + ' | Customer: ' + esc(f.customer || '') + ' | ' + projects.length + ' projects</div>';
-
-    // Escalations section (overdue actions)
+    const ragDot = Report._ragDot.bind(Report);
     const bpTodayStr = new Date().toISOString().split('T')[0];
+    const sections = [];
+
+    // Section: Executive Summary
+    if (f.customer) {
+      sections.push({ id: 'forum-exec', title: 'Executive Summary', html: Report.execSummaryHtml(f.customer) });
+    }
+
+    // Section: Escalations (overdue actions)
     const overdueActions = (f.actions || []).filter(a => a.status !== 'Done' && a.due_date && a.due_date < bpTodayStr);
     if (overdueActions.length) {
-      html += '<h2 style="color:#ef4444">Escalations (' + overdueActions.length + ' Overdue Actions)</h2>';
-      html += '<table><tr><th>Action</th><th>Owner</th><th>Due Date</th><th>Days Overdue</th><th>Related Project</th></tr>';
+      let html = '<table><tr><th>Action</th><th>Owner</th><th>Due Date</th><th>Days Overdue</th><th>Related Project</th></tr>';
       overdueActions.forEach(a => {
         const daysOver = Math.round((new Date() - new Date(a.due_date)) / 86400000);
         const relProject = a.projectId ? (App.data.projects.find(p => p.id === a.projectId) || {}).name || '' : '';
-        html += '<tr style="background:#fef2f2"><td>' + esc(a.description || '') + '</td><td>' + esc(a.owner || '') + '</td><td>' + (a.due_date || '') + '</td><td style="font-weight:700;color:#ef4444">' + daysOver + '</td><td>' + esc(relProject) + '</td></tr>';
+        html += '<tr class="row-red"><td>' + esc(a.description || '') + '</td><td>' + esc(a.owner || '') + '</td><td>' + (a.due_date || '') + '</td><td style="font-weight:700;color:#ef4444">' + daysOver + '</td><td>' + esc(relProject) + '</td></tr>';
       });
       html += '</table>';
+      sections.push({ id: 'forum-escalations', title: 'Escalations · ' + overdueActions.length + ' overdue', html });
     }
 
-    // Decisions section
-    const decisions = f.decisions || [];
+    // Section: Decisions
+    const decisions = (f.decisions || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     if (decisions.length) {
-      html += '<h2>Decisions (' + decisions.length + ')</h2>';
-      html += '<table><tr><th>Date</th><th>Decision</th><th>Linked Projects</th><th>Recorded By</th></tr>';
-      decisions.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).forEach(d => {
+      let html = '<table><tr><th>Date</th><th>Decision</th><th>Linked Projects</th><th>Recorded By</th></tr>';
+      decisions.forEach(d => {
         const linkedNames = (d.linkedProjects || []).map(pid => { const pr = App.data.projects.find(p => p.id === pid); return pr ? esc(pr.name) : pid; }).join(', ');
         html += '<tr><td>' + esc(d.date || '') + '</td><td>' + esc(d.text || '') + '</td><td>' + linkedNames + '</td><td>' + esc(d.recordedBy || '') + '</td></tr>';
       });
       html += '</table>';
+      sections.push({ id: 'forum-decisions', title: 'Decisions Log · ' + decisions.length, html });
     }
 
-    // Project status table
-    html += '<h2>Project Status</h2>';
-    html += '<table><tr><th>#</th><th>Project</th><th>Status</th><th>RAG</th><th>Manager</th><th>Sprint</th><th>Notes</th></tr>';
-    projects.sort((a, b) => (a.priority || 999) - (b.priority || 999)).forEach(p => {
-      const rowBg = p.status === 'Blocked' ? ' style="background:#fef2f2"' : p.status === 'At Risk' ? ' style="background:#fffbeb"' : '';
-      html += '<tr' + rowBg + '><td>' + (p.priority || '') + '</td>' +
-        '<td>' + esc(p.name) + '</td>' +
-        '<td><strong>' + esc(p.status) + '</strong></td>' +
-        '<td>' + ragDot(p.rag_schedule) + ' ' + ragDot(p.rag_resourcing) + ' ' + ragDot(p.rag_scope) + '</td>' +
-        '<td>' + esc(p.manager || '') + '</td>' +
-        '<td>' + esc(p.current_sprint || '') + '</td>' +
-        '<td style="max-width:200px">' + esc((p.notes || '').substring(0, 100)) + '</td></tr>';
-    });
-    html += '</table>';
-
-    // Risks across these projects
-    const allRisks = [];
-    projects.forEach(p => {
-      (p.risks_register || []).forEach(r => {
-        allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, date: r.resolution_date });
+    // Section: Project Status
+    if (projects.length) {
+      const sorted = projects.slice().sort((a, b) => (a.priority || 999) - (b.priority || 999));
+      let html = '<table><tr><th>#</th><th>Project</th><th>Status</th><th>RAG</th><th>Manager</th><th>Sprint</th><th>Notes</th></tr>';
+      sorted.forEach(p => {
+        const rowCls = p.status === 'Blocked' ? 'row-red' : p.status === 'At Risk' ? 'row-amber' : '';
+        html += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+          '<td>' + (p.priority || '') + '</td>' +
+          '<td><strong>' + esc(p.name) + '</strong></td>' +
+          '<td>' + esc(p.status) + '</td>' +
+          '<td>' + ragDot(p.rag_schedule) + ' ' + ragDot(p.rag_resourcing) + ' ' + ragDot(p.rag_scope) + '</td>' +
+          '<td>' + esc(p.manager || '') + '</td>' +
+          '<td>' + esc(p.current_sprint || '') + '</td>' +
+          '<td style="max-width:200px">' + esc((p.notes || '').substring(0, 100)) + '</td></tr>';
       });
-    });
+      html += '</table>';
+      sections.push({ id: 'forum-status', title: 'Project Status · ' + projects.length, html });
+    }
+
+    // Section: Risks
+    const allRisks = [];
+    projects.forEach(p => (p.risks_register || []).forEach(r => {
+      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date });
+    }));
     if (allRisks.length) {
-      html += '<h2>Open Risks (' + allRisks.length + ')</h2>';
-      // Risk severity heatmap
-      html += '<h3 style="font-size:12px;margin-top:12px">Risk Severity Matrix</h3>';
-      html += '<table style="width:auto;margin:6px 0"><tr><th></th>';
-      for (var bpi = 1; bpi <= 5; bpi++) html += '<th style="width:36px;text-align:center">P' + bpi + '</th>';
+      allRisks.sort((a, b) => (b.impact * b.probability) - (a.impact * a.probability));
+      let html = '<h3 style="margin-top:0">Risk Severity Matrix</h3><table style="width:auto"><tr><th></th>';
+      for (let p = 1; p <= 5; p++) html += '<th style="width:34px;text-align:center">P' + p + '</th>';
       html += '</tr>';
-      for (var bii = 5; bii >= 1; bii--) {
-        html += '<tr><td style="font-weight:600;text-align:right;padding-right:8px">I' + bii + '</td>';
-        for (var bpj = 1; bpj <= 5; bpj++) {
-          var bScore = bii * bpj;
-          var bCount = allRisks.filter(function(br) { return (br.impact || 3) === bii && (br.probability || 3) === bpj; }).length;
-          var bBg = bScore >= 15 ? '#fef2f2' : bScore >= 8 ? '#fffbeb' : '#f0fdf4';
-          html += '<td style="text-align:center;background:' + bBg + ';font-weight:' + (bCount > 0 ? '700' : '400') + '">' + (bCount > 0 ? bCount : '') + '</td>';
+      for (let i = 5; i >= 1; i--) {
+        html += '<tr><td style="font-weight:700;text-align:right">I' + i + '</td>';
+        for (let p = 1; p <= 5; p++) {
+          const score = i * p;
+          const count = allRisks.filter(k => k.impact === i && k.probability === p).length;
+          const bg = score >= 15 ? '#fef2f2' : score >= 8 ? '#fffbeb' : '#f0fdf4';
+          html += '<td style="text-align:center;background:' + bg + ';font-weight:' + (count ? '700' : '400') + '">' + (count || '') + '</td>';
         }
         html += '</tr>';
       }
       html += '</table>';
-      html += '<table><tr><th>Project</th><th>Risk</th><th>I</th><th>P</th><th>Score</th><th>Mitigation</th><th>Owner</th><th>Resolution</th></tr>';
-      allRisks.sort(function(a, b) { return ((b.impact || 3) * (b.probability || 3)) - ((a.impact || 3) * (a.probability || 3)); });
+      html += '<h3>Top Risks</h3><table><tr><th>Project</th><th>Risk</th><th>I</th><th>P</th><th>Score</th><th>Mitigation</th><th>Owner</th><th>Resolution</th></tr>';
       allRisks.forEach(r => {
-        const overdue = r.date && r.date < new Date().toISOString().split('T')[0];
-        const rScore = (r.impact || 3) * (r.probability || 3);
-        html += '<tr' + (overdue ? ' style="background:#fef2f2"' : '') + '><td>' + esc(r.project) + '</td>' +
-          '<td>' + esc((r.description || '').substring(0, 80)) + '</td>' +
-          '<td style="text-align:center">' + (r.impact || 3) + '</td>' +
-          '<td style="text-align:center">' + (r.probability || 3) + '</td>' +
-          '<td style="text-align:center;font-weight:700">' + rScore + '</td>' +
+        const overdue = r.date && r.date < bpTodayStr;
+        const score = r.impact * r.probability;
+        const rowCls = overdue || score >= 15 ? 'row-red' : score >= 8 ? 'row-amber' : '';
+        html += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+          '<td>' + esc(r.project) + '</td>' +
+          '<td>' + esc((r.description || '').substring(0, 100)) + '</td>' +
+          '<td style="text-align:center">' + r.impact + '</td>' +
+          '<td style="text-align:center">' + r.probability + '</td>' +
+          '<td style="text-align:center;font-weight:700">' + score + '</td>' +
           '<td>' + esc((r.action || '').substring(0, 80)) + '</td>' +
           '<td>' + esc(r.owner || '') + '</td>' +
           '<td>' + (r.date ? new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '') + (overdue ? ' <strong style="color:#ef4444">OVERDUE</strong>' : '') + '</td></tr>';
       });
       html += '</table>';
+      sections.push({ id: 'forum-risks', title: 'Open Risks · ' + allRisks.length, html });
     }
 
-    // Recent changes from audit log
+    // Section: Recent Changes
     const projectIds = new Set(projects.map(p => p.id));
     const since = f.last_date ? new Date(f.last_date) : new Date(Date.now() - 30 * 86400000);
     const recentChanges = (App.data.audit_log || []).filter(e => projectIds.has(e.projectId) && new Date(e.timestamp) >= since).reverse().slice(0, 30);
     if (recentChanges.length) {
-      html += '<h2>Recent Changes (since ' + since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ')</h2>';
-      html += '<table><tr><th>Date</th><th>Project</th><th>Change</th></tr>';
+      let html = '<table><tr><th>Date</th><th>Project</th><th>Change</th></tr>';
       recentChanges.forEach(e => {
         const dt = new Date(e.timestamp);
         html += '<tr><td>' + dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) + '</td>' +
@@ -10792,13 +11725,513 @@ const Governance = {
           '<td>' + esc(e.field) + ': ' + esc(String(e.oldValue || '').substring(0, 25)) + ' &rarr; ' + esc(String(e.newValue || '').substring(0, 25)) + '</td></tr>';
       });
       html += '</table>';
+      sections.push({ id: 'forum-changes', title: 'Recent Changes (since ' + since.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ')', html });
     }
 
-    html += '<script>window.onload=function(){window.print()}<\/script></body></html>';
+    const doc = Report.buildDoc({
+      customer: f.customer || '',
+      title: f.name + ' — Briefing Pack',
+      subtitle: 'Governance Forum · ' + (f.cadence || 'Ad-hoc') + ' · ' + projects.length + ' project' + (projects.length === 1 ? '' : 's'),
+      reportType: 'Briefing Pack',
+      sections,
+      includeAppendix: true
+    });
+    Report.open(doc);
+    Progress.done('Briefing pack opened — use Print > Save as PDF');
+  }
+};
+/* ============================================================
+   Report — Reusable customer-branded report framework
+   ============================================================ */
+const Report = {
+  branding(customer) {
+    const settings = (App.data && App.data.settings) || {};
+    const b = (settings.branding || {})[customer] || {};
+    const defaultColor = (App.getCustomerColor && customer) ? App.getCustomerColor(customer) : '#3b82f6';
+    return {
+      logo: b.logo || '',
+      primaryColor: b.primaryColor || defaultColor,
+      secondaryColor: b.secondaryColor || '#475569',
+      companyName: b.companyName || customer || 'Portfolio',
+      footerText: b.footerText || 'Confidential — Internal Use Only'
+    };
+  },
+
+  setBranding(customer, patch) {
+    if (!App.data) return;
+    if (!App.data.settings) App.data.settings = {};
+    if (!App.data.settings.branding) App.data.settings.branding = {};
+    App.data.settings.branding[customer] = Object.assign({}, App.data.settings.branding[customer] || {}, patch);
+    App.save && App.save();
+  },
+
+  _baseStyles(brand) {
+    return '<style>' +
+      ':root{--rp-primary:' + brand.primaryColor + ';--rp-secondary:' + brand.secondaryColor + ';}' +
+      '*{box-sizing:border-box}' +
+      'body{font-family:Segoe UI,system-ui,-apple-system,sans-serif;margin:0;color:#1e293b;font-size:12px;line-height:1.45}' +
+      '.page{page-break-after:always;padding:36px 42px 72px 42px;position:relative;min-height:100vh}' +
+      '.page:last-of-type{page-break-after:auto}' +
+      '.page-header{position:running(header);display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#64748b;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:18px}' +
+      '.page-footer{position:running(footer);font-size:9px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:6px;display:flex;justify-content:space-between}' +
+      'h1{font-size:22px;color:var(--rp-primary);margin:0 0 4px 0;font-weight:700;letter-spacing:-0.2px}' +
+      'h2{font-size:14px;color:var(--rp-secondary);margin:22px 0 6px 0;padding-bottom:4px;border-bottom:1px solid #e2e8f0;font-weight:700}' +
+      'h3{font-size:12px;color:#334155;margin:12px 0 4px 0;font-weight:700}' +
+      'p{margin:4px 0}' +
+      'table{width:100%;border-collapse:collapse;margin:6px 0;font-size:11px}' +
+      'th{background:#f1f5f9;font-size:10px;text-align:left;padding:6px 8px;border:1px solid #e2e8f0;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;color:#475569}' +
+      'td{padding:5px 8px;border:1px solid #e2e8f0;vertical-align:top}' +
+      'tr.row-red td{background:#fef2f2}' +
+      'tr.row-amber td{background:#fffbeb}' +
+      '.rp-cover{display:flex;flex-direction:column;justify-content:space-between;height:100vh;padding:60px 60px 80px 60px}' +
+      '.rp-cover-top{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}' +
+      '.rp-cover-brand{display:flex;align-items:center;gap:12px}' +
+      '.rp-cover-logo{width:64px;height:64px;border-radius:12px;background:var(--rp-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;letter-spacing:-1px;object-fit:contain;overflow:hidden}' +
+      '.rp-cover-logo img{width:100%;height:100%;object-fit:contain}' +
+      '.rp-cover-name{font-size:16px;font-weight:700;color:#1e293b}' +
+      '.rp-cover-role{font-size:11px;color:#64748b;letter-spacing:0.5px;text-transform:uppercase}' +
+      '.rp-cover-main{margin-top:auto}' +
+      '.rp-cover-title{font-size:42px;font-weight:800;color:#0f172a;line-height:1.1;margin:0 0 8px 0;letter-spacing:-1px}' +
+      '.rp-cover-sub{font-size:16px;color:#475569;font-weight:500;margin:0 0 32px 0}' +
+      '.rp-cover-bar{height:6px;background:var(--rp-primary);width:120px;margin:12px 0 28px 0;border-radius:3px}' +
+      '.rp-cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;border-top:1px solid #e2e8f0;padding-top:20px}' +
+      '.rp-cover-meta-label{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:4px}' +
+      '.rp-cover-meta-val{font-size:13px;color:#1e293b;font-weight:600}' +
+      '.rp-toc-list{list-style:none;padding:0;margin:12px 0;border-top:1px solid #e2e8f0}' +
+      '.rp-toc-list li{display:flex;align-items:baseline;gap:8px;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px}' +
+      '.rp-toc-list li .rp-toc-no{font-weight:700;color:var(--rp-primary);min-width:28px}' +
+      '.rp-toc-list li .rp-toc-title{flex:1}' +
+      '.rp-toc-list li .rp-toc-page{color:#94a3b8;font-variant-numeric:tabular-nums}' +
+      '.rp-section-header{display:flex;align-items:center;gap:10px;margin-bottom:6px}' +
+      '.rp-section-no{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:var(--rp-primary);color:#fff;font-size:12px;font-weight:700}' +
+      '.rp-exec-summary{background:#f8fafc;border-left:4px solid var(--rp-primary);padding:14px 18px;margin:14px 0;border-radius:6px;font-size:13px;line-height:1.6}' +
+      '.rp-exec-summary p{margin:0}' +
+      '.rp-exec-summary p + p{margin-top:6px}' +
+      '.rp-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:16px 0}' +
+      '.rp-kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px}' +
+      '.rp-kpi-label{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;font-weight:700;margin-bottom:4px}' +
+      '.rp-kpi-val{font-size:22px;font-weight:700;color:#0f172a}' +
+      '.rp-kpi-sub{font-size:10px;color:#64748b;margin-top:2px}' +
+      '.rp-red{color:#ef4444;font-weight:700}.rp-amber{color:#f59e0b;font-weight:700}.rp-green{color:#22c55e;font-weight:700}' +
+      '.rp-dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle}' +
+      '.rp-appendix{font-size:11px;color:#475569}' +
+      '.rp-appendix dt{font-weight:700;color:#1e293b;margin-top:8px}' +
+      '.rp-appendix dd{margin:2px 0 2px 0;padding-left:0}' +
+      '@page{size:A4;margin:22mm 18mm 24mm 18mm}' +
+      '@media print{body{margin:0}.page{min-height:auto;padding:0 0 18px 0}.page-header,.page-footer{position:fixed;left:18mm;right:18mm}.page-header{top:8mm}.page-footer{bottom:10mm}.rp-cover{min-height:calc(100vh - 44mm);height:auto}' +
+        '.rp-no-print{display:none!important}' +
+      '}' +
+      '.rp-toolbar{position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:9999}' +
+      '.rp-toolbar button{background:var(--rp-primary);color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.18)}' +
+      '.rp-toolbar button.secondary{background:#fff;color:#334155;border:1px solid #cbd5e1}' +
+      '</style>';
+  },
+
+  _logoHtml(brand) {
+    if (brand.logo) return '<div class="rp-cover-logo"><img src="' + brand.logo + '" alt=""/></div>';
+    const initial = (brand.companyName || '?').charAt(0).toUpperCase();
+    return '<div class="rp-cover-logo">' + initial + '</div>';
+  },
+
+  _coverPage({ brand, title, subtitle, reportType, customer, sectionsCount }) {
+    const esc = Dashboard.esc;
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    return '<div class="page rp-cover">' +
+      '<div class="rp-cover-top">' +
+        '<div class="rp-cover-brand">' + this._logoHtml(brand) +
+          '<div><div class="rp-cover-name">' + esc(brand.companyName) + '</div>' +
+            '<div class="rp-cover-role">' + esc(reportType || 'Report') + '</div></div>' +
+        '</div>' +
+        '<div style="text-align:right;font-size:10px;color:#64748b"><div style="font-weight:700;color:#1e293b">Portfolio Command Centre</div><div>' + dateStr + '</div></div>' +
+      '</div>' +
+      '<div class="rp-cover-main">' +
+        '<div class="rp-cover-bar"></div>' +
+        '<h1 class="rp-cover-title">' + title + '</h1>' +
+        (subtitle ? '<p class="rp-cover-sub">' + subtitle + '</p>' : '') +
+        '<div class="rp-cover-meta">' +
+          '<div><div class="rp-cover-meta-label">Customer</div><div class="rp-cover-meta-val">' + esc(customer || '—') + '</div></div>' +
+          '<div><div class="rp-cover-meta-label">Generated</div><div class="rp-cover-meta-val">' + dateStr + '</div></div>' +
+          '<div><div class="rp-cover-meta-label">Sections</div><div class="rp-cover-meta-val">' + (sectionsCount || '—') + '</div></div>' +
+          '<div><div class="rp-cover-meta-label">Classification</div><div class="rp-cover-meta-val">' + esc(brand.footerText.split('—')[0].trim() || 'Internal') + '</div></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  },
+
+  _tocPage(sections) {
+    if (!sections || !sections.length) return '';
+    const esc = Dashboard.esc;
+    return '<div class="page"><h1>Contents</h1>' +
+      '<ol class="rp-toc-list">' +
+      sections.map((s, i) => '<li><span class="rp-toc-no">' + String(i + 1).padStart(2, '0') + '</span>' +
+        '<span class="rp-toc-title"><a href="#' + esc(s.id) + '" style="color:inherit;text-decoration:none">' + esc(s.title) + '</a></span>' +
+        '<span class="rp-toc-page">§' + (i + 1) + '</span></li>').join('') +
+      '</ol>' +
+    '</div>';
+  },
+
+  _appendix(customer) {
+    const esc = Dashboard.esc;
+    const version = (App.data && App.data.schema_version) || '1.0';
+    const projectCount = App.data ? App.data.projects.length : 0;
+    return '<div class="page rp-appendix" id="appendix"><h1>Appendix</h1>' +
+      '<h2>Glossary</h2>' +
+      '<dl>' +
+        '<dt>RAG</dt><dd>Red / Amber / Green status indicator across three dimensions: Schedule Health, Resource Health, Scope Health.</dd>' +
+        '<dt>Risk Score</dt><dd>Impact (1–5) × Probability (1–5). Severe risks score ≥ 15.</dd>' +
+        '<dt>Velocity</dt><dd>Points delivered per sprint, used to forecast completion.</dd>' +
+        '<dt>Hardening Week</dt><dd>Week 5 of the 5-week sprint cycle, reserved for stabilisation, UAT, and release activities.</dd>' +
+        '<dt>Governance Forum</dt><dd>A recurring meeting where portfolio decisions, escalations, and approvals are recorded.</dd>' +
+      '</dl>' +
+      '<h2>Report Metadata</h2>' +
+      '<table><tr><th>Property</th><th>Value</th></tr>' +
+        '<tr><td>Generated</td><td>' + new Date().toISOString() + '</td></tr>' +
+        '<tr><td>Customer scope</td><td>' + esc(customer || '—') + '</td></tr>' +
+        '<tr><td>Data schema version</td><td>' + esc(String(version)) + '</td></tr>' +
+        '<tr><td>Projects in dataset</td><td>' + projectCount + '</td></tr>' +
+        '<tr><td>Source</td><td>Portfolio Command Centre</td></tr>' +
+      '</table>' +
+    '</div>';
+  },
+
+  buildDoc({ customer, title, subtitle, sections, bodyHtml, reportType, includeAppendix }) {
+    const brand = this.branding(customer);
+    const esc = Dashboard.esc;
+    const today = new Date();
+    const sectionList = sections || [];
+    const sectionsHtml = sectionList.length
+      ? sectionList.map((s, i) => '<div class="page" id="' + esc(s.id) + '">' +
+          '<div class="rp-section-header"><span class="rp-section-no">' + (i + 1) + '</span><h1 style="margin:0">' + esc(s.title) + '</h1></div>' +
+          s.html +
+        '</div>').join('')
+      : (bodyHtml ? '<div class="page">' + bodyHtml + '</div>' : '');
+
+    const appendixHtml = includeAppendix === false ? '' : this._appendix(customer);
+    const dateStr = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
+      '<title>' + esc(title) + ' — ' + esc(brand.companyName) + '</title>' +
+      this._baseStyles(brand) +
+      '</head><body>' +
+      '<div class="rp-toolbar rp-no-print">' +
+        '<button onclick="window.print()">Print / Save as PDF</button>' +
+        '<button class="secondary" onclick="window.close()">Close</button>' +
+      '</div>' +
+      this._coverPage({ brand, title: esc(title), subtitle: subtitle ? esc(subtitle) : '', reportType, customer, sectionsCount: sectionList.length || (bodyHtml ? 1 : 0) }) +
+      this._tocPage(sectionList) +
+      sectionsHtml +
+      appendixHtml +
+      '<div class="page-footer rp-no-print" style="text-align:center;font-size:10px;color:#94a3b8;padding:14px 0">' +
+        esc(brand.footerText) + ' · Generated ' + dateStr + ' · ' + esc(brand.companyName) +
+      '</div>' +
+      '<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},250)})<\/script>' +
+    '</body></html>';
+  },
+
+  open(html) {
     const w = window.open('', '_blank');
+    if (!w) { App.toast('Popup blocked — allow popups for this site', 'error'); return; }
     w.document.write(html);
     w.document.close();
-    App.toast('Briefing pack opened — use Print > Save as PDF', 'success');
+  },
+
+  // Reusable narrative generator for reports (returns HTML paragraphs)
+  execSummaryHtml(customer) {
+    if (!App.data || !customer) return '';
+    const esc = Dashboard.esc;
+    const all = App.data.projects.filter(p => p.customer === customer);
+    const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    const atRisk = active.filter(p => p.status === 'At Risk').length;
+    const blocked = active.filter(p => p.status === 'Blocked').length;
+    const onTrack = active.filter(p =>
+      (p.rag_schedule === 'Green' || !p.rag_schedule) &&
+      (p.rag_resourcing === 'Green' || !p.rag_resourcing) &&
+      (p.rag_scope === 'Green' || !p.rag_scope)
+    ).length;
+    const onTrackPct = active.length ? Math.round((onTrack / active.length) * 100) : 0;
+
+    // Velocity over completed sprints
+    const sprints = (App.data.sprints || []).slice();
+    const now = new Date();
+    const velData = [];
+    sprints.forEach(s => {
+      if (s.end_date && new Date(s.end_date) > now) return;
+      let committed = 0, completed = 0;
+      all.forEach(p => Object.values(p.skill_splits || {}).forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (sp.sprint !== s.sprint_id) return;
+          committed += sp.points || 0;
+          completed += (sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0));
+        });
+      }));
+      if (committed > 0) velData.push({ committed, completed });
+    });
+    const last3 = velData.slice(-3);
+    const velCommitted = last3.reduce((a, d) => a + d.committed, 0);
+    const velCompleted = last3.reduce((a, d) => a + d.completed, 0);
+    const velPct = velCommitted ? Math.round((velCompleted / velCommitted) * 100) : 0;
+    let velTrend = 'flat';
+    if (last3.length >= 2) {
+      const f0 = last3[0].committed ? last3[0].completed / last3[0].committed : 0;
+      const fN = last3[last3.length - 1].committed ? last3[last3.length - 1].completed / last3[last3.length - 1].committed : 0;
+      if (fN > f0 + 0.05) velTrend = 'up';
+      else if (fN < f0 - 0.05) velTrend = 'down';
+    }
+
+    const todayIso = new Date().toISOString().split('T')[0];
+    const milestones30 = active.filter(p => {
+      const d = p.hard_deadline || p.target_date;
+      if (!d) return false;
+      const diff = (new Date(d) - now) / 86400000;
+      return diff >= 0 && diff <= 30;
+    }).length;
+    const forums = (App.data.governance_forums || []).filter(f => f.customer === customer);
+    let overdueActions = 0;
+    forums.forEach(f => (f.actions || []).forEach(a => {
+      if (a.status !== 'Done' && a.due_date && a.due_date < todayIso) overdueActions++;
+    }));
+
+    let openRisks = 0, severeRisks = 0;
+    active.forEach(p => (p.risks_register || []).forEach(r => {
+      openRisks++;
+      if ((r.impact || 3) * (r.probability || 3) >= 15) severeRisks++;
+    }));
+
+    const healthLabel = blocked > 0 ? '<span class="rp-red">Red</span>' : (atRisk > 0 ? '<span class="rp-amber">Amber</span>' : '<span class="rp-green">Green</span>');
+    const paras = [];
+
+    paras.push('<strong>' + esc(customer) + ' portfolio</strong> carries <strong>' + active.length + '</strong> active ' +
+      (active.length === 1 ? 'project' : 'projects') + ' with a headline health of ' + healthLabel +
+      (active.length ? ' — <strong>' + onTrackPct + '%</strong> fully on-track, <span class="rp-amber">' + atRisk + ' at risk</span>, <span class="rp-red">' + blocked + ' blocked</span>' : '') + '.');
+
+    if (last3.length) {
+      const trendWord = velTrend === 'up' ? '<span class="rp-green">improving</span>' : velTrend === 'down' ? '<span class="rp-red">slipping</span>' : 'stable';
+      paras.push('Over the last ' + last3.length + ' completed sprint' + (last3.length === 1 ? '' : 's') +
+        ', teams delivered <strong>' + velCompleted + ' of ' + velCommitted + ' pts</strong> (' + velPct + '%), trend ' + trendWord + '.');
+    } else {
+      paras.push('No completed sprints with committed work yet — velocity baseline pending.');
+    }
+
+    const fw = [];
+    if (milestones30) fw.push('<strong>' + milestones30 + '</strong> milestone' + (milestones30 === 1 ? '' : 's') + ' within 30 days');
+    if (overdueActions) fw.push('<span class="rp-red">' + overdueActions + ' overdue action' + (overdueActions === 1 ? '' : 's') + '</span>');
+    const rk = [];
+    if (openRisks) {
+      rk.push('<strong>' + openRisks + '</strong> open risk' + (openRisks === 1 ? '' : 's'));
+      if (severeRisks) rk.push('of which <span class="rp-red">' + severeRisks + ' severe</span>');
+    }
+    const mixed = [];
+    if (rk.length) mixed.push(rk.join(' '));
+    if (fw.length) mixed.push('Forward: ' + fw.join(' · '));
+    if (mixed.length) paras.push(mixed.join('. ') + '.');
+
+    return '<div class="rp-exec-summary">' + paras.map(p => '<p>' + p + '</p>').join('') + '</div>';
+  },
+
+  _ragDot(rag) {
+    const c = { 'Green': '#22c55e', 'Amber': '#f59e0b', 'Red': '#ef4444' }[rag] || '#94a3b8';
+    return '<span class="rp-dot" style="background:' + c + '"></span>';
+  },
+
+  // New: portfolio-wide customer pack
+  exportPortfolioPack(customer) {
+    if (!App.data || !customer) { App.toast('Select a customer first', 'error'); return; }
+    Progress.start('Building Portfolio Pack', { msg: 'Preparing sections…', indeterminate: true, cancelable: false });
+    const esc = Dashboard.esc;
+    const now = new Date();
+    const all = App.data.projects.filter(p => p.customer === customer);
+    const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    const sections = [];
+
+    // Section 1: Executive Summary
+    const summaryKpis = [
+      { label: 'Active', val: active.length },
+      { label: 'On Track', val: active.filter(p => (p.rag_schedule === 'Green' || !p.rag_schedule) && (p.rag_resourcing === 'Green' || !p.rag_resourcing) && (p.rag_scope === 'Green' || !p.rag_scope)).length, cls: 'rp-green' },
+      { label: 'At Risk', val: active.filter(p => p.status === 'At Risk').length, cls: 'rp-amber' },
+      { label: 'Blocked', val: active.filter(p => p.status === 'Blocked').length, cls: 'rp-red' },
+      { label: 'Complete (FY)', val: all.filter(p => p.status === 'Complete' || p.status === 'Closed').length }
+    ];
+    const kpiHtml = '<div class="rp-kpis">' + summaryKpis.map(k =>
+      '<div class="rp-kpi"><div class="rp-kpi-label">' + esc(k.label) + '</div>' +
+      '<div class="rp-kpi-val ' + (k.cls || '') + '">' + k.val + '</div></div>'
+    ).join('') + '</div>';
+
+    // Portfolio-wide EVM roll-up
+    let evmBlock = '';
+    try {
+      let BAC = 0, EV = 0, PV = 0, AC = 0, spiCount = 0, cpiCount = 0, spiSum = 0, cpiSum = 0;
+      active.forEach(p => {
+        const ev = Forecast.earnedValue(p);
+        if (!ev || ev.BAC === 0) return;
+        BAC += ev.BAC; EV += ev.EV; AC += ev.AC;
+        if (ev.PV != null) PV += ev.PV;
+        if (ev.SPI != null) { spiCount++; spiSum += ev.SPI; }
+        if (ev.CPI != null) { cpiCount++; cpiSum += ev.CPI; }
+      });
+      if (BAC > 0) {
+        const portSPI = spiCount ? (spiSum / spiCount) : null;
+        const portCPI = cpiCount ? (cpiSum / cpiCount) : null;
+        const spiClass = portSPI == null ? '' : portSPI >= 0.95 ? 'rp-green' : portSPI >= 0.8 ? 'rp-amber' : 'rp-red';
+        const cpiClass = portCPI == null ? '' : portCPI >= 0.95 ? 'rp-green' : portCPI >= 0.8 ? 'rp-amber' : 'rp-red';
+        const evmKpis = [
+          { label: 'BAC (pts)', val: BAC },
+          { label: 'EV (earned)', val: EV },
+          { label: 'PV (planned)', val: Math.round(PV) },
+          { label: 'AC (committed)', val: AC },
+          { label: 'Avg SPI', val: portSPI == null ? '—' : portSPI.toFixed(2), cls: spiClass },
+          { label: 'Avg CPI', val: portCPI == null ? '—' : portCPI.toFixed(2), cls: cpiClass }
+        ];
+        evmBlock = '<h3 style="margin-top:18px">Earned Value Roll-up</h3>' +
+          '<div class="rp-kpis">' + evmKpis.map(k =>
+            '<div class="rp-kpi"><div class="rp-kpi-label">' + esc(k.label) + '</div>' +
+            '<div class="rp-kpi-val ' + (k.cls || '') + '">' + k.val + '</div></div>'
+          ).join('') + '</div>';
+      }
+    } catch (e) { /* ignore */ }
+
+    sections.push({ id: 'exec', title: 'Executive Summary', html: this.execSummaryHtml(customer) + kpiHtml + evmBlock });
+
+    // Section 2: Portfolio Status by Project
+    const sorted = all.slice().sort((a, b) => (a.priority || 999) - (b.priority || 999));
+    let status = '<table><tr><th>#</th><th>Project</th><th>Status</th><th>RAG</th><th>Manager</th><th>Sprint</th><th>Size</th><th>Notes</th></tr>';
+    sorted.forEach(p => {
+      const rowCls = p.status === 'Blocked' ? 'row-red' : p.status === 'At Risk' ? 'row-amber' : '';
+      status += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+        '<td>' + (p.priority || '') + '</td>' +
+        '<td><strong>' + esc(p.name) + '</strong></td>' +
+        '<td>' + esc(p.status) + '</td>' +
+        '<td>' + this._ragDot(p.rag_schedule) + ' ' + this._ragDot(p.rag_resourcing) + ' ' + this._ragDot(p.rag_scope) + '</td>' +
+        '<td>' + esc(p.manager || '') + '</td>' +
+        '<td>' + esc((p.current_sprint || '').replace(/^CY\d+-/, '') || '—') + '</td>' +
+        '<td style="text-align:right">' + (p.size_total || '') + '</td>' +
+        '<td style="max-width:240px">' + esc((p.notes || '').substring(0, 120)) + '</td></tr>';
+    });
+    status += '</table>';
+    sections.push({ id: 'status', title: 'Portfolio Status', html: status });
+
+    // Section 3: Upcoming Milestones
+    const milestones = active.filter(p => {
+      const d = p.hard_deadline || p.target_date;
+      if (!d) return false;
+      const diff = (new Date(d) - now) / 86400000;
+      return diff >= -3 && diff <= 60;
+    }).sort((a, b) => new Date(a.hard_deadline || a.target_date) - new Date(b.hard_deadline || b.target_date));
+    if (milestones.length) {
+      let m = '<table><tr><th>Project</th><th>Date</th><th>Type</th><th>Days</th><th>Manager</th><th>Status</th></tr>';
+      milestones.forEach(p => {
+        const dl = p.hard_deadline || p.target_date;
+        const days = Math.round((new Date(dl) - now) / 86400000);
+        const rowCls = days < 0 ? 'row-red' : days <= 7 ? 'row-amber' : '';
+        m += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+          '<td>' + esc(p.name) + '</td>' +
+          '<td>' + new Date(dl).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + '</td>' +
+          '<td>' + (p.hard_deadline ? 'Hard Deadline' : 'Target') + '</td>' +
+          '<td style="font-weight:700">' + (days < 0 ? days + 'd overdue' : days + 'd') + '</td>' +
+          '<td>' + esc(p.manager || '') + '</td>' +
+          '<td>' + esc(p.status) + '</td></tr>';
+      });
+      m += '</table>';
+      sections.push({ id: 'milestones', title: 'Upcoming Milestones (next 60 days)', html: m });
+    }
+
+    // Section 4: Risks
+    const allRisks = [];
+    active.forEach(p => (p.risks_register || []).forEach(r => {
+      allRisks.push({ project: p.name, description: r.description, action: r.action, owner: r.owner, impact: r.impact || 3, probability: r.probability || 3, date: r.resolution_date });
+    }));
+    if (allRisks.length) {
+      allRisks.sort((a, b) => (b.impact * b.probability) - (a.impact * a.probability));
+      let r = '<h3 style="margin-top:0">Risk Severity Matrix</h3><table style="width:auto"><tr><th></th>';
+      for (let p = 1; p <= 5; p++) r += '<th style="width:34px;text-align:center">P' + p + '</th>';
+      r += '</tr>';
+      for (let i = 5; i >= 1; i--) {
+        r += '<tr><td style="font-weight:700;text-align:right">I' + i + '</td>';
+        for (let p = 1; p <= 5; p++) {
+          const score = i * p;
+          const count = allRisks.filter(k => k.impact === i && k.probability === p).length;
+          const bg = score >= 15 ? '#fef2f2' : score >= 8 ? '#fffbeb' : '#f0fdf4';
+          r += '<td style="text-align:center;background:' + bg + ';font-weight:' + (count ? '700' : '400') + '">' + (count || '') + '</td>';
+        }
+        r += '</tr>';
+      }
+      r += '</table>';
+      r += '<h3>Top Risks</h3><table><tr><th>Project</th><th>Risk</th><th>I</th><th>P</th><th>Score</th><th>Mitigation</th><th>Owner</th></tr>';
+      allRisks.slice(0, 15).forEach(k => {
+        const score = k.impact * k.probability;
+        const rowCls = score >= 15 ? 'row-red' : score >= 8 ? 'row-amber' : '';
+        r += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+          '<td>' + esc(k.project) + '</td>' +
+          '<td>' + esc((k.description || '').substring(0, 100)) + '</td>' +
+          '<td style="text-align:center">' + k.impact + '</td>' +
+          '<td style="text-align:center">' + k.probability + '</td>' +
+          '<td style="text-align:center;font-weight:700">' + score + '</td>' +
+          '<td>' + esc((k.action || '').substring(0, 80)) + '</td>' +
+          '<td>' + esc(k.owner || '') + '</td></tr>';
+      });
+      r += '</table>';
+      sections.push({ id: 'risks', title: 'Risk Posture', html: r });
+    }
+
+    // Section 5: Governance & Decisions
+    const forums = (App.data.governance_forums || []).filter(f => f.customer === customer);
+    if (forums.length) {
+      let g = '<table><tr><th>Forum</th><th>Cadence</th><th>Next</th><th>Open actions</th><th>Overdue</th></tr>';
+      const todayIso = new Date().toISOString().split('T')[0];
+      forums.forEach(f => {
+        const openA = (f.actions || []).filter(a => a.status !== 'Done').length;
+        const overdueA = (f.actions || []).filter(a => a.status !== 'Done' && a.due_date && a.due_date < todayIso).length;
+        const rowCls = overdueA > 0 ? 'row-amber' : '';
+        g += '<tr' + (rowCls ? ' class="' + rowCls + '"' : '') + '>' +
+          '<td>' + esc(f.name) + '</td>' +
+          '<td>' + esc(f.cadence || '—') + '</td>' +
+          '<td>' + esc(f.next_date || '—') + '</td>' +
+          '<td>' + openA + '</td>' +
+          '<td style="font-weight:700">' + overdueA + '</td></tr>';
+      });
+      g += '</table>';
+
+      const recentDecisions = [];
+      forums.forEach(f => (f.decisions || []).slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 3).forEach(d => {
+        recentDecisions.push(Object.assign({ forum: f.name }, d));
+      }));
+      if (recentDecisions.length) {
+        g += '<h3>Recent Decisions</h3><table><tr><th>Date</th><th>Forum</th><th>Decision</th><th>By</th></tr>';
+        recentDecisions.sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 10).forEach(d => {
+          g += '<tr><td>' + esc(d.date || '') + '</td><td>' + esc(d.forum) + '</td><td>' + esc(d.text || '') + '</td><td>' + esc(d.recordedBy || '') + '</td></tr>';
+        });
+        g += '</table>';
+      }
+      sections.push({ id: 'governance', title: 'Governance', html: g });
+    }
+
+    const doc = this.buildDoc({
+      customer,
+      title: customer + ' Portfolio Pack',
+      subtitle: active.length + ' active · ' + all.length + ' total projects · ' + (forums.length || 0) + ' governance forums',
+      reportType: 'Portfolio Pack',
+      sections,
+      includeAppendix: true
+    });
+    this.open(doc);
+    Progress.done('Portfolio Pack opened — use Print > Save as PDF');
+  },
+
+  // Simple branding configurator via prompt (pragmatic, no full UI)
+  configureBranding(customer) {
+    if (!customer) { App.toast('Select a customer first', 'error'); return; }
+    const current = this.branding(customer);
+    const logo = prompt('Logo URL or data URI for ' + customer + ' reports (leave blank to clear):', current.logo || '');
+    if (logo === null) return;
+    const color = prompt('Primary colour (hex, e.g. #3b82f6):', current.primaryColor || '');
+    if (color === null) return;
+    const name = prompt('Display name on reports:', current.companyName || customer);
+    if (name === null) return;
+    const footer = prompt('Footer / classification text:', current.footerText || 'Confidential — Internal Use Only');
+    if (footer === null) return;
+    this.setBranding(customer, { logo: logo.trim(), primaryColor: color.trim() || current.primaryColor, companyName: name.trim() || customer, footerText: footer.trim() });
+    App.toast('Branding saved for ' + customer, 'success');
   }
 };
 /* ============================================================
