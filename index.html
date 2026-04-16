@@ -1149,6 +1149,10 @@ textarea.field-input { resize: vertical; min-height: 60px; }
           <button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()" title="Allocation settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()" title="Manage sprints"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sprints</button>
         </div>
+        <div style="display:flex;gap:4px;margin-bottom:8px">
+          <button class="btn btn-sm" id="sprintViewProjects" style="font-size:10px;background:var(--accent-blue);color:white" onclick="Sprint.setSprintView('projects')">Projects</button>
+          <button class="btn btn-outline btn-sm" id="sprintViewResources" style="font-size:10px" onclick="Sprint.setSprintView('resources')">Resources</button>
+        </div>
         <div class="sprint-board" id="sprintBoard"></div>
       </div>
     </div>
@@ -1948,9 +1952,20 @@ const App = {
         '</div>' +
       '</div>' +
 
+      // Sprint cycle settings (editable)
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Cycle Settings</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dev Weeks/Sprint</div><input type="number" value="' + (Sprint.SPRINT_DEV_WEEKS || 4) + '" min="1" max="8" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.SPRINT_DEV_WEEKS=parseInt(this.value)||4"></div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Business Days/Sprint</div><input type="number" value="20" min="10" max="30" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" disabled title="Derived from dev weeks + hardening"></div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hours per Story Point</div><input type="number" value="8" min="1" max="16" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" title="1 SP = X hours of focused work"></div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">FY Start Month</div><select style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"><option selected>June</option></select></div>' +
+        '</div>' +
+      '</div>' +
+
       // Skill colours reference
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Skill Colours & Phases</h3>' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Skills & Colours</h3>' +
         '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
         Sprint.SKILLS.map(sk => {
           const c = Sprint.SKILL_COLORS[sk.key] || '#666';
@@ -1959,15 +1974,18 @@ const App = {
         '</div>' +
       '</div>' +
 
-      // Sprint cycle info
+      // Sprint management
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Cycle</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);line-height:1.6">' +
-          '4 weeks development + 1 week hardening = 5-week sprint cycle<br>' +
-          '20 business days per sprint<br>' +
-          '1 story point = 8 hours focused work<br>' +
-          'FY boundary: 1 June each year' +
-        '</div>' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Management</h3>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + sprintCount + ' sprints configured</div>' +
+        '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
+      '</div>' +
+
+      // Team holidays summary
+      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Team & Holidays</h3>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + teamCount + ' team members. Holidays and per-sprint capacity overrides can be managed from the Capacity view or by clicking sprint headers in Sprint Planning.</div>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.navigate(\'capacity\')">Go to Capacity View</button>' +
       '</div>' +
 
       // Data actions
@@ -1977,8 +1995,7 @@ const App = {
           '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
           '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
           '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()">Allocation Settings</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()">Variance Report (PDF)</button>' +
         '</div>' +
       '</div>';
   },
@@ -4569,6 +4586,10 @@ const Sprint = {
   render() {
     if (!App.data) return;
     const board = document.getElementById('sprintBoard');
+    if (this.sprintView === 'resources') {
+      this.renderResourceView(board);
+      return;
+    }
     if (this.viewMode === 'swimlane') {
       board.classList.remove('stacked');
       this.renderSwimLane(board);
@@ -6085,7 +6106,20 @@ const Capacity = {
       '<div class="field-group"><div class="field-label">Contracted Hours / Week</div><input type="number" class="field-input" id="tmHours" value="' + (tm.contracted_hours_per_week || 37.5) + '"></div>' +
       '<div class="field-group"><div class="field-label">Utilisation %</div><input type="number" class="field-input" id="tmUtil" value="' + (tm.utilisation_target_pct || 80) + '" min="0" max="100"></div>' +
       '<div class="field-group"><div class="field-label">Primary Skills</div><div style="display:flex;flex-wrap:wrap;gap:6px">' + skillCheckboxes('primary', tm.primary_skills || []) + '</div></div>' +
-      '<div class="field-group"><div class="field-label">Secondary Skills</div><div style="display:flex;flex-wrap:wrap;gap:6px">' + skillCheckboxes('secondary', tm.secondary_skills || []) + '</div></div>';
+      '<div class="field-group"><div class="field-label">Secondary Skills</div><div style="display:flex;flex-wrap:wrap;gap:6px">' + skillCheckboxes('secondary', tm.secondary_skills || []) + '</div></div>' +
+      '<div class="field-group"><div class="field-label">Holidays</div>' +
+        '<div id="tmHolidays">' +
+          (tm.holidays || []).map((h, i) =>
+            '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+              '<input type="date" class="field-input" data-hol-idx="' + i + '" data-hol-field="start" value="' + (h.start || '') + '" style="font-size:11px">' +
+              '<span style="font-size:10px;color:var(--text-muted)">to</span>' +
+              '<input type="date" class="field-input" data-hol-idx="' + i + '" data-hol-field="end" value="' + (h.end || '') + '" style="font-size:11px">' +
+              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px" onclick="this.parentElement.remove()">&times;</button>' +
+            '</div>'
+          ).join('') +
+        '</div>' +
+        '<button class="risk-add-btn" style="margin-top:4px" onclick="var d=document.createElement(\'div\');d.style.cssText=\'display:flex;gap:6px;align-items:center;margin-bottom:4px\';d.innerHTML=\'<input type=date class=field-input data-hol-field=start style=font-size:11px><span style=font-size:10px;color:var(--text-muted)>to</span><input type=date class=field-input data-hol-field=end style=font-size:11px><button style=border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px onclick=this.parentElement.remove()>&times;</button>\';document.getElementById(\'tmHolidays\').appendChild(d)">+ Add Holiday</button>' +
+      '</div>';
 
     document.getElementById('teamEditTitle').textContent = title;
     document.getElementById('teamEditFields').innerHTML = fieldsHtml;
@@ -6119,24 +6153,37 @@ const Capacity = {
     const effective = hours * (util / 100);
     const sprintPts = (effective * 4) / 8;
 
+    // Read holidays from the edit form
+    const holidays = [];
+    document.querySelectorAll('#tmHolidays > div').forEach(row => {
+      const startEl = row.querySelector('[data-hol-field="start"]');
+      const endEl = row.querySelector('[data-hol-field="end"]');
+      if (startEl && endEl && startEl.value && endEl.value) {
+        holidays.push({ start: startEl.value, end: endEl.value });
+      }
+    });
+
     const tm = {
       name, role, customer,
       primary_skills: primary, secondary_skills: secondary,
       contracted_hours_per_week: hours, utilisation_target_pct: util,
       effective_hours_per_week: effective, story_points_per_sprint: sprintPts,
-      holidays: [], holiday_impact_per_sprint: 0, available_points_per_sprint: sprintPts
+      holidays: holidays, holiday_impact_per_sprint: 0, available_points_per_sprint: sprintPts
     };
+
+    // Preserve sprint_overrides from existing member
+    if (this.editIdx >= 0 && App.data.team_members[this.editIdx]) {
+      tm.sprint_overrides = App.data.team_members[this.editIdx].sprint_overrides || {};
+    }
 
     App.pushUndo(this.editIdx === -1 ? 'Add team member' : 'Edit team member');
     if (this.editIdx === -1) {
-      // Add new
+      tm.sprint_overrides = {};
       App.data.team_members.push(tm);
       App.logChange(null, 'team_member_added', '', name, 'user');
       App.toast('Added ' + name, 'success');
     } else {
-      // Preserve holidays from existing
       const oldName = App.data.team_members[this.editIdx].name;
-      tm.holidays = App.data.team_members[this.editIdx].holidays || [];
       App.data.team_members[this.editIdx] = tm;
       App.logChange(null, 'team_member_updated', oldName, name, 'user');
       App.toast('Updated ' + name, 'success');
@@ -6159,6 +6206,67 @@ const Capacity = {
     App.saveToLocalStorage();
     this.render();
     App.toast('Removed ' + tm.name, 'success');
+  },
+
+  sprintView: 'projects',
+
+  setSprintView(view) {
+    this.sprintView = view;
+    document.getElementById('sprintViewProjects').className = view === 'projects' ? 'btn btn-sm' : 'btn btn-outline btn-sm';
+    document.getElementById('sprintViewProjects').style.background = view === 'projects' ? 'var(--accent-blue)' : '';
+    document.getElementById('sprintViewProjects').style.color = view === 'projects' ? 'white' : '';
+    document.getElementById('sprintViewResources').className = view === 'resources' ? 'btn btn-sm' : 'btn btn-outline btn-sm';
+    document.getElementById('sprintViewResources').style.background = view === 'resources' ? 'var(--accent-blue)' : '';
+    document.getElementById('sprintViewResources').style.color = view === 'resources' ? 'white' : '';
+    this.render();
+  },
+
+  renderResourceView(board) {
+    const customer = App.activeCustomer || '';
+    const sprints = App.data.sprints || [];
+    const teamMembers = (App.data.team_members || []).filter(tm => {
+      if (!customer) return true;
+      const c = (tm.customer || '').toLowerCase();
+      return c === customer.toLowerCase() || c === 'both';
+    });
+    const projects = customer ? App.data.projects.filter(p => p.customer === customer) : App.data.projects;
+    const esc = Dashboard.esc;
+
+    // Build: for each team member + sprint, what projects/skills are they working on?
+    let thead = '<tr><th style="position:sticky;left:0;background:white;z-index:2;min-width:140px;padding:8px;font-size:11px">Team Member</th>';
+    sprints.forEach(s => {
+      thead += '<th style="text-align:center;padding:6px;font-size:11px;min-width:100px">' + s.sprint_id.replace('CY26-', '') + '</th>';
+    });
+    thead += '</tr>';
+
+    let tbody = '';
+    teamMembers.forEach(tm => {
+      const override = tm.sprint_overrides || {};
+      const defaultPts = tm.available_points_per_sprint || 0;
+      tbody += '<tr><td style="position:sticky;left:0;background:white;z-index:2;padding:6px 8px;font-size:11px;font-weight:600;border-bottom:1px solid #f1f5f9">' + esc(tm.name) + '<div style="font-size:9px;color:var(--text-muted);font-weight:400">' + (tm.primary_skills || []).join(', ') + '</div></td>';
+      sprints.forEach(s => {
+        const pts = (override[s.sprint_id] && override[s.sprint_id].available_points !== undefined) ? override[s.sprint_id].available_points : defaultPts;
+        // Find what's allocated to this person's skills in this sprint
+        let allocated = 0;
+        const allSkills = [...(tm.primary_skills || []), ...(tm.secondary_skills || [])];
+        const skillKeys = allSkills.map(sk => ({ 'Requirements': 'size_requirements', 'Tableau': 'size_tableau', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'UAT': 'size_uat_adoption', 'Hypercare': 'size_hypercare' })[sk]).filter(Boolean);
+        projects.forEach(p => {
+          const splits = p.skill_splits || {};
+          skillKeys.forEach(sk => {
+            (splits[sk] || []).forEach(sp => { if (sp.sprint === s.sprint_id) allocated += sp.points; });
+          });
+        });
+        // Note: this is a simplified view — actual per-person allocation would need assignment tracking
+        const pct = pts > 0 ? Math.round((allocated / pts) * 100) : 0;
+        const bg = pct <= 80 ? '#f0fdf4' : pct <= 100 ? '#fffbeb' : '#fef2f2';
+        const color = pct <= 80 ? 'var(--status-green)' : pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+        tbody += '<td style="text-align:center;padding:4px;font-size:10px;background:' + bg + ';border-bottom:1px solid #f1f5f9;color:' + color + ';font-weight:600">' + Math.round(allocated) + '/' + Math.round(pts) + '<div style="font-size:8px;font-weight:400">' + pct + '%</div></td>';
+      });
+      tbody += '</tr>';
+    });
+
+    board.innerHTML = '<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;border:1px solid var(--border-light);border-radius:var(--radius-md)">' +
+      '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table></div>';
   },
 
   showSprintCapacityDetail(sprintId) {
