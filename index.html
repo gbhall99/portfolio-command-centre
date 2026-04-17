@@ -1652,9 +1652,8 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Capacity
       </div>
-      <!-- Activity is a modal overlay (AuditPanel), not a view. We add it as a nav item for discoverability;
-           the item gains the .active class while the modal is open, via AuditPanel.open/close. -->
-      <div class="nav-item" data-view="activity" id="navActivity" onclick="AuditPanel.open()">
+      <!-- Activity is a full page (was a slide-in side panel; promoted for usability). -->
+      <div class="nav-item" data-view="activity" id="navActivity" onclick="App.navigate('activity')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
         Activity
       </div>
@@ -1905,6 +1904,25 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
         </div>
         <div id="govForumsContent"></div>
         <div id="govRisksContent" class="risk-dashboard" style="display:none"></div>
+      </div>
+    </div>
+    <div class="view" id="viewActivity">
+      <div class="governance-container" id="activityContainer">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">Portfolio Activity</h2>
+          <span style="font-size:12px;color:var(--text-muted)">Audit trail of every user, drag, and auto-allocation change.</span>
+          <div style="flex:1"></div>
+          <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Window
+            <select id="activityFilter" onchange="AuditPanel.setFilter(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">
+              <option value="today">Today</option>
+              <option value="24h">Last 24 hours</option>
+              <option value="7d" selected>Last 7 days</option>
+              <option value="all">All time</option>
+            </select>
+          </label>
+          <button class="btn btn-outline btn-sm" onclick="App.showAuditExportModal()" title="Export audit log"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export</button>
+        </div>
+        <div class="audit-feed" id="auditFeed" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 16px;min-height:200px"></div>
       </div>
     </div>
     <div class="view" id="viewConfig">
@@ -3384,6 +3402,7 @@ const App = {
     if (viewName === 'sprint' && this.data) Sprint.init();
     if (viewName === 'capacity' && this.data) Capacity.render();
     if (viewName === 'governance' && this.data) Governance.render();
+    if (viewName === 'activity' && this.data) AuditPanel.render();
     if (viewName === 'config') this.renderConfig();
     this.updateViewTitlebar();
   },
@@ -3392,7 +3411,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { dashboard: 'Dashboard', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', config: 'Configuration' };
+    const names = { dashboard: 'Dashboard', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'Configuration' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -16014,23 +16033,10 @@ const AuditPanel = {
   isOpen: false,
   currentFilter: '7d',
 
-  open() {
-    this.isOpen = true;
-    document.getElementById('auditPanel').classList.add('open');
-    document.getElementById('auditOverlay').classList.add('open');
-    // Light up the Activity nav-item so the user sees the context. Nav items do NOT App.navigate for modals.
-    const navAct = document.getElementById('navActivity');
-    if (navAct) navAct.classList.add('active');
-    this.render();
-  },
-
-  close() {
-    this.isOpen = false;
-    document.getElementById('auditPanel').classList.remove('open');
-    document.getElementById('auditOverlay').classList.remove('open');
-    const navAct = document.getElementById('navActivity');
-    if (navAct) navAct.classList.remove('active');
-  },
+  // Legacy entry points — both now navigate to the full Activity page.
+  // Keeping these keeps the command palette, dashboard "View all" link, and any external callers working.
+  open() { App.navigate('activity'); },
+  close() { /* no-op — Activity is a page, not a modal. Left for call-site back-compat. */ },
 
   setFilter(val) {
     this.currentFilter = val;
@@ -16075,7 +16081,7 @@ const AuditPanel = {
         return '<div class="audit-entry">' +
           '<div class="audit-entry-header">' +
             '<span class="audit-entry-time">' + time + '</span>' +
-            '<span class="audit-entry-project" onclick="AuditPanel.close();DetailPanel.open(\'' + (e.projectId || '') + '\')">' + esc(e.projectName || e.projectId || 'System') + '</span>' +
+            '<span class="audit-entry-project" onclick="DetailPanel.open(\'' + (e.projectId || '') + '\')">' + esc(e.projectName || e.projectId || 'System') + '</span>' +
             '<span class="audit-entry-source ' + srcCls + '">' + srcLabel + '</span>' +
           '</div>' +
           '<div class="audit-entry-change">' +
@@ -16458,22 +16464,6 @@ const Onboarding = {
     </div>
   </div>
 </div>
-<!-- Audit Panel Overlay -->
-<div class="audit-overlay" id="auditOverlay" onclick="AuditPanel.close()"></div>
-<div class="audit-panel" id="auditPanel">
-  <div class="audit-panel-header">
-    <h3>Portfolio Activity</h3>
-    <button class="audit-panel-close" onclick="AuditPanel.close()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-  </div>
-  <div class="audit-filter">
-    <select onchange="AuditPanel.setFilter(this.value)">
-      <option value="today">Today</option>
-      <option value="24h">Last 24 hours</option>
-      <option value="7d" selected>Last 7 days</option>
-      <option value="all">All time</option>
-    </select>
-  </div>
-  <div class="audit-feed" id="auditFeed"></div>
-</div>
+<!-- The old slide-in Audit Panel was promoted to a full page; see #viewActivity above. -->
 </body>
 </html>
