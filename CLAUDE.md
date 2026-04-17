@@ -6,6 +6,7 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 ## Files
 - `index.html` — The complete single-file app (~7200 lines). All CSS, HTML, and JS in one file.
 - `portfolio-data.json` — Sample data (39 projects, 7 team members, 6 sprints, 10 governance forums)
+- `SOLVER.md` — Technical reference for the auto-allocation solver: settings, rules R1–R11, algorithm passes, warnings, scoring, and known limitations. Read this before tweaking `Solver.solve` or `Sprint.allocSettings`.
 
 ## Architecture
 - **Single HTML file** — no build step, no dependencies, no framework. Opens directly in any browser.
@@ -14,13 +15,13 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal` — all as plain JS objects in a single `<script>` block.
 - **No emojis** — all icons are inline SVGs throughout.
 - **Customer-scoped** — `App.activeCustomer` is the single source of truth. Defaults to Acme Industries. Syncs across all views.
-- **Skill colors** — defined in `Sprint.SKILL_COLORS`. Avoid green/amber/red (RAG confusion). Current: Indigo (Req), Cyan (Tab), Blue (DE), Violet (DS), Pink (UAT), Slate (HC).
+- **Skill colors** — defined in `Sprint.SKILL_COLORS`. Avoid green/amber/red (RAG confusion). Current: Indigo (Req), Cyan (Tab), Blue (DE), Violet (DS), Pink (UAT).
 
 ## Data Model Key Facts
 - **Customer** is always single-select and mandatory: Acme Industries, Globex, Initech
 - **Delivery Config** per project: `delivery_config` with toggles (include_req, include_de, include_ds, include_tableau, include_uat, include_hypercare) and `phase_order` array
-- **Delivery Phases** (7 possible): Requirements, Data Sourcing, Data Engineering, Data Science, Tableau, UAT, Hypercare. Each has status + optional story points.
-- **Skills** (6 with points): Requirements (size_requirements), Tableau (size_tableau), Data Engineering (size_engineering), Data Science (size_data_science), UAT (size_uat_adoption), Hypercare (size_hypercare)
+- **Delivery Phases** (6 possible): Requirements, Data Sourcing, Data Engineering, Data Science, Tableau, UAT. Each has status + optional story points.
+- **Skills** (5 with points): Requirements (size_requirements), Tableau (size_tableau), Data Engineering (size_engineering), Data Science (size_data_science), UAT (size_uat_adoption)
 - **Delivery Pipeline**: Driven by each project's `delivery_config.phase_order`. The Solver reads this per-project.
 - **skill_splits**: Allocation across sprints with status (pending/in_progress/complete) and completed points.
 - **Sprints**: 4-week dev + 1-week hardening = 5-week cycle. End date auto-computed from start_date.
