@@ -479,9 +479,15 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 .view-titlebar-customer::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--tb-customer-color, var(--accent-blue)); }
 .view-titlebar-spacer { flex: 1; }
 .view-titlebar-asof { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.summary-card { background: var(--surface); border-radius: var(--radius-md); padding: 8px 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-dim); min-height: 62px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
-.summary-card .card-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.summary-card .card-value { font-size: 20px; font-weight: 700; color: var(--text-dark); line-height: 1.1; }
+/* UI-H1: .summary-card was the compact cousin of .dash-card. Unified the
+   interactive affordances — hover shadow, focus ring — and padded the
+   typographic rhythm so the two cards read as part of the same family.
+   Keeping the smaller footprint intentional for dashboard-density views. */
+.summary-card { background: var(--surface); border-radius: var(--radius-md); padding: 8px 12px; box-shadow: var(--shadow-sm); border: 1px solid var(--border-dim); min-height: 62px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.summary-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.summary-card:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.summary-card .card-label { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+.summary-card .card-value { font-size: var(--fs-xl); font-weight: 700; color: var(--text-dark); line-height: 1.15; }
 .summary-card .card-value.customer-gcc { color: var(--gcc-color); }
 .summary-card .card-value.customer-ks { color: var(--ks-color); }
 .summary-card .card-value.customer-dri { color: var(--dri-color); }
@@ -566,7 +572,11 @@ html[data-theme="dark"] .undo-history-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
 .portfolio-utilisation tr:last-child td { border-bottom: none; }
 .portfolio-util-bar { position: relative; width: 140px; height: 8px; background: var(--border-dim); border-radius: 4px; overflow: hidden; }
 .portfolio-util-bar-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 4px; }
-.portfolio-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 12px; }
+/* UI-H2: empty-state family. All of .portfolio-empty / .gantt-empty /
+   .sprint-empty-msg / .audit-empty use the same typographic rhythm; only
+   the padding scale differs per-context. The dashed border signals
+   "nothing to show here" consistently across the app. */
+.portfolio-empty { padding: 28px 20px; text-align: center; color: var(--text-muted); font-size: var(--fs-base); line-height: 1.5; border: 1px dashed var(--border-dim); border-radius: var(--radius-md); background: var(--surface-2); }
 .portfolio-footer-note { margin-top: 6px; font-size: 11px; color: var(--text-muted); padding: 8px 10px; border-top: 1px dashed var(--border-dim); }
 html[data-presentation="on"] .portfolio-title { font-size: calc(22px * var(--fs-scale)); }
 html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--fs-scale)); }
@@ -1363,8 +1373,9 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .forum-header .forum-cadence { font-size: 11px; color: var(--text-muted); background: var(--bg-content); padding: 2px 8px; border-radius: 3px; }
 .forum-header .forum-next { font-size: 12px; font-weight: 600; color: var(--accent-blue); }
 .forum-header .forum-count { font-size: 11px; color: var(--text-muted); font-weight: 600; }
-.forum-header .forum-toggle { font-size: 12px; color: var(--text-muted); transition: transform 0.2s; }
+.forum-header .forum-toggle { font-size: 12px; color: var(--text-muted); transition: transform 0.2s ease; flex-shrink: 0; }
 .forum-header .forum-toggle.open { transform: rotate(90deg); }
+.forum-chevron-icon { color: var(--text-muted); }
 .forum-body { display: none; border-top: 1px solid var(--border-light); padding: 10px 16px; }
 .forum-body.open { display: block; }
 .forum-project { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f8fafc; font-size: 12px; cursor: pointer; }
@@ -5466,6 +5477,31 @@ const App = {
     }
   },
 
+  /* UI-H5: small localStorage-backed key/value store for ephemeral UI state
+     that should survive a page reload — sort order, filter state, collapsed
+     section memory, expand toggles. Kept deliberately dumb: one namespaced
+     JSON blob, merged on write, shallow. Storage errors are swallowed —
+     UI state is a luxury, not a load-bearing concern. */
+  _uiStateCache: null,
+  _uiStateLoad() {
+    if (this._uiStateCache) return this._uiStateCache;
+    try {
+      const raw = localStorage.getItem('pcc.ui');
+      this._uiStateCache = raw ? JSON.parse(raw) : {};
+    } catch (e) { this._uiStateCache = {}; }
+    return this._uiStateCache;
+  },
+  uiStateGet(key, fallback) {
+    const store = this._uiStateLoad();
+    return key in store ? store[key] : (fallback === undefined ? null : fallback);
+  },
+  uiStateSet(key, value) {
+    const store = this._uiStateLoad();
+    if (value === null || value === undefined) delete store[key];
+    else store[key] = value;
+    try { localStorage.setItem('pcc.ui', JSON.stringify(store)); } catch (e) {}
+  },
+
   toast(message, type) {
     type = type || 'info';
     const container = document.getElementById('toastContainer');
@@ -6833,7 +6869,7 @@ const Backups = {
           '<td style="padding:6px 8px">' + (b.projectCount || 0) + '</td>' +
           '<td style="padding:6px 8px;color:var(--text-muted)">' + Math.round((b.size || 0) / 1024) + ' KB</td>' +
           '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px">' + esc(captured) + '</td>' +
-          '<td style="padding:6px 8px;text-align:right"><button onclick="Backups.restore(\'' + b.date + '\').then(()=>document.getElementById(\'backupsModalOverlay\').remove())" style="font-size:11px;padding:4px 10px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);border-radius:4px;cursor:pointer;font-weight:600">Restore</button></td>' +
+          '<td style="padding:6px 8px;text-align:right"><button class="btn btn-outline btn-sm" onclick="Backups.restore(\'' + b.date + '\').then(()=>document.getElementById(\'backupsModalOverlay\').remove())">Restore</button></td>' +
         '</tr>';
       });
       html += '</table>';
@@ -6876,11 +6912,12 @@ const SyncGuard = {
     if (!banner) {
       banner = document.createElement('div');
       banner.id = 'syncGuardBanner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fffbeb;color:#78350f;border-bottom:2px solid #f59e0b;padding:10px 16px;z-index:9998;display:flex;align-items:center;gap:12px;font-size:12px;font-weight:600';
+      banner.className = 'sync-guard-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:var(--tint-amber-weak);color:var(--status-amber);border-bottom:2px solid var(--status-amber);padding:10px 16px;z-index:9998;display:flex;align-items:center;gap:12px;font-size:12px;font-weight:600';
       banner.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
         '<span class="sg-msg" style="flex:1"></span>' +
-        '<button onclick="location.reload()" style="background:#f59e0b;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11px">Reload</button>' +
-        '<button onclick="this.parentNode.style.display=\'none\'" style="background:transparent;color:#78350f;border:1px solid #78350f;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px">Dismiss</button>';
+        '<button class="btn btn-primary btn-sm" onclick="location.reload()">Reload</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="this.parentNode.style.display=\'none\'">Dismiss</button>';
       document.body.appendChild(banner);
     }
     banner.querySelector('.sg-msg').textContent = msg;
@@ -7030,9 +7067,9 @@ const Scenarios = {
           '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px">' + esc(captured) + '</td>' +
           '<td style="padding:6px 8px">' + (diffCount === 0 ? '<span style="color:var(--status-green);font-weight:600">identical</span>' : '<span style="color:var(--status-amber);font-weight:600">' + diffCount + ' change' + (diffCount === 1 ? '' : 's') + '</span>') + '</td>' +
           '<td style="padding:6px 8px;text-align:right;white-space:nowrap">' +
-            (diffCount > 0 ? '<button onclick="Scenarios._showDiff(\'' + sc.id + '\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--accent-blue);background:transparent;color:var(--accent-blue);border-radius:3px;cursor:pointer;margin-right:4px">View diff</button>' : '') +
-            '<button onclick="Scenarios.apply(\'' + sc.id + '\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--status-green);background:transparent;color:var(--status-green);border-radius:3px;cursor:pointer;margin-right:4px">Apply</button>' +
-            '<button onclick="Scenarios.remove(\'' + sc.id + '\')" style="font-size:10px;padding:3px 8px;border:1px solid var(--status-red);background:transparent;color:var(--status-red);border-radius:3px;cursor:pointer">Delete</button>' +
+            (diffCount > 0 ? '<button class="btn btn-outline btn-sm" style="margin-right:4px" onclick="Scenarios._showDiff(\'' + sc.id + '\')">View diff</button>' : '') +
+            '<button class="btn btn-primary btn-sm" style="margin-right:4px" onclick="Scenarios.apply(\'' + sc.id + '\')">Apply</button>' +
+            '<button class="btn btn-danger-outline btn-sm" onclick="Scenarios.remove(\'' + sc.id + '\')">Delete</button>' +
           '</td></tr>';
       });
       html += '</tbody></table>';
@@ -7584,6 +7621,12 @@ const Dashboard = {
   lastFilters: null,
 
   init() {
+    // UI-H5: restore persisted sort state so column ordering survives page reloads
+    // and view switches (previously always reset to priority/asc).
+    if (App && App.uiStateGet) {
+      const saved = App.uiStateGet('dashboard.sort');
+      if (saved && saved.field && saved.dir) { this.sortField = saved.field; this.sortDir = saved.dir; }
+    }
     try { this.populateFilters(); } catch (e) { console.error('[PCC] Dashboard.populateFilters failed:', e); }
     // M5: prefer filter state from URL hash on first load; fall back to last session state.
     let hashApplied = false;
@@ -7874,6 +7917,8 @@ const Dashboard = {
       this.sortField = field;
       this.sortDir = 'asc';
     }
+    // UI-H5: persist so sort sticks across page reloads
+    if (App && App.uiStateSet) App.uiStateSet('dashboard.sort', { field: this.sortField, dir: this.sortDir });
 
     // Update header visuals
     document.querySelectorAll('.project-table th').forEach(th => {
@@ -7992,7 +8037,7 @@ const Dashboard = {
       const staleIcon = (staleDays >= staleThreshold && p.status !== 'Complete' && p.status !== 'Closed') ? '<span class="stale-icon" title="Not updated in ' + staleDays + ' days \u00B7 threshold is ' + staleThreshold + ' days (change in Settings)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>' : '';
 
       const pinned = App.isPinned(p.id);
-      const pinIcon = '<button class="pin-btn' + (pinned ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned ? 'Remove from watchlist' : 'Add to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
+      const pinIcon = '<button class="pin-btn' + (pinned ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned ? 'Remove from watchlist' : 'Add to watchlist') + '" aria-label="' + (pinned ? 'Remove ' + this.esc(p.name) + ' from watchlist' : 'Add ' + this.esc(p.name) + ' to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
 
       const recR = p.recommended_priority;
       const recChip = (recR && recR !== p.priority)
@@ -8159,7 +8204,7 @@ const Dashboard = {
     const staleIcon2 = (staleDays2 >= staleThreshold2 && p.status !== 'Complete' && p.status !== 'Closed') ? '<span class="stale-icon" title="Not updated in ' + staleDays2 + ' days \u00B7 threshold is ' + staleThreshold2 + ' days (change in Settings)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>' : '';
 
     const pinned2 = App.isPinned(p.id);
-    const pinIcon2 = '<button class="pin-btn' + (pinned2 ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned2 ? 'Remove from watchlist' : 'Add to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned2 ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
+    const pinIcon2 = '<button class="pin-btn' + (pinned2 ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned2 ? 'Remove from watchlist' : 'Add to watchlist') + '" aria-label="' + (pinned2 ? 'Remove ' + this.esc(p.name) + ' from watchlist' : 'Add ' + this.esc(p.name) + ' to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned2 ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
 
     const rec2 = p.recommended_priority;
     const warnChip2 = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
@@ -9236,7 +9281,7 @@ const Dashboard = {
       html += '<option value="' + i + '">' + Dashboard.esc(p.name) + '</option>';
     });
     html += '</select>';
-    html += '<button class="filter-preset-del" onclick="var s=document.querySelector(\'.filter-preset-select\');if(s&&s.value!==\'\'){Dashboard.deleteFilterPreset(parseInt(s.value))}" title="Delete selected preset"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
+    html += '<button class="filter-preset-del" onclick="var s=document.querySelector(\'.filter-preset-select\');if(s&&s.value!==\'\'){Dashboard.deleteFilterPreset(parseInt(s.value))}" title="Delete selected preset" aria-label="Delete selected filter preset"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
     // M5: "copy link" button — encodes the current filter state into a URL hash.
     html += '<button class="filter-preset-del" onclick="Dashboard.copyFilterLink()" title="Copy a shareable link with the current filters" aria-label="Copy filter link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></button>';
     container.innerHTML = html;
@@ -10111,18 +10156,18 @@ const DetailPanel = {
     const direction = delta > 0 ? 'increased' : 'decreased';
     const color = Math.abs(pct) >= 50 ? 'var(--status-red)' : 'var(--status-amber)';
     modal.innerHTML =
-      '<h3 id="scopeChangeTitle" style="margin-top:0">Scope change detected</h3>' +
-      '<div style="font-size:13px;margin:8px 0 10px;line-height:1.5">' +
+      '<h3 id="scopeChangeTitle" class="confirm-title" style="margin-top:0">Scope change detected</h3>' +
+      '<div class="confirm-body">' +
         '<strong>' + esc(p.name) + '</strong>\u2019s size just ' + direction +
         ' from <strong>' + oldTotal + '</strong> to <strong>' + newTotal + '</strong> points ' +
         '(<span style="color:' + color + ';font-weight:600">' + (pct > 0 ? '+' : '') + pct + '%</span>). ' +
         'Record a brief reason so the change is traceable.' +
       '</div>' +
-      '<label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:10px">Reason for scope change (required)' +
-        '<textarea id="scopeChangeReason" rows="3" style="display:block;margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px;line-height:1.4" placeholder="e.g. Sponsor added UAT scope after demo; added 20 SP of integration work"></textarea>' +
+      '<label class="field-label" style="display:block;margin-bottom:10px">Reason for scope change (required)' +
+        '<textarea id="scopeChangeReason" rows="3" class="field-input" style="display:block;margin-top:4px;width:100%" placeholder="e.g. Sponsor added UAT scope after demo; added 20 SP of integration work"></textarea>' +
       '</label>' +
-      '<div class="split-actions">' +
-        '<button class="btn btn-ghost btn-sm" onclick="DetailPanel._revertScopeChange(\'' + esc(projectId) + '\', \'' + esc(fieldChanged) + '\', ' + oldTotal + ')">Revert change</button>' +
+      '<div class="split-actions confirm-actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="DetailPanel._revertScopeChange(\'' + esc(projectId) + '\', \'' + esc(fieldChanged) + '\', ' + oldTotal + ')">Revert change</button>' +
         '<button class="btn btn-primary btn-sm" onclick="DetailPanel._confirmScopeChangeReason(\'' + esc(projectId) + '\', ' + oldTotal + ', ' + newTotal + ')">Save reason</button>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -15169,7 +15214,7 @@ const Sprint = {
       '<div class="card-bottom">' +
         '<span style="font-size:10px;font-weight:600;color:' + skillColor + ';background:' + skillColor + '15;padding:1px 6px;border-radius:3px">' + (c.skill ? Sprint.skillShape(c.skill.key) : '') + skillLabel + '</span>' +
         (ptsLabel ? '<span class="card-size">' + ptsLabel + '</span>' : '') +
-        '<span class="card-manager">' + Dashboard.esc(p.manager || '') + '</span>' +
+        '<span class="card-manager" title="' + Dashboard.esc(p.manager || '') + '">' + Dashboard.esc(p.manager || '') + '</span>' +
         '<div class="card-rag-dots">' +
           '<div class="card-rag-dot" style="background:' + App.ragColor(p.rag_schedule) + '"></div>' +
           '<div class="card-rag-dot" style="background:' + App.ragColor(p.rag_resourcing) + '"></div>' +
@@ -20363,15 +20408,15 @@ const Governance = {
         '<div class="forum-no-projects">No projects are mapped to this forum yet. Open a project and set its <em>Governance Forum</em> to include it here.</div>';
 
       return '<div class="forum-card">' +
-        '<div class="forum-header" onclick="Governance.toggle(' + idx + ')">' +
+        '<div class="forum-header" onclick="Governance.toggle(' + idx + ')" role="button" tabindex="0" aria-expanded="false" aria-controls="forumBody' + idx + '" id="forumHeader' + idx + '" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Governance.toggle(' + idx + ')}">' +
           '<div class="forum-customer-dot" style="background:' + color + '"></div>' +
           '<div class="forum-name">' + Dashboard.esc(f.name) + '</div>' +
           '<span class="forum-cadence">' + (f.cadence || '') + '</span>' +
           '<span class="forum-next">' + nextLabel + '</span>' +
           '<span class="forum-count">' + forumProjects.length + ' projects</span>' +
-          '<button class="forum-edit-btn" onclick="event.stopPropagation();Governance.openForumModal(' + realIdx + ')" title="Edit forum"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
-          '<button class="forum-delete-btn" onclick="event.stopPropagation();Governance.deleteForum(' + realIdx + ')" title="Delete forum"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>' +
-          '<span class="forum-toggle" id="forumToggle' + idx + '">\u25B6</span>' +
+          '<button class="forum-edit-btn" onclick="event.stopPropagation();Governance.openForumModal(' + realIdx + ')" title="Edit forum" aria-label="Edit forum ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
+          '<button class="forum-delete-btn" onclick="event.stopPropagation();Governance.deleteForum(' + realIdx + ')" title="Delete forum" aria-label="Delete forum ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>' +
+          '<svg class="forum-toggle forum-chevron-icon" id="forumToggle' + idx + '" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>' +
         '</div>' +
         '<div class="forum-body" id="forumBody' + idx + '">' + projectRows +
           Governance.renderForumRoster(f, realIdx) +
@@ -20394,9 +20439,12 @@ const Governance = {
   toggle(idx) {
     const body = document.getElementById('forumBody' + idx);
     const arrow = document.getElementById('forumToggle' + idx);
-    const isOpen = body.classList.contains('open');
+    const header = document.getElementById('forumHeader' + idx);
+    if (!body) return;
+    const nowOpen = !body.classList.contains('open');
     body.classList.toggle('open');
-    arrow.classList.toggle('open');
+    if (arrow) arrow.classList.toggle('open');
+    if (header) header.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
   },
 
   renderForumActions(forum, forumIdx) {
