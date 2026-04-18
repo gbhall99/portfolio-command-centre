@@ -1059,20 +1059,23 @@ html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
 .gantt-tooltip-skills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
 .gantt-tooltip-skill { display: inline-flex; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; }
 
-/* --- Gantt Hover Effects --- */
-.gantt-seg { transition: filter 0.15s, opacity 0.15s; pointer-events: auto !important; cursor: pointer; z-index: 1; }
-.gantt-seg-hover { filter: brightness(1.15); z-index: 3; }
+/* --- Gantt Hover Effects (v3 unified model) --- */
+/* Every hoverable element has .gantt-hoverable + data-hover-type. The JS adds .gantt-hovered to
+   the element under the cursor/focus, plus type-specific highlight classes to siblings. */
+.gantt-hoverable { transition: filter 0.12s, opacity 0.12s, box-shadow 0.12s; }
+.gantt-hoverable:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.gantt-seg { pointer-events: auto !important; cursor: pointer; z-index: 1; }
+.gantt-seg.gantt-hovered { filter: brightness(1.15); z-index: 3; }
 .gantt-seg-dim { opacity: 0.35; }
 .gantt-bar-highlight { box-shadow: 0 0 0 2px var(--accent-blue); z-index: 5; }
-/* 2B: Forward-sync — when a bar is active, the matching label row gets a subtle active treatment. */
+/* Forward-sync — when a bar is hovered, the matching label row lights up, and vice-versa. */
 .gantt-label-active { background: rgba(59,130,246,0.08) !important; }
 html[data-theme="dark"] .gantt-label-active { background: rgba(59,130,246,0.16) !important; }
-.gantt-dep-path { transition: stroke-width 0.15s, opacity 0.15s; }
-.gantt-dep-active { stroke-width: 2.8 !important; opacity: 1 !important; }
-/* 2G: the invisible fat hit path is the thing that receives hover — style the visible path via
-   sibling selector so we don't need JS to set stroke. The visible path immediately precedes the hit. */
-.gantt-dep-hit { cursor: pointer; }
-.gantt-dep-hit:hover + .gantt-dep-path { stroke-width: 2.8; opacity: 1; }
+/* Dep arrows: the invisible hit path receives the hover, but the ACTIVE class is applied to
+   both the hit and the visible path by paint(). That way the visible path actually lights up. */
+.gantt-dep-path { transition: stroke-width 0.12s, opacity 0.12s; }
+.gantt-dep-path.gantt-dep-active { stroke-width: 2.8; opacity: 1; }
+.gantt-dep-hit { cursor: pointer; pointer-events: stroke; }
 
 /* --- Gantt Critical Path --- */
 .gantt-bar-critical { box-shadow: 0 0 0 2px #f59e0b !important; z-index: 5; }
@@ -3749,6 +3752,8 @@ const App = {
   renderConfig() {
     const body = document.getElementById('configBody');
     if (!body) return;
+    // Defensive: ensure settings defaults exist before any IIFE reads them.
+    if (this._ensureSettingsDefaults) this._ensureSettingsDefaults();
     const s = Sprint.allocSettings;
     const esc = Dashboard.esc;
     const ch = this.configHelp.bind(this);
@@ -3757,7 +3762,20 @@ const App = {
     const teamCount = this.data ? (this.data.team_members || []).length : 0;
     const projectCount = this.data ? this.data.projects.length : 0;
 
-    body.innerHTML =
+    // Wrap the entire render in try/catch — a broken IIFE previously blanked the page silently.
+    let html;
+    try {
+      html =
+      // Table of contents — quick-jump to each section so the whole page is discoverable at a glance.
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;background:linear-gradient(to right, rgba(59,130,246,0.06), rgba(139,92,246,0.04));border:1px solid var(--border-light);border-radius:var(--radius-md);font-size:11px">' +
+        '<span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-right:6px;align-self:center">Jump to:</span>' +
+        '<a href="#schedulingEngineCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Scheduling Engine</a>' +
+        '<a href="#scoringCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Scoring &amp; Prioritisation</a>' +
+        '<a href="#displayThresholdsCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Display Thresholds</a>' +
+        '<a href="#brandingCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Branding</a>' +
+        '<a href="#dataCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Data</a>' +
+      '</div>' +
+
       // Data summary
       '<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">' +
         '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-blue)">' + projectCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Projects</div></div>' +
@@ -4117,6 +4135,21 @@ const App = {
           }).join('');
         })() +
       '</div>';
+    } catch (err) {
+      console.error('[PCC] renderConfig error — falling back to error card:', err);
+      html = '<div style="background:#fef2f2;border:1px solid var(--status-red);border-radius:var(--radius-md);padding:20px;color:var(--status-red)">' +
+        '<div style="font-weight:700;margin-bottom:8px">System Settings failed to render</div>' +
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">An error occurred building this page. The app itself is unaffected — reload to try again.</div>' +
+        '<pre style="font-size:11px;background:white;border:1px solid var(--border-light);padding:8px;border-radius:4px;overflow:auto;max-height:200px">' + Dashboard.esc(String(err && err.stack || err)) + '</pre>' +
+      '</div>';
+    }
+    body.innerHTML = html;
+
+    // Add stable ids to existing cards so the TOC anchors land. Scheduling/scoring/thresholds already have ids.
+    const brandingCard = body.querySelector('h3') ? Array.from(body.querySelectorAll('h3')).find(h => h.textContent.indexOf('Branding') >= 0) : null;
+    if (brandingCard && brandingCard.parentElement && !brandingCard.parentElement.id) brandingCard.parentElement.id = 'brandingCard';
+    const dataMgmtCard = body.querySelector('h3') ? Array.from(body.querySelectorAll('h3')).find(h => h.textContent.indexOf('Data Management') >= 0) : null;
+    if (dataMgmtCard && dataMgmtCard.parentElement && !dataMgmtCard.parentElement.id) dataMgmtCard.parentElement.id = 'dataCard';
   },
 
   setupKeyboardShortcuts() {
@@ -9269,29 +9302,44 @@ const Gantt = {
   renderLegend() {
     const el = document.getElementById('ganttLegend');
     if (!el) return;
-    const esc = Dashboard.esc;
-    // Skill colours
+    // Skill colours — one chip per active skill.
     let html = '<div class="gantt-legend-group">';
     Sprint.SKILLS.forEach(sk => {
       const c = Sprint.SKILL_COLORS[sk.key] || '#666';
       html += '<span class="gantt-legend-item"><span class="gantt-legend-swatch" style="background:' + c + '"></span>' + sk.short + '</span>';
     });
     html += '</div>';
-    // Markers
+
+    // Milestones — every shape rendered on the chart MUST appear here with a clear label.
+    // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat/msGoLive/msGoLiveGhost).
     html += '<div class="gantt-legend-group">' +
-      '<span class="gantt-legend-item"><svg width="10" height="10" viewBox="0 0 14 14"><polygon points="7,1 13,7 7,13 1,7" fill="#64748b" stroke="#475569" stroke-width="1"/></svg> Milestone</span>' +
-      '<span class="gantt-legend-item"><svg width="12" height="12" viewBox="0 0 14 14"><path d="M7 1C7 1 3 5 3 9l2 2 4-4 4 4 2-2c0-4-4-8-4-8z" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/><path d="M5 11l-2 2M9 11l2 2" stroke="#15803d" stroke-width="1" fill="none"/></svg> Launch</span>' +
+      '<span class="gantt-legend-item" title="Deadline (hard_deadline) — the project cannot slip past this date.">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="#dc2626" stroke="#7f1d1d" stroke-width="1.2"/></svg> Deadline</span>' +
+      '<span class="gantt-legend-item" title="Product launch milestone (category=Product Release + product_release_date).">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="7" r="1.2" fill="#b45309"/><path d="M5 11 L3 14 M11 11 L13 14" stroke="#b45309" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg> Launch</span>' +
+      '<span class="gantt-legend-item" title="DT UAT release — the data-sourcing partner has signed off.">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/><polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> UAT release</span>' +
+      '<span class="gantt-legend-item" title="Go-Live — actual when a date is set.">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="1.2" height="13" fill="#0e7490"/><path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/></svg> Go-Live</span>' +
+      '<span class="gantt-legend-item" title="Go-Live (estimated) — placeholder drawn at target_date when no explicit go_live_date is set.">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16" style="opacity:0.65"><rect x="3" y="2" width="1.2" height="13" fill="#0e7490" opacity="0.6"/><path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="none" stroke="#0e7490" stroke-width="1.4" stroke-dasharray="2 1.5"/></svg> Estimated</span>' +
       '</div>';
-    // 2E/2F: Lines + dependency types.
+
+    // Lines — today (live reference), sprint boundaries, financial year.
     html += '<div class="gantt-legend-group">' +
-      '<span class="gantt-legend-item"><span style="width:10px;height:2px;background:var(--accent-blue);display:inline-block"></span> Today</span>' +
-      '<span class="gantt-legend-item"><span style="width:10px;border-top:1.5px dashed rgba(59,130,246,0.6);display:inline-block"></span> Sprint</span>' +
-      '<span class="gantt-legend-item"><span style="width:10px;border-top:2px solid #8b5cf6;opacity:0.5;display:inline-block"></span> FY</span>' +
-      '</div>' +
-      '<div class="gantt-legend-group">' +
-        '<span class="gantt-legend-item"><svg width="18" height="8"><line x1="0" y1="4" x2="15" y2="4" stroke="#1e293b" stroke-width="2"/><polygon points="12,1 18,4 12,7" fill="#1e293b"/></svg> Blocks / blocked by</span>' +
-        '<span class="gantt-legend-item"><svg width="22" height="8"><circle cx="3" cy="4" r="2.5" fill="white" stroke="#64748b" stroke-width="1.3"/><line x1="6" y1="4" x2="16" y2="4" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.7"/><circle cx="19" cy="4" r="2.5" fill="white" stroke="#64748b" stroke-width="1.3"/></svg> Related</span>' +
-      '</div>';
+      '<span class="gantt-legend-item"><span style="width:14px;height:2px;background:var(--accent-blue);display:inline-block;vertical-align:middle"></span> Today</span>' +
+      '<span class="gantt-legend-item"><span style="width:14px;border-top:1.5px dashed rgba(59,130,246,0.55);display:inline-block;vertical-align:middle"></span> Sprint</span>' +
+      '<span class="gantt-legend-item"><span style="width:14px;border-top:2px solid #8b5cf6;opacity:0.35;display:inline-block;vertical-align:middle"></span> FY</span>' +
+    '</div>';
+
+    // Dependency types — 'blocks' and 'blocked_by' share one edge style (tooltip clarifies direction);
+    // 'related' is visually weaker with open-circle endpoints.
+    html += '<div class="gantt-legend-group">' +
+      '<span class="gantt-legend-item" title="A blocks B — B cannot start until A finishes.">' +
+        '<svg width="24" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke="#1e293b" stroke-width="2"/><polygon points="17,1 24,4 17,7" fill="#1e293b"/></svg> Blocks / blocked-by</span>' +
+      '<span class="gantt-legend-item" title="Related — informational only; not enforced by the solver.">' +
+        '<svg width="28" height="8"><circle cx="3.5" cy="4" r="2.8" fill="white" stroke="#64748b" stroke-width="1.3"/><line x1="7" y1="4" x2="21" y2="4" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.8"/><circle cx="24.5" cy="4" r="2.8" fill="white" stroke="#64748b" stroke-width="1.3"/></svg> Related</span>' +
+    '</div>';
     el.innerHTML = html;
   },
 
@@ -9366,19 +9414,24 @@ const Gantt = {
       '</div>';
     };
 
-    /* 2A/2C: Unified hover model.
-       Every hoverable element carries .gantt-hoverable + data-hover-type. A single pair of delegated
-       listeners (mouseover/mouseout) live on the scroll container AND the labels column so bars,
-       segments, milestones, dependency arrows, and label rows all follow the same mechanic.
+    /* Unified hover model — v3 rewrite.
+       Design goals (informed by two independent design reviews):
+         1. Every hoverable element carries .gantt-hoverable + data-hover-type. Hover is detected by a
+            single delegated listener pair on both the scroll container AND the labels column (labels
+            are siblings of #ganttScroll, not descendants).
+         2. A 120 ms LEAVE delay prevents flicker when the cursor crosses a 1-px gap between adjacent
+            elements (bar → seg → dep arrow → milestone). Enter is instant.
+         3. One shared `_hoverState` holds the current hovered element + the pending hide timer.
+            enter()/leave() are the only mutators. If the user hovers a new element before the
+            timer fires, we cancel it and swap highlight state atomically.
+         4. Keyboard: every .gantt-hoverable is focusable (tabindex=0). `focus` behaves like `mouseenter`;
+            `blur` like `mouseleave`. Enter/Space on a bar or label opens the detail panel.
+         5. Tooltip positioning uses position:fixed + getBoundingClientRect (viewport-relative, so
+            scroll offset is already accounted for). Above the element, flips below if clipped. */
 
-       Key design rules:
-       - One tooltip DOM, one content dispatcher keyed by hover-type.
-       - Highlight state goes through a small enterHover()/leaveHover() pair so
-         re-ordering or new hover types don't fragment the logic.
-       - Moving between two adjacent .gantt-hoverable elements never flashes — we suppress leaveHover
-         when relatedTarget is also hoverable; enterHover re-fires cleanly.
-       - 2B: bar hover activates the matching label row via .gantt-label-active (forward sync); label
-         hover activates the matching bar via .gantt-bar-highlight (existing). Both symmetric. */
+    // _hoverState is scoped to the closure so only this handler writes it.
+    self._hoverState = self._hoverState || { el: null, hideTimer: 0 };
+    const HIDE_DELAY_MS = 120;
 
     const buildTooltip = (type, el) => {
       if (type === 'seg') {
@@ -9448,37 +9501,38 @@ const Gantt = {
       return '';
     };
 
-    const enterHover = (el) => {
+    // Highlight helpers — each paint/erase is idempotent and touches only DOM it owns.
+    const paint = (el) => {
       const type = el.dataset.hoverType;
       if (!type) return;
+      el.classList.add('gantt-hovered');
       if (type === 'seg') {
-        el.classList.add('gantt-seg-hover');
-        el.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== el) s.classList.add('gantt-seg-dim'); });
+        el.parentElement && el.parentElement.querySelectorAll('.gantt-seg').forEach(s => { if (s !== el) s.classList.add('gantt-seg-dim'); });
       } else if (type === 'bar' || type === 'label') {
         const id = el.dataset.id;
         const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
-        // 2B: bidirectional sync — bar hover lights the label row, label hover lights the bar.
         if (bar) bar.classList.add('gantt-bar-highlight');
         if (label) label.classList.add('gantt-label-active');
       } else if (type === 'dep') {
         el.classList.add('gantt-dep-active');
-        // Highlight both endpoint label rows for context.
+        // Also paint the sibling visible path and the endpoint circles so the whole arrow lights up.
+        const svg = el.ownerSVGElement || el.closest('svg');
+        if (svg) {
+          svg.querySelectorAll('[data-from="' + el.dataset.from + '"][data-to="' + el.dataset.to + '"]').forEach(p => p.classList.add('gantt-dep-active'));
+        }
         const fromId = el.dataset.from, toId = el.dataset.to;
         document.querySelectorAll('.gantt-label-row').forEach(row => {
           if (row.dataset.id === fromId || row.dataset.id === toId) row.classList.add('gantt-label-active');
         });
       }
-      const html = buildTooltip(type, el);
-      if (html) self.showTooltip(el, html);
     };
-
-    const leaveHover = (el) => {
+    const erase = (el) => {
       const type = el.dataset.hoverType;
       if (!type) return;
+      el.classList.remove('gantt-hovered');
       if (type === 'seg') {
-        el.classList.remove('gantt-seg-hover');
-        el.parentElement.querySelectorAll('.gantt-seg-dim').forEach(s => s.classList.remove('gantt-seg-dim'));
+        el.parentElement && el.parentElement.querySelectorAll('.gantt-seg-dim').forEach(s => s.classList.remove('gantt-seg-dim'));
       } else if (type === 'bar' || type === 'label') {
         const id = el.dataset.id;
         const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
@@ -9486,32 +9540,76 @@ const Gantt = {
         if (bar) bar.classList.remove('gantt-bar-highlight');
         if (label) label.classList.remove('gantt-label-active');
       } else if (type === 'dep') {
-        el.classList.remove('gantt-dep-active');
+        const svg = el.ownerSVGElement || el.closest('svg');
+        if (svg) svg.querySelectorAll('.gantt-dep-active').forEach(p => p.classList.remove('gantt-dep-active'));
         document.querySelectorAll('.gantt-label-row.gantt-label-active').forEach(row => row.classList.remove('gantt-label-active'));
       }
     };
 
-    // Delegated handlers — one pair on the scroll container AND the labels column so label-row
-    // hovers are caught even though labels are a sibling of scroll, not a descendant.
+    // Enter/leave are the ONLY external API. They maintain _hoverState and drive showTooltip.
+    const enter = (el) => {
+      if (!el) return;
+      // Cancel any pending hide.
+      if (self._hoverState.hideTimer) { clearTimeout(self._hoverState.hideTimer); self._hoverState.hideTimer = 0; }
+      // Already on this element → nothing to do.
+      if (self._hoverState.el === el) return;
+      // Swap: erase the previous, paint the new.
+      if (self._hoverState.el) erase(self._hoverState.el);
+      self._hoverState.el = el;
+      paint(el);
+      const html = buildTooltip(el.dataset.hoverType, el);
+      if (html) self.showTooltip(el, html); else self.hideTooltip();
+    };
+    const leave = (el) => {
+      // Start the hide timer. If the cursor moves onto another hoverable before it fires,
+      // enter() cancels it and swaps highlight atomically — no flicker.
+      if (self._hoverState.el !== el) return;
+      if (self._hoverState.hideTimer) clearTimeout(self._hoverState.hideTimer);
+      self._hoverState.hideTimer = setTimeout(() => {
+        if (self._hoverState.el) erase(self._hoverState.el);
+        self._hoverState.el = null;
+        self._hoverState.hideTimer = 0;
+        self.hideTooltip();
+      }, HIDE_DELAY_MS);
+    };
+
+    // Delegated listeners — pointerover/pointerout cover both mouse and touch+pen.
     const attachTo = (container) => {
       if (!container || container.__ganttHoverWired) return;
       container.__ganttHoverWired = true;
       container.addEventListener('mouseover', function(e) {
-        const el = e.target.closest('.gantt-hoverable');
+        const el = e.target.closest && e.target.closest('.gantt-hoverable');
         if (!el) return;
-        // Avoid re-entering hover when moving between child elements of the same hoverable.
-        const rel = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.gantt-hoverable') : null;
-        if (rel === el) return;
-        enterHover(el);
+        enter(el);
       });
       container.addEventListener('mouseout', function(e) {
-        const el = e.target.closest('.gantt-hoverable');
+        const el = e.target.closest && e.target.closest('.gantt-hoverable');
         if (!el) return;
         const rel = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('.gantt-hoverable') : null;
+        // Still inside same hoverable (moving between its children) → ignore.
         if (rel === el) return;
-        leaveHover(el);
-        // Only hide the tooltip if we're moving to non-hoverable space.
-        if (!rel) self.hideTooltip();
+        leave(el);
+      });
+      // Keyboard accessibility: focus/blur mirror mouseover/mouseout. Enter/Space on a project
+      // hoverable opens the detail panel (same as clicking the bar or label).
+      container.addEventListener('focusin', function(e) {
+        const el = e.target.closest && e.target.closest('.gantt-hoverable');
+        if (el) enter(el);
+      });
+      container.addEventListener('focusout', function(e) {
+        const el = e.target.closest && e.target.closest('.gantt-hoverable');
+        if (el) leave(el);
+      });
+      container.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const el = e.target.closest && e.target.closest('.gantt-hoverable');
+        if (!el) return;
+        const type = el.dataset.hoverType;
+        const id = el.dataset.id;
+        if ((type === 'bar' || type === 'label') && id) {
+          e.preventDefault();
+          DetailPanel.open(id);
+        }
       });
     };
     attachTo(scroll);
@@ -9697,7 +9795,7 @@ const Gantt = {
         '<span class="rag-dot" title="Resource · ' + Dashboard.esc(p.rag_resourcing || '—') + '" style="background:' + (App.ragColor ? App.ragColor(p.rag_resourcing) : 'var(--text-muted)') + '"></span>' +
         '<span class="rag-dot" title="Scope · ' + Dashboard.esc(p.rag_scope || '—') + '" style="background:' + (App.ragColor ? App.ragColor(p.rag_scope) : 'var(--text-muted)') + '"></span>' +
       '</span>';
-      labelsHtml += '<div class="gantt-label-row gantt-hoverable' + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+      labelsHtml += '<div class="gantt-label-row gantt-hoverable' + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
         ragDotsHtml +
         '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
       '</div>';
@@ -9796,52 +9894,48 @@ const Gantt = {
 
       const forecastHtml = ''; // forecast cone feature removed
 
-      // 2D: New milestone icon set. One shape per type — colour used ONLY to encode the type, never
-      // status (status belongs to RAG). Every icon uses a 16×16 viewBox with a 1 px outer stroke for
-      // visual consistency and sits on the same top offset so they stack cleanly on the same project.
-      // 2G: viewBox bumped from 14→16 so the hit target is comfortably clickable.
+      // Milestone icon set — redesigned per design-review feedback (v2).
+      // Each icon: single instantly-readable metaphor, one strong fill colour, matching dark stroke.
+      // Colour semantics are role-coded (not status-coded — RAG owns status). Every one is documented
+      // in the Gantt legend (see Gantt.renderLegend).
+      //   DEADLINE → red octagon ("hard stop").
+      //   LAUNCH   → amber rocket ("go live!"), warm, distinct from RAG green.
+      //   UAT      → cyan document + checkmark ("signed off, ready to hand over").
+      //   GO-LIVE  → dark-teal pennant flag (solid=actual; dashed=estimated).
       let milestoneHtml = '';
       const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
-      const msWrap = (klass, x, type, date, inner) =>
-        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' style="position:absolute;top:7px;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
+      const msWrap = (klass, x, type, date, inner, tabIdx) =>
+        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:7px;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
 
-      // Hard deadline — stop octagon, slate outline on white fill. Strong "do not pass" silhouette.
+      // Deadline — octagon filled red. Strong, unambiguous "stop" signal.
       const msDeadline = (x, type, date) => msWrap('gantt-ms-deadline', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" aria-label="deadline">' +
-          '<polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="white" stroke="#475569" stroke-width="1.2"/>' +
-          '<rect x="4" y="7" width="8" height="2" fill="#475569"/>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+          '<polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="#dc2626" stroke="#7f1d1d" stroke-width="1.2"/>' +
         '</svg>');
-      // Product launch — chequered flag. Navy fill; avoids green (RAG) and red (deadline).
+      // Launch — rocket. Amber fill with a darker stroke; distinct from RAG green and from red deadline.
       const msLaunch = (x, type, date) => msWrap('gantt-ms-launch', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" aria-label="launch">' +
-          '<rect x="3" y="2" width="1.2" height="13" fill="#1e293b"/>' +
-          '<path d="M5 2 L14 2 L14 8 L5 8 Z" fill="white" stroke="#1e293b" stroke-width="1"/>' +
-          '<rect x="5" y="2" width="2.25" height="2" fill="#1e293b"/>' +
-          '<rect x="9.5" y="2" width="2.25" height="2" fill="#1e293b"/>' +
-          '<rect x="7.25" y="4" width="2.25" height="2" fill="#1e293b"/>' +
-          '<rect x="11.75" y="4" width="2.25" height="2" fill="#1e293b"/>' +
-          '<rect x="5" y="6" width="2.25" height="2" fill="#1e293b"/>' +
-          '<rect x="9.5" y="6" width="2.25" height="2" fill="#1e293b"/>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+          '<path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/>' +
+          '<circle cx="8" cy="7" r="1.2" fill="#b45309"/>' +
+          '<path d="M5 11 L3 14 M11 11 L13 14" stroke="#b45309" stroke-width="1.2" stroke-linecap="round" fill="none"/>' +
         '</svg>');
-      // DT UAT release — key icon in teal. "Handed over to another team" metaphor.
+      // UAT release — document with a checkmark. "Approved, handover ready."
       const msUat = (x, type, date) => msWrap('gantt-ms-uat', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" aria-label="uat release">' +
-          '<circle cx="5" cy="8" r="3" fill="none" stroke="#0d9488" stroke-width="1.4"/>' +
-          '<line x1="8" y1="8" x2="14" y2="8" stroke="#0d9488" stroke-width="1.4" stroke-linecap="round"/>' +
-          '<line x1="12" y1="8" x2="12" y2="11" stroke="#0d9488" stroke-width="1.4" stroke-linecap="round"/>' +
-          '<line x1="14" y1="8" x2="14" y2="10.5" stroke="#0d9488" stroke-width="1.4" stroke-linecap="round"/>' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+          '<rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/>' +
+          '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>');
-      // Go-Live — pennant flag, solid cyan.
+      // Go-Live — pennant flag, solid dark teal.
       const msGoLive = (x, type, date) => msWrap('gantt-ms-golive', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" aria-label="go-live">' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
           '<rect x="3" y="2" width="1.2" height="13" fill="#0e7490"/>' +
-          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="#0891b2" stroke="#0e7490" stroke-width="1"/>' +
+          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/>' +
         '</svg>');
-      // Go-Live (ghost) — same pennant silhouette, dashed outline, no fill.
+      // Go-Live (estimated) — same pennant, dashed outline, no fill.
       const msGoLiveGhost = (x, type, date) => msWrap('gantt-ms-ghost', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" aria-label="go-live (estimated)" style="opacity:0.65">' +
+        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false" style="opacity:0.65">' +
           '<rect x="3" y="2" width="1.2" height="13" fill="#0e7490" opacity="0.6"/>' +
-          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="none" stroke="#0891b2" stroke-width="1.4" stroke-dasharray="2 1.5"/>' +
+          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="none" stroke="#0e7490" stroke-width="1.4" stroke-dasharray="2 1.5"/>' +
         '</svg>');
 
       if (p.hard_deadline) milestoneHtml += msDeadline(dateToX(p.hard_deadline), 'Hard Deadline', p.hard_deadline);
@@ -9904,7 +9998,7 @@ const Gantt = {
       }
 
       let mainRow = '<div class="gantt-row" style="width:' + totalWidth + 'px">' +
-        '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+        '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
         forecastHtml +
@@ -10078,10 +10172,11 @@ const Gantt = {
       if (kind === 'related') {
         stroke = '#64748b'; width = 1.5; dash = '4 3'; marker = ''; // open-circle endpoints drawn separately
       }
-      // 2G: invisible fat hit path FIRST so the visible path renders on top. The hit path is what
-      // receives hover/click; CSS sibling selector .gantt-dep-hit:hover ~ .gantt-dep-path grows the visible stroke.
-      depLines += '<path class="gantt-dep-hit gantt-hoverable" data-hover-type="dep" data-kind="' + kind + '" data-from="' + fromId + '" data-to="' + toId + '" d="' + path + '" ' +
-        'fill="none" stroke="transparent" stroke-width="10" style="pointer-events:stroke;cursor:pointer"/>';
+      // Invisible fat hit path FIRST so the visible path renders on top. The hit path is what
+      // receives hover/click/focus; paint() applies .gantt-dep-active to BOTH paths via the shared
+      // data-from+data-to attribute so the visible path actually lights up under the cursor.
+      depLines += '<path class="gantt-dep-hit gantt-hoverable" data-hover-type="dep" data-kind="' + kind + '" data-from="' + fromId + '" data-to="' + toId + '" tabindex="0" d="' + path + '" ' +
+        'fill="none" stroke="transparent" stroke-width="12" style="pointer-events:stroke;cursor:pointer"/>';
       // Visible path — no pointer events on its own; hit path beside it carries the interaction.
       depLines += '<path class="gantt-dep-path" data-kind="' + kind + '" data-from="' + fromId + '" data-to="' + toId + '" d="' + path + '" ' +
         'fill="none" stroke="' + stroke + '" stroke-width="' + width + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + ' opacity="' + baseOpacity + '"' +
