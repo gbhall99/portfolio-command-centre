@@ -1642,9 +1642,10 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
         Forums <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
       <div class="nav-section-label">System</div>
+      <!-- data-view="config" kept for back-compat (App.navigate key); visible label is "System Settings". -->
       <div class="nav-item" data-view="config" onclick="App.navigate('config')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Configuration
+        System Settings
       </div>
     </div>
     <div class="sidebar-footer">
@@ -1905,7 +1906,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
     </div>
     <div class="view" id="viewConfig">
       <div class="governance-container" id="configContainer">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">Configuration</h2><button class="view-help-btn" onclick="Onboarding.showViewHelp('config')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">System Settings</h2><button class="view-help-btn" onclick="Onboarding.showViewHelp('config')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>
         <div class="view-help-panel" id="helpConfig"></div>
         <div id="configBody"></div>
       </div>
@@ -2830,6 +2831,8 @@ const App = {
   },
 
   onDataLoaded() {
+    // Hydrate settings defaults before any UI/solver code reads them.
+    this._ensureSettingsDefaults();
     const badge = document.getElementById('modeBadge');
     badge.textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
     badge.classList.add('loaded');
@@ -2850,6 +2853,53 @@ const App = {
     if (this._integrityIssues.length > 0) {
       console.warn('[PCC] Data integrity issues found:', this._integrityIssues.length);
     }
+  },
+
+  /* Hydrate every tunable with defaults. Back-compatible: older JSON without these keys still loads,
+     and every call site that reads settings.* gets a value. Mirror the defaults here with what the
+     UI exposes in System Settings so the two never drift. */
+  _ensureSettingsDefaults() {
+    if (!this.data) return;
+    if (!this.data.settings) this.data.settings = {};
+    const s = this.data.settings;
+
+    // Scheduling-engine tunables previously hard-coded inside Solver.solve.
+    s.scheduler = Object.assign({
+      loadBalanceIterations: 3,
+      hotSprintThresholdPct: 90,
+      coolSprintThresholdPct: 60,
+      shiftGranuleDivisor: 2,
+      enforceCrossCustomerDeps: false
+    }, s.scheduler || {});
+
+    // Priority-scoring weights previously hard-coded inside App.calculateProjectPriorityScore.
+    s.scoring = Object.assign({
+      statusWeights: { 'Blocked': 5, 'At Risk': 4, 'In Progress': 3, 'Not Started': 2, 'On Hold': 1, 'Complete': 0, 'Closed': 0 },
+      statusMultiplier: 10,
+      ragWeights: { 'Red': 3, 'Amber': 2, 'Green': 1 },
+      ragMultiplier: 5,
+      riskMultiplier: 1,
+      sizeDivisor: 5,
+      sizeCap: 20,
+      deadlineTiers: [
+        { days: 7,  score: 60 },
+        { days: 14, score: 40 },
+        { days: 30, score: 20 },
+        { days: 60, score: 10 }
+      ],
+      dependencyLeverageWeight: 3,
+      dependencyLeverageCap: 30
+    }, s.scoring || {});
+
+    // Display colour-band thresholds previously hard-coded at dozens of call sites.
+    s.thresholds = Object.assign({
+      utilisation:        { green: 80,  amber: 100 },
+      capacityDemand:     { green: 85,  amber: 100 },
+      forecastP80Sprints: { green: 4,   amber: 8 },
+      deliveryRate:       { green: 85,  amber: 65 },  // higher is better — green is the upper bound
+      evmIndex:           { green: 0.95, amber: 0.80 }, // higher is better
+      staleActivityDays:  7
+    }, s.thresholds || {});
   },
 
   // REQ-UX-02: Data Integrity Validation
@@ -3436,7 +3486,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { dashboard: 'Dashboard', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'Configuration' };
+    const names = { dashboard: 'Dashboard', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -3480,6 +3530,209 @@ const App = {
       '<div class="config-help-text" id="configHelp_' + id + '">' + text + '</div>';
   },
 
+  // --- System Settings save/reset handlers (1C, 1D, 1E) ---
+
+  saveSchedulingEngineSettings() {
+    if (!this.data) return;
+    this.pushUndo('Save Scheduling Engine settings');
+    this._ensureSettingsDefaults();
+    const s = Sprint.allocSettings;
+    const sched = this.data.settings.scheduler;
+    const readInt = (id, min, max, fallback) => {
+      const el = document.getElementById(id);
+      if (!el) return fallback;
+      const v = parseInt(el.value, 10);
+      if (isNaN(v)) return fallback;
+      return Math.max(min, Math.min(max, v));
+    };
+    s.maxCapacityPct = readInt('seMaxCap', 50, 100, 85);
+    s.phaseBufferPoints = readInt('seBuffer', 0, 10, 2);
+    s.maxBufferSlides = readInt('seMaxSlides', 1, 10, 4);
+    sched.loadBalanceIterations = readInt('seIter', 1, 10, 3);
+    sched.hotSprintThresholdPct = readInt('seHot', 60, 100, 90);
+    sched.coolSprintThresholdPct = readInt('seCool', 0, 80, 60);
+    sched.shiftGranuleDivisor = readInt('seShift', 1, 5, 2);
+    const startEl = document.getElementById('seStartSprint');
+    if (startEl) s.startFromSprint = startEl.value || '';
+    s.enforcePerPersonCap = !!document.getElementById('seEnforcePerPerson').checked;
+    s.respectSkillOrder = !!document.getElementById('seRespectOrder').checked;
+    s.spreadWork = !!document.getElementById('seSpread').checked;
+    s.lockCompleted = !!document.getElementById('seLockComp').checked;
+    s.lockInProgress = !!document.getElementById('seLockIP').checked;
+    s.preservePastSprintAllocations = !!document.getElementById('seProtectPast').checked;
+    sched.enforceCrossCustomerDeps = !!document.getElementById('seCrossCust').checked;
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Scheduling Engine settings saved', 'success');
+    this.renderConfig();
+  },
+
+  resetSchedulingEngineSettings() {
+    if (!confirm('Reset Scheduling Engine settings to defaults?')) return;
+    this.pushUndo('Reset Scheduling Engine settings');
+    const s = Sprint.allocSettings;
+    Object.assign(s, {
+      maxCapacityPct: 85,
+      phaseBufferPoints: 2,
+      maxBufferSlides: 4,
+      startFromSprint: '',
+      enforcePerPersonCap: true,
+      respectSkillOrder: true,
+      spreadWork: true,
+      lockCompleted: true,
+      lockInProgress: false,
+      preservePastSprintAllocations: true
+    });
+    if (this.data && this.data.settings) {
+      this.data.settings.scheduler = {
+        loadBalanceIterations: 3,
+        hotSprintThresholdPct: 90,
+        coolSprintThresholdPct: 60,
+        shiftGranuleDivisor: 2,
+        enforceCrossCustomerDeps: false
+      };
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Scheduling Engine reset to defaults', 'success');
+    this.renderConfig();
+  },
+
+  saveScoringSettings() {
+    if (!this.data) return;
+    this.pushUndo('Save Scoring settings');
+    this._ensureSettingsDefaults();
+    const cfg = this.data.settings.scoring;
+    const readInt = (id, min, max, fallback) => {
+      const el = document.getElementById(id);
+      if (!el) return fallback;
+      const v = parseFloat(el.value);
+      if (isNaN(v)) return fallback;
+      return Math.max(min, Math.min(max, v));
+    };
+    cfg.statusMultiplier = readInt('scoreStatusMult', 0, 50, 10);
+    cfg.ragMultiplier = readInt('scoreRagMult', 0, 20, 5);
+    cfg.riskMultiplier = readInt('scoreRiskMult', 0, 10, 1);
+    cfg.sizeDivisor = readInt('scoreSizeDiv', 1, 50, 5);
+    cfg.sizeCap = readInt('scoreSizeCap', 1, 100, 20);
+    cfg.dependencyLeverageWeight = readInt('scoreDepWeight', 0, 20, 3);
+    cfg.dependencyLeverageCap = readInt('scoreDepCap', 0, 200, 30);
+    // Tier inputs: read in order
+    const tiers = [];
+    const currentTiers = (cfg.deadlineTiers || []).slice().sort((a, b) => a.days - b.days);
+    currentTiers.forEach((_, i) => {
+      const dEl = document.getElementById('scoreDlDays_' + i);
+      const sEl = document.getElementById('scoreDlScore_' + i);
+      if (dEl && sEl) tiers.push({ days: parseInt(dEl.value, 10) || currentTiers[i].days, score: parseInt(sEl.value, 10) || currentTiers[i].score });
+    });
+    if (tiers.length) cfg.deadlineTiers = tiers.sort((a, b) => a.days - b.days);
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Scoring settings saved', 'success');
+    this.renderConfig();
+  },
+
+  resetScoringSettings() {
+    if (!confirm('Reset Scoring settings to defaults?')) return;
+    this.pushUndo('Reset Scoring settings');
+    if (this.data && this.data.settings) {
+      this.data.settings.scoring = {
+        statusWeights: { 'Blocked': 5, 'At Risk': 4, 'In Progress': 3, 'Not Started': 2, 'On Hold': 1, 'Complete': 0, 'Closed': 0 },
+        statusMultiplier: 10,
+        ragWeights: { 'Red': 3, 'Amber': 2, 'Green': 1 },
+        ragMultiplier: 5,
+        riskMultiplier: 1,
+        sizeDivisor: 5,
+        sizeCap: 20,
+        deadlineTiers: [
+          { days: 7,  score: 60 }, { days: 14, score: 40 }, { days: 30, score: 20 }, { days: 60, score: 10 }
+        ],
+        dependencyLeverageWeight: 3,
+        dependencyLeverageCap: 30
+      };
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Scoring reset to defaults', 'success');
+    this.renderConfig();
+  },
+
+  saveDisplayThresholds() {
+    if (!this.data) return;
+    this.pushUndo('Save Display Thresholds');
+    this._ensureSettingsDefaults();
+    const t = this.data.settings.thresholds;
+    const readNum = (id, fallback) => {
+      const el = document.getElementById(id);
+      if (!el) return fallback;
+      const v = parseFloat(el.value);
+      return isNaN(v) ? fallback : v;
+    };
+    t.utilisation        = { green: readNum('tUtilGreen', 80),  amber: readNum('tUtilAmber', 100) };
+    t.capacityDemand     = { green: readNum('tCvdGreen', 85),   amber: readNum('tCvdAmber', 100) };
+    t.forecastP80Sprints = { green: readNum('tFcGreen', 4),     amber: readNum('tFcAmber', 8) };
+    t.deliveryRate       = { green: readNum('tDrGreen', 85),    amber: readNum('tDrAmber', 65) };
+    t.evmIndex           = { green: readNum('tEvmGreen', 0.95), amber: readNum('tEvmAmber', 0.80) };
+    t.staleActivityDays  = readNum('tStaleDays', 7);
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Display thresholds saved', 'success');
+    this.renderConfig();
+  },
+
+  resetDisplayThresholds() {
+    if (!confirm('Reset Display Thresholds to defaults?')) return;
+    this.pushUndo('Reset Display Thresholds');
+    if (this.data && this.data.settings) {
+      this.data.settings.thresholds = {
+        utilisation:        { green: 80,  amber: 100 },
+        capacityDemand:     { green: 85,  amber: 100 },
+        forecastP80Sprints: { green: 4,   amber: 8 },
+        deliveryRate:       { green: 85,  amber: 65 },
+        evmIndex:           { green: 0.95, amber: 0.80 },
+        staleActivityDays:  7
+      };
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.toast('Display thresholds reset to defaults', 'success');
+    this.renderConfig();
+  },
+
+  // Colour helper for utilisation percent — reads settings.thresholds.utilisation so every call
+  // site (sprint swimlane, capacity view, trends modal) stays in sync with Display Thresholds.
+  utilColor(pct) {
+    const t = (this.data && this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.utilisation) || { green: 80, amber: 100 };
+    if (pct <= t.green) return 'var(--status-green)';
+    if (pct <= t.amber) return 'var(--status-amber)';
+    return 'var(--status-red)';
+  },
+  // Returns 'green' / 'amber' / 'red' (for places that build CSS class names).
+  utilClass(pct) {
+    const t = (this.data && this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.utilisation) || { green: 80, amber: 100 };
+    if (pct <= t.green) return 'green';
+    if (pct <= t.amber) return 'amber';
+    return 'red';
+  },
+
+  _renderScoringPreview() {
+    if (!this.data || !this.data.projects || !this.data.projects.length) return '';
+    const customer = this.activeCustomer;
+    const actives = (this.data.projects || []).filter(p =>
+      (!customer || p.customer === customer) && p.status !== 'Complete' && p.status !== 'Closed');
+    if (!actives.length) return '<em>No active projects to preview.</em>';
+    const lev = this.computeDependencyLeverage(actives);
+    const scored = actives.map(p => ({ p, score: this.calculateProjectPriorityScore(p, lev[p.id] || 0) }));
+    scored.sort((a, b) => b.score - a.score);
+    const row = (entry) => '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dark)">' + Dashboard.esc(entry.p.name) + '</span><span style="color:var(--text-muted);font-variant-numeric:tabular-nums">' + entry.score + ' pts</span></div>';
+    const top = scored.slice(0, 5).map(row).join('');
+    const bottom = scored.slice(-5).map(row).join('');
+    return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">' +
+      '<div><div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Top 5 by score</div>' + top + '</div>' +
+      '<div><div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Bottom 5 by score</div>' + bottom + '</div>' +
+    '</div>';
+  },
+
   toggleConfigHelp(id) {
     const el = document.getElementById('configHelp_' + id);
     if (el) el.classList.toggle('visible');
@@ -3505,21 +3758,123 @@ const App = {
         '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700">' + customers.length + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Customers</div></div>' +
       '</div>' +
 
-      // Allocation settings
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Auto-Allocation Settings</h3>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max Capacity %' + ch('maxCap', 'Maximum percentage of team capacity the solver will fill per skill per sprint. Lower values leave buffer for unplanned work. Range: 50-100%.') + '</div><input type="number" value="' + s.maxCapacityPct + '" min="50" max="100" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.allocSettings.maxCapacityPct=parseInt(this.value)||85"></div>' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Priority Weight (1-5)' + ch('priWeight', 'How strongly project priority influences allocation order. Higher values mean high-priority projects get resources first. Range: 1-5.') + '</div><input type="number" value="' + s.priorityWeight + '" min="1" max="5" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.allocSettings.priorityWeight=parseInt(this.value)||3"></div>' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Default Customer</div><div style="font-size:13px;font-weight:600;padding:5px 0">' + esc(this.activeCustomer || 'None') + '</div></div>' +
-        '</div>' +
-        '<div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap">' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.respectSkillOrder ? 'checked' : '') + ' onchange="Sprint.allocSettings.respectSkillOrder=this.checked"> Respect delivery pipeline' + ch('pipeline', 'When enabled, the solver allocates skills in the order defined by each project&#39;s delivery config (e.g., Requirements before Data Engineering before UAT).') + '</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.spreadWork ? 'checked' : '') + ' onchange="Sprint.allocSettings.spreadWork=this.checked"> Spread work across sprints' + ch('spread', 'When enabled, distributes work evenly across available sprints instead of front-loading into the earliest sprint.') + '</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.lockCompleted ? 'checked' : '') + ' onchange="Sprint.allocSettings.lockCompleted=this.checked"> Lock completed projects' + ch('lockComp', 'Reserves capacity for projects already marked as Complete, preventing the solver from overwriting their allocations.') + '</label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ' + (s.lockInProgress ? 'checked' : '') + ' onchange="Sprint.allocSettings.lockInProgress=this.checked"> Lock in-progress projects' + ch('lockIP', 'Reserves capacity for projects already marked as In Progress, preventing the solver from overwriting their allocations.') + '</label>' +
-        '</div>' +
-      '</div>' +
+      // Scheduling Engine — every knob the solver consumes (inline-editable; mirrors the Sprint toolbar modal)
+      (function() {
+        const sched = (App.data.settings && App.data.settings.scheduler) || {};
+        const sprintsOpts = '<option value="">First available</option>' +
+          (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace('CY26-', '') + '</option>').join('');
+        const numInput = (id, val, min, max, title) =>
+          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + '" title="' + title + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="schedulingEngineCard">' +
+          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Scheduling Engine</h3>' +
+          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Every solver knob. Changes take effect on the next Auto-Allocate run.</div>' +
+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity &amp; Buffers</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max capacity target (%)' + ch('seMaxCap', 'Aggregate-skill ceiling per sprint. Per-person caps still apply separately.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Phase hand-off buffer (SP)' + ch('seBuffer', 'Reserved points when two consecutive phases share a sprint. 0 disables.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max buffer slides' + ch('seMaxSlides', 'Safety cap on cascading buffer pushes (R6). After this many slides the buffer is abandoned.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
+          '</div>' +
+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Load Balancing (Pass 3)</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Iterations' + ch('seIter', 'Max passes of load-balance. More = better spread, slower run.') + '</div>' + numInput('seIter', sched.loadBalanceIterations != null ? sched.loadBalanceIterations : 3, 1, 10, '1–10') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hot sprint ≥ (%)' + ch('seHot', 'Triggers redistribution when utilisation exceeds this. Default 90%.') + '</div>' + numInput('seHot', sched.hotSprintThresholdPct != null ? sched.hotSprintThresholdPct : 90, 60, 100, '60–100%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Cool sprint &lt; (%)' + ch('seCool', 'Next sprint must be below this to accept redistributed work. Default 60%.') + '</div>' + numInput('seCool', sched.coolSprintThresholdPct != null ? sched.coolSprintThresholdPct : 60, 0, 80, '0–80%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Shift granule divisor' + ch('seShift', 'Shifts ceil(points / divisor) at a time. Smaller divisor = larger chunks moved per pass.') + '</div>' + numInput('seShift', sched.shiftGranuleDivisor != null ? sched.shiftGranuleDivisor : 2, 1, 5, '1–5') + '</div>' +
+          '</div>' +
+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Horizon &amp; Locks</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start from sprint' + ch('seStart', 'Earliest sprint the solver will allocate into.') + '</div><select id="seStartSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + sprintsOpts + '</select></div>' +
+            '<div></div>' +
+          '</div>' +
+          '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seEnforcePerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Enforce per-person cap' + ch('sePerPerson', 'Hard constraint: each team member never exceeds available_points_per_sprint.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Respect delivery pipeline' + ch('seOrder', 'Phase order preserved across sprints.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seSpread"' + (s.spreadWork ? ' checked' : '') + '> Spread work evenly' + ch('seSpread2', 'Runs Pass 3 load-balance.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockComp"' + (s.lockCompleted ? ' checked' : '') + '> Lock Complete/Closed</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockIP"' + (s.lockInProgress ? ' checked' : '') + '> Lock In-Progress</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seProtectPast"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Protect past sprints' + ch('sePast', 'Past-sprint slices stay put; no new work lands in past sprints.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seCrossCust"' + (sched.enforceCrossCustomerDeps ? ' checked' : '') + '> Enforce cross-customer deps' + ch('seCross', 'When ON, locked projects in other customers constrain start times. Default OFF (historical behaviour).') + '</label>' +
+          '</div>' +
+
+          '<div style="margin-top:14px;display:flex;gap:8px">' +
+            '<button class="btn btn-primary btn-sm" onclick="App.saveSchedulingEngineSettings()">Save</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.resetSchedulingEngineSettings()">Reset to defaults</button>' +
+          '</div>' +
+        '</div>';
+      })() +
+
+      // Scoring & Prioritisation — auto-prioritise weights
+      (function() {
+        const cfg = App._scoringCfg ? App._scoringCfg() : {};
+        const numInput = (id, val, min, max, step) =>
+          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+        const tiers = (cfg.deadlineTiers || []).slice().sort((a, b) => a.days - b.days);
+        const tiersHtml = tiers.map((t, i) =>
+          '<tr><td style="padding:4px 6px">&le; ' + numInput('scoreDlDays_' + i, t.days, 1, 365) + ' days</td>' +
+          '<td style="padding:4px 6px">' + numInput('scoreDlScore_' + i, t.score, 0, 200) + ' pts</td></tr>'
+        ).join('');
+        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="scoringCard">' +
+          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Scoring &amp; Prioritisation</h3>' +
+          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Weights that drive Auto-Prioritise. Components sum into a single project score; higher = more urgent.</div>' +
+
+          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Status multiplier' + ch('scoreStatus', 'Status weight × this multiplier. Blocked (5) × 10 = 50 default top.') + '</div>' + numInput('scoreStatusMult', cfg.statusMultiplier, 0, 50) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">RAG multiplier' + ch('scoreRag', 'Each RAG dimension contributes weight × this multiplier; three dimensions summed.') + '</div>' + numInput('scoreRagMult', cfg.ragMultiplier, 0, 20) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Risk multiplier' + ch('scoreRisk', 'Sum of (severity × probability) × multiplier.') + '</div>' + numInput('scoreRiskMult', cfg.riskMultiplier, 0, 10, '0.1') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size divisor' + ch('scoreSize', 'Score component = size_total / divisor, capped below. Default: every 5 SP = 1 pt.') + '</div>' + numInput('scoreSizeDiv', cfg.sizeDivisor, 1, 50) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size cap' + ch('scoreSizeCap', 'Upper bound on the size component.') + '</div>' + numInput('scoreSizeCap', cfg.sizeCap, 1, 100) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage weight' + ch('scoreDep', 'Points added per downstream project this one blocks (transitive).') + '</div>' + numInput('scoreDepWeight', cfg.dependencyLeverageWeight, 0, 20) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage cap' + ch('scoreDepCap', 'Upper bound on the dependency-leverage contribution.') + '</div>' + numInput('scoreDepCap', cfg.dependencyLeverageCap, 0, 200) + '</div>' +
+          '</div>' +
+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Deadline urgency tiers</div>' +
+          '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
+            '<thead><tr style="border-bottom:1px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">When deadline is within</th><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">Score contribution</th></tr></thead>' +
+            '<tbody>' + tiersHtml + '</tbody>' +
+          '</table>' +
+
+          '<div style="margin-top:14px;display:flex;gap:8px">' +
+            '<button class="btn btn-primary btn-sm" onclick="App.saveScoringSettings()">Save</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.resetScoringSettings()">Reset to defaults</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()">Run Auto-Prioritise</button>' +
+          '</div>' +
+          '<div id="scoringPreview" style="margin-top:12px;font-size:11px;color:var(--text-muted)">' + App._renderScoringPreview() + '</div>' +
+        '</div>';
+      })() +
+
+      // Display Thresholds — every colour-band cutoff in one place
+      (function() {
+        const t = (App.data.settings && App.data.settings.thresholds) || {};
+        const numInput = (id, val, min, max, step) =>
+          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="displayThresholdsCard">' +
+          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Display Thresholds</h3>' +
+          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Colour band cut-offs used across the dashboard, capacity views, and reports.</div>' +
+
+          '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
+            '<thead><tr style="border-bottom:1px solid var(--border-light)">' +
+              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Metric</th>' +
+              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Green at</th>' +
+              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Amber at</th>' +
+              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Direction</th>' +
+            '</tr></thead><tbody>' +
+            '<tr><td style="padding:5px 7px">Utilisation (%)</td><td style="padding:5px 7px">' + numInput('tUtilGreen', (t.utilisation || {}).green != null ? t.utilisation.green : 80, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tUtilAmber', (t.utilisation || {}).amber != null ? t.utilisation.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better — green is the ceiling</td></tr>' +
+            '<tr><td style="padding:5px 7px">Capacity vs demand (%)</td><td style="padding:5px 7px">' + numInput('tCvdGreen', (t.capacityDemand || {}).green != null ? t.capacityDemand.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tCvdAmber', (t.capacityDemand || {}).amber != null ? t.capacityDemand.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better</td></tr>' +
+            '<tr><td style="padding:5px 7px">Forecast P80 (sprints)</td><td style="padding:5px 7px">' + numInput('tFcGreen', (t.forecastP80Sprints || {}).green != null ? t.forecastP80Sprints.green : 4, 1, 52) + '</td><td style="padding:5px 7px">' + numInput('tFcAmber', (t.forecastP80Sprints || {}).amber != null ? t.forecastP80Sprints.amber : 8, 1, 52) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Fewer is better</td></tr>' +
+            '<tr><td style="padding:5px 7px">Delivery rate (%)</td><td style="padding:5px 7px">' + numInput('tDrGreen', (t.deliveryRate || {}).green != null ? t.deliveryRate.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tDrAmber', (t.deliveryRate || {}).amber != null ? t.deliveryRate.amber : 65, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better — green is the floor</td></tr>' +
+            '<tr><td style="padding:5px 7px">SPI / CPI (ratio)</td><td style="padding:5px 7px">' + numInput('tEvmGreen', (t.evmIndex || {}).green != null ? t.evmIndex.green : 0.95, 0, 2, '0.01') + '</td><td style="padding:5px 7px">' + numInput('tEvmAmber', (t.evmIndex || {}).amber != null ? t.evmIndex.amber : 0.80, 0, 2, '0.01') + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better</td></tr>' +
+            '<tr><td style="padding:5px 7px">Stale activity (days)</td><td style="padding:5px 7px" colspan="2">' + numInput('tStaleDays', t.staleActivityDays != null ? t.staleActivityDays : 7, 1, 90) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Global default (per-customer overrides still apply)</td></tr>' +
+          '</tbody></table>' +
+
+          '<div style="margin-top:10px;display:flex;gap:8px">' +
+            '<button class="btn btn-primary btn-sm" onclick="App.saveDisplayThresholds()">Save</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.resetDisplayThresholds()">Reset to defaults</button>' +
+          '</div>' +
+        '</div>';
+      })() +
 
       // Sprint cycle settings (editable)
       '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
@@ -3852,20 +4207,40 @@ const App = {
     return [...new Set(this.data.projects.map(p => p[field]).filter(Boolean))].sort();
   },
   // --- Risk Scoring ---
+  // Accessor — always returns a fully-hydrated scoring bag even if _ensureSettingsDefaults hasn't run yet.
+  _scoringCfg() {
+    const s = (this.data && this.data.settings && this.data.settings.scoring) || {};
+    return {
+      statusWeights: s.statusWeights || { 'Blocked': 5, 'At Risk': 4, 'In Progress': 3, 'Not Started': 2, 'On Hold': 1, 'Complete': 0, 'Closed': 0 },
+      statusMultiplier: s.statusMultiplier != null ? s.statusMultiplier : 10,
+      ragWeights: s.ragWeights || { 'Red': 3, 'Amber': 2, 'Green': 1 },
+      ragMultiplier: s.ragMultiplier != null ? s.ragMultiplier : 5,
+      riskMultiplier: s.riskMultiplier != null ? s.riskMultiplier : 1,
+      sizeDivisor: s.sizeDivisor || 5,
+      sizeCap: s.sizeCap != null ? s.sizeCap : 20,
+      deadlineTiers: Array.isArray(s.deadlineTiers) && s.deadlineTiers.length ? s.deadlineTiers : [
+        { days: 7, score: 60 }, { days: 14, score: 40 }, { days: 30, score: 20 }, { days: 60, score: 10 }
+      ],
+      dependencyLeverageWeight: s.dependencyLeverageWeight != null ? s.dependencyLeverageWeight : 3,
+      dependencyLeverageCap: s.dependencyLeverageCap != null ? s.dependencyLeverageCap : 30
+    };
+  },
+
   calculateRiskScore(project) {
     const risks = project.risks_register || [];
     if (!risks.length) return 0;
+    const mult = this._scoringCfg().riskMultiplier;
     let totalScore = 0;
     risks.forEach(r => {
       const severity = { 'Critical': 5, 'High': 4, 'Medium': 3, 'Low': 2, 'Very Low': 1 }[r.severity] || 2;
       const probability = { 'Almost Certain': 5, 'Likely': 4, 'Possible': 3, 'Unlikely': 2, 'Rare': 1 }[r.probability] || 3;
       totalScore += severity * probability;
     });
-    return totalScore;
+    return totalScore * mult;
   },
 
-  // Graded deadline urgency ramp: projects with closer hard_deadlines rank higher.
-  // Cliffs are intentional — they correspond to sprint-scale planning windows.
+  // Graded deadline urgency ramp from settings.scoring.deadlineTiers. First-matching tier wins;
+  // tiers are expected sorted ascending by days but we sort defensively.
   calculateDeadlineScore(project) {
     if (!project.hard_deadline) return 0;
     if (project.status === 'Complete' || project.status === 'Closed' || project.status === 'On Hold') return 0;
@@ -3874,45 +4249,168 @@ const App = {
     const dl = new Date(project.hard_deadline);
     const dlUTC = Date.UTC(dl.getUTCFullYear(), dl.getUTCMonth(), dl.getUTCDate());
     const days = Math.ceil((dlUTC - nowUTC) / 86400000);
-    if (days <= 7) return 60;
-    if (days <= 14) return 40;
-    if (days <= 30) return 20;
-    if (days <= 60) return 10;
+    const tiers = this._scoringCfg().deadlineTiers.slice().sort((a, b) => a.days - b.days);
+    for (let i = 0; i < tiers.length; i++) if (days <= tiers[i].days) return tiers[i].score;
     return 0;
   },
 
-  calculateProjectPriorityScore(project) {
-    // Weighted scoring for auto-prioritisation
-    const statusWeight = { 'Blocked': 5, 'At Risk': 4, 'In Progress': 3, 'Not Started': 2, 'On Hold': 1, 'Complete': 0, 'Closed': 0 };
-    const ragWeight = { 'Red': 3, 'Amber': 2, 'Green': 1 };
-
-    const statusScore = (statusWeight[project.status] || 0) * 10;
-    const ragScore = ((ragWeight[project.rag_schedule] || 0) + (ragWeight[project.rag_resourcing] || 0) + (ragWeight[project.rag_scope] || 0)) * 5;
-    const riskScore = this.calculateRiskScore(project);
-    const sizeScore = Math.min(20, (project.size_total || 0) / 5);
-    const deadlineScore = this.calculateDeadlineScore(project);
-
-    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore);
+  // Dependency leverage: transitive count of projects downstream of `project` (ones it blocks,
+  // directly or indirectly). Built from BOTH 'blocks' (outgoing) and reverse 'blocked_by' (incoming
+  // on the other side) so either direction contributes. `related` edges are ignored. Cycles are
+  // broken by visited-set. Returns 0 when App.data is missing.
+  _buildDepGraph() {
+    // Edge A → B means A blocks B. Built lazily; cache is invalidated when dependencies change.
+    if (!this.data) return { adj: {} };
+    const adj = {};
+    (this.data.projects || []).forEach(p => { adj[p.id] = adj[p.id] || new Set(); });
+    (this.data.projects || []).forEach(p => {
+      (p.dependencies || []).forEach(d => {
+        if (!d || !d.target_id) return;
+        if (d.type === 'related') return;
+        if (d.type === 'blocks') {
+          // p blocks target → p → target
+          (adj[p.id] || (adj[p.id] = new Set())).add(d.target_id);
+        } else {
+          // default / 'blocked_by': p is blocked by target → target → p
+          (adj[d.target_id] || (adj[d.target_id] = new Set())).add(p.id);
+        }
+      });
+    });
+    return { adj };
   },
 
+  computeDependencyLeverage(projects) {
+    const out = {};
+    if (!projects || !projects.length) return out;
+    const { adj } = this._buildDepGraph();
+    projects.forEach(p => {
+      // BFS from p over adj; count unique reachable nodes excluding p itself.
+      const seen = new Set();
+      const queue = [];
+      (adj[p.id] ? Array.from(adj[p.id]) : []).forEach(n => { if (n !== p.id) { seen.add(n); queue.push(n); } });
+      while (queue.length) {
+        const cur = queue.shift();
+        (adj[cur] ? Array.from(adj[cur]) : []).forEach(n => {
+          if (n === p.id) return; // cycle — don't count self
+          if (seen.has(n)) return;
+          seen.add(n);
+          queue.push(n);
+        });
+      }
+      out[p.id] = seen.size;
+    });
+    return out;
+  },
+
+  calculateProjectPriorityScore(project, leverageCount) {
+    const cfg = this._scoringCfg();
+    const statusScore = (cfg.statusWeights[project.status] || 0) * cfg.statusMultiplier;
+    const ragScore = ((cfg.ragWeights[project.rag_schedule] || 0) +
+                      (cfg.ragWeights[project.rag_resourcing] || 0) +
+                      (cfg.ragWeights[project.rag_scope] || 0)) * cfg.ragMultiplier;
+    const riskScore = this.calculateRiskScore(project);
+    const sizeScore = Math.min(cfg.sizeCap, (project.size_total || 0) / cfg.sizeDivisor);
+    const deadlineScore = this.calculateDeadlineScore(project);
+    // Dependency-leverage: transitive count of downstream projects × weight, capped.
+    // If caller passed a precomputed leverageCount, use it (saves repeated graph builds during autoPrioritise).
+    const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
+    const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
+    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore);
+  },
+
+  // Auto-prioritise with dependency-aware topological guarantee.
+  // Rules:
+  //   1. Per customer, compute priority score for every active project (dep leverage included).
+  //   2. Bucket by topological layer: layer-0 = no same-customer incoming edge, layer-N depends on a
+  //      layer-(N-1) project. Ancestors always rank above descendants regardless of score.
+  //   3. Within a layer, sort by score desc (ties broken by id for stability).
+  //   4. Assign priority 1..N in that order.
+  //   5. Collect "held-up" pairs where a lower-scoring parent sits above a higher-scoring child; surface
+  //      a dismissable toast so the manager can see why the pure-score order was overridden.
   autoPrioritise() {
     if (!this.data) return;
     this.pushUndo('Auto-prioritise projects');
     const customers = this.getCustomers();
+    const { adj } = this._buildDepGraph();
+    const heldUpByDep = []; // pairs { parent, child }
     customers.forEach(cust => {
       const custProjects = this.data.projects.filter(p => p.customer === cust && p.status !== 'Complete' && p.status !== 'Closed');
-      custProjects.forEach(p => { p._score = this.calculateProjectPriorityScore(p); });
-      custProjects.sort((a, b) => b._score - a._score);
-      custProjects.forEach((p, i) => {
-        this.logChange(p.id, 'priority', p.priority, i + 1, 'auto-prioritise');
-        p.priority = i + 1;
+      if (!custProjects.length) return;
+      const idSet = new Set(custProjects.map(p => p.id));
+
+      // Leverage over JUST this customer's active set
+      const leverage = this.computeDependencyLeverage(custProjects);
+      custProjects.forEach(p => { p._score = this.calculateProjectPriorityScore(p, leverage[p.id] || 0); });
+
+      // Per-customer Kahn layering — edges only between same-customer active projects.
+      const indeg = {};
+      custProjects.forEach(p => { indeg[p.id] = 0; });
+      custProjects.forEach(p => {
+        (adj[p.id] ? Array.from(adj[p.id]) : []).forEach(child => {
+          if (idSet.has(child)) indeg[child] = (indeg[child] || 0) + 1;
+        });
+      });
+
+      const layers = [];
+      let frontier = custProjects.filter(p => indeg[p.id] === 0).map(p => p.id);
+      const placed = new Set();
+      while (frontier.length) {
+        layers.push(frontier.slice());
+        frontier.forEach(id => placed.add(id));
+        const next = [];
+        frontier.forEach(id => {
+          (adj[id] ? Array.from(adj[id]) : []).forEach(child => {
+            if (!idSet.has(child)) return;
+            indeg[child]--;
+            if (indeg[child] === 0) next.push(child);
+          });
+        });
+        frontier = next;
+      }
+      // Leftover nodes are in a cycle — append them as a final layer so they still get prioritised.
+      const leftovers = custProjects.filter(p => !placed.has(p.id)).map(p => p.id);
+      if (leftovers.length) layers.push(leftovers);
+
+      // Within-layer: sort by score desc, id asc
+      const projectById = {};
+      custProjects.forEach(p => { projectById[p.id] = p; });
+      const ordered = [];
+      layers.forEach(layer => {
+        layer.sort((a, b) => {
+          const sa = projectById[a]._score, sb = projectById[b]._score;
+          if (sa !== sb) return sb - sa;
+          return a.localeCompare(b);
+        });
+        layer.forEach(id => ordered.push(projectById[id]));
+      });
+
+      // Detect held-up pairs: a parent with a STRICTLY LOWER score than one of its descendants.
+      ordered.forEach((parent, parentIdx) => {
+        (adj[parent.id] ? Array.from(adj[parent.id]) : []).forEach(childId => {
+          const child = projectById[childId];
+          if (!child) return;
+          if (child._score > parent._score) heldUpByDep.push({ parent: parent.name, child: child.name });
+        });
+      });
+
+      ordered.forEach((p, i) => {
+        const newP = i + 1;
+        if (p.priority !== newP) this.logChange(p.id, 'priority', p.priority, newP, 'auto-prioritise');
+        p.priority = newP;
         delete p._score;
       });
     });
+
     this.markDirty();
     this.saveToLocalStorage();
     Dashboard.render();
-    this.toast('Auto-prioritised projects by risk score', 'success');
+    if (heldUpByDep.length) {
+      const sample = heldUpByDep.slice(0, 2).map(h => h.parent + ' kept above ' + h.child).join('; ');
+      const more = heldUpByDep.length > 2 ? ' (+' + (heldUpByDep.length - 2) + ' more)' : '';
+      this.toast('Auto-prioritised. Dependency order held: ' + sample + more, 'info');
+    } else {
+      this.toast('Auto-prioritised projects', 'success');
+    }
   },
 
   // --- Customer Management (REQ-CFG-01) ---
@@ -5100,7 +5598,7 @@ const CommandPalette = {
       { title: 'Roadmap / Gantt', id: 'roadmap' },
       { title: 'Capacity & Workload', id: 'capacity' },
       { title: 'Governance Forums', id: 'governance' },
-      { title: 'Configuration', id: 'config' }
+      { title: 'System Settings', id: 'config' }
     ].forEach(v => items.push({ group: 'Views', title: v.title, meta: 'View · ' + v.id, action: () => App.navigate(v.id), keywords: v.title.toLowerCase() }));
 
     // Customers
@@ -6186,7 +6684,10 @@ const Dashboard = {
         if (cap > 0) {
           const ratio = dem / cap;
           capDemandLabel = Math.round(ratio * 100) + '%';
-          capDemandColor = ratio <= 0.85 ? 'var(--status-green)' : ratio <= 1.0 ? 'var(--status-amber)' : 'var(--status-red)';
+          // 1E: cap vs demand bands sourced from settings.thresholds.capacityDemand (default 85/100).
+          const cvdCfg = (this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.capacityDemand) || { green: 85, amber: 100 };
+          const pct = ratio * 100;
+          capDemandColor = pct <= cvdCfg.green ? 'var(--status-green)' : pct <= cvdCfg.amber ? 'var(--status-amber)' : 'var(--status-red)';
           // D7: round demand/capacity to whole SP in the sub-label — fractional values leak in via per-person splits.
           capDemandSub = Math.round(dem) + ' of ' + Math.round(cap) + ' pts · next 4 sprints';
         }
@@ -6204,7 +6705,9 @@ const Dashboard = {
         } else if (pf.distribution) {
           forecastLabel = pf.distribution.p80 + ' sp';
           forecastSub = 'P80 to clear ' + pf.remaining + ' pts';
-          forecastColor = pf.distribution.p80 <= 4 ? 'var(--status-green)' : pf.distribution.p80 <= 8 ? 'var(--status-amber)' : 'var(--status-red)';
+          // 1E: forecast P80 bands sourced from settings.thresholds.forecastP80Sprints (default 4/8).
+          const fcCfg = (this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.forecastP80Sprints) || { green: 4, amber: 8 };
+          forecastColor = pf.distribution.p80 <= fcCfg.green ? 'var(--status-green)' : pf.distribution.p80 <= fcCfg.amber ? 'var(--status-amber)' : 'var(--status-red)';
         }
       }
     } catch (e) { /* ignore */ }
@@ -6220,7 +6723,9 @@ const Dashboard = {
         if (commit > 0) {
           const r = Math.round((comp / commit) * 100);
           deliveryLabel = r + '%';
-          deliveryColor = r >= 85 ? 'var(--status-green)' : r >= 65 ? 'var(--status-amber)' : 'var(--status-red)';
+          // 1E: delivery rate bands sourced from settings.thresholds.deliveryRate (higher is better; default 85/65).
+          const drCfg = (this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.deliveryRate) || { green: 85, amber: 65 };
+          deliveryColor = r >= drCfg.green ? 'var(--status-green)' : r >= drCfg.amber ? 'var(--status-amber)' : 'var(--status-red)';
         }
       }
     } catch (e) { /* ignore */ }
@@ -10438,7 +10943,7 @@ const Sprint = {
         if (cap === 0 && com === 0) return '';
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
         if (pct > maxOverPct) maxOverPct = pct;
-        const cls = pct <= 80 ? 'green' : pct <= 100 ? 'amber' : 'red';
+        const cls = App.utilClass(pct);
         const numCls = pct > 100 ? ' over' : '';
         return '<div class="capacity-row">' +
           '<span class="capacity-label">' + sk.short + '</span>' +
@@ -10684,7 +11189,7 @@ const Sprint = {
         totalCap += cap;
         if (cap === 0 && com === 0) return '';
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 999 : 0);
-        const barColor = pct <= 80 ? 'var(--status-green)' : pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+        const barColor = App.utilColor(pct);
         const numStyle = pct > 100 ? 'color:var(--status-red);font-weight:700' : 'color:var(--text-muted)';
         return '<div style="display:flex;align-items:center;gap:3px;font-size:9px">' +
           '<span style="width:24px;color:' + skillColors[sk.key] + ';font-weight:600">' + sk.short + '</span>' +
@@ -10950,7 +11455,7 @@ const Sprint = {
         let loadColor = 'var(--text-muted)';
         if (capPts > 0) {
           const pct = (totalPts / capPts) * 100;
-          loadColor = pct <= 80 ? 'var(--status-green)' : pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+          loadColor = App.utilColor(pct);
         }
         const loadPill = capPts > 0
           ? '<div class="sl-team-load" style="font-size:9px;font-weight:700;color:' + loadColor + ';margin-bottom:3px">' + roundedTotal + ' / ' + capPts + ' pts</div>'
@@ -11871,6 +12376,7 @@ const Sprint = {
         (s.peopleOverCapAverted ? '<div class="alloc-stat" title="Slices slid to later sprints because a team member would have exceeded their per-person capacity"><div class="alloc-stat-num" style="color:var(--accent-teal)">' + s.peopleOverCapAverted + '</div><div class="alloc-stat-label">Over-Cap Averted</div></div>' : '') +
         (s.timeBudgetSplits ? '<div class="alloc-stat" title="Phase slices split across sprints because the project exceeded a sprint\'s calendar day-budget (R11)"><div class="alloc-stat-num" style="color:var(--accent-amber,var(--status-amber))">' + s.timeBudgetSplits + '</div><div class="alloc-stat-label">Time Splits</div></div>' : '') +
         (s.pastSprintProtected ? '<div class="alloc-stat" title="Past-sprint slices that were preserved because past-sprint protection is on"><div class="alloc-stat-num" style="color:var(--text-muted)">' + s.pastSprintProtected + '</div><div class="alloc-stat-label">Past Preserved</div></div>' : '') +
+        (s.dependencyPushes ? '<div class="alloc-stat" title="Projects whose first sprint was pushed because a dependency had to finish first"><div class="alloc-stat-num" style="color:var(--accent-teal)">' + s.dependencyPushes + '</div><div class="alloc-stat-label">Dep Pushes</div></div>' : '') +
       '</div>';
 
       if (w.length) {
@@ -12658,7 +13164,7 @@ const Capacity = {
         totalComSum += com;
         if (cap === 0 && com === 0) return '';
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
-        const cls = pct <= 80 ? 'green' : pct <= 100 ? 'amber' : 'red';
+        const cls = App.utilClass(pct);
         return '<div class="team-skill-row">' +
           '<span class="team-skill-label">' + sk.short + '</span>' +
           '<div class="team-skill-bar"><div class="team-skill-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>' +
@@ -12837,7 +13343,7 @@ const Capacity = {
         let cap = 0, com = 0;
         g.sprints.forEach(s => { cap += memberCapForSprint(tm, s); com += memberDemandForSprint(tm, s); });
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
-        const cls = pct <= 80 ? 'green' : pct <= 100 ? 'amber' : 'red';
+        const cls = App.utilClass(pct);
         return '<div class="team-skill-row team-group-row team-group-' + g.key + '">' +
           '<span class="team-skill-label" title="' + g.sprints.map(s => s.sprint_id).join(', ') + '">' + g.label + '</span>' +
           '<div class="team-skill-bar"><div class="team-skill-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>' +
@@ -13153,7 +13659,7 @@ const Capacity = {
         // Note: this is a simplified view — actual per-person allocation would need assignment tracking
         const pct = pts > 0 ? Math.round((allocated / pts) * 100) : 0;
         const bg = pct <= 80 ? '#f0fdf4' : pct <= 100 ? '#fffbeb' : '#fef2f2';
-        const color = pct <= 80 ? 'var(--status-green)' : pct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+        const color = App.utilColor(pct);
         tbody += '<td style="text-align:center;padding:4px;font-size:10px;background:' + bg + ';border-bottom:1px solid #f1f5f9;color:' + color + ';font-weight:600">' + Math.round(allocated) + '/' + Math.round(pts) + '<div style="font-size:8px;font-weight:400">' + pct + '%</div></td>';
       });
       tbody += '</tr>';
@@ -13667,13 +14173,12 @@ const Forecast = {
     };
   },
 
-  // Convenience: classify SPI/CPI into RAG
+  // Convenience: classify SPI/CPI into RAG. Bands sourced from settings.thresholds.evmIndex (default 0.95/0.80).
   evRag(value, kind) {
     if (value == null) return { label: '—', color: 'var(--text-muted)' };
-    const green = kind === 'SPI' ? 0.95 : 0.95;
-    const amber = kind === 'SPI' ? 0.80 : 0.80;
-    if (value >= green) return { label: value.toFixed(2), color: 'var(--status-green)' };
-    if (value >= amber) return { label: value.toFixed(2), color: 'var(--status-amber)' };
+    const cfg = (App.data && App.data.settings && App.data.settings.thresholds && App.data.settings.thresholds.evmIndex) || { green: 0.95, amber: 0.80 };
+    if (value >= cfg.green) return { label: value.toFixed(2), color: 'var(--status-green)' };
+    if (value >= cfg.amber) return { label: value.toFixed(2), color: 'var(--status-amber)' };
     return { label: value.toFixed(2), color: 'var(--status-red)' };
   }
 };
@@ -13710,13 +14215,46 @@ const Solver = {
     return sprints.length - 1;
   },
 
-  // Normalize dependencies into an array of blocked_by project IDs
+  // Normalize dependencies into an array of blocked_by project IDs.
+  // Does NOT incorporate reverse 'blocks' edges — use normalizeDepsBidirectional for that.
   normalizeDeps(project) {
     const deps = project.dependencies;
     if (!deps) return [];
     if (Array.isArray(deps)) return deps.filter(d => d.type === 'blocked_by').map(d => d.target_id);
     if (typeof deps === 'string' && deps.trim()) return deps.split(',').map(s => s.trim()).filter(Boolean);
     return [];
+  },
+
+  // Dependency-aware solver variant: returns the full set of projects THIS project depends on,
+  // drawing from BOTH:
+  //   (a) its own 'blocked_by' edges — `project depends on target`
+  //   (b) reverse 'blocks' edges anywhere in the portfolio — `other.blocks = project` means
+  //       project depends on `other`.
+  // Pre-built reverseBlocks map (id → Set<id>) avoids repeated scanning inside hot loops.
+  normalizeDepsBidirectional(project, reverseBlocks) {
+    const own = this.normalizeDeps(project);
+    const extra = reverseBlocks && reverseBlocks[project.id] ? Array.from(reverseBlocks[project.id]) : [];
+    // De-dupe
+    const seen = new Set();
+    const out = [];
+    own.concat(extra).forEach(id => { if (!seen.has(id)) { seen.add(id); out.push(id); } });
+    return out;
+  },
+
+  // Build id → Set<id> where each key maps to the set of projects it depends on because they have
+  // `blocks`-type edges targeting it. Computed once per Solver.solve call.
+  buildReverseBlocks(allProjects) {
+    const map = {};
+    (allProjects || []).forEach(p => {
+      const deps = p.dependencies;
+      if (!Array.isArray(deps)) return;
+      deps.forEach(d => {
+        if (!d || d.type !== 'blocks' || !d.target_id) return;
+        // p.blocks = d.target_id → target depends on p
+        (map[d.target_id] || (map[d.target_id] = new Set())).add(p.id);
+      });
+    });
+    return map;
   },
 
   // Topological sort to detect circular dependencies; returns { order: [], cycles: [] }
@@ -14056,22 +14594,43 @@ const Solver = {
       return -1;
     };
 
+    // 1G: build reverse-blocks map ONCE so normalizeDepsBidirectional can augment each project's
+    // blocked_by list with any other project's 'blocks' edge pointing at it.
+    const reverseBlocks = this.buildReverseBlocks(allProjects);
+    const enforceCrossCust = !!(settings.enforceCrossCustomerDeps);
+
     // Sort: deadline projects first (by deadline sprint), then by priority, then stable by id
     projects = projects.map(p => {
       const hardDl = p.hard_deadline ? this.dateToSprintIdx(p.hard_deadline, sprints) : -1;
       const targetDl = p.target_date ? this.dateToSprintIdx(p.target_date, sprints) : -1;
       let depEarliest = 0;
-      this.normalizeDeps(p).forEach(depId => {
+      let pushReason = null; // which dep pushed us the most?
+      this.normalizeDepsBidirectional(p, reverseBlocks).forEach(depId => {
         if (cycleSet.has(p.id) && cycleSet.has(depId)) return;
         const depProject = allProjectMap[depId];
         if (depProject && depProject.customer !== customer && !lockedIds.has(depId)) {
-          this._warn(warnings, 'dependency_cross_customer', p, null, null,
-            p.name + ' depends on ' + depId + ' (different customer) - treated as unblocked');
-          return;
+          // Cross-customer dep. Default: warn + ignore (historical behaviour). If enforceCrossCust
+          // is on AND the remote is locked, we do enforce via its finish index like any other dep.
+          if (!(enforceCrossCust && depProject && lockedIds.has(depId))) {
+            this._warn(warnings, 'dependency_cross_customer', p, null, null,
+              p.name + ' depends on ' + depId + ' (different customer) - treated as unblocked');
+            return;
+          }
         }
         const fin = getDepFinish(depId);
-        if (fin >= 0 && fin + 1 > depEarliest) depEarliest = fin + 1;
+        if (fin >= 0 && fin + 1 > depEarliest) {
+          depEarliest = fin + 1;
+          pushReason = { depId, finIdx: fin };
+        }
       });
+      // 1G: if dep computation pushed this project off sprint 0, emit a push warning so users
+      // can see in Allocation Results WHY a project doesn't start earlier.
+      if (depEarliest > 0 && pushReason) {
+        const depName = (allProjectMap[pushReason.depId] && allProjectMap[pushReason.depId].name) || pushReason.depId;
+        const startSid = sprints[depEarliest] ? sprints[depEarliest].sprint_id : ('sprint ' + depEarliest);
+        this._warn(warnings, 'dependency_push', p, null, startSid,
+          p.name + ' starts in ' + startSid + ' — blocked by ' + depName + ' finishing in ' + (sprints[pushReason.finIdx] ? sprints[pushReason.finIdx].sprint_id : '?'));
+      }
       return { ...p, _hardDl: hardDl, _targetDl: targetDl, _depEarliest: depEarliest };
     }).sort((a, b) => {
       const aDl = a._hardDl >= 0 ? a._hardDl : 9999;
@@ -14527,7 +15086,16 @@ const Solver = {
         return true;
       };
 
-      for (let iter = 0; iter < 3; iter++) {
+      // 1C: load-balance iterations + hot/cool thresholds + shift granule are now user-tunable
+      // via settings.scheduler.* (System Settings → Scheduling Engine). Defaults mirror the
+      // historical hard-coded values (3 / 90 / 60 / 2) so unconfigured datasets behave identically.
+      const schedCfg = (App.data && App.data.settings && App.data.settings.scheduler) || {};
+      const iterations = Math.max(1, Math.min(10, parseInt(schedCfg.loadBalanceIterations, 10) || 3));
+      const hotPct = Math.max(60, Math.min(100, parseInt(schedCfg.hotSprintThresholdPct, 10) || 90));
+      const coolPct = Math.max(0, Math.min(80, parseInt(schedCfg.coolSprintThresholdPct, 10) || 60));
+      const granule = Math.max(1, Math.min(5, parseInt(schedCfg.shiftGranuleDivisor, 10) || 2));
+
+      for (let iter = 0; iter < iterations; iter++) {
         let improved = false;
         SKILLS.forEach(sk => {
           for (let si = 0; si < sprints.length - 1; si++) {
@@ -14541,13 +15109,13 @@ const Solver = {
             const pct = Math.round((used / cap) * 100);
             const nextPct = Math.round((nextUsed / nextCap) * 100);
 
-            if (pct > 90 && nextPct < 60 && remaining[nextSid][sk.key] > 0) {
+            if (pct > hotPct && nextPct < coolPct && remaining[nextSid][sk.key] > 0) {
               Object.keys(allocations).forEach(pid => {
                 const alloc = allocations[pid][sk.key];
                 if (!alloc) return;
                 const entry = alloc.find(a => a.sprint === sid && a.points > 1);
                 if (!entry) return;
-                const shift = Math.min(Math.ceil(entry.points / 2), remaining[nextSid][sk.key]);
+                const shift = Math.min(Math.ceil(entry.points / granule), remaining[nextSid][sk.key]);
                 if (shift <= 0) return;
                 if (!canShift(pid, sk.key, sid, nextSid, shift, entry.assigned_to)) return;
 
@@ -14632,7 +15200,9 @@ const Solver = {
         peopleOverCapAverted,
         timeBudgetSplits,
         pastSprintProtected,
-        pastSprintBlocked
+        pastSprintBlocked,
+        // 1G: projects whose first sprint was pushed by a dependency finish. Counted from warnings.
+        dependencyPushes: warnings.filter(w => w.type === 'dependency_push').length
       },
       utilizationGrid
     };
@@ -16222,8 +16792,8 @@ const Onboarding = {
       content: '<ul><li>View governance forums filtered by customer, sorted by next meeting date.</li><li>Expand a forum to see which projects report into it, and their RAG status.</li><li>Add, edit, or delete forums using the buttons on each card header.</li><li>Track actions per forum with owners and due dates.</li><li>Switch to the Risks tab for a cross-portfolio risk dashboard.</li></ul>'
     },
     config: {
-      title: 'Configuration View',
-      content: '<ul><li>Adjust auto-allocation settings like max capacity and priority weighting.</li><li>Configure sprint cycle parameters (dev weeks, hours per story point, FY start).</li><li>Manage sprints and view team/holiday summaries.</li><li>Export data in multiple formats (JSON, CSV, PDF reports).</li><li>Click the (i) icons next to settings for detailed explanations.</li></ul>'
+      title: 'System Settings',
+      content: '<ul><li>Scheduling Engine — tune the auto-allocation solver (capacity targets, buffer, load-balance thresholds).</li><li>Scoring &amp; Prioritisation — adjust the weights auto-prioritise uses to rank projects.</li><li>Display Thresholds — set the green/amber/red cutoffs for every colour-coded metric.</li><li>Customers, skills, team, sprints and holidays remain managed here.</li><li>Data integrity, RAG rules, project templates and branding are each in their own section.</li></ul>'
     }
   },
 
