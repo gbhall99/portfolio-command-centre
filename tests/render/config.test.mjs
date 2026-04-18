@@ -13,7 +13,9 @@ describe('App.renderConfig output', () => {
     expect(card).not.toBeNull();
     const html = card.outerHTML;
     expect(html).toContain('What the solver optimises for');
-    expect(html).toContain('Solver rules (R1–R12)');
+    // C3: rule header renamed from internal code to plain-English reference.
+    expect(html).toContain('Solver rules');
+    expect(html).toContain('plain-English reference');
     // Issue 7+14: section headings rewritten to outcome-based plain English.
     expect(html).toContain('Team members split across customers');
     expect(html).toContain('Sprint time-budget');
