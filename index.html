@@ -38,9 +38,13 @@
   --status-red: #dc2626;
   --status-grey: #94a3b8;
   --status-blue: #3b82f6;
-  --rag-green: #0d9488;
-  --rag-amber: #f59e0b;
-  --rag-red: #dc2626;
+  /* UI-M14: RAG tokens are aliases of status tokens so a single change to
+     the status palette flows through every RAG dot / pill / row tint.
+     The two names coexist for readability — use --rag-* on RAG health
+     indicators, --status-* on workflow statuses (Blocked/At Risk/etc). */
+  --rag-green: var(--status-green);
+  --rag-amber: var(--status-amber);
+  --rag-red: var(--status-red);
   --border-color: #334155;
   --border-light: #e2e8f0;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.1);
@@ -1017,15 +1021,18 @@ html[data-theme="dark"] .btn-danger:hover { background: #ef4444; }
 .sprint-card:hover { box-shadow: var(--shadow-sm); border-color: var(--text-muted); }
 .sprint-card.dragging { opacity: 0.4; }
 .sprint-card .card-top { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
-.sprint-card .card-customer-dot { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+/* UI-M20: indicator sizes nudged up from 5-6px so they actually register
+   at glance-reading distance on standard monitors. RAG + status both
+   moved to 7px with clearer borders. */
+.sprint-card .card-customer-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 .sprint-card .card-name { font-size: 11px; font-weight: 600; color: var(--text-dark); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .sprint-card .card-priority { font-size: 9px; color: var(--text-muted); font-weight: 700; flex-shrink: 0; }
 .sprint-card .card-bottom { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
 .sprint-card .card-manager { font-size: 10px; color: var(--text-dark-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; }
 .sprint-card .card-size { font-size: 9px; font-weight: 600; color: var(--text-muted); background: var(--bg-content); padding: 0px 4px; border-radius: 3px; flex-shrink: 0; }
-.sprint-card .card-status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.sprint-card .card-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .sprint-card .card-rag-dots { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
-.sprint-card .card-rag-dot { width: 5px; height: 5px; border-radius: 50%; }
+.sprint-card .card-rag-dot { width: 7px; height: 7px; border-radius: 50%; border: 1px solid rgba(15, 23, 42, 0.18); }
 
 .sprint-col-count { font-size: 10px; color: var(--text-muted); font-weight: 600; }
 .sprint-empty-msg { font-size: 11px; color: var(--text-muted); text-align: center; padding: 16px 6px; }
@@ -1800,6 +1807,25 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
 .bg-red-weak { background: var(--tint-red-weak); }
 .bg-amber-weak { background: var(--tint-amber-weak); }
 .bg-surface-2 { background: var(--surface-2); }
+
+/* --- UI-M7: merge/import preview counter cards. Were 3 separate inline-
+   styled blocks with hardcoded light-mode backgrounds; now share a single
+   primitive that flips in dark mode and scales in presentation mode. */
+.import-counter { flex: 1; min-width: 80px; padding: 12px; background: var(--surface-2); border-radius: var(--radius-md); text-align: center; }
+.import-counter-num { font-size: var(--fs-xl); font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.import-counter-label { font-size: var(--fs-xs); color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.4px; margin-top: 2px; }
+.import-counter--added { background: var(--tint-green-weak); }
+.import-counter--added .import-counter-num { color: var(--status-green); }
+.import-counter--updated { background: var(--tint-blue-weak); }
+.import-counter--updated .import-counter-num { color: var(--accent-blue); }
+.import-counter--conflict { background: var(--tint-red-weak); }
+.import-counter--conflict .import-counter-num { color: var(--status-red); }
+
+/* --- UI-M3: workforce over-utilisation row tint. Was inlined at the
+   render site as `style="background:rgba(239,68,68,0.06)"` which was
+   both theme-unsafe and too pale to actually signal the warning. */
+.workforce-row-overutil td { background: var(--tint-red-weak); }
+html[data-theme="dark"] .workforce-row-overutil td { background: rgba(220, 38, 38, 0.22); }
 
 /* --- UI-H7: deeper RAG row tints so "at risk" actually reads as at-risk.
    Old values were 4% opacity; raised to ~14%. Dark-mode variants added. */
@@ -3347,9 +3373,9 @@ const App = {
 
     // Summary stats
     html += '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
-      '<div style="flex:1;min-width:80px;padding:12px;background:#f0fdf4;border-radius:var(--radius-md);text-align:center"><div style="font-size:20px;font-weight:700;color:#16a34a">' + totalAdded + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Added</div></div>' +
-      '<div style="flex:1;min-width:80px;padding:12px;background:#eff6ff;border-radius:var(--radius-md);text-align:center"><div style="font-size:20px;font-weight:700;color:#2563eb">' + totalUpdated + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Updated</div></div>' +
-      '<div style="flex:1;min-width:80px;padding:12px;background:' + (conflictCount > 0 ? '#fef2f2' : '#f8fafc') + ';border-radius:var(--radius-md);text-align:center"><div style="font-size:20px;font-weight:700;color:' + (conflictCount > 0 ? '#dc2626' : 'var(--text-muted)') + '">' + conflictCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Conflicts</div></div>' +
+      '<div class="import-counter import-counter--added"><div class="import-counter-num">' + totalAdded + '</div><div class="import-counter-label">Added</div></div>' +
+      '<div class="import-counter import-counter--updated"><div class="import-counter-num">' + totalUpdated + '</div><div class="import-counter-label">Updated</div></div>' +
+      '<div class="import-counter' + (conflictCount > 0 ? ' import-counter--conflict' : '') + '"><div class="import-counter-num">' + conflictCount + '</div><div class="import-counter-label">Conflicts</div></div>' +
     '</div>';
 
     // Breakdown
@@ -4274,7 +4300,15 @@ const App = {
       Dashboard.lastFilters = Dashboard.saveCurrentFilterState();
     }
     this.currentView = viewName;
-    document.querySelectorAll('.nav-item').forEach(item => { item.classList.toggle('active', item.dataset.view === viewName); });
+    // UI-M22: update aria-current="page" on the active nav item so screen
+    // readers announce the active section change. Also keep the .active
+    // visual class in sync for the CSS rules in the sidebar block.
+    document.querySelectorAll('.nav-item').forEach(item => {
+      const isActive = item.dataset.view === viewName;
+      item.classList.toggle('active', isActive);
+      if (isActive) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
     document.querySelectorAll('.view').forEach(view => { view.classList.remove('active'); });
     // Issue 11: Dashboard and Projects share the same DOM container; toggle a view-mode class
     // on the container to hide/show summary vs. table sections. Same render pipeline, two views.
@@ -5477,6 +5511,32 @@ const App = {
     }
   },
 
+  /* UI-M10: consistent inline field-error rendering. Previously only the
+     Detail Panel used .field-invalid + .field-error-msg; Import / Config /
+     Scenarios flows relied on toast-only feedback that vanished in 3.5s.
+     Usage: App.fieldError(inputEl, 'Must be a positive integer');
+            App.fieldError(inputEl, null); // clear */
+  fieldError(input, message) {
+    if (!input) return;
+    let msg = input.nextElementSibling;
+    if (msg && !msg.classList.contains('field-error-msg')) msg = null;
+    if (message) {
+      input.classList.add('field-invalid');
+      input.setAttribute('aria-invalid', 'true');
+      if (!msg) {
+        msg = document.createElement('span');
+        msg.className = 'field-error-msg';
+        input.insertAdjacentElement('afterend', msg);
+      }
+      msg.textContent = message;
+      msg.removeAttribute('hidden');
+    } else {
+      input.classList.remove('field-invalid');
+      input.removeAttribute('aria-invalid');
+      if (msg) msg.setAttribute('hidden', '');
+    }
+  },
+
   /* UI-H5: small localStorage-backed key/value store for ephemeral UI state
      that should survive a page reload — sort order, filter state, collapsed
      section memory, expand toggles. Kept deliberately dumb: one namespaced
@@ -6468,6 +6528,10 @@ const App = {
   customerColor(customer) { return this.getCustomerColor(customer); },
   statusColor(status) { return { 'In Progress': 'var(--status-blue)', 'Complete': 'var(--status-green)', 'On Hold': 'var(--status-amber)', 'At Risk': 'var(--status-amber)', 'Blocked': 'var(--status-red)', 'Not Started': 'var(--status-grey)', 'Closed': 'var(--text-muted)' }[status] || 'var(--status-grey)'; },
   ragColor(rag) { return { 'Green': 'var(--rag-green)', 'Amber': 'var(--rag-amber)', 'Red': 'var(--rag-red)' }[rag] || 'var(--text-muted)'; },
+  /* UI-M5: return the lowercase rag key for use as a data attribute
+     (data-rag="red|amber|green|grey"). Pairs with the CSS rules on
+     .fp-rag-dot[data-rag="..."] so the render code is colour-free. */
+  ragKey(rag) { return ({ 'Green': 'green', 'Amber': 'amber', 'Red': 'red' }[rag]) || 'grey'; },
 
   // Story points are always whole integers (rounded half-up). Decimals are silently rounded,
   // not truncated, so 2.5 → 3 rather than 2. Returns 0 for non-numeric input.
@@ -7512,6 +7576,7 @@ const CommandPalette = {
   },
 
   _render(onlyHighlight) {
+    let truncated = 0;
     if (!onlyHighlight) {
       this._items = this._build();
       if (this._query) {
@@ -7521,8 +7586,12 @@ const CommandPalette = {
           .sort((a, b) => b.score - a.score)
           .map(x => x.it);
       }
-      if (this._items.length > 80) this._items = this._items.slice(0, 80);
-    }
+      // UI-M15: instead of silently dropping >80 results, remember how many
+      // were hidden and surface it at the bottom of the list so users know
+      // they need to narrow their query.
+      if (this._items.length > 80) { truncated = this._items.length - 80; this._items = this._items.slice(0, 80); }
+      this._truncated = truncated;
+    } else { truncated = this._truncated || 0; }
     const list = document.getElementById('cmdkList');
     if (!list) return;
     if (!this._items.length) {
@@ -7536,12 +7605,15 @@ const CommandPalette = {
           html += '<div class="cmdk-group-label">' + esc(it.group) + '</div>';
           lastGroup = it.group;
         }
-        html += '<div class="cmdk-item' + (idx === this._selected ? ' active' : '') + '" data-idx="' + idx + '">' +
+        html += '<div class="cmdk-item' + (idx === this._selected ? ' active' : '') + '" data-idx="' + idx + '" tabindex="-1">' +
           '<span class="cmdk-icon">›</span>' +
           '<span class="cmdk-title">' + esc(it.title) + '</span>' +
           '<span class="cmdk-meta">' + esc(it.meta || '') + '</span>' +
         '</div>';
       });
+      if (truncated > 0) {
+        html += '<div class="cmdk-empty" style="padding:10px 18px;border-top:1px dashed var(--border-dim);font-size:11px">Showing 80 of ' + (this._items.length + truncated) + ' \u2014 <strong>+' + truncated + ' more</strong>. Refine your search to narrow the list.</div>';
+      }
       list.innerHTML = html;
       list.querySelectorAll('.cmdk-item').forEach(el => {
         el.addEventListener('mouseenter', () => { this._selected = parseInt(el.dataset.idx); this._render(true); });
@@ -9413,7 +9485,7 @@ const Portfolio = {
         const dot = App.getCustomerColor(c);
         return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted);margin-right:8px"><span style="width:8px;height:8px;border-radius:50%;background:' + dot + '"></span>' + esc(c) + ' ' + Math.round(v) + 'pts</span>';
       }).filter(Boolean).join('');
-      return '<tr' + (util != null && util > 1.0 ? ' style="background:rgba(239,68,68,0.06)"' : '') + '>' +
+      return '<tr' + (util != null && util > 1.0 ? ' class="workforce-row-overutil"' : '') + '>' +
         '<td>' + esc(r.tm.name || '(unnamed)') + (r.tm.customer === 'Both' ? ' <span style="font-size:9px;color:var(--text-muted)">(Both)</span>' : '') + '</td>' +
         '<td style="font-size:11px">' + (per || '<span style="color:var(--text-muted)">—</span>') + '</td>' +
         '<td style="font-variant-numeric:tabular-nums">' + r.totalDemand + ' / ' + r.totalCap + ' pts</td>' +
@@ -10785,16 +10857,23 @@ const DetailPanel = {
     const esc = Dashboard.esc;
     const ragColor = (App.ragColor || ((r) => ({ Green: 'var(--status-green)', Amber: 'var(--status-amber)', Red: 'var(--status-red)' }[r] || 'var(--text-muted)')));
     const statusCls = (p.status === 'Blocked' || p.status === 'At Risk') ? 'es-red' : '';
+    // UI-M8: surface "Updated …" in the sticky meta so users see confirmation
+    // of their edits inside the panel rather than having to glance at the
+    // global header's saved-indicator chip.
+    const updatedLabel = p.last_updated
+      ? '<span class="psm-chip" title="Last saved ' + esc(p.last_updated) + '" style="background:transparent;padding:0;color:var(--text-muted)">Updated <strong style="color:var(--text-dark)">' + esc(App.timeAgo(new Date(p.last_updated))) + '</strong></span>'
+      : '';
     el.innerHTML =
       '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>' +
       '<span class="psm-chip">' + esc(p.id) + '</span>' +
       '<span class="psm-chip">' + esc(p.status || '—') + '</span>' +
       '<span class="psm-rag" title="Schedule / Resource / Scope health">' +
-        '<span class="rag-dot" style="background:' + ragColor(p.rag_schedule) + '"></span>' +
-        '<span class="rag-dot" style="background:' + ragColor(p.rag_resourcing) + '"></span>' +
-        '<span class="rag-dot" style="background:' + ragColor(p.rag_scope) + '"></span>' +
+        '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_schedule) + '" style="background:' + ragColor(p.rag_schedule) + '"></span>' +
+        '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_resourcing) + '" style="background:' + ragColor(p.rag_resourcing) + '"></span>' +
+        '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" style="background:' + ragColor(p.rag_scope) + '"></span>' +
       '</span>' +
-      (p.manager ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Manager: <strong style="color:var(--text-dark)">' + esc(p.manager) + '</strong></span>' : '');
+      (p.manager ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Manager: <strong style="color:var(--text-dark)">' + esc(p.manager) + '</strong></span>' : '') +
+      updatedLabel;
   },
 
   _buildJumpMenu() {
@@ -20399,9 +20478,9 @@ const Governance = {
             '<div class="fp-name">' + Dashboard.esc(p.name) + '</div>' +
             '<div class="fp-manager">' + Dashboard.esc(p.manager || '') + '</div>' +
             '<div class="fp-rag">' +
-              '<div class="fp-rag-dot" style="background:' + App.ragColor(p.rag_schedule) + '"></div>' +
-              '<div class="fp-rag-dot" style="background:' + App.ragColor(p.rag_resourcing) + '"></div>' +
-              '<div class="fp-rag-dot" style="background:' + App.ragColor(p.rag_scope) + '"></div>' +
+              '<div class="fp-rag-dot" data-rag="' + App.ragKey(p.rag_schedule) + '" title="Schedule: ' + (p.rag_schedule || 'Not set') + '"></div>' +
+              '<div class="fp-rag-dot" data-rag="' + App.ragKey(p.rag_resourcing) + '" title="Resourcing: ' + (p.rag_resourcing || 'Not set') + '"></div>' +
+              '<div class="fp-rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" title="Scope: ' + (p.rag_scope || 'Not set') + '"></div>' +
             '</div>' +
           '</div>';
         }).join('') :
@@ -22195,7 +22274,12 @@ const AuditPanel = {
     const truncate = (s, n) => s && s.length > n ? s.substring(0, n) + '\u2026' : (s || '');
 
     const renderEntry = (e) => {
-      const time = e.timestamp.split('T')[1].substring(0, 5);
+      // UI-M23: use the browser's locale-aware formatter so 24h locales see
+      // "14:05" and 12h locales see "2:05 PM". Previously was always 24h-only
+      // which was ambiguous on 12h systems.
+      const d = new Date(e.timestamp);
+      const time = isNaN(d) ? e.timestamp.split('T')[1].substring(0, 5)
+        : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
       const srcCls = this._sourceBucket(e.source);
       const srcLabel = srcCls === 'auto' ? 'Auto' : srcCls === 'drag' ? 'Drag' : 'User';
       return '<div class="audit-entry">' +
@@ -22221,7 +22305,9 @@ const AuditPanel = {
         if (curRun && curRunEntries.length) {
           const runKey = day + '::' + curRun;
           const first = curRunEntries[0];
-          const headTime = first.timestamp.split('T')[1].substring(0, 5);
+          const headDate = new Date(first.timestamp);
+          const headTime = isNaN(headDate) ? first.timestamp.split('T')[1].substring(0, 5)
+            : headDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
           const label = first.run_label || 'Batch run';
           const expanded = !!this._expandedRuns[runKey];
           const body = expanded ? curRunEntries.map(renderEntry).join('') : '';
