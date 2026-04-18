@@ -102,7 +102,7 @@ html[data-theme="dark"] {
   --status-grey: #94a3b8;
 }
 /* Global surface wiring: anything visually presented on a "card" uses the token. */
-.drop-zone, .filter-bar, .table-wrapper, .audit-panel, .sprint-card, .split-modal,
+.drop-zone, .filter-bar, .table-wrapper, .sprint-card, .split-modal,
 .gantt-labels, .forum-card, .risk-table, .integrity-panel, .onboarding-card,
 .progress-card, .cmdk-panel, .summary-card, .kpi-card, .panel-section,
 .sprint-swimlane .sl-project-cell, .velocity-panel {
@@ -173,7 +173,6 @@ html[data-theme="dark"] .cmdk-kbd { background: #0b1220; color: var(--text-dark-
 html[data-theme="dark"] .filter-select, html[data-theme="dark"] .multi-select, html[data-theme="dark"] .search-input { background: var(--bg-card); color: var(--text-dark); border-color: #1f2937; }
 html[data-theme="dark"] .sprint-swimlane tr:hover td, html[data-theme="dark"] .sprint-swimlane tr:hover .sl-project-cell { background: #1e293b; }
 /* Second-pass dark overrides: audit feed, trends, capacity, config panel, sprint columns */
-html[data-theme="dark"] .audit-panel { background: var(--bg-card); }
 html[data-theme="dark"] .audit-panel-header { border-bottom-color: #1f2937; }
 html[data-theme="dark"] .audit-panel-header h3 { color: var(--text-dark); }
 html[data-theme="dark"] .audit-entry { border-bottom-color: #1f2937; color: var(--text-dark); }
@@ -716,16 +715,13 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .customer-config-table input[type="number"] { width: 60px; padding: 3px 6px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-sans); }
 .customer-config-table input[type="text"] { padding: 3px 6px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-sans); width: 100px; }
 
-/* --- Audit Panel --- */
-.audit-panel { position: fixed; top: 0; right: -420px; width: 420px; height: 100vh; background: #fff; z-index: 1100; box-shadow: -4px 0 24px rgba(0,0,0,0.15); transition: right 0.25s ease; display: flex; flex-direction: column; }
-.audit-panel.open { right: 0; }
+/* --- Activity Page + shared modal-header styles --- */
+/* .audit-panel-header / .audit-panel-close are reused by TrendsModal and AllocResults modals. */
 .audit-panel-header { display: flex; align-items: center; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
 .audit-panel-header h3 { flex: 1; margin: 0; font-size: 15px; font-weight: 700; color: var(--text-dark); }
 .audit-panel-close { width: 28px; height: 28px; border: none; background: none; cursor: pointer; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .audit-panel-close:hover { background: rgba(0,0,0,0.06); }
-.audit-filter { padding: 8px 20px; border-bottom: 1px solid var(--border-light); flex-shrink: 0; }
-.audit-filter select { padding: 4px 8px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-sans); }
-.audit-feed { flex: 1; overflow-y: auto; padding: 12px 20px; }
+.audit-feed { overflow-y: auto; padding: 12px 16px; }
 .audit-day-group { margin-bottom: 16px; }
 .audit-day-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border-light); }
 .audit-entry { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.04); font-size: 11px; }
@@ -741,8 +737,6 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 .audit-entry-change { color: var(--text-dark-secondary); padding-left: 48px; }
 .audit-entry-change .old-val { text-decoration: line-through; color: var(--text-muted); }
 .audit-entry-change .new-val { font-weight: 600; }
-.audit-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 1099; display: none; }
-.audit-overlay.open { display: block; }
 .audit-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 12px; }
 
 /* --- Copy/Export toolbar --- */
@@ -1888,15 +1882,16 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
           <button class="view-help-btn" onclick="Onboarding.showViewHelp('governance')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
         </div>
         <div class="view-help-panel" id="helpGovernance"></div>
-        <!-- D3: Exports relocated from Dashboard toolbar. Scoped to the active customer. -->
+        <!-- D3: Exports relocated from Dashboard toolbar. Status Report is cross-customer;
+             Portfolio Pack is scoped to the active customer and disabled when none is selected. -->
         <div class="gov-exports" id="govExports" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="flex:0 0 auto">
             <div style="font-size:12px;font-weight:700;color:var(--text-dark)">Exports</div>
-            <div style="font-size:10px;color:var(--text-muted)" id="govExportsScope">Scoped to active customer.</div>
+            <div style="font-size:10px;color:var(--text-muted)" id="govExportsScope">Status Report covers all customers. Portfolio Pack is scoped to the active customer.</div>
           </div>
           <div style="flex:1 1 auto"></div>
           <button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()" title="Cross-customer PDF status report"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Status Report</button>
-          <button class="btn btn-outline btn-sm" onclick="Report.exportPortfolioPack(App.activeCustomer)" title="Branded portfolio pack (active customer)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Portfolio Pack</button>
+          <button class="btn btn-outline btn-sm" id="govExportPortfolioPackBtn" onclick="Report.exportPortfolioPack(App.activeCustomer)" title="Branded portfolio pack (active customer)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Portfolio Pack</button>
         </div>
         <div class="gov-tabs" id="govTabs">
           <div class="gov-tab active" data-tab="forums" onclick="Governance.switchTab('forums')">Forums <span class="tab-count" id="govForumCount">0</span></div>
@@ -2929,6 +2924,30 @@ const App = {
       });
     });
 
+    // H4: flag projects whose allocated skill_splits points don't sum to the intended project size.
+    // Drift opens via drag-drop, manual JSON edits, or solver splits that lose fidelity.
+    // Auto-fix inserts a _backlog slice for the missing delta so capacity planning sees the full scope.
+    const skillKeys = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'];
+    projects.forEach(p => {
+      skillKeys.forEach(sk => {
+        const intended = p[sk] || 0;
+        if (intended <= 0) return;
+        const arr = (p.skill_splits && p.skill_splits[sk]) || [];
+        if (!arr.length) return; // no splits at all is a different state; don't flag here
+        const allocated = arr.reduce((s, sp) => s + (sp.points || 0), 0);
+        const delta = intended - allocated;
+        if (Math.abs(delta) >= 1) {
+          issues.push({
+            type: 'warning',
+            message: 'Project "' + p.name + '" ' + sk + ': allocated ' + Math.round(allocated) + ' pts vs intended ' + intended + ' (delta ' + (delta > 0 ? '+' : '') + Math.round(delta) + ')',
+            fixAction: 'rebalance_splits',
+            projectId: p.id,
+            skillKey: sk
+          });
+        }
+      });
+    });
+
     this._integrityIssues = issues;
     return issues;
   },
@@ -2964,6 +2983,33 @@ const App = {
           this.logChange(dupes[i].id, 'integrity_autofix', oldId, dupes[i].id, 'auto-fix: dedupe project id');
         }
         this.toast('Renamed duplicate project IDs', 'success');
+      }
+    } else if (issue.fixAction === 'rebalance_splits' && p) {
+      // H4: rebalance skill_splits so the allocated sum matches the intended project size.
+      // Under-allocated → append a _backlog slice for the missing delta.
+      // Over-allocated → trim points proportionally from the latest slices first.
+      if (!p.skill_splits) p.skill_splits = {};
+      const arr = p.skill_splits[issue.skillKey] || [];
+      const intended = p[issue.skillKey] || 0;
+      const allocated = arr.reduce((s, sp) => s + (sp.points || 0), 0);
+      const delta = intended - allocated;
+      if (delta > 0) {
+        arr.push({ sprint: '_backlog', points: delta, status: 'pending', completed: 0, assigned_to: [], reasons: ['integrity-rebalance'] });
+        p.skill_splits[issue.skillKey] = arr;
+        this.logChange(p.id, 'integrity_autofix', 'sum:' + Math.round(allocated), 'sum:' + intended, 'auto-fix: added backlog slice for ' + delta + ' missing SP');
+        this.toast('Rebalanced ' + p.name + ' ' + issue.skillKey + ' (+' + delta + ' pts → backlog)', 'success');
+      } else {
+        // Over-allocated: trim from the end
+        let excess = -delta;
+        for (let i = arr.length - 1; i >= 0 && excess > 0; i--) {
+          const take = Math.min(arr[i].points, excess);
+          arr[i].points -= take;
+          excess -= take;
+          if (arr[i].points <= 0) arr.splice(i, 1);
+        }
+        p.skill_splits[issue.skillKey] = arr;
+        this.logChange(p.id, 'integrity_autofix', 'sum:' + Math.round(allocated), 'sum:' + intended, 'auto-fix: trimmed ' + (-delta) + ' excess SP');
+        this.toast('Rebalanced ' + p.name + ' ' + issue.skillKey + ' (' + delta + ' pts trimmed)', 'success');
       }
     }
 
@@ -3755,6 +3801,8 @@ const App = {
       if (e.altKey && e.key === '3') { e.preventDefault(); this.navigate('roadmap'); }
       if (e.altKey && e.key === '4') { e.preventDefault(); this.navigate('capacity'); }
       if (e.altKey && e.key === '5') { e.preventDefault(); this.navigate('governance'); }
+      // M8: Activity gets a keyboard shortcut so it's reachable without mouse or Cmd+K.
+      if (e.altKey && e.key === '6') { e.preventDefault(); this.navigate('activity'); }
     });
   },
 
@@ -8329,11 +8377,6 @@ const DetailPanel = {
     }, 300);
   },
 
-  _showTemplatePicker() {
-    // Kept as a shim — the wizard supersedes the template picker.
-    this._openQuickAddWizard();
-  },
-
   /* D6: Quick-add wizard with priority-driven timeline option.
      Gathers name, customer, optional template, size (whole SP), and either:
        - priority-driven: insert at slot N, shift others, reserve sprint capacity, auto-fill dates, OR
@@ -8368,7 +8411,7 @@ const DetailPanel = {
           '<button onclick="document.getElementById(\'templatePicker\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
         '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
-          '<label style="font-size:11px;font-weight:600">Name<br><input type="text" id="qaName" value="New Project" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+          '<label style="font-size:11px;font-weight:600">Name<br><input type="text" id="qaName" placeholder="New project name" autofocus style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
           '<label style="font-size:11px;font-weight:600">Customer<br><select id="qaCustomer" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
           '<label style="font-size:11px;font-weight:600">Template<br><select id="qaTemplate" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
           '<label style="font-size:11px;font-weight:600">Total size (SP)<br><input type="number" id="qaSize" value="20" min="0" step="1" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"><div style="font-size:10px;color:var(--text-muted);margin-top:2px">Split evenly across the chosen template\'s phases; edit per-phase in the detail panel.</div></label>' +
@@ -8409,6 +8452,8 @@ const DetailPanel = {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
     this._refreshWizardContext();
+    // M12: explicit focus — `autofocus` is unreliable in overlays appended post-load.
+    setTimeout(() => { const el = document.getElementById('qaName'); if (el) el.focus(); }, 30);
   },
 
   _switchWizardMode(mode) {
@@ -8492,7 +8537,7 @@ const DetailPanel = {
     const modeEl = document.querySelector('input[name="qaTimelineMode"]:checked');
     if (!nameEl || !custEl || !modeEl) return;
 
-    const name = nameEl.value.trim() || 'New Project';
+    const name = nameEl.value.trim() || (tplEl && tplEl.value ? ('New ' + (tplEl.options[tplEl.selectedIndex].text || 'Project')) : 'New Project');
     const cust = custEl.value;
     const tplId = tplEl.value || '';
     const size = Math.max(0, parseInt(sizeEl.value, 10) || 0);
@@ -8501,6 +8546,15 @@ const DetailPanel = {
     const id = App.generateId(cust);
     const templates = App.data.project_templates || [];
     const tpl = tplId ? templates.find(t => t.id === tplId) : null;
+
+    // H7: block zero-size projects when no template is providing sizing. A size=0 project is
+    // invisible on the Gantt and silently skipped by the solver — drift between the project list
+    // and the capacity plan opens immediately.
+    if (size <= 0 && !tpl) {
+      App.toast('Enter a size greater than zero, or pick a template', 'error');
+      if (sizeEl && sizeEl.focus) sizeEl.focus();
+      return;
+    }
 
     const newProject = {
       id, name, customer: cust,
@@ -8547,11 +8601,13 @@ const DetailPanel = {
 
     if (mode === 'priority') {
       const prio = Math.max(1, parseInt(prioEl.value, 10) || 1);
-      // Shift existing priorities for this customer to open the slot
+      // Shift existing priorities for this customer to open the slot.
+      // B2: only shift projects that ALREADY have a numeric priority; never mutate null/undefined
+      // into a concrete number, otherwise unprioritised projects cascade to 1000+ on every wizard use.
       App.data.projects.forEach(p => {
         if (p.customer !== cust) return;
         if (p.status === 'Complete' || p.status === 'Closed') return;
-        if ((p.priority || 999) >= prio) p.priority = (p.priority || 999) + 1;
+        if (typeof p.priority === 'number' && p.priority >= prio) p.priority = p.priority + 1;
       });
       newProject.priority = prio;
       // Reserve sprint capacity via the helper
@@ -8609,104 +8665,10 @@ const Gantt = {
   // Multi-named baseline state (D2.2/2.3)
   LS_BASELINE_KEY: 'portfolio-command-centre-activeBaselineId',
   _activeBaselineId: null,
-  // View mode — 'projects' (default) or 'team' (per-team-member rows, D2.4)
-  viewMode: 'projects',
-
-  setViewMode(mode) {
-    if (mode !== 'projects' && mode !== 'team') return;
-    this.viewMode = mode;
-    const pBtn = document.getElementById('ganttViewProjects');
-    const tBtn = document.getElementById('ganttViewTeam');
-    if (pBtn) pBtn.classList.toggle('active', mode === 'projects');
-    if (tBtn) tBtn.classList.toggle('active', mode === 'team');
-    this.render();
-  },
-
-  // Build synthetic "project" rows keyed by team member. Each row aggregates every slice assigned
-  // to that member across all customer-scoped projects, exposing a start_date / target_date span
-  // plus a skill_splits map that the existing Gantt renderer can consume unchanged.
-  getTeamMemberRows() {
-    if (!App.data) return [];
-    const customer = App.activeCustomer;
-    const sprintsById = {};
-    (App.data.sprints || []).forEach(s => { sprintsById[s.sprint_id] = s; });
-    const members = (App.data.team_members || []).filter(tm => {
-      if (!tm || !tm.name) return false;
-      if (!customer) return true;
-      const c = (tm.customer || '').toLowerCase();
-      return c === customer.toLowerCase() || c === 'both';
-    });
-
-    const projects = (App.data.projects || []).filter(p => !customer || p.customer === customer);
-
-    return members.map(tm => {
-      const splitsByKey = {};
-      let earliestDate = null, latestDate = null;
-      const projectsTouched = new Set();
-
-      projects.forEach(p => {
-        const ss = p.skill_splits || {};
-        Object.keys(ss).forEach(skKey => {
-          (ss[skKey] || []).forEach(entry => {
-            // Prefer assigned_to (solver-populated, authoritative); fall back to legacy .assignee string
-            const matchesAssigned = Array.isArray(entry.assigned_to) && entry.assigned_to.some(a => a.member === tm.name);
-            const matchesLegacy = !matchesAssigned && (entry.assignee === tm.name);
-            if (!matchesAssigned && !matchesLegacy) return;
-            const s = sprintsById[entry.sprint];
-            if (!s || !s.start_date || !s.end_date) return;
-            const memberPts = matchesAssigned
-              ? entry.assigned_to.filter(a => a.member === tm.name).reduce((acc, a) => acc + (a.points || 0), 0)
-              : (entry.points || 0);
-            if (memberPts <= 0) return;
-            splitsByKey[skKey] = splitsByKey[skKey] || [];
-            splitsByKey[skKey].push({
-              sprint: entry.sprint,
-              points: memberPts,
-              completed: entry.completed || 0,
-              status: entry.status || 'pending',
-              project_id: p.id,
-              project_name: p.name,
-              assignee: tm.name
-            });
-            projectsTouched.add(p.id);
-            if (!earliestDate || s.start_date < earliestDate) earliestDate = s.start_date;
-            if (!latestDate || s.end_date > latestDate) latestDate = s.end_date;
-          });
-        });
-      });
-
-      if (!earliestDate || !latestDate) return null;
-      const totals = {};
-      let grandTotal = 0;
-      Object.keys(splitsByKey).forEach(k => {
-        totals[k] = splitsByKey[k].reduce((a, x) => a + x.points, 0);
-        grandTotal += totals[k];
-      });
-      // Synthetic project shape the renderer already understands.
-      return {
-        id: '__team_' + tm.name.replace(/\s+/g, '_'),
-        name: tm.name + ' · ' + projectsTouched.size + ' project' + (projectsTouched.size === 1 ? '' : 's'),
-        customer: tm.customer === 'Both' ? customer : tm.customer,
-        manager: (tm.role || 'Team member'),
-        status: 'In Progress',
-        rag_schedule: 'Green', rag_resourcing: 'Green', rag_scope: 'Green',
-        start_date: earliestDate,
-        target_date: latestDate,
-        priority: 0,
-        size_requirements: totals.size_requirements || 0,
-        size_tableau: totals.size_tableau || 0,
-        size_engineering: totals.size_engineering || 0,
-        size_data_science: totals.size_data_science || 0,
-        size_uat_adoption: totals.size_uat_adoption || 0,
-        size_total: grandTotal,
-        skill_splits: splitsByKey,
-        delivery_config: {},
-        dependencies: [],
-        _isTeamRow: true,
-        _teamMember: tm
-      };
-    }).filter(Boolean);
-  },
+  // L14: Gantt previously had a "Team" view mode alongside "Projects". The toggle and helper
+  // (getTeamMemberRows, setViewMode) were removed when team planning moved to Sprint Planning.
+  // (L14: Gantt "Team" viewMode was removed — getTeamMemberRows and the viewMode==='team' branch
+  //  are gone. Team planning lives in Sprint Planning → Team.)
 
   // Ensure the App.data.baselines array exists and is keyed by the active customer's customers.
   _ensureBaselines() {
@@ -9128,7 +9090,7 @@ const Gantt = {
     // Keep the baseline selector + persisted selection in sync with the dataset / customer.
     this._restoreActiveBaseline();
     this._renderBaselineSelect();
-    const projects = this.viewMode === 'team' ? this.getTeamMemberRows() : this.getFilteredProjects();
+    const projects = this.getFilteredProjects();
 
     if (!projects.length) {
       document.getElementById('ganttLabels').innerHTML = '<div class="gantt-label-header">Project</div>';
@@ -9361,7 +9323,9 @@ const Gantt = {
       // D8: pre-compute overrun for the detailed view so the red continuation + badge sit inside
       // the main gantt-row (anchored to target_date's x position). Non-destructive; target_date is never mutated.
       let overrunHtml = '';
-      if (isDetailed) {
+      // B3: skip overrun calc entirely when target_date is missing — dateToX(null) collapses to the
+      // Unix epoch, turning every in-schedule project into a false positive.
+      if (isDetailed && p.target_date) {
         const activeSkillsForOverrun = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : skills;
         let maxEnd = x1;
         activeSkillsForOverrun.forEach(sk => {
@@ -10931,7 +10895,16 @@ const Sprint = {
       const c = (tm.customer || '').toLowerCase();
       return c === customer.toLowerCase() || c === 'both';
     });
-    if (!members.length) { board.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">No team members assigned to ' + Dashboard.esc(customer) + '.</div>'; return; }
+    if (!members.length) {
+      // M11: upgrade empty-state with a CTA so PMs land somewhere actionable.
+      board.innerHTML =
+        '<div style="padding:32px;text-align:center;background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);max-width:420px;margin:24px auto">' +
+          '<div style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:6px">No team members for ' + Dashboard.esc(customer) + '</div>' +
+          '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Add team capacity to plan who is doing what.</div>' +
+          '<button class="btn btn-outline btn-sm" onclick="App.navigate(\'config\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Go to Configuration → Team</button>' +
+        '</div>';
+      return;
+    }
 
     // Build a person→sprint→[{project, skill, points}] map from every project's skill_splits.
     // Authoritative source: assigned_to array on the slice. Fallback: legacy single-assignee field.
@@ -11599,6 +11572,28 @@ const Sprint = {
       this.SKILLS.forEach(sk => { remaining[s.sprint_id][sk.key] = Math.floor((cap[sk.key] || 0) * capPct); });
     });
 
+    // H6: per-person headroom per sprint (sum of every eligible member's available_points_per_sprint).
+    // The aggregate skill cap can say "30 DE pts" but if it's coming from 2 engineers × 15, we can't
+    // place a single 30-SP chunk without splitting. Reserve against the per-person ledger so the wizard
+    // preview matches what Auto-Allocate will actually do.
+    const personCapByMember = {}; // { sid: { memberName: remaining_pts } }
+    futureSprints.forEach(s => {
+      personCapByMember[s.sprint_id] = {};
+      (App.data.team_members || []).forEach(tm => {
+        const mc = this.calcMemberCapacityForSprint(tm, s.sprint_id, customer);
+        if (mc && mc.points > 0 && mc.skills && mc.skills.length) {
+          personCapByMember[s.sprint_id][tm.name] = Math.floor(mc.points * capPct);
+        }
+      });
+    });
+
+    // Normalise legacy single-assignee → assigned_to shape so older data consumes per-person cap correctly.
+    const normaliseAssigns = (sp) => {
+      if (Array.isArray(sp.assigned_to) && sp.assigned_to.length) return sp.assigned_to;
+      if (sp.assignee) return [{ member: sp.assignee, points: sp.points }];
+      return [];
+    };
+
     // Subtract everything higher-priority projects already committed (including lower-priority — consumption is consumption).
     // Simpler rule: subtract consumption from every project except this one.
     (App.data.projects || []).forEach(p => {
@@ -11612,9 +11607,35 @@ const Sprint = {
           if (remaining[sp.sprint] && remaining[sp.sprint][sk.key] !== undefined) {
             remaining[sp.sprint][sk.key] = Math.max(0, remaining[sp.sprint][sk.key] - (sp.points || 0));
           }
+          // H6: also drain per-person cap so later projects don't over-promise against the same person.
+          if (personCapByMember[sp.sprint]) {
+            normaliseAssigns(sp).forEach(a => {
+              if (personCapByMember[sp.sprint][a.member] != null) {
+                personCapByMember[sp.sprint][a.member] = Math.max(0, personCapByMember[sp.sprint][a.member] - (a.points || 0));
+              }
+            });
+          }
         });
       });
     });
+
+    // H6: helper — the maximum slice size that can be reserved for `skillKey` in `sid` without
+    // exceeding any one member's remaining per-person cap. Returns the min(headroom, sum-of-eligible-members-cap).
+    const personHeadroom = (sid, skillKey) => {
+      const skillLabelMap = {};
+      ((App.data && App.data.skills) ? App.data.skills : []).forEach(s => { skillLabelMap[s.label] = s.key; });
+      // Determine which members are eligible for this skill in this sprint.
+      let sum = 0;
+      (App.data.team_members || []).forEach(tm => {
+        const primary = (tm.primary_skills || []).map(l => skillLabelMap[l]).filter(Boolean);
+        const secondary = (tm.secondary_skills || []).map(l => skillLabelMap[l]).filter(Boolean);
+        const eligible = primary.includes(skillKey) || secondary.includes(skillKey);
+        if (!eligible) return;
+        const r = personCapByMember[sid] && personCapByMember[sid][tm.name];
+        if (r != null) sum += r;
+      });
+      return sum;
+    };
 
     // Walk the phase order, greedily filling skills into sprints from earliest-available.
     const phaseOrder = (project.delivery_config && project.delivery_config.phase_order) || ['Requirements', 'Data Engineering', 'Tableau', 'UAT'];
@@ -11632,7 +11653,12 @@ const Sprint = {
       reservedSplits[sk] = reservedSplits[sk] || [];
       while (pts > 0 && cursor < futureSprints.length) {
         const sid = futureSprints[cursor].sprint_id;
-        const headroom = remaining[sid][sk] || 0;
+        const skillHeadroom = remaining[sid][sk] || 0;
+        const peopleHeadroom = personHeadroom(sid, sk);
+        // H6: the effective headroom is bounded by BOTH the aggregate skill cap AND what the
+        // people eligible for this skill actually have left. Prevents over-promising against a
+        // single under-capacity team member.
+        const headroom = Math.min(skillHeadroom, peopleHeadroom);
         if (headroom <= 0) { cursor++; continue; }
         const take = Math.min(pts, headroom);
         reservedSplits[sk].push({
@@ -11647,7 +11673,7 @@ const Sprint = {
         pts -= take;
         if (!firstSprint) firstSprint = sid;
         lastSprint = sid;
-        if (headroom <= take) cursor++; // sprint's capacity for this skill is exhausted — advance
+        if (headroom <= take) cursor++; // bottleneck exhausted — advance
       }
       if (pts > 0) warnings.push(phaseName + ': ' + pts + ' pts could not be reserved in horizon');
     });
@@ -13956,6 +13982,14 @@ const Solver = {
     // Identify locked projects and subtract their capacity (both aggregate and per-person, best-effort).
     const allProjects = data.projects || [];
     const lockedIds = new Set();
+    // H5: normalise legacy single-assignee slices before reserving per-person capacity. Older data
+    // (or manual JSON edits) may have `sp.assignee = 'Alice'` but no `assigned_to` array; without
+    // this the person ledger misses the reservation and the solver double-books them.
+    const _normaliseAssigns = (sp) => {
+      if (Array.isArray(sp.assigned_to) && sp.assigned_to.length) return sp.assigned_to;
+      if (sp.assignee) return [{ member: sp.assignee, points: sp.points }];
+      return [];
+    };
     const reserveLocked = (p) => {
       const splits = p.skill_splits || {};
       SKILLS.forEach(sk => {
@@ -13965,9 +13999,8 @@ const Solver = {
           if (remaining[sp.sprint] && remaining[sp.sprint][sk.key] !== undefined) {
             remaining[sp.sprint][sk.key] = Math.max(0, remaining[sp.sprint][sk.key] - sp.points);
           }
-          // Per-person reservation when assigned_to is present on the locked slice
-          if (enforcePerPerson && personLedger[sp.sprint] && Array.isArray(sp.assigned_to)) {
-            sp.assigned_to.forEach(a => {
+          if (enforcePerPerson && personLedger[sp.sprint]) {
+            _normaliseAssigns(sp).forEach(a => {
               const entry = personLedger[sp.sprint][a.member];
               if (entry) entry.remaining = Math.max(0, entry.remaining - a.points);
             });
@@ -14002,8 +14035,8 @@ const Solver = {
             if (remaining[sp.sprint] && remaining[sp.sprint][sk.key] !== undefined) {
               remaining[sp.sprint][sk.key] = Math.max(0, remaining[sp.sprint][sk.key] - sp.points);
             }
-            if (enforcePerPerson && personLedger[sp.sprint] && Array.isArray(sp.assigned_to)) {
-              sp.assigned_to.forEach(a => {
+            if (enforcePerPerson && personLedger[sp.sprint]) {
+              _normaliseAssigns(sp).forEach(a => {
                 const entry = personLedger[sp.sprint][a.member];
                 if (entry) entry.remaining = Math.max(0, entry.remaining - a.points);
               });
@@ -14178,6 +14211,11 @@ const Solver = {
                 sprint: orig.sprint,
                 points: preservedPts,
                 assigned_to: Array.isArray(orig.assigned_to) ? orig.assigned_to.slice() : [],
+                // B1: preserve historical completion state — applyAllocation defaults missing status/completed
+                // which would silently revert every past-complete slice to pending on every Auto-Allocate run.
+                status: orig.status || 'complete',
+                completed: orig.completed != null ? orig.completed : preservedPts,
+                assignee: orig.assignee || '',
                 reasons: ['past-sprint-preserved']
               });
               pointsLeft = Math.max(0, pointsLeft - preservedPts);
@@ -14406,6 +14444,10 @@ const Solver = {
     const releaseProject = (p) => {
       Object.keys(allocations[p.id] || {}).forEach(skillKey => {
         (allocations[p.id][skillKey] || []).forEach(sp => {
+          // L15: under past-sprint protection, past slices are reserved upfront and treated as
+          // immutable. Skip them here so Pass 2's rollback doesn't inflate remaining capacity for
+          // sprints we'll never place new work into.
+          if (protectPast && pastSprintIds.has(sp.sprint)) return;
           if (remaining[sp.sprint] && remaining[sp.sprint][skillKey] !== undefined) {
             remaining[sp.sprint][skillKey] += sp.points;
           }
@@ -14656,8 +14698,18 @@ const Governance = {
     if (forumCountEl) forumCountEl.textContent = forums.length;
     if (riskCountEl) riskCountEl.textContent = riskCount;
     // D3: Exports scope label — Status Report is cross-customer; Portfolio Pack is the active customer.
+    // M13: disable the Portfolio Pack button outright when no customer is active so the export can't misfire.
     const scopeEl = document.getElementById('govExportsScope');
-    if (scopeEl) scopeEl.textContent = 'Status Report: all customers · Portfolio Pack: ' + (customer || 'none selected');
+    if (scopeEl) scopeEl.textContent = customer
+      ? ('Status Report covers all customers. Portfolio Pack is scoped to ' + customer + '.')
+      : 'Status Report covers all customers. Portfolio Pack needs an active customer — select one above.';
+    const packBtn = document.getElementById('govExportPortfolioPackBtn');
+    if (packBtn) {
+      packBtn.disabled = !customer;
+      packBtn.style.opacity = customer ? '' : '0.5';
+      packBtn.style.cursor = customer ? '' : 'not-allowed';
+      packBtn.title = customer ? 'Branded portfolio pack for ' + customer : 'Select a customer to enable this export';
+    }
 
     // Add Forum button
     let addBtnHtml = '<div style="margin-bottom:10px"><button class="btn btn-add btn-sm" onclick="Governance.openForumModal(null)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Forum</button></div>';
@@ -16215,7 +16267,7 @@ const Onboarding = {
     },
     sprint: {
       title: 'Sprint Planning View',
-      content: '<ul><li>Manage project skill allocations across sprint columns.</li><li>Drag skill chips between sprints to manually assign work.</li><li>Use Auto-Allocate to let the solver distribute work based on capacity and priority.</li><li>Click sprint headers to view/edit capacity and holidays for that sprint.</li><li>Toggle between Projects and Resources views using the buttons at top.</li></ul>'
+      content: '<ul><li>Manage project skill allocations across sprint columns.</li><li>Drag skill chips between sprints to manually assign work.</li><li>Use Auto-Allocate to let the solver distribute work based on capacity and priority.</li><li>Click sprint headers to view/edit capacity and holidays for that sprint.</li><li>Toggle between Projects and Team views using the buttons at top.</li></ul>'
     },
     roadmap: {
       title: 'Roadmap / Gantt View',
