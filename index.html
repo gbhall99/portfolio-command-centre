@@ -393,6 +393,13 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 
 /* --- Dashboard --- */
 .dashboard-container { padding: 14px 24px; display: block; }
+/* Issue 11: Projects view hides the portfolio-health KPIs to give the table full focus.
+   Dashboard view shows everything (unchanged legacy behaviour so existing habits still work). */
+.dashboard-container.view-mode-projects #execSummary,
+.dashboard-container.view-mode-projects #summaryCards,
+.dashboard-container.view-mode-projects #kpiCards,
+.dashboard-container.view-mode-projects #attentionPanel,
+.dashboard-container.view-mode-projects .watching-section { display: none !important; }
 .dashboard-container > * { margin-bottom: 10px; }
 .dashboard-container > *:last-child { margin-bottom: 0; }
 .dashboard-container > .view-help-panel:empty,
@@ -1032,8 +1039,8 @@ html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, r
   background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px);
 }
 html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
-.gantt-ms:hover { transform: scale(1.15); transition: transform 0.12s; }
-.gantt-ms-ghost:hover { opacity: 0.9 !important; }
+.gantt-ms { transform: translateY(-50%); transition: transform 0.12s; }
+.gantt-ms:hover { transform: translateY(-50%) scale(1.15); }
 /* 2E: "Today" = the one live reference line — solid 2px in accent blue to own that role. */
 .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-blue); z-index: 3; pointer-events: none; border: none; }
 .gantt-today-label { position: absolute; top: 4px; font-size: 9px; color: var(--accent-blue); font-weight: 700; transform: translateX(-50%); white-space: nowrap; z-index: 3; }
@@ -1067,6 +1074,9 @@ html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
 .gantt-seg { pointer-events: auto !important; cursor: pointer; z-index: 1; }
 .gantt-seg.gantt-hovered { filter: brightness(1.15); z-index: 3; }
 .gantt-seg-dim { opacity: 0.35; }
+.gantt-phase-bar.gantt-hovered { filter: brightness(1.12); box-shadow: 0 0 0 1.5px var(--accent-blue) inset; z-index: 3; }
+/* Bar label overlays segs visually but must not swallow their pointer events. */
+.bar-label { pointer-events: none; }
 .gantt-bar-highlight { box-shadow: 0 0 0 2px var(--accent-blue); z-index: 5; }
 /* Forward-sync — when a bar is hovered, the matching label row lights up, and vice-versa. */
 .gantt-label-active { background: rgba(59,130,246,0.08) !important; }
@@ -1628,6 +1638,10 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         Dashboard <span class="nav-badge" id="navBadgeTotal">0</span>
       </div>
+      <div class="nav-item" data-view="projects" onclick="App.navigate('projects')">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+        Projects
+      </div>
       <div class="nav-item" data-view="sprint" onclick="App.navigate('sprint')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 4 21 10 15 10"/></svg>
         Sprint Planning
@@ -1812,7 +1826,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
           <div class="toolbar-group" role="group" aria-label="Display toggles">
             <span class="toolbar-group-label">Show</span>
             <label class="toolbar-chk"><input type="checkbox" id="ganttBaseline" onchange="Gantt.render()"> Baseline</label>
-            <label class="toolbar-chk"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed phases</label>
+            <label class="toolbar-chk"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
             <label class="toolbar-chk"><input type="checkbox" id="ganttCriticalPath" onchange="Gantt.toggleCriticalPath(this.checked)"> Critical path</label>
           </div>
           <div class="toolbar-group" role="group" aria-label="Baselines">
@@ -1868,6 +1882,11 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
         <div class="capacity-section">
           <div class="capacity-section-title">Team Members</div>
           <div class="team-grid" id="teamGrid"></div>
+        </div>
+        <!-- Issue 6: Scrum Master view — per-member delivery timeline. -->
+        <div class="capacity-section">
+          <div class="capacity-section-title">Scrum Master Schedule <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px">\u2014 what each person is doing, in priority order, with due dates</span></div>
+          <div id="teamScheduleGantt"></div>
         </div>
       </div>
     </div>
@@ -2001,12 +2020,12 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 <!-- Allocation Settings Modal -->
 <div class="split-modal-overlay" id="allocSettingsOverlay" style="display:none" onclick="Sprint.closeAllocSettings()"></div>
 <div class="split-modal" id="allocSettingsModal" style="display:none;max-width:520px">
-  <h3>Auto-Allocation Settings</h3>
-  <div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Configure how the auto-allocator assigns project skills to sprints.</div>
+  <h3>Solver Configuration (read-only)</h3>
+  <div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">What the auto-allocator will use on the next run. Edit values in System Settings &rarr; Scheduling Engine.</div>
   <div id="allocSettingsBody"></div>
   <div class="split-actions">
     <button class="btn btn-ghost btn-sm" onclick="Sprint.closeAllocSettings()">Close</button>
-    <button class="btn btn-primary btn-sm" onclick="Sprint.saveAllocSettings()">Save Settings</button>
+    <button class="btn btn-primary btn-sm" onclick="Sprint.saveAllocSettings()">Edit in System Settings &rarr;</button>
   </div>
 </div>
 
@@ -2218,11 +2237,31 @@ const App = {
   },
 
   refreshCurrentView() {
-    if (this.currentView === 'dashboard') Dashboard.render();
+    if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.render();
     else if (this.currentView === 'sprint') Sprint.render();
     else if (this.currentView === 'roadmap') Gantt.render();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'config') this.renderConfig();
+  },
+
+  // Call after any mutation to project data (edit, add, soft-delete). Refreshes the active view so
+  // it always reflects current state. Other views are covered by App.navigate re-rendering the
+  // destination on switch. rAF-debounced to coalesce rapid successive mutations.
+  notifyDataChange() {
+    if (!this.data) return;
+    if (typeof this.computeRecommendedPriorities === 'function') this.computeRecommendedPriorities();
+    // Shared UI elements that aren't owned by a single view
+    const totalEl = document.getElementById('navBadgeTotal');
+    if (totalEl) totalEl.textContent = this.data.projects.length;
+    const modeEl = document.getElementById('modeBadge');
+    if (modeEl) modeEl.textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
+    if (this._refreshScheduled) return;
+    this._refreshScheduled = true;
+    requestAnimationFrame(() => {
+      this._refreshScheduled = false;
+      this.refreshCurrentView();
+    });
   },
 
   // --- Schema Migration ---
@@ -2245,6 +2284,49 @@ const App = {
     if (data.skills && Array.isArray(data.skills)) {
       data.skills = data.skills.filter(s => s && s.key !== 'size_hypercare' && s.label !== 'Hypercare');
     }
+
+    // Always-run: round any fractional story-point values to integers. Story points must be whole
+    // numbers; only derived statistics (velocity averages etc.) keep decimals. Idempotent on clean data.
+    const roundPts = (v) => (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.round(v)) : v;
+    const ptFields = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption', 'size_total'];
+    (data.projects || []).forEach(p => {
+      if (!p) return;
+      ptFields.forEach(k => { if (typeof p[k] === 'number') p[k] = roundPts(p[k]); });
+      if (p.skill_splits && typeof p.skill_splits === 'object') {
+        Object.keys(p.skill_splits).forEach(sk => {
+          const arr = p.skill_splits[sk];
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (typeof sp.points === 'number') sp.points = roundPts(sp.points);
+            if (typeof sp.completed === 'number') sp.completed = roundPts(sp.completed);
+            if (Array.isArray(sp.assigned_to)) {
+              sp.assigned_to.forEach(a => { if (typeof a.points === 'number') a.points = roundPts(a.points); });
+            }
+          });
+        });
+      }
+      if (p.estimate_baseline) {
+        Object.keys(p.estimate_baseline).forEach(k => {
+          if (typeof p.estimate_baseline[k] === 'number') p.estimate_baseline[k] = roundPts(p.estimate_baseline[k]);
+        });
+      }
+    });
+    (data.team_members || []).forEach(tm => {
+      if (!tm) return;
+      if (typeof tm.available_points_per_sprint === 'number') tm.available_points_per_sprint = roundPts(tm.available_points_per_sprint);
+      if (typeof tm.story_points_per_sprint === 'number') tm.story_points_per_sprint = roundPts(tm.story_points_per_sprint);
+      if (tm.capacity_by_customer && typeof tm.capacity_by_customer === 'object') {
+        Object.keys(tm.capacity_by_customer).forEach(c => {
+          if (typeof tm.capacity_by_customer[c] === 'number') tm.capacity_by_customer[c] = roundPts(tm.capacity_by_customer[c]);
+        });
+      }
+      if (tm.sprint_overrides && typeof tm.sprint_overrides === 'object') {
+        Object.keys(tm.sprint_overrides).forEach(sid => {
+          const o = tm.sprint_overrides[sid];
+          if (o && typeof o.available_points === 'number') o.available_points = roundPts(o.available_points);
+        });
+      }
+    });
 
     const version = (data.meta && data.meta.schema_version) || '0.0';
     if (version === this.SCHEMA_VERSION) return data;
@@ -2803,7 +2885,7 @@ const App = {
     badge.textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
 
     // Re-render current view
-    if (this.currentView === 'dashboard') Dashboard.applyFilters();
+    if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.applyFilters();
     else if (this.currentView === 'sprint') Sprint.render();
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
@@ -2844,6 +2926,8 @@ const App = {
   onDataLoaded() {
     // Hydrate settings defaults before any UI/solver code reads them.
     this._ensureSettingsDefaults();
+    // Populate recommended_priority once at load so UI chips reflect state from the start.
+    this.computeRecommendedPriorities();
     const badge = document.getElementById('modeBadge');
     badge.textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
     badge.classList.add('loaded');
@@ -2880,7 +2964,9 @@ const App = {
       hotSprintThresholdPct: 90,
       coolSprintThresholdPct: 60,
       shiftGranuleDivisor: 2,
-      enforceCrossCustomerDeps: false
+      enforceCrossCustomerDeps: false,
+      defaultDevDays: 20,
+      daysPerSPMultiplier: 1
     }, s.scheduler || {});
 
     // Priority-scoring weights previously hard-coded inside App.calculateProjectPriorityScore.
@@ -3225,6 +3311,7 @@ const App = {
     project.last_updated = new Date().toISOString();
     this.markDirty();
     this.saveToLocalStorage();
+    this.notifyDataChange();
   },
 
   addProject(projectData) {
@@ -3234,8 +3321,7 @@ const App = {
     this.logChange(projectData.id, 'project_created', '', projectData.name, 'user');
     this.markDirty();
     this.saveToLocalStorage();
-    document.getElementById('navBadgeTotal').textContent = this.data.projects.length;
-    document.getElementById('modeBadge').textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
+    this.notifyDataChange();
   },
 
   exportJSON() {
@@ -3469,21 +3555,33 @@ const App = {
 
   navigate(viewName) {
     if (!this.data && viewName !== 'dashboard') return;
-    // Save current filter state when leaving dashboard (REQ-DASH-03)
-    if (this.currentView === 'dashboard' && viewName !== 'dashboard') {
+    // Save current filter state when leaving dashboard/projects (REQ-DASH-03)
+    if ((this.currentView === 'dashboard' || this.currentView === 'projects') && viewName !== 'dashboard' && viewName !== 'projects') {
       Dashboard.lastFilters = Dashboard.saveCurrentFilterState();
     }
     this.currentView = viewName;
     document.querySelectorAll('.nav-item').forEach(item => { item.classList.toggle('active', item.dataset.view === viewName); });
     document.querySelectorAll('.view').forEach(view => { view.classList.remove('active'); });
-    const target = document.getElementById('view' + viewName.charAt(0).toUpperCase() + viewName.slice(1));
-    if (target) target.classList.add('active');
+    // Issue 11: Dashboard and Projects share the same DOM container; toggle a view-mode class
+    // on the container to hide/show summary vs. table sections. Same render pipeline, two views.
+    const dashContainer = document.querySelector('#viewDashboard .dashboard-container');
+    if (viewName === 'dashboard' || viewName === 'projects') {
+      const target = document.getElementById('viewDashboard');
+      if (target) target.classList.add('active');
+      if (dashContainer) {
+        dashContainer.classList.toggle('view-mode-projects', viewName === 'projects');
+        dashContainer.classList.toggle('view-mode-dashboard', viewName === 'dashboard');
+      }
+    } else {
+      const target = document.getElementById('view' + viewName.charAt(0).toUpperCase() + viewName.slice(1));
+      if (target) target.classList.add('active');
+    }
     // Close mobile menu
     const sb = document.querySelector('.sidebar');
     if (sb) sb.classList.remove('mobile-open');
     const bd = document.getElementById('mobileBackdrop');
     if (bd) bd.remove();
-    if (viewName === 'dashboard' && this.data) { Dashboard.init(); Dashboard.renderFilterPresets(); }
+    if ((viewName === 'dashboard' || viewName === 'projects') && this.data) { Dashboard.init(); Dashboard.renderFilterPresets(); }
     if (viewName === 'roadmap' && this.data) Gantt.init();
     if (viewName === 'sprint' && this.data) Sprint.init();
     if (viewName === 'capacity' && this.data) Capacity.render();
@@ -3497,7 +3595,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { dashboard: 'Dashboard', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
+    const names = { dashboard: 'Dashboard', projects: 'Projects', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -3526,7 +3624,7 @@ const App = {
     const dot = document.getElementById('headerCustomerDot');
     if (dot) dot.style.background = this.getCustomerColor(customer) || 'var(--accent-blue)';
     // Re-render current view
-    if (this.currentView === 'dashboard') Dashboard.applyFilters();
+    if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.applyFilters();
     else if (this.currentView === 'sprint') Sprint.render();
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
@@ -3572,6 +3670,42 @@ const App = {
     s.lockInProgress = !!document.getElementById('seLockIP').checked;
     s.preservePastSprintAllocations = !!document.getElementById('seProtectPast').checked;
     sched.enforceCrossCustomerDeps = !!document.getElementById('seCrossCust').checked;
+    const concEl = document.getElementById('seConcurrent');
+    if (concEl) s.enforceConcurrentSinglePerson = !!concEl.checked;
+    // R12: allowed-overlap skills (checkbox per skill key)
+    const overlapBoxes = document.querySelectorAll('input[data-r12-overlap]');
+    if (overlapBoxes.length) {
+      const allowed = [];
+      overlapBoxes.forEach(cb => { if (cb.checked) allowed.push(cb.dataset.r12Overlap); });
+      s.concurrentOverlapAllowedSkills = allowed;
+    }
+    // R11 day-budget knobs
+    const defDD = document.getElementById('seDefaultDevDays');
+    if (defDD) {
+      const v = parseInt(defDD.value, 10);
+      if (!isNaN(v)) sched.defaultDevDays = Math.max(1, Math.min(60, v));
+    }
+    const dpsp = document.getElementById('seDaysPerSPMult');
+    if (dpsp) {
+      const v = parseFloat(dpsp.value);
+      if (!isNaN(v)) sched.daysPerSPMultiplier = Math.max(0.25, Math.min(3, v));
+    }
+    // R8 per-member capacity_by_customer grid
+    const capInputs = document.querySelectorAll('input[data-capmember]');
+    const byMember = {};
+    capInputs.forEach(inp => {
+      const m = inp.dataset.capmember;
+      const c = inp.dataset.capcust;
+      if (!byMember[m]) byMember[m] = {};
+      const v = inp.value === '' ? null : parseFloat(inp.value);
+      if (v != null && !isNaN(v)) byMember[m][c] = v;
+    });
+    (this.data.team_members || []).forEach(mem => {
+      if (mem.customer !== 'Both') return;
+      const entries = byMember[mem.name] || {};
+      if (Object.keys(entries).length) mem.capacity_by_customer = entries;
+      else delete mem.capacity_by_customer;
+    });
     this.markDirty();
     this.saveToLocalStorage();
     this.toast('Scheduling Engine settings saved', 'success');
@@ -3592,7 +3726,9 @@ const App = {
       spreadWork: true,
       lockCompleted: true,
       lockInProgress: false,
-      preservePastSprintAllocations: true
+      preservePastSprintAllocations: true,
+      enforceConcurrentSinglePerson: true,
+      concurrentOverlapAllowedSkills: ['size_requirements', 'size_uat_adoption']
     });
     if (this.data && this.data.settings) {
       this.data.settings.scheduler = {
@@ -3600,7 +3736,9 @@ const App = {
         hotSprintThresholdPct: 90,
         coolSprintThresholdPct: 60,
         shiftGranuleDivisor: 2,
-        enforceCrossCustomerDeps: false
+        enforceCrossCustomerDeps: false,
+        defaultDevDays: 20,
+        daysPerSPMultiplier: 1
       };
     }
     this.markDirty();
@@ -3735,12 +3873,41 @@ const App = {
     const lev = this.computeDependencyLeverage(actives);
     const scored = actives.map(p => ({ p, score: this.calculateProjectPriorityScore(p, lev[p.id] || 0) }));
     scored.sort((a, b) => b.score - a.score);
-    const row = (entry) => '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dark)">' + Dashboard.esc(entry.p.name) + '</span><span style="color:var(--text-muted);font-variant-numeric:tabular-nums">' + entry.score + ' pts</span></div>';
+    const esc = Dashboard.esc;
+    const row = (entry) => '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:11px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dark)">' + esc(entry.p.name) + '</span><span style="color:var(--text-muted);font-variant-numeric:tabular-nums">' + entry.score + ' pts</span></div>';
     const top = scored.slice(0, 5).map(row).join('');
     const bottom = scored.slice(-5).map(row).join('');
+
+    // Worked example — top-scoring project, broken down by component.
+    const sampleP = scored[0].p;
+    const breakdown = this.explainPriorityScore(sampleP.id);
+    let example = '';
+    if (breakdown) {
+      const rows = breakdown.rows.map(r =>
+        '<tr><td style="padding:3px 6px;font-weight:600">' + esc(r.label) + '</td>' +
+        '<td style="padding:3px 6px;color:var(--text-dark-secondary)">' + esc(r.input) + '</td>' +
+        '<td style="padding:3px 6px;color:var(--text-muted);text-align:center">' + esc(r.multiplier) + '</td>' +
+        '<td style="padding:3px 6px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(r.contribution) + '</td></tr>'
+      ).join('');
+      example =
+        '<div style="grid-column:1 / -1;margin-top:14px">' +
+          '<div style="font-weight:700;margin-bottom:6px;color:var(--text-dark)">Worked example \u2014 ' + esc(breakdown.projectName) + '</div>' +
+          '<table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm);overflow:hidden">' +
+            '<thead style="background:#f8fafc"><tr>' +
+              '<th style="padding:3px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Component</th>' +
+              '<th style="padding:3px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Input</th>' +
+              '<th style="padding:3px 6px;text-align:center;font-size:10px;color:var(--text-muted);text-transform:uppercase">Multiplier</th>' +
+              '<th style="padding:3px 6px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase">Pts</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+            '<tfoot><tr style="background:#f1f5f9"><td colspan="3" style="padding:4px 6px;font-weight:700;text-align:right">Total</td><td style="padding:4px 6px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums">' + breakdown.total + '</td></tr></tfoot>' +
+          '</table>' +
+        '</div>';
+    }
     return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">' +
       '<div><div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Top 5 by score</div>' + top + '</div>' +
       '<div><div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Bottom 5 by score</div>' + bottom + '</div>' +
+      example +
     '</div>';
   },
 
@@ -3791,39 +3958,133 @@ const App = {
           (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace('CY26-', '') + '</option>').join('');
         const numInput = (id, val, min, max, title) =>
           '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + '" title="' + title + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+        // Rules R1–R11 reference — derived from SOLVER.md §4. Each row declares whether the rule is
+        // enforced unconditionally, toggleable via a setting, or not currently exposed in the UI.
+        const rules = [
+          { id: 'R1',  name: 'Fill sprints earliest-to-latest',        cfg: 'enforced',        note: 'Forward loop; Pass 3 never moves work earlier.' },
+          { id: 'R2',  name: 'Phase hand-off buffer',                   cfg: 'phaseBufferPoints', note: 'Reserves SP when consecutive phases share a sprint.' },
+          { id: 'R3',  name: '(retired) Hypercare',                     cfg: 'n/a',             note: 'Hypercare phase was removed in v1.1.' },
+          { id: 'R4',  name: 'Per-person capacity cap',                 cfg: 'enforcePerPersonCap', note: 'Hard: no member exceeds available_points_per_sprint.' },
+          { id: 'R5',  name: 'Cross-phase overlap when R2/R11 hold',    cfg: 'respectSkillOrder', note: 'Replaces the old strict phase gate.' },
+          { id: 'R6',  name: 'Buffer-slide safety cap',                 cfg: 'maxBufferSlides', note: 'Phase slides N sprints before giving up the buffer.' },
+          { id: 'R7',  name: 'Deadline beats buffer',                   cfg: 'enforced',        note: 'Buffer dropped, overlap allowed, warning emitted.' },
+          { id: 'R8',  name: '"Both"-customer capacity split',          cfg: 'per-member',      note: 'Edit per-member capacity_by_customer below.' },
+          { id: 'R9',  name: 'Graded deadline urgency (scoring)',       cfg: 'deadlineTiers',   note: 'Configured in Scoring & Prioritisation.' },
+          { id: 'R10', name: 'Slice metadata (assigned_to, reasons)',   cfg: 'enforced',        note: 'UI tooltip source.' },
+          { id: 'R11', name: 'Project day-budget per sprint',           cfg: 'defaultDevDays / daysPerSPMultiplier', note: 'Splits phases when calendar-day budget would overflow.' },
+          { id: 'R12', name: 'One person, one delivery at a time',      cfg: 'enforceConcurrentSinglePerson', note: 'Blocks overlapping assignments across projects unless both are in the allow-list (Req + UAT by default).' }
+        ];
+        const rulesRows = rules.map(r =>
+          '<tr>' +
+            '<td style="padding:4px 6px;font-weight:700;color:var(--accent-blue);font-variant-numeric:tabular-nums">' + r.id + '</td>' +
+            '<td style="padding:4px 6px;font-weight:600">' + esc(r.name) + '</td>' +
+            '<td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + esc(r.cfg) + '</td>' +
+            '<td style="padding:4px 6px;font-size:11px;color:var(--text-dark-secondary)">' + esc(r.note) + '</td>' +
+          '</tr>'
+        ).join('');
+
+        // R8 per-member capacity-by-customer grid (only members with customer === "Both"). Editable inline.
+        const bothMembers = (App.data.team_members || []).filter(m => m.customer === 'Both');
+        const bothRows = bothMembers.length
+          ? bothMembers.map((m, i) => {
+              const cap = m.capacity_by_customer || {};
+              const cells = customers.map(c =>
+                '<td style="padding:4px 6px"><input type="number" data-capmember="' + esc(m.name) + '" data-capcust="' + esc(c) + '" value="' + (cap[c] != null ? cap[c] : '') + '" min="0" step="0.5" placeholder="auto" style="width:70px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-variant-numeric:tabular-nums"></td>'
+              ).join('');
+              return '<tr><td style="padding:4px 6px;font-weight:600">' + esc(m.name) + '</td><td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + (m.available_points_per_sprint || 0) + ' SP/sprint total</td>' + cells + '</tr>';
+            }).join('')
+          : '<tr><td colspan="' + (2 + customers.length) + '" style="padding:10px;color:var(--text-muted);font-style:italic;text-align:center">No team members with customer = "Both". Members tagged to a single customer use their full capacity there.</td></tr>';
+        const bothHeader = '<tr style="background:#f8fafc"><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Member</th><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Total</th>' +
+          customers.map(c => '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">' + esc(c) + ' (SP)</th>').join('') +
+          '</tr>';
+
         return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="schedulingEngineCard">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Scheduling Engine</h3>' +
-          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Every solver knob. Changes take effect on the next Auto-Allocate run.</div>' +
+          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">How work gets assigned to sprints</h3>' +
+          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Controls used by Auto-Allocate when it packs story points into sprints. Changes apply on the next run.</div>' +
 
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity &amp; Buffers</div>' +
+          // What the solver optimises for — plain-English summary.
+          '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:11px;line-height:1.6;color:var(--text-dark-secondary)">' +
+            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">What the solver optimises for</div>' +
+            'Auto-Allocate packs work into sprints starting from the earliest available, in priority order. It tries to hit every hard deadline without overloading any person or any skill, and spreads work evenly across sprints as a secondary goal. ' +
+            'Ordering: <strong>hard deadline first</strong> \u2192 <strong>MoSCoW band</strong> (Must > Should > \u2026) \u2192 <strong>WSJF</strong> (value-per-effort) \u2192 the manual <strong>priority</strong> field. ' +
+            'It makes one pass forward, repairs deadlines, then balances load \u2014 this is fast and stable but not a perfect global optimum (it cannot reclaim an early-sprint idle slot once later work has filled around it). See SOLVER.md for the full algorithm.' +
+          '</div>' +
+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity limits</div>' +
           '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max capacity target (%)' + ch('seMaxCap', 'Aggregate-skill ceiling per sprint. Per-person caps still apply separately.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Phase hand-off buffer (SP)' + ch('seBuffer', 'Reserved points when two consecutive phases share a sprint. 0 disables.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Max buffer slides' + ch('seMaxSlides', 'Safety cap on cascading buffer pushes (R6). After this many slides the buffer is abandoned.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How busy can a skill get? (%)' + ch('seMaxCap', 'The highest share of the team\u2019s available points we\u2019ll assign to any one skill (e.g. Data Engineering) in a single sprint. 85% leaves some breathing room. Raising it speeds up delivery but risks overload.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Spare points between phases (SP)' + ch('seBuffer', 'When two phases of one project share a sprint, leave this many points free as a buffer for slippage. Zero means phases butt straight up against each other. 2\u20133 is a sensible default.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How far can a phase slide?' + ch('seMaxSlides', 'If a phase can\u2019t fit in its intended sprint, we push it to the next one. This is the most sprints we\u2019ll push before giving up on the buffer altogether. Higher is more forgiving, lower forces the schedule to reshape.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
           '</div>' +
 
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Load Balancing (Pass 3)</div>' +
+          '<details style="margin-bottom:14px"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Advanced: load-balancing tuning</summary>' +
+          '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">These knobs control the third pass of the solver, which evens out work across sprints once the forward packing is done. Defaults are good for most teams \u2014 only change these if sprints are repeatedly over- or under-committed.</div>' +
           '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Iterations' + ch('seIter', 'Max passes of load-balance. More = better spread, slower run.') + '</div>' + numInput('seIter', sched.loadBalanceIterations != null ? sched.loadBalanceIterations : 3, 1, 10, '1–10') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hot sprint ≥ (%)' + ch('seHot', 'Triggers redistribution when utilisation exceeds this. Default 90%.') + '</div>' + numInput('seHot', sched.hotSprintThresholdPct != null ? sched.hotSprintThresholdPct : 90, 60, 100, '60–100%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Cool sprint &lt; (%)' + ch('seCool', 'Next sprint must be below this to accept redistributed work. Default 60%.') + '</div>' + numInput('seCool', sched.coolSprintThresholdPct != null ? sched.coolSprintThresholdPct : 60, 0, 80, '0–80%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Shift granule divisor' + ch('seShift', 'Shifts ceil(points / divisor) at a time. Smaller divisor = larger chunks moved per pass.') + '</div>' + numInput('seShift', sched.shiftGranuleDivisor != null ? sched.shiftGranuleDivisor : 2, 1, 5, '1–5') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Balancing passes' + ch('seIter', 'How many times we try to even out sprint workloads. More passes give a smoother plan but take slightly longer to compute.') + '</div>' + numInput('seIter', sched.loadBalanceIterations != null ? sched.loadBalanceIterations : 3, 1, 10, '1–10') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cOver-committed\u201d at (%)' + ch('seHot', 'Any sprint above this utilisation triggers a redistribution. 90% = only reshape when sprints are really full.') + '</div>' + numInput('seHot', sched.hotSprintThresholdPct != null ? sched.hotSprintThresholdPct : 90, 60, 100, '60–100%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cStill has room\u201d below (%)' + ch('seCool', 'A neighbouring sprint must be below this level to absorb shifted work. 60% leaves comfortable headroom in the target.') + '</div>' + numInput('seCool', sched.coolSprintThresholdPct != null ? sched.coolSprintThresholdPct : 60, 0, 80, '0–80%') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Chunk size divisor' + ch('seShift', 'How big each reshuffled chunk is, as a fraction of the phase. 2 = halves (biggest chunks); 5 = fifths (smallest, smoothest).') + '</div>' + numInput('seShift', sched.shiftGranuleDivisor != null ? sched.shiftGranuleDivisor : 2, 1, 5, '1–5') + '</div>' +
           '</div>' +
+          '</details>' +
 
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Horizon &amp; Locks</div>' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Timeline &amp; locks</div>' +
           '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start from sprint' + ch('seStart', 'Earliest sprint the solver will allocate into.') + '</div><select id="seStartSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + sprintsOpts + '</select></div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start scheduling from' + ch('seStart', 'The earliest sprint the solver will place new work in. Use this to freeze the current sprint and only reshape future work.') + '</div><select id="seStartSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + sprintsOpts + '</select></div>' +
             '<div></div>' +
           '</div>' +
           '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seEnforcePerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Enforce per-person cap' + ch('sePerPerson', 'Hard constraint: each team member never exceeds available_points_per_sprint.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Respect delivery pipeline' + ch('seOrder', 'Phase order preserved across sprints.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seSpread"' + (s.spreadWork ? ' checked' : '') + '> Spread work evenly' + ch('seSpread2', 'Runs Pass 3 load-balance.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockComp"' + (s.lockCompleted ? ' checked' : '') + '> Lock Complete/Closed</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockIP"' + (s.lockInProgress ? ' checked' : '') + '> Lock In-Progress</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seProtectPast"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Protect past sprints' + ch('sePast', 'Past-sprint slices stay put; no new work lands in past sprints.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seCrossCust"' + (sched.enforceCrossCustomerDeps ? ' checked' : '') + '> Enforce cross-customer deps' + ch('seCross', 'When ON, locked projects in other customers constrain start times. Default OFF (historical behaviour).') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seEnforcePerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Never overload a team member' + ch('sePerPerson', 'Hard limit: no-one is assigned more than their available points per sprint. Slices slide to later sprints if someone would be over-loaded.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Keep phases in order' + ch('seOrder', 'Phase N+1 never starts before phase N in the same project. Without this, the solver might e.g. start UAT before Data Engineering is done.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seSpread"' + (s.spreadWork ? ' checked' : '') + '> Balance workload across sprints' + ch('seSpread2', 'Runs a smoothing pass after the initial schedule so no sprint is boiling hot while the next one is empty.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockComp"' + (s.lockCompleted ? ' checked' : '') + '> Don\u2019t touch completed/closed projects</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockIP"' + (s.lockInProgress ? ' checked' : '') + '> Don\u2019t touch in-progress projects</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seProtectPast"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Freeze past sprints' + ch('sePast', 'Work already scheduled in a past sprint stays put, and no new work ever lands in a sprint that\u2019s already ended. Prevents history from being rewritten.') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seCrossCust"' + (sched.enforceCrossCustomerDeps ? ' checked' : '') + '> Honour cross-customer dependencies' + ch('seCross', 'When ON, a project in another customer\u2019s portfolio can delay this customer\u2019s start if a dependency points to it. Default OFF (each customer solves in isolation).') + '</label>' +
+            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seConcurrent"' + (s.enforceConcurrentSinglePerson !== false ? ' checked' : '') + '> One person, one delivery at a time' + ch('seConc', 'Rule R12. Prevents a team member from being booked on two deliveries that overlap in time \u2014 unless both are in the \u201callow overlap\u201d list below (typically Requirements and UAT, which are naturally collaborative/async).') + '</label>' +
           '</div>' +
+          // R12 — overlap allow-list
+          (function() {
+            const allowed = Array.isArray(s.concurrentOverlapAllowedSkills) ? s.concurrentOverlapAllowedSkills : ['size_requirements', 'size_uat_adoption'];
+            const skillList = (App.data.skills || []).filter(sk => sk && sk.active !== false);
+            if (!skillList.length) return '';
+            const chips = skillList.map(sk =>
+              '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 7px;border:1px solid var(--border-light);border-radius:999px;background:' + (allowed.includes(sk.key) ? '#e0f2fe' : '#fff') + ';cursor:pointer">' +
+                '<input type="checkbox" data-r12-overlap="' + esc(sk.key) + '"' + (allowed.includes(sk.key) ? ' checked' : '') + ' style="margin:0"> ' + esc(sk.label || sk.key) +
+              '</label>'
+            ).join(' ');
+            return '<div style="font-size:11px;color:var(--text-dark-secondary);margin:6px 0 0 0"><span style="font-weight:600">Overlap allow-list:</span> overlapping assignments are permitted only when <em>both</em> skills are ticked below. Typical: Req + UAT only.<br><div style="margin-top:5px">' + chips + '</div></div>';
+          })() +
+
+          // R11 + R8: calendar-day and Both-customer controls. Hidden by default — only needed
+          // when teams are hitting time-budget overruns or when members split across customers.
+          '<details style="margin:18px 0 8px">' +
+            '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Advanced: time and split-customer controls</summary>' +
+            '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">Only touch these if projects keep overrunning their sprint time-budget, or if team members are shared across multiple customers.</div>' +
+            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 8px">Sprint time-budget</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+              '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Working days per sprint' + ch('seDefDD', 'How many working days a sprint has for development. Used as a fallback when a sprint has no explicit hardening date. The solver checks each project\u2019s total phase-days against this budget.') + '</div>' + numInput('seDefaultDevDays', sched.defaultDevDays != null ? sched.defaultDevDays : 20, 1, 60, '1–60 working days') + '</div>' +
+              '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Story-point effort multiplier' + ch('seDpsp', 'How much real time a story point actually costs. 1.0 = team\u2019s measured average. Raise this if projects keep overrunning; lower if they finish early.') + '</div><input type="number" id="seDaysPerSPMult" value="' + (sched.daysPerSPMultiplier != null ? sched.daysPerSPMultiplier : 1) + '" min="0.25" max="3" step="0.1" title="0.25–3×" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"></div>' +
+            '</div>' +
+            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Team members split across customers</div>' +
+            '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">For each team member tagged as working across multiple customers (<code>customer = "Both"</code>), declare how many points they give to each customer per sprint. Leave blank to use an equal split.</div>' +
+            '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead>' + bothHeader + '</thead><tbody>' + bothRows + '</tbody></table></div>' +
+          '</details>' +
+
+          // Rules — R1–R11 at a glance
+          '<details style="margin-top:14px">' +
+            '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Solver rules (R1–R12)</summary>' +
+            '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-top:8px">' +
+              '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
+                '<thead style="background:#f8fafc"><tr>' +
+                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">#</th>' +
+                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Rule</th>' +
+                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Config</th>' +
+                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Note</th>' +
+                '</tr></thead>' +
+                '<tbody>' + rulesRows + '</tbody>' +
+              '</table>' +
+            '</div>' +
+          '</details>' +
 
           '<div style="margin-top:14px;display:flex;gap:8px">' +
             '<button class="btn btn-primary btn-sm" onclick="App.saveSchedulingEngineSettings()">Save</button>' +
@@ -3847,14 +4108,25 @@ const App = {
           '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Weights that drive Auto-Prioritise. Components sum into a single project score; higher = more urgent.</div>' +
 
           '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Status multiplier' + ch('scoreStatus', 'Status weight × this multiplier. Blocked (5) × 10 = 50 default top.') + '</div>' + numInput('scoreStatusMult', cfg.statusMultiplier, 0, 50) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">RAG multiplier' + ch('scoreRag', 'Each RAG dimension contributes weight × this multiplier; three dimensions summed.') + '</div>' + numInput('scoreRagMult', cfg.ragMultiplier, 0, 20) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Risk multiplier' + ch('scoreRisk', 'Sum of (severity × probability) × multiplier.') + '</div>' + numInput('scoreRiskMult', cfg.riskMultiplier, 0, 10, '0.1') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size divisor' + ch('scoreSize', 'Score component = size_total / divisor, capped below. Default: every 5 SP = 1 pt.') + '</div>' + numInput('scoreSizeDiv', cfg.sizeDivisor, 1, 50) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size cap' + ch('scoreSizeCap', 'Upper bound on the size component.') + '</div>' + numInput('scoreSizeCap', cfg.sizeCap, 1, 100) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage weight' + ch('scoreDep', 'Points added per downstream project this one blocks (transitive).') + '</div>' + numInput('scoreDepWeight', cfg.dependencyLeverageWeight, 0, 20) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage cap' + ch('scoreDepCap', 'Upper bound on the dependency-leverage contribution.') + '</div>' + numInput('scoreDepCap', cfg.dependencyLeverageCap, 0, 200) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Status multiplier' + ch('scoreStatus', 'Each status has a fixed weight (Blocked=5, At Risk=4, In Progress=3, Not Started=2, On Hold=1, Complete/Closed=0). Component = status_weight × this multiplier. Default 10 \u2192 Blocked projects contribute 50 pts here.') + '</div>' + numInput('scoreStatusMult', cfg.statusMultiplier, 0, 50) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">RAG multiplier' + ch('scoreRag', 'Each RAG dimension has a weight (Red=3, Amber=2, Green=1). Component = (rag_schedule + rag_resourcing + rag_scope) × this multiplier. All-Red project \u2192 9 × 5 = 45 pts by default.') + '</div>' + numInput('scoreRagMult', cfg.ragMultiplier, 0, 20) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Risk multiplier' + ch('scoreRisk', 'Component = \u03A3(severity_weight × probability_weight) \u00D7 this multiplier across the project\'s risk register. Severity/probability use 1\u20135 scales. Empty register \u2192 0 pts.') + '</div>' + numInput('scoreRiskMult', cfg.riskMultiplier, 0, 10, '0.1') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size divisor' + ch('scoreSize', 'Component = size_total \u00F7 divisor, capped by \u201CSize cap\u201D. Default 5 \u2192 every 5 SP earns 1 pt. Prevents huge projects from dominating.') + '</div>' + numInput('scoreSizeDiv', cfg.sizeDivisor, 1, 50) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size cap' + ch('scoreSizeCap', 'Upper bound on the size component, regardless of divisor. Default 20 = a 100 SP project still only contributes 20 pts.') + '</div>' + numInput('scoreSizeCap', cfg.sizeCap, 1, 100) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage weight' + ch('scoreDep', 'Component = (count of downstream projects this one transitively blocks) \u00D7 this weight, capped. Rewards upstream projects that unblock others.') + '</div>' + numInput('scoreDepWeight', cfg.dependencyLeverageWeight, 0, 20) + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage cap' + ch('scoreDepCap', 'Upper bound on the dependency-leverage component.') + '</div>' + numInput('scoreDepCap', cfg.dependencyLeverageCap, 0, 200) + '</div>' +
           '</div>' +
+          '<details style="margin-bottom:14px;font-size:11px">' +
+            '<summary style="cursor:pointer;font-weight:600;color:var(--text-dark-secondary)">How are the status / RAG weights derived?</summary>' +
+            '<div style="padding:8px 4px 2px;color:var(--text-dark-secondary);line-height:1.6">' +
+              'Fixed constants in the scoring engine (not currently user-editable). They are integer ordinal weights chosen to make actively-blocked work outrank pre-started work, while the multipliers let you control the size of each category relative to the total.<br><br>' +
+              '<strong>Status weights:</strong> Blocked 5, At Risk 4, In Progress 3, Not Started 2, On Hold 1, Complete/Closed 0.<br>' +
+              '<strong>RAG weights:</strong> Red 3, Amber 2, Green 1 per dimension (schedule, resource, scope).<br>' +
+              '<strong>Risks:</strong> severity_weight \u00D7 probability_weight, summed across the register; severity and probability each map 1\u20135 to their integer value.<br>' +
+              '<strong>Deadline:</strong> graded tiers (below) \u2014 first matching tier wins.<br>' +
+              'Total score = \u03A3(components above). Higher = more urgent. Per-customer recommendations layer this by dependency order so ancestors always outrank descendants.' +
+            '</div>' +
+          '</details>' +
 
           '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Deadline urgency tiers</div>' +
           '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
@@ -3862,10 +4134,11 @@ const App = {
             '<tbody>' + tiersHtml + '</tbody>' +
           '</table>' +
 
-          '<div style="margin-top:14px;display:flex;gap:8px">' +
+          '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
             '<button class="btn btn-primary btn-sm" onclick="App.saveScoringSettings()">Save</button>' +
             '<button class="btn btn-outline btn-sm" onclick="App.resetScoringSettings()">Reset to defaults</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()">Run Auto-Prioritise</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()" title="Compute recommended priorities. Does NOT overwrite manual priorities.">Recompute recommendations</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="if(confirm(\'Overwrite actual priorities with recommendations for all projects?\'))App.applyAllRecommendations()" title="Copy recommended_priority \u2192 priority for every project where they differ.">Apply all recommendations</button>' +
           '</div>' +
           '<div id="scoringPreview" style="margin-top:12px;font-size:11px;color:var(--text-muted)">' + App._renderScoringPreview() + '</div>' +
         '</div>';
@@ -4271,11 +4544,20 @@ const App = {
     const risks = project.risks_register || [];
     if (!risks.length) return 0;
     const mult = this._scoringCfg().riskMultiplier;
+    const SEV_MAP = { 'Critical': 5, 'High': 4, 'Medium': 3, 'Low': 2, 'Very Low': 1 };
+    const PROB_MAP = { 'Almost Certain': 5, 'Likely': 4, 'Possible': 3, 'Unlikely': 2, 'Rare': 1 };
+    // The risk form writes impact + probability as integers 1–5 (see DetailPanel.renderRisks).
+    // Fall back to string severity/probability for legacy data; default to the form's mid-range
+    // defaults (3×3) when neither is present so empty risks don't silently score 0.
     let totalScore = 0;
     risks.forEach(r => {
-      const severity = { 'Critical': 5, 'High': 4, 'Medium': 3, 'Low': 2, 'Very Low': 1 }[r.severity] || 2;
-      const probability = { 'Almost Certain': 5, 'Likely': 4, 'Possible': 3, 'Unlikely': 2, 'Rare': 1 }[r.probability] || 3;
-      totalScore += severity * probability;
+      const impact = (typeof r.impact === 'number')
+        ? r.impact
+        : (SEV_MAP[r.severity] != null ? SEV_MAP[r.severity] : 3);
+      const probability = (typeof r.probability === 'number')
+        ? r.probability
+        : (PROB_MAP[r.probability] != null ? PROB_MAP[r.probability] : 3);
+      totalScore += impact * probability;
     });
     return totalScore * mult;
   },
@@ -4343,8 +4625,84 @@ const App = {
     return out;
   },
 
+  // WSJF (Weighted Shortest Job First — SAFe): CoD ÷ job size, where CoD = business value +
+  // time criticality + risk/opportunity reduction (each 1..10). Returns { wsjf, cod, size, confidence }.
+  // Confidence reflects how many of the three inputs are populated — "high" = all three.
+  calculateWsjf(project) {
+    const bv = Number(project && project.business_value);
+    const tc = Number(project && project.time_criticality);
+    const rr = Number(project && project.risk_reduction_opportunity);
+    const populated = [bv, tc, rr].filter(v => Number.isFinite(v) && v > 0);
+    const cod = populated.reduce((a, b) => a + b, 0);
+    const size = Math.max(1, Number(project && project.size_total) || 0);
+    const wsjf = cod > 0 ? cod / size : 0;
+    let confidence = 'low';
+    if (populated.length === 3) confidence = 'high';
+    else if (populated.length >= 1 && (project && project.size_total > 0)) confidence = 'medium';
+    return { wsjf: Math.round(wsjf * 100) / 100, cod, size, confidence, populated: populated.length };
+  },
+
+  // Issue 12: compute confidence signal + reasons for a project's automated priority. Used by
+  // both the detail panel and the dashboard row to show a subtle warning when the ranking is
+  // derived from thin data (missing deadline, zero size, etc.). Returns { level, reasons[] }.
+  priorityConfidence(project) {
+    if (!project) return { level: 'low', reasons: [] };
+    const reasons = [];
+    if (!project.hard_deadline && !project.target_date) reasons.push('no hard deadline or target date');
+    if (!project.size_total || project.size_total === 0) reasons.push('project size is 0 (nothing to schedule)');
+    if (project.status === 'On Hold') reasons.push('status is On Hold — not currently deliverable');
+    if (project.status === 'Blocked') reasons.push('status is Blocked — rank may not reflect current reality');
+    const wsjf = this.calculateWsjf(project);
+    if (wsjf.populated === 0 && !project.moscow) reasons.push('no WSJF or MoSCoW inputs populated');
+    const rec = project.recommended_priority;
+    if (rec != null && project.priority != null && Math.abs(rec - project.priority) > 3) {
+      reasons.push('manual priority differs from recommendation by more than 3 ranks');
+    }
+    let level = 'high';
+    if (reasons.length >= 2) level = 'low';
+    else if (reasons.length === 1) level = 'medium';
+    return { level, reasons };
+  },
+
+  // Compact warning chip HTML — inline SVG amber triangle with a tooltip of reasons. Returns ''
+  // when confidence is high (no chip rendered). Safe to interpolate into HTML (everything escaped).
+  priorityWarningChip(project) {
+    const c = this.priorityConfidence(project);
+    if (c.level === 'high' || !c.reasons.length) return '';
+    const tip = c.reasons.join(' \u00B7 ');
+    const color = c.level === 'low' ? '#d97706' : '#f59e0b';
+    return '<span title="Low-confidence priority: ' + (Dashboard.esc ? Dashboard.esc(tip) : tip) + '" style="display:inline-flex;align-items:center;margin-left:4px;cursor:help">' +
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="' + color + '" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>' +
+    '</span>';
+  },
+
+  // Coarse MoSCoW banding. Unset / unknown → "Could". Lower numeric band sorts first.
+  moscowBand(project) {
+    const m = project && project.moscow;
+    if (m === 'Must') return 0;
+    if (m === 'Should') return 1;
+    if (m === 'Could' || !m) return 2;
+    if (m === 'Won\u2019t' || m === "Won't") return 3;
+    return 2;
+  },
+
   calculateProjectPriorityScore(project, leverageCount) {
     const cfg = this._scoringCfg();
+    // WSJF-first: when any WSJF input is populated, use the WSJF-derived score (scaled to ~0–100)
+    // blended with deadline urgency (unchanged) so hard deadlines still punch through.
+    const wsjfMode = (this.data && this.data.settings && this.data.settings.priorityMode) || 'auto';
+    const wsjf = this.calculateWsjf(project);
+    const useWsjf = (wsjfMode === 'wsjf') || (wsjfMode !== 'hybrid' && wsjf.populated > 0);
+    if (useWsjf) {
+      // Scale WSJF (typ. 0.05–5) by 20 to give ~1–100 range. Add deadline score so time-criticality
+      // short-circuits tie-breaks near a cliff. Dependency leverage still amplifies must-unblock items.
+      const wsjfScore = Math.min(100, Math.round(wsjf.wsjf * 20));
+      const deadlineScore = this.calculateDeadlineScore(project);
+      const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
+      const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
+      return Math.round(wsjfScore + deadlineScore + depScore);
+    }
+    // Hybrid fallback (legacy) — status + RAG + risk + size + deadline + dep leverage.
     const statusScore = (cfg.statusWeights[project.status] || 0) * cfg.statusMultiplier;
     const ragScore = ((cfg.ragWeights[project.rag_schedule] || 0) +
                       (cfg.ragWeights[project.rag_resourcing] || 0) +
@@ -4359,31 +4717,25 @@ const App = {
     return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore);
   },
 
-  // Auto-prioritise with dependency-aware topological guarantee.
-  // Rules:
-  //   1. Per customer, compute priority score for every active project (dep leverage included).
-  //   2. Bucket by topological layer: layer-0 = no same-customer incoming edge, layer-N depends on a
+  // Shared recommendation engine. Returns { perCustomerOrder, heldUpByDep } WITHOUT mutating anything.
+  //   1. Per customer, compute score for every active project (dep leverage included).
+  //   2. Bucket by topological layer: layer-0 = no same-customer incoming edge; layer-N depends on a
   //      layer-(N-1) project. Ancestors always rank above descendants regardless of score.
   //   3. Within a layer, sort by score desc (ties broken by id for stability).
-  //   4. Assign priority 1..N in that order.
-  //   5. Collect "held-up" pairs where a lower-scoring parent sits above a higher-scoring child; surface
-  //      a dismissable toast so the manager can see why the pure-score order was overridden.
-  autoPrioritise() {
-    if (!this.data) return;
-    this.pushUndo('Auto-prioritise projects');
+  //   4. Collect "held-up" pairs where a lower-scoring parent sits above a higher-scoring child.
+  _computePriorityOrderings() {
     const customers = this.getCustomers();
     const { adj } = this._buildDepGraph();
-    const heldUpByDep = []; // pairs { parent, child }
+    const perCustomerOrder = {}; // customer → [projects in priority order]
+    const heldUpByDep = [];
     customers.forEach(cust => {
       const custProjects = this.data.projects.filter(p => p.customer === cust && p.status !== 'Complete' && p.status !== 'Closed');
-      if (!custProjects.length) return;
+      if (!custProjects.length) { perCustomerOrder[cust] = []; return; }
       const idSet = new Set(custProjects.map(p => p.id));
-
-      // Leverage over JUST this customer's active set
       const leverage = this.computeDependencyLeverage(custProjects);
-      custProjects.forEach(p => { p._score = this.calculateProjectPriorityScore(p, leverage[p.id] || 0); });
+      const scoreByProj = {};
+      custProjects.forEach(p => { scoreByProj[p.id] = this.calculateProjectPriorityScore(p, leverage[p.id] || 0); });
 
-      // Per-customer Kahn layering — edges only between same-customer active projects.
       const indeg = {};
       custProjects.forEach(p => { indeg[p.id] = 0; });
       custProjects.forEach(p => {
@@ -4408,50 +4760,124 @@ const App = {
         });
         frontier = next;
       }
-      // Leftover nodes are in a cycle — append them as a final layer so they still get prioritised.
       const leftovers = custProjects.filter(p => !placed.has(p.id)).map(p => p.id);
       if (leftovers.length) layers.push(leftovers);
 
-      // Within-layer: sort by score desc, id asc
       const projectById = {};
       custProjects.forEach(p => { projectById[p.id] = p; });
       const ordered = [];
       layers.forEach(layer => {
         layer.sort((a, b) => {
-          const sa = projectById[a]._score, sb = projectById[b]._score;
+          const sa = scoreByProj[a], sb = scoreByProj[b];
           if (sa !== sb) return sb - sa;
           return a.localeCompare(b);
         });
         layer.forEach(id => ordered.push(projectById[id]));
       });
-
-      // Detect held-up pairs: a parent with a STRICTLY LOWER score than one of its descendants.
-      ordered.forEach((parent, parentIdx) => {
+      ordered.forEach(parent => {
         (adj[parent.id] ? Array.from(adj[parent.id]) : []).forEach(childId => {
           const child = projectById[childId];
           if (!child) return;
-          if (child._score > parent._score) heldUpByDep.push({ parent: parent.name, child: child.name });
+          if (scoreByProj[childId] > scoreByProj[parent.id]) heldUpByDep.push({ parent: parent.name, child: child.name });
         });
       });
-
-      ordered.forEach((p, i) => {
-        const newP = i + 1;
-        if (p.priority !== newP) this.logChange(p.id, 'priority', p.priority, newP, 'auto-prioritise');
-        p.priority = newP;
-        delete p._score;
-      });
+      perCustomerOrder[cust] = ordered;
     });
+    return { perCustomerOrder, heldUpByDep };
+  },
 
+  // Light-weight: write recommended_priority on every active project. Never mutates priority itself.
+  // Safe to call after any mutation.
+  computeRecommendedPriorities() {
+    if (!this.data || !Array.isArray(this.data.projects)) return;
+    const { perCustomerOrder } = this._computePriorityOrderings();
+    Object.keys(perCustomerOrder).forEach(cust => {
+      perCustomerOrder[cust].forEach((p, i) => { p.recommended_priority = i + 1; });
+    });
+  },
+
+  // Surface the recommendation (toast) but NEVER silently overwrite user-set priority.
+  // User applies explicitly via applyRecommendedPriority (one project) or applyAllRecommendations (all).
+  autoPrioritise() {
+    if (!this.data) return;
+    this.computeRecommendedPriorities();
+    const { heldUpByDep } = this._computePriorityOrderings();
+    const diffs = this.data.projects.filter(p => p.recommended_priority && p.recommended_priority !== p.priority);
+    this.saveToLocalStorage();
+    this.notifyDataChange();
+    if (!diffs.length) {
+      this.toast('Recommendations computed — current priorities already match', 'success');
+      return;
+    }
+    const msg = 'Recommendations computed: ' + diffs.length + ' project(s) differ from actual. Use "Apply all" in Scoring Settings, or Apply per project in the detail panel.';
+    this.toast(msg + (heldUpByDep.length ? ' Dependency holds: ' + heldUpByDep.slice(0, 2).map(h => h.parent + '>' + h.child).join(', ') : ''), 'info');
+  },
+
+  applyRecommendedPriority(projectId) {
+    if (!this.data) return;
+    const p = this.data.projects.find(pr => pr.id === projectId);
+    if (!p || !p.recommended_priority) return;
+    if (p.priority === p.recommended_priority) return;
+    this.pushUndo('Apply recommended priority to ' + p.name);
+    this.logChange(p.id, 'priority', p.priority, p.recommended_priority, 'apply-recommendation');
+    p.priority = p.recommended_priority;
+    p.last_updated = new Date().toISOString();
     this.markDirty();
     this.saveToLocalStorage();
-    Dashboard.render();
-    if (heldUpByDep.length) {
-      const sample = heldUpByDep.slice(0, 2).map(h => h.parent + ' kept above ' + h.child).join('; ');
-      const more = heldUpByDep.length > 2 ? ' (+' + (heldUpByDep.length - 2) + ' more)' : '';
-      this.toast('Auto-prioritised. Dependency order held: ' + sample + more, 'info');
-    } else {
-      this.toast('Auto-prioritised projects', 'success');
-    }
+    this.notifyDataChange();
+  },
+
+  applyAllRecommendations() {
+    if (!this.data) return;
+    this.computeRecommendedPriorities();
+    this.pushUndo('Apply all recommended priorities');
+    let changed = 0;
+    this.data.projects.forEach(p => {
+      if (!p.recommended_priority || p.priority === p.recommended_priority) return;
+      this.logChange(p.id, 'priority', p.priority, p.recommended_priority, 'apply-recommendation-all');
+      p.priority = p.recommended_priority;
+      p.last_updated = new Date().toISOString();
+      changed++;
+    });
+    this.markDirty();
+    this.saveToLocalStorage();
+    this.notifyDataChange();
+    this.toast(changed ? 'Applied recommendations to ' + changed + ' project(s)' : 'No differences to apply', changed ? 'success' : 'info');
+  },
+
+  // Per-project explanation: returns rows for the score breakdown (component, input, multiplier, contribution).
+  explainPriorityScore(projectId) {
+    if (!this.data) return null;
+    const p = this.data.projects.find(pr => pr.id === projectId);
+    if (!p) return null;
+    const cfg = this._scoringCfg();
+    const lev = this.computeDependencyLeverage([p])[p.id] || 0;
+    const statusW = cfg.statusWeights[p.status] || 0;
+    const ragS = cfg.ragWeights[p.rag_schedule] || 0;
+    const ragR = cfg.ragWeights[p.rag_resourcing] || 0;
+    const ragC = cfg.ragWeights[p.rag_scope] || 0;
+    const ragSum = ragS + ragR + ragC;
+    const risk = this.calculateRiskScore(p);
+    const sizeRaw = (p.size_total || 0) / cfg.sizeDivisor;
+    const sizeComp = Math.min(cfg.sizeCap, sizeRaw);
+    const deadlineComp = this.calculateDeadlineScore(p);
+    const depComp = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
+    const statusComp = statusW * cfg.statusMultiplier;
+    const ragComp = ragSum * cfg.ragMultiplier;
+    const riskComp = risk; // already risk × risk already multiplied inside calculateRiskScore
+    const total = Math.round(statusComp + ragComp + riskComp + sizeComp + deadlineComp + depComp);
+    return {
+      projectName: p.name,
+      total,
+      rows: [
+        { label: 'Status',    input: (p.status || '—') + ' (weight ' + statusW + ')',                                            multiplier: '× ' + cfg.statusMultiplier,              contribution: statusComp },
+        { label: 'RAG',       input: 'S=' + (p.rag_schedule || '–') + ' R=' + (p.rag_resourcing || '–') + ' Sc=' + (p.rag_scope || '–') + ' (sum ' + ragSum + ')', multiplier: '× ' + cfg.ragMultiplier,                 contribution: ragComp },
+        { label: 'Risks',     input: (p.risks_register || []).length + ' risk(s) — Σ(severity × probability) × multiplier',      multiplier: '× ' + cfg.riskMultiplier + ' (in fn)',   contribution: riskComp },
+        { label: 'Size',      input: (p.size_total || 0) + ' SP ÷ ' + cfg.sizeDivisor + ' (cap ' + cfg.sizeCap + ')',             multiplier: '—',                                      contribution: sizeComp },
+        { label: 'Deadline',  input: p.hard_deadline ? 'hard_deadline ' + p.hard_deadline : 'no deadline',                         multiplier: 'tiered (R9)',                            contribution: deadlineComp },
+        { label: 'Dep lever', input: lev + ' downstream project(s)',                                                               multiplier: '× ' + cfg.dependencyLeverageWeight + ' (cap ' + cfg.dependencyLeverageCap + ')', contribution: depComp }
+      ]
+    };
   },
 
   // --- Customer Management (REQ-CFG-01) ---
@@ -4706,6 +5132,26 @@ const App = {
   customerColor(customer) { return this.getCustomerColor(customer); },
   statusColor(status) { return { 'In Progress': 'var(--status-blue)', 'Complete': 'var(--status-green)', 'On Hold': 'var(--status-amber)', 'At Risk': 'var(--status-amber)', 'Blocked': 'var(--status-red)', 'Not Started': 'var(--status-grey)', 'Closed': 'var(--text-muted)' }[status] || 'var(--status-grey)'; },
   ragColor(rag) { return { 'Green': 'var(--rag-green)', 'Amber': 'var(--rag-amber)', 'Red': 'var(--rag-red)' }[rag] || 'var(--text-muted)'; },
+
+  // Story points are always whole integers (rounded half-up). Decimals are silently rounded,
+  // not truncated, so 2.5 → 3 rather than 2. Returns 0 for non-numeric input.
+  toInteger(v) {
+    if (v === null || v === undefined || v === '') return 0;
+    const n = typeof v === 'number' ? v : parseFloat(v);
+    if (!isFinite(n)) return 0;
+    return Math.max(0, Math.round(n));
+  },
+  // Display a story-point value — always integer. Use for any user-facing points number.
+  fmtPoints(n) { return String(this.toInteger(n)); },
+  // Display a derived statistic (velocity average, days-per-SP, utilisation ratio) to
+  // `decimals` places. Intentionally allows decimals — this is the ONLY sanctioned
+  // decimal path for point-derived numbers.
+  fmtAverage(n, decimals) {
+    const d = decimals == null ? 1 : decimals;
+    const x = typeof n === 'number' ? n : parseFloat(n);
+    if (!isFinite(x)) return '—';
+    return x.toFixed(d);
+  },
 
   // --- RAG Auto-Scoring ---
   evaluateRagRules(project) {
@@ -6202,10 +6648,15 @@ const Dashboard = {
       const pinned = App.isPinned(p.id);
       const pinIcon = '<button class="pin-btn' + (pinned ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned ? 'Remove from watchlist' : 'Add to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
 
+      const recR = p.recommended_priority;
+      const recChip = (recR && recR !== p.priority)
+        ? ' <span title="Recommended priority #' + recR + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + recR + '</span>'
+        : '';
+      const warnChip = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
       return '<tr' + rowClass + ' data-id="' + p.id + '" draggable="true">' +
         '<td class="drag-handle" title="Drag to reorder">⠿</td>' +
         '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon + '</td>' +
-        '<td class="priority-cell">' + (p.priority || '') + '</td>' +
+        '<td class="priority-cell">' + (p.priority || '') + recChip + warnChip + '</td>' +
         '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon + '</td>' +
         '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
         '<td>' + this.esc(p.category || '') + '</td>' +
@@ -6363,10 +6814,17 @@ const Dashboard = {
     const pinned2 = App.isPinned(p.id);
     const pinIcon2 = '<button class="pin-btn' + (pinned2 ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned2 ? 'Remove from watchlist' : 'Add to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned2 ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
 
+    const rec2 = p.recommended_priority;
+    const warnChip2 = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
+    const priCell = '<td class="priority-cell">' + (p.priority || '') +
+      (rec2 && rec2 !== p.priority
+        ? ' <span title="Recommended priority #' + rec2 + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + rec2 + '</span>'
+        : '') + warnChip2 +
+      '</td>';
     return '<tr' + rowClass + ' data-id="' + p.id + '" draggable="true">' +
       '<td class="drag-handle" title="Drag to reorder">\u2807</td>' +
       '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon2 + '</td>' +
-      '<td class="priority-cell">' + (p.priority || '') + '</td>' +
+      priCell +
       '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + '</td>' +
       '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
       '<td>' + this.esc(p.category || '') + '</td>' +
@@ -6900,15 +7358,18 @@ const Dashboard = {
         ]
       }),
       renderHero({
-        title: 'Forecast P80',
-        subtitle: 'Sprints to clear remaining',
+        title: 'Forecast (P80)',
+        subtitle: 'Conservative sprint count to clear remaining work',
         value: forecastLabel,
         color: forecastColor,
         footnote: forecastSub,
+        // Issue 8: plain-English explanation of "P80" — 8 out of 10 simulated futures finish
+        // by this sprint count. P50 (most-likely) and P95 (worst-case) shown alongside.
         tip: [
-          '<strong>P80:</strong> ' + forecastLabel + ' — ' + forecastSub,
+          '<strong>P80 means:</strong> in 8 out of 10 likely futures, the remaining work clears in this many sprints.',
+          '<strong>P80:</strong> ' + forecastLabel + ' \u2014 ' + forecastSub,
           '<strong>Forecast accuracy:</strong> ' + forecastAccuracyLabel,
-          '<em>Monte Carlo based on velocity history for ' + Dashboard.esc(customer) + '.</em>'
+          '<em>Based on 500 simulated runs using ' + Dashboard.esc(customer) + '\u2019s historical velocity. Lower is better.</em>'
         ]
       })
     ];
@@ -7347,24 +7808,83 @@ const DetailPanel = {
     const pct = (ev.BAC > 0) ? Math.round((ev.EV / ev.BAC) * 100) : 0;
 
     // Each cell carries a tooltip that explains the acronym on first hover.
+    // Sub-labels rewritten in plain English (Issue 1).
     const cells = [
-      { label: 'BAC', tip: 'Budget at Completion — total planned size for this project (story points).',                 val: fmt(ev.BAC), sub: 'total size' },
-      { label: 'EV',  tip: 'Earned Value — story points already completed.',                                              val: fmt(ev.EV),  sub: pct + '% complete' },
-      { label: 'PV',  tip: 'Planned Value — points we should have completed by today if we were on plan.',              val: ev.PV == null ? '—' : fmt(ev.PV), sub: ev.PV == null ? 'no schedule dates' : 'planned to date' },
-      { label: 'AC',  tip: 'Actual Cost — points committed to sprints so far (our effort spend).',                       val: fmt(ev.AC), sub: 'committed' },
-      { label: 'SPI', tip: 'Schedule Performance Index = EV / PV. ≥ 1 means on / ahead of plan; < 1 means behind.',       val: spi.label,  sub: ev.SPI == null ? 'no PV' : (ev.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'), color: spi.color },
-      { label: 'CPI', tip: 'Cost Performance Index = EV / AC. ≥ 1 means we are earning faster than we commit.',          val: cpi.label,  sub: ev.CPI == null ? 'no AC' : (ev.CPI >= 1 ? 'efficient' : 'over-consuming'), color: cpi.color },
-      { label: 'EAC', tip: 'Estimate at Completion = AC + (BAC − EV) / CPI — forecast total points when done.',          val: ev.EAC == null ? '—' : fmt(ev.EAC), sub: 'forecast total' },
-      { label: 'ETC', tip: 'Estimate to Complete = EAC − AC — remaining work to finish.',                                 val: ev.ETC == null ? '—' : fmt(ev.ETC), sub: 'remaining' }
+      { label: 'BAC', tip: 'Budget at Completion — the total story points this project is planned to cost.',                 val: fmt(ev.BAC), sub: 'total points planned' },
+      { label: 'EV',  tip: 'Earned Value — story points we\u2019ve already marked complete.',                                 val: fmt(ev.EV),  sub: pct + '% done' },
+      { label: 'PV',  tip: 'Planned Value — points we should have completed by today if we were on plan. Needs a start and target date.', val: ev.PV == null ? '—' : fmt(ev.PV), sub: ev.PV == null ? 'needs dates' : 'expected by today' },
+      { label: 'AC',  tip: 'Actual Cost — points we\u2019ve already put into sprints (our effort spend so far).',             val: fmt(ev.AC), sub: 'committed to sprints' },
+      { label: 'SPI', tip: 'Schedule Performance Index = EV \u00F7 PV. 1.0 means on plan; above 1.0 means ahead; below 1.0 means behind.', val: spi.label,  sub: ev.SPI == null ? 'no PV' : (ev.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'), color: spi.color },
+      { label: 'CPI', tip: 'Cost Performance Index = EV \u00F7 AC. 1.0 means we\u2019re earning points as fast as we commit them; below 1.0 means we\u2019re over-consuming.', val: cpi.label,  sub: ev.CPI == null ? 'no AC' : (ev.CPI >= 1 ? 'efficient' : 'over-consuming'), color: cpi.color },
+      { label: 'EAC', tip: 'Estimate at Completion = AC + (BAC \u2212 EV) \u00F7 CPI — forecast of total points when done, given current efficiency.', val: ev.EAC == null ? '—' : fmt(ev.EAC), sub: 'forecast total' },
+      { label: 'ETC', tip: 'Estimate to Complete = EAC \u2212 AC — remaining story points still to spend.', val: ev.ETC == null ? '—' : fmt(ev.ETC), sub: 'remaining work' }
     ];
     const esc = Dashboard.esc;
-    return '<div class="evm-strip" aria-label="Earned Value metrics">' + cells.map(c =>
+    const header = '<div style="grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+      '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Earned Value (EVM)</div>' +
+      '<button type="button" onclick="DetailPanel.showEvmGlossary(\'' + esc(p.id) + '\')" style="border:none;background:transparent;color:var(--accent-blue);cursor:pointer;font-size:11px;text-decoration:underline;padding:0">What do these mean?</button>' +
+    '</div>';
+    return '<div class="evm-strip" aria-label="Earned Value metrics">' + header + cells.map(c =>
       '<div class="evm-cell" title="' + esc(c.tip) + '">' +
         '<div class="evm-label">' + c.label + '</div>' +
         '<div class="evm-val"' + (c.color ? ' style="color:' + c.color + '"' : '') + '>' + c.val + '</div>' +
         '<div class="evm-sub">' + c.sub + '</div>' +
       '</div>'
     ).join('') + '</div>';
+  },
+
+  // Issue 1: full-EVM glossary modal. Plain-English definitions + the specific project's own numbers as a worked example.
+  showEvmGlossary(projectId) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return;
+    const ev = (typeof Forecast !== 'undefined') ? Forecast.earnedValue(p) : null;
+    const fmt = (n) => n == null ? '—' : (Math.abs(n) >= 100 ? Math.round(n) : (Math.round(n * 10) / 10));
+    const esc = Dashboard.esc;
+    const rows = [
+      { acr: 'BAC', full: 'Budget at Completion', def: 'The total story points this project is planned to cost from start to finish.', val: ev ? fmt(ev.BAC) : '\u2014' },
+      { acr: 'EV',  full: 'Earned Value',         def: 'Story points already marked complete. It\u2019s what you\u2019ve delivered, not what you\u2019ve spent.', val: ev ? fmt(ev.EV) : '\u2014' },
+      { acr: 'PV',  full: 'Planned Value',        def: 'Story points you should have delivered by today, based on the project\u2019s schedule. Needs a start and target date.', val: ev && ev.PV != null ? fmt(ev.PV) : '\u2014' },
+      { acr: 'AC',  full: 'Actual Cost',          def: 'Story points already committed into sprints. The effort you\u2019ve spent so far, whether or not it has landed as EV yet.', val: ev ? fmt(ev.AC) : '\u2014' },
+      { acr: 'SPI', full: 'Schedule Performance Index', def: 'EV \u00F7 PV. 1.0 means on plan. Above 1.0 is ahead; below 1.0 is behind. A softer cousin of the simple \u201cdays late\u201d metric.', val: ev && ev.SPI != null ? ev.SPI.toFixed(2) : '\u2014' },
+      { acr: 'CPI', full: 'Cost Performance Index',     def: 'EV \u00F7 AC. 1.0 means each point committed yields a point delivered. Below 1.0 means you\u2019re spending effort without banking completions \u2014 a classic early sign of scope or quality drag.', val: ev && ev.CPI != null ? ev.CPI.toFixed(2) : '\u2014' },
+      { acr: 'EAC', full: 'Estimate at Completion',     def: 'Forecast of total points when done, given current efficiency. AC + (BAC \u2212 EV) \u00F7 CPI.', val: ev && ev.EAC != null ? fmt(ev.EAC) : '\u2014' },
+      { acr: 'ETC', full: 'Estimate to Complete',       def: 'Forecast of points still to spend. EAC \u2212 AC.', val: ev && ev.ETC != null ? fmt(ev.ETC) : '\u2014' },
+      { acr: 'P50', full: '50th percentile forecast', def: 'The \u201cmost likely\u201d outcome from 500 simulated futures using your team\u2019s historical velocity \u2014 half the runs finish by this point.', val: '\u2014 (see dashboard)' },
+      { acr: 'P80', full: '80th percentile forecast', def: 'A conservative commitment point. Out of 500 simulated futures, 80% finish by this sprint count or sooner. This is the figure you can promise with reasonable confidence.', val: '\u2014 (see dashboard)' },
+      { acr: 'P95', full: '95th percentile forecast', def: 'A worst-case bound. Only 5% of simulations take longer than this. Use for risk-aware contingency planning, not day-to-day commitments.', val: '\u2014 (see dashboard)' }
+    ];
+    const body = '<div style="max-height:420px;overflow:auto">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<thead style="background:#f8fafc;position:sticky;top:0"><tr>' +
+          '<th style="padding:8px 10px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase;width:60px">Acr</th>' +
+          '<th style="padding:8px 10px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Meaning</th>' +
+          '<th style="padding:8px 10px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase;width:100px">For ' + esc(p.name) + '</th>' +
+        '</tr></thead>' +
+        '<tbody>' +
+          rows.map(r => '<tr style="border-top:1px solid var(--border-light)">' +
+            '<td style="padding:8px 10px;font-weight:700;color:var(--accent-blue);vertical-align:top">' + esc(r.acr) + '</td>' +
+            '<td style="padding:8px 10px;line-height:1.5"><strong>' + esc(r.full) + '</strong><div style="color:var(--text-dark-secondary);margin-top:2px">' + esc(r.def) + '</div></td>' +
+            '<td style="padding:8px 10px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + esc(String(r.val)) + '</td>' +
+          '</tr>').join('') +
+        '</tbody>' +
+      '</table>' +
+    '</div>';
+    const overlay = document.createElement('div');
+    overlay.id = 'evmGlossaryOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:720px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:16px 20px;border-bottom:1px solid var(--border-light)">' +
+          '<h3 style="margin:0;font-size:15px;font-weight:700">Earned Value & forecasting glossary</h3>' +
+          '<button onclick="document.getElementById(\'evmGlossaryOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)">&times;</button>' +
+        '</div>' +
+        '<div style="padding:16px 20px;overflow:auto">' + body + '</div>' +
+        '<div style="padding:12px 20px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end">' +
+          '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'evmGlossaryOverlay\').remove()">Close</button>' +
+        '</div>' +
+      '</div>';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
   },
 
   renderBody(p) {
@@ -7455,10 +7975,52 @@ const DetailPanel = {
         '<div class="panel-section-title">Status & Health</div>' +
         '<div class="field-grid">' +
           '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
-          '<div class="field-group"><div class="field-label">Priority</div>' + inp('priority', p.priority, 'number') + '</div>' +
+          '<div class="field-group">' +
+            '<div class="field-label" style="display:flex;align-items:center;gap:6px">Priority ' +
+              '<button type="button" class="field-info-btn" title="Show score breakdown" onclick="DetailPanel.showPriorityExplainer(\'' + p.id + '\')" style="border:none;background:transparent;cursor:pointer;color:var(--accent-blue);padding:0;font-size:11px;text-decoration:underline">why?</button>' +
+            '</div>' +
+            inp('priority', p.priority, 'number') +
+            (function() {
+              const rec = p.recommended_priority;
+              if (!rec) return '';
+              if (rec === p.priority) {
+                return '<div style="font-size:10px;color:var(--status-green);margin-top:3px">&check; Matches recommendation</div>';
+              }
+              return '<div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px">' +
+                '<span style="color:var(--text-muted)">Recommended:</span>' +
+                '<span style="font-weight:700;color:var(--accent-violet)">#' + rec + '</span>' +
+                '<button type="button" onclick="App.applyRecommendedPriority(\'' + p.id + '\')" style="font-size:10px;padding:2px 6px;border:1px solid var(--accent-violet);color:var(--accent-violet);background:transparent;border-radius:3px;cursor:pointer;font-weight:600">Apply</button>' +
+              '</div>';
+            })() +
+          '</div>' +
           ragSel('Schedule Health', 'rag_schedule', p.rag_schedule) +
           ragSel('Resource Health', 'rag_resourcing', p.rag_resourcing) +
           ragSel('Scope Health', 'rag_scope', p.rag_scope) +
+        '</div>' +
+        // WSJF (SAFe) inputs + MoSCoW classification. Blank values fall back to the legacy hybrid score.
+        '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Prioritisation (WSJF + MoSCoW)</div>' +
+          '<div class="field-grid">' +
+            '<div class="field-group"><div class="field-label" title="Business value: how much does this deliver to customers/users/revenue? 1 = negligible, 10 = transformational.">Business value (1–10)</div>' + inp('business_value', p.business_value, 'number') + '</div>' +
+            '<div class="field-group"><div class="field-label" title="Time-criticality: how much value decays as we delay? 1 = no decay, 10 = value lost if not done imminently.">Time-criticality (1–10)</div>' + inp('time_criticality', p.time_criticality, 'number') + '</div>' +
+            '<div class="field-group"><div class="field-label" title="Risk reduction / opportunity enablement: how much does this de-risk the portfolio or open new opportunities? 1 = none, 10 = unlocks major downstream value.">Risk / opportunity (1–10)</div>' + inp('risk_reduction_opportunity', p.risk_reduction_opportunity, 'number') + '</div>' +
+            '<div class="field-group"><div class="field-label" title="MoSCoW classification partitions priority bands. Must > Should > Could > Won\u2019t.">MoSCoW</div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won\u2019t'], p.moscow || '') + '</div>' +
+          '</div>' +
+          (function() {
+            const w = App.calculateWsjf(p);
+            if (!w || w.populated === 0) {
+              return '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Fill at least one WSJF input to switch this project from the legacy hybrid score to the agile WSJF score. When blank, the current score is used.</div>';
+            }
+            const band = App.moscowBand(p);
+            const bandLabel = ['Must', 'Should', 'Could', 'Won\u2019t'][band] || 'Could';
+            const confColor = w.confidence === 'high' ? 'var(--status-green)' : w.confidence === 'medium' ? 'var(--status-amber)' : 'var(--text-muted)';
+            return '<div style="font-size:11px;margin-top:6px;color:var(--text-dark-secondary)">' +
+              'WSJF <strong style="color:var(--text-dark)">' + w.wsjf.toFixed(2) + '</strong> ' +
+              '(CoD ' + w.cod + ' / size ' + w.size + ') · ' +
+              'MoSCoW <strong style="color:var(--text-dark)">' + bandLabel + '</strong> · ' +
+              'Confidence <span style="color:' + confColor + ';font-weight:700">' + w.confidence + '</span>' +
+            '</div>';
+          })() +
         '</div>' +
       '</div>' +
 
@@ -7546,7 +8108,7 @@ const DetailPanel = {
             (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
           const allocated = ph.skillKey && p.skill_splits && p.skill_splits[ph.skillKey] && p.skill_splits[ph.skillKey].length > 0;
           const pointsInput = ph.skillKey ?
-            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' : '';
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' : '';
           // Variance columns (only for phases with points and when baseline exists)
           let varianceHtml = '';
           if (ph.skillKey && p.estimate_baseline) {
@@ -7996,6 +8558,52 @@ const DetailPanel = {
       rows + showAll + '</div>';
   },
 
+  showPriorityExplainer(projectId) {
+    const data = App.explainPriorityScore(projectId);
+    if (!data) return;
+    const esc = Dashboard.esc;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    const rec = p && p.recommended_priority;
+    const rows = data.rows.map(r =>
+      '<tr>' +
+        '<td style="padding:6px 8px;font-weight:600;color:var(--text-dark)">' + esc(r.label) + '</td>' +
+        '<td style="padding:6px 8px;color:var(--text-dark-secondary);font-size:11px">' + esc(r.input) + '</td>' +
+        '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px;text-align:center">' + esc(r.multiplier) + '</td>' +
+        '<td style="padding:6px 8px;text-align:right;font-weight:700">' + Math.round(r.contribution) + '</td>' +
+      '</tr>'
+    ).join('');
+    const backdrop = document.createElement('div');
+    backdrop.id = 'priorityExplainerBackdrop';
+    backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:9999;display:flex;align-items:center;justify-content:center';
+    backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+    backdrop.innerHTML =
+      '<div style="background:white;border-radius:var(--radius-md);box-shadow:0 20px 50px rgba(0,0,0,0.3);width:min(640px,92vw);max-height:80vh;overflow:auto;padding:20px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">' +
+          '<div>' +
+            '<h3 style="margin:0;font-size:16px;font-weight:700">Priority score — ' + esc(data.projectName) + '</h3>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">Actual priority #' + (p.priority || '—') + (rec ? ' · Recommended #' + rec : '') + '</div>' +
+          '</div>' +
+          '<button onclick="document.getElementById(\'priorityExplainerBackdrop\').remove()" style="border:none;background:transparent;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)">&times;</button>' +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--border-light);border-radius:var(--radius-sm);overflow:hidden">' +
+          '<thead style="background:#f8fafc"><tr>' +
+            '<th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Component</th>' +
+            '<th style="padding:6px 8px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Input</th>' +
+            '<th style="padding:6px 8px;text-align:center;font-size:10px;color:var(--text-muted);text-transform:uppercase">Multiplier</th>' +
+            '<th style="padding:6px 8px;text-align:right;font-size:10px;color:var(--text-muted);text-transform:uppercase">Contribution</th>' +
+          '</tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+          '<tfoot><tr style="background:#f1f5f9;border-top:2px solid var(--border-light)">' +
+            '<td colspan="3" style="padding:8px;font-weight:700;text-align:right">Total score</td>' +
+            '<td style="padding:8px;font-weight:700;text-align:right;font-size:14px">' + data.total + '</td>' +
+          '</tr></tfoot>' +
+        '</table>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.5">Weights and multipliers are configured in <strong>System Settings → Scoring &amp; Prioritisation</strong>. Higher total = higher urgency within a customer. Per-customer recommendations use dependency-aware layering, so an upstream project never ranks below one it blocks.</div>' +
+        (rec && rec !== p.priority ? '<div style="margin-top:12px;text-align:right"><button onclick="App.applyRecommendedPriority(\'' + projectId + '\');document.getElementById(\'priorityExplainerBackdrop\').remove()" style="padding:6px 14px;border:none;background:var(--accent-violet);color:white;font-weight:600;border-radius:var(--radius-sm);cursor:pointer">Apply recommended (#' + rec + ')</button></div>' : '') +
+      '</div>';
+    document.body.appendChild(backdrop);
+  },
+
   renderRisks(p) {
     const risks = p.risks_register || [];
     if (!risks.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No risks registered</div>';
@@ -8017,9 +8625,9 @@ const DetailPanel = {
           '<div class="full"><div class="risk-field-label">Action / Mitigation</div>' +
             '<textarea data-risk-idx="' + i + '" data-risk-field="action" onchange="DetailPanel.onRiskChange(this)">' + Dashboard.esc(r.action || '') + '</textarea></div>' +
           '<div><div class="risk-field-label">Impact</div>' +
-            '<select data-risk-idx="' + i + '" data-risk-field="impact" onchange="DetailPanel.onRiskChange(this)" style="font-size:11px">' + impOpts + '</select></div>' +
+            '<select class="field-input" data-risk-idx="' + i + '" data-risk-field="impact" onchange="DetailPanel.onRiskChange(this)">' + impOpts + '</select></div>' +
           '<div><div class="risk-field-label">Probability</div>' +
-            '<select data-risk-idx="' + i + '" data-risk-field="probability" onchange="DetailPanel.onRiskChange(this)" style="font-size:11px">' + probOpts + '</select></div>' +
+            '<select class="field-input" data-risk-idx="' + i + '" data-risk-field="probability" onchange="DetailPanel.onRiskChange(this)">' + probOpts + '</select></div>' +
           '<div><div class="risk-field-label">Risk Score</div>' +
             '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:' + scoreBg + ';color:white;font-size:11px;font-weight:700">' + riskScore + '</span></div>' +
           '<div><div class="risk-field-label">Owner</div>' +
@@ -8102,6 +8710,7 @@ const DetailPanel = {
     // Re-render risks section only
     document.getElementById('riskList').innerHTML = this.renderRisks(p);
     document.getElementById('riskCount').textContent = p.risks_register.length;
+    App.notifyDataChange();
   },
 
   removeRisk(idx) {
@@ -8113,6 +8722,7 @@ const DetailPanel = {
     App.saveToLocalStorage();
     document.getElementById('riskList').innerHTML = this.renderRisks(p);
     document.getElementById('riskCount').textContent = p.risks_register.length;
+    App.notifyDataChange();
   },
 
   onRiskChange(el) {
@@ -8130,6 +8740,7 @@ const DetailPanel = {
     if (field === 'impact' || field === 'probability') {
       document.getElementById('riskList').innerHTML = this.renderRisks(p);
     }
+    App.notifyDataChange();
   },
 
   // Issues (same pattern as Risks)
@@ -8461,12 +9072,10 @@ const DetailPanel = {
       }
     }
 
-    Dashboard.applyFilters();
-    Dashboard.renderSummaryCards();
-
     if (field === 'name') {
       document.getElementById('panelTitle').textContent = value;
     }
+    App.notifyDataChange();
   },
 
   onDataSourcingChange(el) {
@@ -8493,6 +9102,7 @@ const DetailPanel = {
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
+    App.notifyDataChange();
   },
 
 
@@ -8524,7 +9134,7 @@ const DetailPanel = {
     App.markDirty();
     App.saveToLocalStorage();
     this.renderBody(p);
-    Dashboard.applyFilters();
+    App.notifyDataChange();
     App.toast('RAG override cleared - auto-scoring active', 'info');
   },
 
@@ -8538,7 +9148,7 @@ const DetailPanel = {
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    Dashboard.applyFilters();
+    App.notifyDataChange();
   },
 
   onPhaseChange(el) {
@@ -8593,7 +9203,7 @@ const DetailPanel = {
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    Dashboard.applyFilters();
+    App.notifyDataChange();
     // Toggle data sourcing section visibility
     if (phaseName === 'Data Sourcing') {
       const ds = document.getElementById('dataSourcingSection');
@@ -8963,6 +9573,7 @@ const DetailPanel = {
 
         '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">' +
           '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'templatePicker\').remove()">Cancel</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="DetailPanel._previewScenarios()" title="Generate 3\u20135 indicative allocation scenarios before committing">Preview scenarios</button>' +
           '<button class="btn btn-primary btn-sm" onclick="DetailPanel._confirmWizard()">Create project</button>' +
         '</div>' +
       '</div>';
@@ -9044,6 +9655,143 @@ const DetailPanel = {
         }
       }
     }
+  },
+
+  // Issue 10: Build a candidate project object from current wizard inputs WITHOUT persisting anything.
+  // Used by `_previewScenarios` to dry-run the solver against 5 different setting presets so the
+  // user can compare before committing.
+  _buildCandidateFromWizard() {
+    const nameEl = document.getElementById('qaName');
+    const custEl = document.getElementById('qaCustomer');
+    const tplEl = document.getElementById('qaTemplate');
+    const sizeEl = document.getElementById('qaSize');
+    if (!nameEl || !custEl) return null;
+    const name = nameEl.value.trim() || 'Candidate project';
+    const cust = custEl.value;
+    const size = Math.max(0, parseInt(sizeEl.value, 10) || 0);
+    const tplId = tplEl ? tplEl.value : '';
+    const templates = App.data.project_templates || [];
+    const tpl = tplId ? templates.find(t => t.id === tplId) : null;
+    const id = '__SCENARIO_CANDIDATE__';
+    const candidate = {
+      id, name, customer: cust, status: 'Not Started',
+      priority: 1,
+      delivery_config: tpl && tpl.delivery_config ? JSON.parse(JSON.stringify(tpl.delivery_config))
+        : { include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
+      size_requirements: 0, size_tableau: 0, size_engineering: 0, size_data_science: 0, size_uat_adoption: 0, size_total: 0,
+      skill_splits: {},
+      risks_register: [], issues_register: [], dependencies: [],
+      rag_schedule: null, rag_resourcing: null, rag_scope: null
+    };
+    if (tpl) {
+      ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'].forEach(k => { if (tpl[k]) candidate[k] = tpl[k]; });
+    } else if (size > 0) {
+      const phases = (candidate.delivery_config.phase_order || []).slice();
+      const psm = Solver.PHASE_SKILL_MAP;
+      const phaseSkills = phases.map(ph => psm[ph]).filter(Boolean);
+      const even = phaseSkills.length ? Math.floor(size / phaseSkills.length) : 0;
+      let leftover = size - even * phaseSkills.length;
+      phaseSkills.forEach(sk => { candidate[sk] = even + (leftover > 0 ? 1 : 0); if (leftover > 0) leftover--; });
+    }
+    candidate.size_total = (candidate.size_requirements || 0) + (candidate.size_tableau || 0) + (candidate.size_engineering || 0) + (candidate.size_data_science || 0) + (candidate.size_uat_adoption || 0);
+    return candidate;
+  },
+
+  // Issue 10: Generate a small set of differentiated allocation scenarios by varying solver settings.
+  // NOTE: indicative only — no skill_splits are persisted. This is decision-support, not a commitment.
+  _previewScenarios() {
+    const candidate = this._buildCandidateFromWizard();
+    if (!candidate || !candidate.size_total) { App.toast('Set a size > 0 (or pick a template) before previewing', 'error'); return; }
+    if (typeof Solver === 'undefined') { App.toast('Solver not available', 'error'); return; }
+    const presets = [
+      { id: 'fastest',   label: 'Fastest delivery',    desc: 'Push work as early as possible. Minimum slack.',
+        overrides: { maxCapacityPct: 95, phaseBufferPoints: 0, spreadWork: false } },
+      { id: 'balanced',  label: 'Balanced',            desc: 'Default: sensible capacity + buffer, team load balanced.',
+        overrides: {} },
+      { id: 'priority',  label: 'Priority-first',      desc: 'This project forced to priority 1; everything else shifts.',
+        overrides: {}, mutateCandidate: c => { c.priority = 1; } },
+      { id: 'safe',      label: 'Lowest risk',         desc: 'Large buffer, lower utilisation, no concurrent people.',
+        overrides: { maxCapacityPct: 70, phaseBufferPoints: 4, enforceConcurrentSinglePerson: true } },
+      { id: 'stretched', label: 'Stretched / low cost', desc: 'Longer horizon, lower peak utilisation, fewer concurrent people.',
+        overrides: { maxCapacityPct: 60, phaseBufferPoints: 3, spreadWork: true } }
+    ];
+    const dataCopy = JSON.parse(JSON.stringify(App.data));
+    // Inject candidate into the data copy.
+    dataCopy.projects = dataCopy.projects.concat([JSON.parse(JSON.stringify(candidate))]);
+    const esc = Dashboard.esc;
+    const sprintsById = {};
+    (dataCopy.sprints || []).forEach(s => { sprintsById[s.sprint_id] = s; });
+
+    const scenarios = presets.map(preset => {
+      const localData = JSON.parse(JSON.stringify(dataCopy));
+      if (preset.mutateCandidate) {
+        const c = localData.projects.find(p => p.id === candidate.id);
+        if (c) preset.mutateCandidate(c);
+      }
+      const settings = { ...Sprint.allocSettings, ...preset.overrides };
+      let plan;
+      try { plan = Solver.solve(candidate.customer, settings, localData, Sprint); }
+      catch (e) { return { preset, error: String(e) }; }
+      const alloc = (plan.allocations && plan.allocations[candidate.id]) || {};
+      let firstSprintIdx = Infinity, lastSprintIdx = -1;
+      Object.values(alloc).forEach(arr => (arr || []).forEach(sp => {
+        const idx = (localData.sprints || []).findIndex(s => s.sprint_id === sp.sprint);
+        if (idx >= 0) { if (idx < firstSprintIdx) firstSprintIdx = idx; if (idx > lastSprintIdx) lastSprintIdx = idx; }
+      }));
+      const firstSprint = firstSprintIdx >= 0 && firstSprintIdx !== Infinity ? (localData.sprints[firstSprintIdx] || {}).sprint_id : null;
+      const lastSprint = lastSprintIdx >= 0 ? (localData.sprints[lastSprintIdx] || {}).sprint_id : null;
+      const totalSprints = (firstSprintIdx !== Infinity && lastSprintIdx >= 0) ? lastSprintIdx - firstSprintIdx + 1 : 0;
+      return {
+        preset,
+        firstSprint, lastSprint, totalSprints,
+        peakUtilPct: plan.stats ? (plan.stats.peakUtilization || 0) : 0,
+        avgUtilPct: plan.stats ? (plan.stats.avgUtilization || 0) : 0,
+        warningCount: (plan.warnings || []).length,
+        concurrentBlocked: plan.stats ? (plan.stats.concurrentBlocked || 0) : 0
+      };
+    });
+
+    const cards = scenarios.map(sc => {
+      if (sc.error) {
+        return '<div style="flex:1;min-width:200px;border:1px solid var(--status-red);border-radius:var(--radius-sm);padding:10px;background:#fef2f2"><div style="font-weight:700;font-size:12px">' + esc(sc.preset.label) + '</div><div style="font-size:11px;color:var(--status-red)">Error: ' + esc(sc.error) + '</div></div>';
+      }
+      const bandColor = sc.totalSprints === 0 ? '#94a3b8' : (sc.totalSprints <= 2 ? 'var(--status-green)' : sc.totalSprints <= 4 ? 'var(--status-amber)' : 'var(--status-red)');
+      return '<div style="flex:1;min-width:200px;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px;background:white">' +
+        '<div style="font-weight:700;font-size:12px;color:var(--text-dark);margin-bottom:2px">' + esc(sc.preset.label) + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;line-height:1.4">' + esc(sc.preset.desc) + '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:3px;font-size:11px;line-height:1.5">' +
+          '<div><span style="color:var(--text-muted)">First sprint:</span> <strong>' + esc(sc.firstSprint || '\u2014') + '</strong></div>' +
+          '<div><span style="color:var(--text-muted)">Last sprint:</span> <strong>' + esc(sc.lastSprint || '\u2014') + '</strong></div>' +
+          '<div><span style="color:var(--text-muted)">Sprints:</span> <strong style="color:' + bandColor + '">' + sc.totalSprints + '</strong></div>' +
+          '<div><span style="color:var(--text-muted)">Peak team util:</span> <strong>' + sc.peakUtilPct + '%</strong></div>' +
+          '<div><span style="color:var(--text-muted)">Warnings:</span> <strong>' + sc.warningCount + '</strong></div>' +
+          (sc.concurrentBlocked ? '<div style="color:var(--status-amber);font-weight:600">\u26A0 ' + sc.concurrentBlocked + ' concurrent blocks</div>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'scenarioPreviewOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:950;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:1100px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:14px 20px;border-bottom:1px solid var(--border-light);background:#fef3c7">' +
+          '<h3 style="margin:0;font-size:14px;font-weight:700">Scenario preview \u2014 indicative only</h3>' +
+          '<button onclick="document.getElementById(\'scenarioPreviewOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)">&times;</button>' +
+        '</div>' +
+        '<div style="padding:10px 20px;font-size:11px;color:var(--text-dark-secondary);background:#fef3c7;border-bottom:1px solid var(--border-light)">' +
+          'These are <strong>planning options</strong> for the conversation with your stakeholder. No allocations are committed \u2014 they\u2019re dry-runs of the solver with different settings. Picking one below will create the project with those settings applied on the next Auto-Allocate run.' +
+        '</div>' +
+        '<div style="padding:14px 20px;overflow:auto">' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap">' + cards + '</div>' +
+        '</div>' +
+        '<div style="padding:12px 20px;border-top:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;gap:12px">' +
+          '<div style="font-size:11px;color:var(--text-muted)">Close this preview and either pick "Create project" (no scenario) or tweak the wizard inputs.</div>' +
+          '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'scenarioPreviewOverlay\').remove()">Close preview</button>' +
+        '</div>' +
+      '</div>';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
   },
 
   _confirmWizard() {
@@ -9311,18 +10059,14 @@ const Gantt = {
     html += '</div>';
 
     // Milestones — every shape rendered on the chart MUST appear here with a clear label.
-    // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat/msGoLive/msGoLiveGhost).
+    // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat).
     html += '<div class="gantt-legend-group">' +
       '<span class="gantt-legend-item" title="Deadline (hard_deadline) — the project cannot slip past this date.">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16"><polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="#dc2626" stroke="#7f1d1d" stroke-width="1.2"/></svg> Deadline</span>' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="#8b5cf6" stroke="#5b21b6" stroke-width="1.2"/><line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#5b21b6" stroke-width="1"/><line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/><line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="8.5" x2="8" y2="11" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12.5" r="0.9" fill="#fff"/></svg> Deadline</span>' +
       '<span class="gantt-legend-item" title="Product launch milestone (category=Product Release + product_release_date).">' +
         '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="7" r="1.2" fill="#b45309"/><path d="M5 11 L3 14 M11 11 L13 14" stroke="#b45309" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg> Launch</span>' +
       '<span class="gantt-legend-item" title="DT UAT release — the data-sourcing partner has signed off.">' +
         '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/><polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> UAT release</span>' +
-      '<span class="gantt-legend-item" title="Go-Live — actual when a date is set.">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="1.2" height="13" fill="#0e7490"/><path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/></svg> Go-Live</span>' +
-      '<span class="gantt-legend-item" title="Go-Live (estimated) — placeholder drawn at target_date when no explicit go_live_date is set.">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16" style="opacity:0.65"><rect x="3" y="2" width="1.2" height="13" fill="#0e7490" opacity="0.6"/><path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="none" stroke="#0e7490" stroke-width="1.4" stroke-dasharray="2 1.5"/></svg> Estimated</span>' +
       '</div>';
 
     // Lines — today (live reference), sprint boundaries, financial year.
@@ -9548,7 +10292,62 @@ const Gantt = {
           esc(phaseName) +
           (overrun ? ' <span style="font-size:9px;padding:1px 5px;border-radius:999px;background:var(--status-red);color:white;font-weight:700">past target</span>' : '') +
         '</div>';
-        return projHeader + phaseHeader + phaseRowHtml(p, skillKey, { compact: false }) + buildAssigneeLine(p, skillKey);
+        // Issue 13: rich context — assignee, work window, per-person priority rank, handover target.
+        const splits = (p.skill_splits && p.skill_splits[skillKey]) || [];
+        let assigneeLine = '';
+        let workWindow = '';
+        if (splits.length) {
+          const firstSplit = splits[0];
+          const firstSprint = (App.data.sprints || []).find(s => s.sprint_id === firstSplit.sprint);
+          const startDate = firstSplit.work_start_date || (firstSprint && firstSprint.start_date);
+          const lastSplit = splits[splits.length - 1];
+          const lastSprint = (App.data.sprints || []).find(s => s.sprint_id === lastSplit.sprint);
+          const endDate = lastSplit.work_end_date || (lastSprint && lastSprint.end_date);
+          if (startDate && endDate) {
+            const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            workWindow = '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:4px"><span style="color:var(--text-muted)">Working:</span> ' + esc(fmtD(startDate)) + ' \u2013 ' + esc(fmtD(endDate)) + '</div>';
+          }
+          const memberPts = {};
+          splits.forEach(sp => (sp.assigned_to || []).forEach(a => { memberPts[a.member] = (memberPts[a.member] || 0) + (a.points || 0); }));
+          const topMembers = Object.entries(memberPts).sort((a, b) => b[1] - a[1]);
+          if (topMembers.length) {
+            assigneeLine = '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:4px"><span style="color:var(--text-muted)">Assigned:</span> ' +
+              topMembers.slice(0, 3).map(([m, pts]) => '<strong>' + esc(m) + '</strong> (' + pts + 'pts)').join(', ') +
+              '</div>';
+          }
+        }
+        // Handover: find the next phase in phase_order for this project, and its first assignee.
+        const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+        const psmInv = Solver.PHASE_SKILL_MAP;
+        let currentPhaseName = null;
+        Object.entries(psmInv).forEach(([phName, skKey]) => { if (skKey === skillKey) currentPhaseName = phName; });
+        let handoverLine = '';
+        if (currentPhaseName) {
+          const idx = phaseOrder.indexOf(currentPhaseName);
+          if (idx >= 0 && idx < phaseOrder.length - 1) {
+            const nextPhaseName = phaseOrder[idx + 1];
+            const nextSkillKey = psmInv[nextPhaseName];
+            if (nextSkillKey && (p[nextSkillKey] || 0) > 0) {
+              const nextSplits = (p.skill_splits && p.skill_splits[nextSkillKey]) || [];
+              const nextMember = (() => {
+                for (let i = 0; i < nextSplits.length; i++) {
+                  const at = nextSplits[i].assigned_to || [];
+                  if (at.length) return at[0].member;
+                }
+                return null;
+              })();
+              handoverLine = '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border-light)">' +
+                '<span style="color:#2563eb;font-weight:600">Handover \u2192</span> ' +
+                (nextMember ? '<strong>' + esc(nextMember) + '</strong> (' + esc(nextPhaseName) + ')' : '<span style="color:var(--text-muted)">' + esc(nextPhaseName) + ' (unassigned)</span>') +
+              '</div>';
+            } else {
+              handoverLine = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border-light);font-style:italic">Delivery complete at this phase.</div>';
+            }
+          } else if (idx === phaseOrder.length - 1) {
+            handoverLine = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;padding-top:4px;border-top:1px dashed var(--border-light);font-style:italic">Final phase \u2014 delivery completes here.</div>';
+          }
+        }
+        return projHeader + phaseHeader + phaseRowHtml(p, skillKey, { compact: false }) + workWindow + assigneeLine + handoverLine;
       }
       if (type === 'milestone') {
         const info = (() => { try { return JSON.parse(el.dataset.info || '{}'); } catch (_) { return {}; } })();
@@ -9591,6 +10390,10 @@ const Gantt = {
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
         if (bar) bar.classList.add('gantt-bar-highlight');
         if (label) label.classList.add('gantt-label-active');
+      } else if (type === 'phase') {
+        const id = el.dataset.id;
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (label) label.classList.add('gantt-label-active');
       } else if (type === 'dep') {
         el.classList.add('gantt-dep-active');
         // Also paint the sibling visible path and the endpoint circles so the whole arrow lights up.
@@ -9615,6 +10418,10 @@ const Gantt = {
         const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
         if (bar) bar.classList.remove('gantt-bar-highlight');
+        if (label) label.classList.remove('gantt-label-active');
+      } else if (type === 'phase') {
+        const id = el.dataset.id;
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
         if (label) label.classList.remove('gantt-label-active');
       } else if (type === 'dep') {
         const svg = el.ownerSVGElement || el.closest('svg');
@@ -9872,9 +10679,16 @@ const Gantt = {
         '<span class="rag-dot" title="Resource · ' + Dashboard.esc(p.rag_resourcing || '—') + '" style="background:' + (App.ragColor ? App.ragColor(p.rag_resourcing) : 'var(--text-muted)') + '"></span>' +
         '<span class="rag-dot" title="Scope · ' + Dashboard.esc(p.rag_scope || '—') + '" style="background:' + (App.ragColor ? App.ragColor(p.rag_scope) : 'var(--text-muted)') + '"></span>' +
       '</span>';
+      const recPri = p.recommended_priority;
+      const priChip =
+        '<span style="font-size:9px;color:var(--text-muted);font-weight:600;flex-shrink:0">#' + (p.priority || '—') + '</span>' +
+        (recPri && recPri !== p.priority
+          ? '<span title="Recommended #' + recPri + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;flex-shrink:0">\u2192#' + recPri + '</span>'
+          : '');
       labelsHtml += '<div class="gantt-label-row gantt-hoverable' + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')">' +
         ragDotsHtml +
         '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+        priChip +
       '</div>';
       if (isDetailed) {
         // Keep sub-row spacing in the left panel but without duplicate phase labels —
@@ -9975,19 +10789,23 @@ const Gantt = {
       // Each icon: single instantly-readable metaphor, one strong fill colour, matching dark stroke.
       // Colour semantics are role-coded (not status-coded — RAG owns status). Every one is documented
       // in the Gantt legend (see Gantt.renderLegend).
-      //   DEADLINE → red octagon ("hard stop").
+      //   DEADLINE → violet calendar-warning ("hard stop"; non-red so it doesn't clash with RAG).
       //   LAUNCH   → amber rocket ("go live!"), warm, distinct from RAG green.
       //   UAT      → cyan document + checkmark ("signed off, ready to hand over").
-      //   GO-LIVE  → dark-teal pennant flag (solid=actual; dashed=estimated).
       let milestoneHtml = '';
       const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
       const msWrap = (klass, x, type, date, inner, tabIdx) =>
-        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:7px;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
+        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:50%;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
 
-      // Deadline — octagon filled red. Strong, unambiguous "stop" signal.
+      // Deadline — calendar with an exclamation. Violet fill (NOT red) so it never reads as RAG Red.
       const msDeadline = (x, type, date) => msWrap('gantt-ms-deadline', x, type, date,
         '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<polygon points="5,1 11,1 15,5 15,11 11,15 5,15 1,11 1,5" fill="#dc2626" stroke="#7f1d1d" stroke-width="1.2"/>' +
+          '<rect x="2" y="3" width="12" height="11" rx="1.5" fill="#8b5cf6" stroke="#5b21b6" stroke-width="1.2"/>' +
+          '<line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#5b21b6" stroke-width="1"/>' +
+          '<line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/>' +
+          '<line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/>' +
+          '<line x1="8" y1="8.5" x2="8" y2="11" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
+          '<circle cx="8" cy="12.5" r="0.9" fill="#fff"/>' +
         '</svg>');
       // Launch — rocket. Amber fill with a darker stroke; distinct from RAG green and from red deadline.
       const msLaunch = (x, type, date) => msWrap('gantt-ms-launch', x, type, date,
@@ -10002,38 +10820,12 @@ const Gantt = {
           '<rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/>' +
           '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>');
-      // Go-Live — pennant flag, solid dark teal.
-      const msGoLive = (x, type, date) => msWrap('gantt-ms-golive', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<rect x="3" y="2" width="1.2" height="13" fill="#0e7490"/>' +
-          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/>' +
-        '</svg>');
-      // Go-Live (estimated) — same pennant, dashed outline, no fill.
-      const msGoLiveGhost = (x, type, date) => msWrap('gantt-ms-ghost', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false" style="opacity:0.65">' +
-          '<rect x="3" y="2" width="1.2" height="13" fill="#0e7490" opacity="0.6"/>' +
-          '<path d="M4.2 2 L14 2 L11 5 L14 8 L4.2 8 Z" fill="none" stroke="#0e7490" stroke-width="1.4" stroke-dasharray="2 1.5"/>' +
-        '</svg>');
 
       if (p.hard_deadline) milestoneHtml += msDeadline(dateToX(p.hard_deadline), 'Hard Deadline', p.hard_deadline);
       if (p.category === 'Product Release' && p.product_release_date) milestoneHtml += msLaunch(dateToX(p.product_release_date), 'Product Launch', p.product_release_date);
       const ds = p.data_sourcing || {};
       if (ds.type && ds.type !== 'Internal') {
         if (ds.uat_release_date) milestoneHtml += msUat(dateToX(ds.uat_release_date), 'DT UAT Release', ds.uat_release_date);
-      }
-
-      // Always render a Go-Live milestone — canonical field first, then data-sourcing, then product-release,
-      // else a ghost placeholder at target_date (or hard_deadline) so every project shows one.
-      const goLiveDate =
-        p.go_live_date ||
-        (ds && ds.go_live_date) ||
-        (p.category === 'Product Release' ? p.product_release_date : null) ||
-        null;
-      if (goLiveDate) {
-        milestoneHtml += msGoLive(dateToX(goLiveDate), 'Go-Live', goLiveDate);
-      } else {
-        const ghostDate = p.target_date || p.hard_deadline;
-        if (ghostDate) milestoneHtml += msGoLiveGhost(dateToX(ghostDate), 'Go-Live (estimated)', ghostDate);
       }
 
       // Critical path + faded classes
@@ -10069,8 +10861,8 @@ const Gantt = {
           const overrunDays = pxPerDay > 0 ? Math.round(overrunPx / pxPerDay) : 0;
           const badgeLeft = Math.min(totalWidth - 40, maxEnd + 4);
           overrunHtml =
-            '<div class="gantt-bar-overrun" style="position:absolute;top:17px;left:' + x2 + 'px;width:' + overrunPx + 'px;height:2px;border-top:2px dashed var(--status-red);opacity:0.85;pointer-events:none;z-index:2"></div>' +
-            '<div class="gantt-bar-overrun-badge" title="Phases extend ' + overrunDays + ' days past declared target (' + Dashboard.esc(p.target_date || '—') + ')" style="position:absolute;top:8px;left:' + badgeLeft + 'px;font-size:9px;font-weight:700;color:white;background:var(--status-red);padding:1px 5px;border-radius:3px;z-index:3;pointer-events:auto;cursor:help">+' + overrunDays + 'd</div>';
+            '<div class="gantt-bar-overrun" style="position:absolute;top:50%;transform:translateY(-50%);left:' + x2 + 'px;width:' + overrunPx + 'px;height:2px;border-top:2px dashed var(--status-red);opacity:0.85;pointer-events:none;z-index:2"></div>' +
+            '<div class="gantt-bar-overrun-badge" title="Phases extend ' + overrunDays + ' days past declared target (' + Dashboard.esc(p.target_date || '—') + ')" style="position:absolute;top:50%;transform:translateY(-50%);left:' + badgeLeft + 'px;font-size:9px;font-weight:700;color:white;background:var(--status-red);padding:1px 5px;border-radius:3px;z-index:3;pointer-events:auto;cursor:help">+' + overrunDays + 'd</div>';
         }
       }
 
@@ -10087,6 +10879,55 @@ const Gantt = {
       // Detailed sub-rows per phase
       if (isDetailed) {
         const activeSkills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : skills;
+
+        // Issue 4: narrow each phase bar to its actual work window within each sprint.
+        // Approach: for every sprint this project has work in, allocate the sprint's calendar
+        // proportionally across phases by points, ordered by phase_order. A phase with 3 pts in
+        // a 20-day sprint containing 8 total project pts occupies 3/8 of the sprint — starting
+        // after earlier phases' slices. Preserves cross-sprint stretches (a phase that spans
+        // two sprints still renders from first-slice-start to last-slice-end).
+        // Explicit work_start_date / work_end_date on a split override the derivation.
+        const skToPhaseNum = {};
+        activeSkills.forEach((skKey, i) => { skToPhaseNum[skKey] = i; });
+        const sprintLookup = {};
+        (App.data.sprints || []).forEach(s => { sprintLookup[s.sprint_id] = s; });
+        // Pre-index: sprintId → { totalPts, cumulativePointsByPhase (offset before each phase) }
+        const perSprintOffsets = {};
+        activeSkills.forEach(skKey => {
+          const arr = (p.skill_splits && p.skill_splits[skKey]) || [];
+          arr.forEach(sp => {
+            if (!sp.sprint || !sprintLookup[sp.sprint]) return;
+            const bucket = perSprintOffsets[sp.sprint] || (perSprintOffsets[sp.sprint] = { total: 0, byPhase: {} });
+            bucket.total += (sp.points || 0);
+            bucket.byPhase[skKey] = (bucket.byPhase[skKey] || 0) + (sp.points || 0);
+          });
+        });
+        // Work-window helper — returns { start, end } in px for a given split.
+        const computeSplitWindow = (sp, skKey) => {
+          const spr = sprintLookup[sp.sprint];
+          if (!spr) return null;
+          const sprStart = dateToX(spr.start_date);
+          const sprEnd = dateToX(spr.end_date);
+          const sprWidth = Math.max(1, sprEnd - sprStart);
+          if (sp.work_start_date && sp.work_end_date) {
+            return { start: dateToX(sp.work_start_date), end: dateToX(sp.work_end_date) };
+          }
+          const bucket = perSprintOffsets[sp.sprint];
+          if (!bucket || bucket.total <= 0) return { start: sprStart, end: sprEnd };
+          const thisPhaseIdx = skToPhaseNum[skKey];
+          let pointsBefore = 0;
+          Object.keys(bucket.byPhase).forEach(otherSk => {
+            if (skToPhaseNum[otherSk] < thisPhaseIdx) pointsBefore += bucket.byPhase[otherSk];
+          });
+          const thisPts = sp.points || 0;
+          const beforeFrac = pointsBefore / bucket.total;
+          const thisFrac = thisPts / bucket.total;
+          return {
+            start: sprStart + beforeFrac * sprWidth,
+            end: sprStart + (beforeFrac + thisFrac) * sprWidth
+          };
+        };
+
         let prevEnd = x1;
         activeSkills.forEach(sk => {
           const pts = p[sk] || 0;
@@ -10098,13 +10939,10 @@ const Gantt = {
           const splits = (p.skill_splits && p.skill_splits[sk]) || [];
           let subX1 = x1, subX2 = x2;
           if (splits.length) {
-            const sprintDates = splits.map(sp => {
-              const spr = (App.data.sprints || []).find(s => s.sprint_id === sp.sprint);
-              return spr ? { start: dateToX(spr.start_date), end: dateToX(spr.end_date) } : null;
-            }).filter(Boolean);
-            if (sprintDates.length) {
-              subX1 = Math.min(...sprintDates.map(d => d.start));
-              subX2 = Math.max(...sprintDates.map(d => d.end));
+            const windows = splits.map(sp => computeSplitWindow(sp, sk)).filter(Boolean);
+            if (windows.length) {
+              subX1 = Math.min(...windows.map(w => w.start));
+              subX2 = Math.max(...windows.map(w => w.end));
             }
           }
           const subW = Math.max(4, subX2 - subX1);
@@ -10861,6 +11699,30 @@ const Sprint = {
   multiSelections: {},
   viewMode: 'swimlane',
 
+  // Keep project-level date fields in sync with skill_splits. The Gantt reads start_date /
+  // target_date for bar position; Sprint Planning reads skill_splits for column placement.
+  // When Sprint's drag/drop or Auto-Allocate apply mutates skill_splits without touching
+  // project dates, the two views drift. Call this after any skill_splits mutation.
+  _syncDatesFromSplits(project) {
+    if (!project || !project.skill_splits) return;
+    let earliestSid = null, latestSid = null;
+    Object.values(project.skill_splits).forEach(arr => {
+      (arr || []).forEach(sp => {
+        if (!sp || !sp.sprint || sp.sprint === '_backlog') return;
+        if (!earliestSid || sp.sprint < earliestSid) earliestSid = sp.sprint;
+        if (!latestSid || sp.sprint > latestSid) latestSid = sp.sprint;
+      });
+    });
+    if (!earliestSid || !latestSid) return;
+    const sprints = App.data.sprints || [];
+    const first = sprints.find(s => s.sprint_id === earliestSid);
+    const last  = sprints.find(s => s.sprint_id === latestSid);
+    if (first && first.start_date) project.start_date = first.start_date;
+    if (last && last.end_date)      project.target_date = last.end_date;
+    project.current_sprint = earliestSid;
+    project.target_sprint  = latestSid;
+  },
+
   setViewMode(mode) {
     this.viewMode = mode;
     document.querySelectorAll('#sprintViewToggle .toggle-btn').forEach(btn => {
@@ -11290,6 +12152,9 @@ const Sprint = {
             '<div class="group-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
             '<span class="group-total">' + totalPts + 'pts</span>' +
             '<span style="font-size:9px;color:var(--text-muted)">#' + (p.priority || '') + '</span>' +
+            (p.recommended_priority && p.recommended_priority !== p.priority
+              ? '<span title="Recommended #' + p.recommended_priority + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer">\u2192#' + p.recommended_priority + '</span>'
+              : '') +
             '<span style="font-size:10px;cursor:pointer;color:var(--text-muted);padding:0 2px" onclick="event.stopPropagation();DetailPanel.open(\'' + pid + '\')" title="Open details">\u2197</span>' +
           '</div>' +
           '<div class="group-cards' + (startCollapsed ? ' collapsed' : '') + '" id="gc-' + gid + '">' + innerCards + '</div>' +
@@ -12287,19 +13152,9 @@ const Sprint = {
     // Clean up: remove zero-point splits
     p.skill_splits[skillKey] = splits.filter(sp => sp.points > 0);
 
-    // Update current_sprint to the sprint with the most work
-    let maxSprint = p.current_sprint;
-    let maxPts = 0;
-    const sprintPts = {};
-    this.SKILLS.forEach(sk => {
-      (p.skill_splits[sk.key] || []).forEach(sp => {
-        sprintPts[sp.sprint] = (sprintPts[sp.sprint] || 0) + sp.points;
-      });
-    });
-    Object.keys(sprintPts).forEach(sid => {
-      if (sprintPts[sid] > maxPts) { maxPts = sprintPts[sid]; maxSprint = sid; }
-    });
-    p.current_sprint = maxSprint;
+    // Re-derive project-level sprint/date fields from the updated splits so Gantt + Sprint Planning
+    // stay in sync (see _syncDatesFromSplits).
+    this._syncDatesFromSplits(p);
 
     App.logChange(projectId, 'skill_splits.' + skillKey, fromSprint, toSprint, 'swimlane-drag');
     if (isPastSprint) {
@@ -12308,7 +13163,7 @@ const Sprint = {
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    this.render();
+    App.notifyDataChange();
     const baseToast = (skillLabel ? skillLabel.label : 'Skill') + ' moved to ' + toSprint.replace('CY26-', '');
     App.toast(isPastSprint ? baseToast + ' — auto-marked complete' : baseToast, 'success');
   },
@@ -12460,6 +13315,8 @@ const Sprint = {
     phaseBufferPoints: 2,         // Hand-off buffer inside a project when two phases share a sprint (0 disables)
     enforcePerPersonCap: true,    // Hard cap on each team member's available_points_per_sprint
     maxBufferSlides: 4,           // Safety stop for cascading buffer pushes (sprints)
+    enforceConcurrentSinglePerson: true, // R12: one person is never on two deliveries at once (sprint-overlap), except for the allow-list below
+    concurrentOverlapAllowedSkills: ['size_requirements', 'size_uat_adoption'], // skills where overlap is permitted (collaborative/async phases)
   },
 
   openAllocSettings() {
@@ -12492,31 +13349,35 @@ const Sprint = {
       }
     } catch (e) { /* ignore */ }
 
+    // Issue 9: this modal is now READ-ONLY. All solver knobs live in System Settings as the
+    // single source of truth. Sprint Planning shows a summary of what's currently in effect
+    // plus the delivery pipeline visual and the priority weights legend (both are contextual
+    // aids during allocation, not settings). An "Edit in System Settings" button deep-links.
+    const yesNo = (v) => v ? '<span style="color:var(--status-green);font-weight:600">ON</span>' : '<span style="color:var(--text-muted)">off</span>';
+    const startLabel = s.startFromSprint ? s.startFromSprint.replace('CY26-', '') : 'First available';
     const body = document.getElementById('allocSettingsBody');
     body.innerHTML =
       '<div style="display:flex;flex-direction:column;gap:10px">' +
         '<div style="background:#eff6ff;border:1px solid #3b82f640;border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--text-dark)">' +
           '<strong>Customer:</strong> ' + Dashboard.esc(App.activeCustomer || 'None') + ' <span style="color:var(--text-muted)">(change via the customer filter on any view)</span>' +
         '</div>' +
-        '<div class="field-grid" style="grid-template-columns:1fr 1fr 1fr;gap:8px">' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Max capacity target (%) <span title="Aggregate-skill ceiling per sprint. Per-person caps are still enforced separately when the toggle below is on." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
-            '<input type="number" id="asMaxCap" value="' + s.maxCapacityPct + '" min="50" max="100" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Phase hand-off buffer (SP) <span title="When two consecutive phases of one project share a sprint, reserve this many SP of the project\'s footprint as hand-off. 0 disables." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
-            '<input type="number" id="asBufferPts" value="' + (s.phaseBufferPoints != null ? s.phaseBufferPoints : 2) + '" min="0" max="10" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
-            (bufferDaysText ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">' + Dashboard.esc(bufferDaysText) + '</div>' : '') +
-          '</label>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-dark)">Start from sprint <span title="Only allocate into this sprint and later. Earlier sprints are left unchanged." style="cursor:help;color:var(--accent-blue)">&#9432;</span><br>' +
-            '<select id="asStartSprint" style="width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + sprintOpts + '</select></label>' +
+        '<div style="background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--text-dark)">' +
+          '<strong>Read-only preview.</strong> These values come from <em>System Settings</em>. Use that page to change them — they apply to the next Auto-Allocate run.' +
         '</div>' +
-        '<div style="display:flex;flex-direction:column;gap:6px">' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asPerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Enforce per-person capacity <span title="HARD constraint. Each team member never exceeds their available_points_per_sprint in any sprint. Slices slide to later sprints if a person would be over-loaded." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Respect delivery pipeline <span title="Phase order (from Delivery Setup) is preserved across sprints. Phase N+1 can share a sprint with phase N if the hand-off buffer holds." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asSpread"' + (s.spreadWork ? ' checked' : '') + '> Spread work evenly <span title="Load-balance hot sprints into cooler adjacent ones (Pass 3). Respects buffer, per-person cap, phase order, and deadline." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockComplete"' + (s.lockCompleted ? ' checked' : '') + '> Lock completed/closed <span title="Don\'t move projects that are already Complete or Closed." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockInProg"' + (s.lockInProgress ? ' checked' : '') + '> Lock in-progress <span title="Don\'t move projects currently In Progress." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
-          '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="asLockPastSprints"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Protect past sprints <span title="Past-sprint slices stay put, and the solver refuses to place new work into sprints that have already ended. Prevents history from being silently rewritten." style="cursor:help;color:var(--accent-blue)">&#9432;</span></label>' +
+        // Summary table of the active values. Matches what the solver will use.
+        '<div style="border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;line-height:1.8">' +
+          '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">Current solver configuration</div>' +
+          '<div><strong>Max capacity target:</strong> ' + s.maxCapacityPct + '%</div>' +
+          '<div><strong>Phase hand-off buffer:</strong> ' + (s.phaseBufferPoints != null ? s.phaseBufferPoints : 2) + ' SP' + (bufferDaysText ? ' <span style="color:var(--text-muted)">· ' + Dashboard.esc(bufferDaysText) + '</span>' : '') + '</div>' +
+          '<div><strong>Start from sprint:</strong> ' + Dashboard.esc(startLabel) + '</div>' +
+          '<div><strong>Per-person cap:</strong> ' + yesNo(s.enforcePerPersonCap !== false) + '</div>' +
+          '<div><strong>Respect delivery pipeline:</strong> ' + yesNo(s.respectSkillOrder) + '</div>' +
+          '<div><strong>Spread work evenly:</strong> ' + yesNo(s.spreadWork) + '</div>' +
+          '<div><strong>Lock completed / in-progress:</strong> ' + yesNo(s.lockCompleted) + ' / ' + yesNo(s.lockInProgress) + '</div>' +
+          '<div><strong>Protect past sprints:</strong> ' + yesNo(s.preservePastSprintAllocations !== false) + '</div>' +
+          '<div><strong>One person per delivery (R12):</strong> ' + yesNo(s.enforceConcurrentSinglePerson !== false) + '</div>' +
         '</div>' +
-        '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-top:4px">' +
+        '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px">' +
           '<div style="font-size:10px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Delivery Pipeline</div>' +
           '<div style="display:flex;align-items:center;gap:4px;font-size:9px;flex-wrap:wrap">' +
             '<span style="background:#6366f120;color:#6366f1;padding:2px 6px;border-radius:3px;font-weight:600">Req</span>' +
@@ -12532,13 +13393,11 @@ const Sprint = {
           '</div>' +
           '<div style="font-size:9px;color:var(--text-muted);margin-top:4px">Each phase starts in the next sprint after the previous phase completes. Eng & DS can run in parallel. Phases may share a sprint if capacity allows.</div>' +
         '</div>' +
-        // D6: read-only summary of the priority weights the auto-prioritise model uses.
-        // Gives users a single place to see how priority is computed. Edit in Configuration.
-        '<details style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:6px 10px;margin-top:4px">' +
+        '<details style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:6px 10px">' +
           '<summary style="cursor:pointer;font-size:10px;font-weight:700;color:var(--text-dark);text-transform:uppercase;letter-spacing:0.4px">Priority weights (read-only)</summary>' +
           '<div style="font-size:10px;color:var(--text-dark-secondary);margin-top:6px;line-height:1.5">' +
-            '<div><strong>Status</strong> up to 50 · <strong>RAG</strong> up to 45 · <strong>Risk register</strong> per item · <strong>Size</strong> up to 20 · <strong>Deadline</strong> up to 60 (≤7d)</div>' +
-            '<div style="color:var(--text-muted);margin-top:3px">Auto-prioritise ranks projects per customer by this combined score. Edit weights in Configuration → Priority rules.</div>' +
+            '<div><strong>WSJF</strong> up to 100 · <strong>MoSCoW band</strong> partitions Must > Should > Could > Won\u2019t · <strong>Deadline</strong> up to 60 (≤7d) · <strong>Dep leverage</strong> up to 30</div>' +
+            '<div style="color:var(--text-muted);margin-top:3px">When WSJF inputs (business value, time-criticality, risk/opportunity) are blank, the legacy hybrid score is used instead. Edit weights in System Settings.</div>' +
           '</div>' +
         '</details>' +
       '</div>';
@@ -12552,21 +13411,10 @@ const Sprint = {
     document.getElementById('allocSettingsModal').style.display = 'none';
   },
 
+  // Issue 9: modal is read-only — "Save" now just closes it and deep-links to System Settings.
   saveAllocSettings() {
-    this.allocSettings.maxCapacityPct = parseInt(document.getElementById('asMaxCap').value) || 85;
-    this.allocSettings.startFromSprint = document.getElementById('asStartSprint').value;
-    this.allocSettings.respectSkillOrder = document.getElementById('asRespectOrder').checked;
-    this.allocSettings.spreadWork = document.getElementById('asSpread').checked;
-    this.allocSettings.lockCompleted = document.getElementById('asLockComplete').checked;
-    this.allocSettings.lockInProgress = document.getElementById('asLockInProg').checked;
-    const lockPastEl = document.getElementById('asLockPastSprints');
-    if (lockPastEl) this.allocSettings.preservePastSprintAllocations = lockPastEl.checked;
-    const bufEl = document.getElementById('asBufferPts');
-    if (bufEl) this.allocSettings.phaseBufferPoints = Math.max(0, Math.min(10, parseInt(bufEl.value, 10) || 0));
-    const perPersonEl = document.getElementById('asPerPerson');
-    if (perPersonEl) this.allocSettings.enforcePerPersonCap = perPersonEl.checked;
     this.closeAllocSettings();
-    App.toast('Allocation settings saved', 'success');
+    App.navigate('config');
   },
 
   pendingAllocation: null,
@@ -12605,23 +13453,15 @@ const Sprint = {
       if (!p.allocation_baseline) {
         p.allocation_baseline = JSON.parse(JSON.stringify(alloc[projectId]));
       }
-      // Set current_sprint to earliest, target_sprint to latest
-      let earliest = null, latest = null;
-      Object.values(alloc[projectId]).forEach(splits => {
-        splits.forEach(sp => {
-          if (!earliest || sp.sprint < earliest) earliest = sp.sprint;
-          if (!latest || sp.sprint > latest) latest = sp.sprint;
-        });
-      });
-      if (earliest) p.current_sprint = earliest;
-      if (latest) p.target_sprint = latest;
+      // Sync project-level sprint/date fields to the new plan so Gantt stays in step.
+      this._syncDatesFromSplits(p);
       p.last_updated = new Date().toISOString();
     });
     this.pendingAllocation = null;
     App.markDirty();
     App.saveToLocalStorage();
     this.closeAllocResults();
-    this.render();
+    App.notifyDataChange();
     App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
   },
 
@@ -13194,7 +14034,7 @@ const Sprint = {
       const pts = ex ? ex.points : 0;
       return '<div class="split-row">' +
         '<label>' + s.sprint_id.replace('CY26-', '') + '</label>' +
-        '<input type="number" min="0" max="' + totalPts + '" value="' + pts + '" data-sprint="' + s.sprint_id + '" oninput="Sprint.updateSplitRemaining()">' +
+        '<input type="number" min="0" step="1" max="' + totalPts + '" value="' + pts + '" data-sprint="' + s.sprint_id + '" oninput="Sprint.updateSplitRemaining()">' +
       '</div>';
     }).join('');
 
@@ -13350,6 +14190,118 @@ const Capacity = {
     if (!App.data) return;
     this.renderSprintCapacity();
     this.renderTeamGrid();
+    this.renderTeamSchedule();
+  },
+
+  // Issue 6: Scrum Master view — per-member horizontal timeline showing each member's
+  // upcoming delivery items in priority order with due dates and handover arrows.
+  // This is a communication tool for standups, not a replacement for the portfolio Gantt.
+  renderTeamSchedule() {
+    const el = document.getElementById('teamScheduleGantt');
+    if (!el || !App.data) return;
+    const customer = App.activeCustomer;
+    if (!customer) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">Select a customer to see the team schedule.</div>'; return; }
+    const members = (App.data.team_members || []).filter(tm => {
+      const c = (tm.customer || '').toLowerCase();
+      return c === customer.toLowerCase() || c === 'both';
+    });
+    if (!members.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No team members assigned to ' + Dashboard.esc(customer) + '.</div>'; return; }
+    const sprints = App.data.sprints || [];
+    const todayISO = new Date().toISOString().split('T')[0];
+    // Horizon: current + next 3 sprints (or all remaining if fewer).
+    const futureSprints = sprints.filter(s => s.end_date >= todayISO).slice(0, 4);
+    if (!futureSprints.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No upcoming sprints.</div>'; return; }
+
+    const esc = Dashboard.esc;
+    // Collect assignments per member: { member: [{ project, skillKey, sprintId, points, phaseName, wsjf, projectPriority, startDate, endDate }] }
+    const perMember = {};
+    members.forEach(m => { perMember[m.name] = []; });
+    (App.data.projects || []).filter(p => p.customer === customer && !['Complete', 'Closed'].includes(p.status)).forEach(p => {
+      const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
+      const psm = Solver.PHASE_SKILL_MAP;
+      Object.entries(p.skill_splits || {}).forEach(([skKey, arr]) => {
+        (arr || []).forEach(sp => {
+          if (!futureSprints.find(s => s.sprint_id === sp.sprint)) return;
+          (sp.assigned_to || []).forEach(a => {
+            if (!perMember[a.member]) return;
+            const sprint = sprints.find(s => s.sprint_id === sp.sprint);
+            let phaseName = skKey;
+            Object.entries(psm).forEach(([ph, k]) => { if (k === skKey) phaseName = ph; });
+            perMember[a.member].push({
+              project: p,
+              skillKey: skKey,
+              sprintId: sp.sprint,
+              points: a.points || 0,
+              phaseName,
+              startDate: sp.work_start_date || (sprint && sprint.start_date),
+              endDate: sp.work_end_date || (sprint && sprint.end_date),
+              priority: p.priority,
+              wsjf: App.calculateWsjf ? App.calculateWsjf(p).wsjf : 0
+            });
+          });
+        });
+      });
+    });
+
+    // Render one row per member with a date-aligned bar strip.
+    const minDate = new Date(futureSprints[0].start_date);
+    const maxDate = new Date(futureSprints[futureSprints.length - 1].end_date);
+    const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
+    const totalWidth = 720; // px — fixed rendering width; horizontal scroll if it overflows
+    const dateToX = (iso) => {
+      if (!iso) return 0;
+      const d = new Date(iso);
+      return Math.max(0, Math.min(totalWidth, ((d - minDate) / 86400000 / totalDays) * totalWidth));
+    };
+
+    // Sprint vertical guides + labels
+    const guideLines = futureSprints.map(s => {
+      const x = dateToX(s.start_date);
+      return '<div style="position:absolute;top:0;bottom:0;left:' + x + 'px;width:1px;background:#e5e7eb;pointer-events:none"></div>';
+    }).join('');
+    const sprintLabels = futureSprints.map(s => {
+      const x = dateToX(s.start_date);
+      return '<span style="position:absolute;left:' + (x + 4) + 'px;top:2px;font-size:9px;color:var(--text-muted);font-weight:600">' + esc(s.sprint_id.replace('CY26-', '')) + '</span>';
+    }).join('');
+
+    const rows = members.map(m => {
+      const assigns = perMember[m.name].slice().sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+      // Rank within this member's own work queue (chronological).
+      const rankedAssigns = assigns.map((a, i) => ({ ...a, memberRank: i + 1 }));
+      const bars = rankedAssigns.map((a, i) => {
+        const x1 = dateToX(a.startDate);
+        const x2 = dateToX(a.endDate);
+        const w = Math.max(6, x2 - x1);
+        const custColor = App.customerColor(a.project.customer);
+        const phaseColor = Sprint.SKILL_COLORS[a.skillKey] || custColor;
+        const dueDate = a.endDate ? new Date(a.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+        const label = '#' + a.memberRank + ' ' + a.project.name.slice(0, 20) + ' \u00B7 ' + a.phaseName + ' (' + a.points + 'pt)';
+        const tooltip = esc(a.project.name + ' — ' + a.phaseName + ' (' + a.points + 'pts). Due ' + dueDate + '. Priority #' + (a.priority || '?') + ', WSJF ' + (a.wsjf || 0));
+        return '<div style="position:absolute;left:' + x1 + 'px;top:6px;width:' + w + 'px;height:24px;background:' + phaseColor + ';border-radius:3px;padding:2px 6px;font-size:10px;color:white;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,0.1);cursor:pointer" title="' + tooltip + '" onclick="DetailPanel.open(\'' + esc(a.project.id) + '\')">' + esc(label) + '</div>';
+      }).join('');
+      const queue = rankedAssigns.length
+        ? '<ol style="margin:0;padding-left:16px;font-size:10px;color:var(--text-dark-secondary);line-height:1.5">' + rankedAssigns.slice(0, 5).map(a => '<li>' + esc(a.project.name) + ' \u2014 ' + esc(a.phaseName) + ' <span style="color:var(--text-muted)">(due ' + esc(a.endDate ? new Date(a.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '?') + ')</span></li>').join('') + '</ol>'
+        : '<span style="font-size:10px;color:var(--text-muted);font-style:italic">No upcoming assignments</span>';
+      return '<div style="display:flex;gap:8px;align-items:stretch;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
+        '<div style="min-width:180px;padding:4px 8px">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">' + esc(m.name) + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted)">' + esc((m.primary_skills || []).join(', ') || m.role || '') + '</div>' +
+          queue +
+        '</div>' +
+        '<div style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:38px;background:#fbfbfd;border-left:1px solid var(--border-light)">' +
+          guideLines + bars +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    el.innerHTML =
+      '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);background:white;overflow-x:auto">' +
+        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);background:#f8fafc">' +
+          '<div style="min-width:180px;padding:4px 8px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Team member</div>' +
+          '<div style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:20px">' + sprintLabels + '</div>' +
+        '</div>' +
+        rows +
+      '</div>';
   },
 
   // --- REQ-CAP-01: Capacity Forecast ---
@@ -13782,7 +14734,7 @@ const Capacity = {
               const cur = (tm.capacity_by_customer && tm.capacity_by_customer[cName] != null) ? tm.capacity_by_customer[cName] : '';
               return '<label style="display:flex;flex-direction:column;font-size:11px;gap:2px">' +
                 '<span style="color:var(--text-dark-secondary)">' + Dashboard.esc(cName) + '</span>' +
-                '<input type="number" class="field-input" data-cbc="' + Dashboard.esc(cName) + '" value="' + cur + '" step="0.25" min="0" style="width:72px;font-size:11px">' +
+                '<input type="number" class="field-input" data-cbc="' + Dashboard.esc(cName) + '" value="' + cur + '" step="1" min="0" style="width:72px;font-size:11px">' +
               '</label>';
             }).join('') +
           '</div>' +
@@ -13833,7 +14785,9 @@ const Capacity = {
     });
 
     const effective = hours * (util / 100);
-    const sprintPts = (effective * 4) / 8;
+    // Story points are integers; round the derived per-sprint capacity to avoid
+    // fractional values leaking into the ledger (e.g. 28.125 hrs / 8 → 14.06 pts).
+    const sprintPts = App.toInteger((effective * 4) / 8);
 
     // Read holidays from the edit form
     const holidays = [];
@@ -13856,8 +14810,8 @@ const Capacity = {
       const cName = inp.dataset.cbc;
       const val = inp.value.trim();
       if (val !== '') {
-        const n = parseFloat(val);
-        if (!isNaN(n) && n >= 0) capacityByCustomer[cName] = n;
+        const n = App.toInteger(val);
+        if (n >= 0) capacityByCustomer[cName] = n;
       }
     });
 
@@ -13978,7 +14932,7 @@ const Capacity = {
       return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
         '<span style="min-width:120px;font-weight:600;font-size:11px">' + esc(tm.name) + '</span>' +
         '<span style="font-size:10px;color:var(--text-muted);min-width:80px">' + (tm.primary_skills || []).join(', ') + '</span>' +
-        '<input type="number" value="' + pts + '" min="0" style="width:55px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + globalIdx + ',\'' + sprintId + '\',\'available_points\',parseInt(this.value)||0)">' +
+        '<input type="number" value="' + pts + '" min="0" step="1" style="width:55px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + globalIdx + ',\'' + sprintId + '\',\'available_points\',App.toInteger(this.value))">' +
         '<span style="font-size:10px;color:var(--text-muted)">pts</span>' +
         '<span style="font-size:9px;color:var(--text-muted);flex:1">' + holStr + '</span>' +
       '</div>';
@@ -14011,7 +14965,7 @@ const Capacity = {
       const holStr = holidays.map(h => h.start + ' to ' + h.end).join(', ') || 'None';
       return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9' + (isPast ? ';opacity:0.5' : '') + '">' +
         '<span style="min-width:60px;font-weight:600;font-size:11px">' + s.sprint_id.replace('CY26-', '') + '</span>' +
-        '<input type="number" value="' + pts + '" min="0" style="width:60px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + idx + ',\'' + s.sprint_id + '\',\'available_points\',parseInt(this.value)||0)">' +
+        '<input type="number" value="' + pts + '" min="0" step="1" style="width:60px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.setSprintOverride(' + idx + ',\'' + s.sprint_id + '\',\'available_points\',App.toInteger(this.value))">' +
         '<span style="font-size:10px;color:var(--text-muted);flex:1">pts</span>' +
         '<span style="font-size:10px;color:var(--text-muted)">' + holStr + '</span>' +
       '</div>';
@@ -14595,11 +15549,14 @@ const Solver = {
     sprints.forEach(s => {
       ledger[s.sprint_id] = {};
       const devDays = this._devDaysForSprint(s);
+      const dpspMult = ((App.data && App.data.settings && App.data.settings.scheduler && App.data.settings.scheduler.daysPerSPMultiplier) != null)
+        ? App.data.settings.scheduler.daysPerSPMultiplier : 1;
       members.forEach(tm => {
         const mc = sprintModule.calcMemberCapacityForSprint(tm, s.sprint_id, customer);
         if (!mc || !mc.skills.length || mc.points <= 0) return;
-        // days per SP: member delivers `points` SP in `devDays` working days → 1 SP = devDays/points days
-        const daysPerSP = mc.points > 0 ? devDays / mc.points : devDays;
+        // days per SP: member delivers `points` SP in `devDays` working days → 1 SP = devDays/points days.
+        // daysPerSPMultiplier scales this (>1 = phases split earlier; <1 = later).
+        const daysPerSP = (mc.points > 0 ? devDays / mc.points : devDays) * dpspMult;
         ledger[s.sprint_id][tm.name] = {
           total: mc.points,
           remaining: mc.points,
@@ -14614,20 +15571,22 @@ const Solver = {
   },
 
   // Working days (Mon-Fri) between sprint.start_date and sprint.hardening_start (preferred)
-  // or sprint.end_date. Returns 20 as a reasonable default if dates are missing.
+  // or sprint.end_date. Falls back to settings.scheduler.defaultDevDays (default 20) when dates missing.
   _devDaysForSprint(sprint) {
-    if (!sprint || !sprint.start_date) return 20;
+    const sched = (App.data && App.data.settings && App.data.settings.scheduler) || {};
+    const defaultDD = sched.defaultDevDays != null ? sched.defaultDevDays : 20;
+    if (!sprint || !sprint.start_date) return defaultDD;
     const endStr = sprint.hardening_start || sprint.end_date;
-    if (!endStr) return 20;
+    if (!endStr) return defaultDD;
     const start = new Date(sprint.start_date);
     const end = new Date(endStr);
-    if (isNaN(start) || isNaN(end) || end < start) return 20;
+    if (isNaN(start) || isNaN(end) || end < start) return defaultDD;
     let days = 0;
     for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
       const dow = d.getDay();
       if (dow !== 0 && dow !== 6) days++;
     }
-    return days || 20;
+    return days || defaultDD;
   },
 
   // Mean days-per-SP across eligible members for this (customer, sprint).
@@ -14679,31 +15638,77 @@ const Solver = {
     return primary.concat(secondary);
   },
 
+  // R12: given existing commitments for a member in a sprint, is a new assignment to
+  // (projectId, skillKey) allowed? Returns true if member has no conflicting commitment.
+  // Two splits conflict when: different project AND at least one skill is NOT in the allow-list.
+  // Same-project assignments (e.g. a dev doing Req + DE for one project) never conflict.
+  _concurrentConflict(concurrentMap, sprintId, memberName, projectId, skillKey, allowedSkills) {
+    if (!concurrentMap) return false;
+    const existing = concurrentMap[memberName] && concurrentMap[memberName][sprintId];
+    if (!existing || !existing.length) return false;
+    const allowed = new Set(allowedSkills || []);
+    const proposedAllowed = allowed.has(skillKey);
+    for (let i = 0; i < existing.length; i++) {
+      const e = existing[i];
+      if (e.projectId === projectId) continue;
+      if (proposedAllowed && allowed.has(e.skillKey)) continue;
+      return true;
+    }
+    return false;
+  },
+
+  // Record a new assignment into the concurrency tracker.
+  _recordCommitment(concurrentMap, sprintId, memberName, projectId, skillKey) {
+    if (!concurrentMap) return;
+    if (!concurrentMap[memberName]) concurrentMap[memberName] = {};
+    if (!concurrentMap[memberName][sprintId]) concurrentMap[memberName][sprintId] = [];
+    concurrentMap[memberName][sprintId].push({ projectId, skillKey });
+  },
+
+  // Reverse _recordCommitment — used when a tentative assignment is released.
+  _releaseCommitment(concurrentMap, sprintId, memberName, projectId, skillKey) {
+    if (!concurrentMap || !concurrentMap[memberName] || !concurrentMap[memberName][sprintId]) return;
+    const arr = concurrentMap[memberName][sprintId];
+    const idx = arr.findIndex(e => e.projectId === projectId && e.skillKey === skillKey);
+    if (idx >= 0) arr.splice(idx, 1);
+  },
+
   // Greedy fill-down across the ordered member list, respecting per-person remaining capacity.
+  // Optional opts = { concurrentMap, allowedOverlapSkills, projectId, enforceConcurrent } enables R12.
   // Returns { assigned: [{ member, points }], total }.
-  _assignToMembers(personLedger, sprintId, skillKey, target, enforcePerPerson) {
+  _assignToMembers(personLedger, sprintId, skillKey, target, enforcePerPerson, opts) {
     if (target <= 0) return { assigned: [], total: 0 };
     if (!enforcePerPerson) return { assigned: [], total: target }; // caller will still decrement aggregate
     const names = this._eligibleMembers(personLedger, sprintId, skillKey);
     const assigned = [];
     let remaining = target;
+    const o = opts || {};
+    const enforceConcurrent = !!o.enforceConcurrent;
     for (let i = 0; i < names.length && remaining > 0; i++) {
       const entry = personLedger[sprintId][names[i]];
       const take = Math.min(entry.remaining, remaining);
       if (take <= 0) continue;
+      if (enforceConcurrent && this._concurrentConflict(o.concurrentMap, sprintId, names[i], o.projectId, skillKey, o.allowedOverlapSkills)) {
+        continue;
+      }
       assigned.push({ member: names[i], points: take });
       entry.remaining -= take;
       remaining -= take;
+      if (enforceConcurrent) this._recordCommitment(o.concurrentMap, sprintId, names[i], o.projectId, skillKey);
     }
     return { assigned, total: target - remaining };
   },
 
   // Reverse of _assignToMembers: credit back per-person capacity when a slice is released.
-  _releaseFromMembers(personLedger, sprintId, assignments) {
+  // Optional opts = { concurrentMap, projectId, skillKey } also releases the R12 commitment record.
+  _releaseFromMembers(personLedger, sprintId, assignments, opts) {
     if (!assignments || !personLedger[sprintId]) return;
     assignments.forEach(a => {
       const entry = personLedger[sprintId][a.member];
       if (entry) entry.remaining = Math.min(entry.total, entry.remaining + a.points);
+      if (opts && opts.concurrentMap && opts.projectId && opts.skillKey) {
+        this._releaseCommitment(opts.concurrentMap, sprintId, a.member, opts.projectId, opts.skillKey);
+      }
     });
   },
 
@@ -14749,6 +15754,15 @@ const Solver = {
     const enforcePerPerson = settings.enforcePerPersonCap !== false;
     const maxBufferSlides = Math.max(1, parseInt(settings.maxBufferSlides || 4, 10) || 4);
     const SKILLS = sprintModule.SKILLS;
+
+    // R12: concurrent single-person guard. When on, one person is never assigned to two
+    // overlapping deliveries at once — except when both are in the allow-list (default: Req + UAT).
+    const enforceConcurrent = settings.enforceConcurrentSinglePerson !== false;
+    const allowedOverlapSkills = Array.isArray(settings.concurrentOverlapAllowedSkills)
+      ? settings.concurrentOverlapAllowedSkills
+      : ['size_requirements', 'size_uat_adoption'];
+    const concurrentMap = {};
+    let concurrentBlocked = 0;
 
     // D5: past-sprint protection. Two behaviours when enabled:
     //   1) every slice already in a past sprint (any project, any status) has its capacity reserved and is never moved.
@@ -14921,11 +15935,21 @@ const Solver = {
         this._warn(warnings, 'dependency_push', p, null, startSid,
           p.name + ' starts in ' + startSid + ' — blocked by ' + depName + ' finishing in ' + (sprints[pushReason.finIdx] ? sprints[pushReason.finIdx].sprint_id : '?'));
       }
-      return { ...p, _hardDl: hardDl, _targetDl: targetDl, _depEarliest: depEarliest };
+      // MoSCoW band + WSJF (Issue 2 — agile prioritisation). When the project populates WSJF inputs
+      // or a MoSCoW classification, these take precedence over the free-form `priority` integer.
+      const moscow = (App && App.moscowBand) ? App.moscowBand(p) : 2;
+      const wsjf = (App && App.calculateWsjf) ? App.calculateWsjf(p).wsjf : 0;
+      return { ...p, _hardDl: hardDl, _targetDl: targetDl, _depEarliest: depEarliest, _moscow: moscow, _wsjf: wsjf };
     }).sort((a, b) => {
+      // Hard deadline always wins — missing a hard deadline is the most expensive failure mode.
       const aDl = a._hardDl >= 0 ? a._hardDl : 9999;
       const bDl = b._hardDl >= 0 ? b._hardDl : 9999;
       if (aDl !== bDl) return aDl - bDl;
+      // Then MoSCoW band (Must before Should before Could before Won't).
+      if (a._moscow !== b._moscow) return a._moscow - b._moscow;
+      // Then WSJF descending (higher cost-of-delay-per-size wins).
+      if ((b._wsjf || 0) !== (a._wsjf || 0)) return (b._wsjf || 0) - (a._wsjf || 0);
+      // Then the manual priority integer (legacy tie-break).
       const ap = a.priority || 999, bp = b.priority || 999;
       if (ap !== bp) return ap - bp;
       return (a.id || '').localeCompare(b.id || '');
@@ -15130,17 +16154,20 @@ const Solver = {
 
               // daysPerSP we'll use for this slice — prefer per-person (member we'd assign to); fall back to sprint average.
               let tentativeAssignedTo = [];
+              const concOpts = { concurrentMap, allowedOverlapSkills, projectId: p.id, enforceConcurrent };
+              const releaseOpts = { concurrentMap, projectId: p.id, skillKey: sk.key };
               if (enforcePerPerson) {
-                const tentRes = this._assignToMembers(personLedger, sid, sk.key, assign, true);
+                const tentRes = this._assignToMembers(personLedger, sid, sk.key, assign, true, concOpts);
                 tentativeAssignedTo = tentRes.assigned;
                 if (tentRes.total < assign) {
-                  this._releaseFromMembers(personLedger, sid, tentativeAssignedTo);
+                  this._releaseFromMembers(personLedger, sid, tentativeAssignedTo, releaseOpts);
+                  if (enforceConcurrent && tentRes.total === 0) concurrentBlocked++;
                   peopleOverCapAverted++;
                   continue;
                 }
               }
               // Release the tentative assignment — we may clamp `assign` downward, then re-assign.
-              if (tentativeAssignedTo.length) this._releaseFromMembers(personLedger, sid, tentativeAssignedTo);
+              if (tentativeAssignedTo.length) this._releaseFromMembers(personLedger, sid, tentativeAssignedTo, releaseOpts);
 
               const devBudget = devDaysBySprint[sid] || 20;
               const daysUsedSoFar = timeBucket.totalDays;
@@ -15177,10 +16204,10 @@ const Solver = {
               // Re-assign to members with the (possibly clamped) final `assign` value
               let assignedTo = [];
               if (enforcePerPerson) {
-                const res = this._assignToMembers(personLedger, sid, sk.key, assign, true);
+                const res = this._assignToMembers(personLedger, sid, sk.key, assign, true, concOpts);
                 assignedTo = res.assigned;
                 if (res.total < assign) {
-                  this._releaseFromMembers(personLedger, sid, assignedTo);
+                  this._releaseFromMembers(personLedger, sid, assignedTo, releaseOpts);
                   peopleOverCapAverted++;
                   continue;
                 }
@@ -15221,12 +16248,13 @@ const Solver = {
             }
 
             if (!placedThisSprint) {
-              // Exhausted the sprint list without placing anything — overflow
+              // Exhausted the sprint list without placing anything — overflow.
+              // ALWAYS push a new slice rather than merging into an existing one: merging bumps
+              // slice.points but leaves assigned_to untouched, making `points` and Σassigned_to
+              // diverge (capacity view over-reports, per-person ledger under-reserves).
               allMet = false;
               const lastSid = sprints[(ceilingIdx >= 0 ? Math.min(ceilingIdx, sprints.length - 1) : sprints.length - 1)].sprint_id;
-              const existing = allocations[p.id][sk.key].find(s => s.sprint === lastSid);
-              if (existing) existing.points += pointsLeft;
-              else allocations[p.id][sk.key].push({ sprint: lastSid, points: pointsLeft, assigned_to: [], reasons: ['overflow'] });
+              allocations[p.id][sk.key].push({ sprint: lastSid, points: pointsLeft, assigned_to: [], reasons: ['overflow'] });
               this._warn(warnings, 'capacity_overflow', p, sk.label, lastSid,
                 p.name + ': ' + sk.label + ' overflows by ' + pointsLeft + ' pts');
               pointsLeft = 0;
@@ -15491,6 +16519,7 @@ const Solver = {
         timeBudgetSplits,
         pastSprintProtected,
         pastSprintBlocked,
+        concurrentBlocked,
         // 1G: projects whose first sprint was pushed by a dependency finish. Counted from warnings.
         dependencyPushes: warnings.filter(w => w.type === 'dependency_push').length
       },
