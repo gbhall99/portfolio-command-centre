@@ -474,6 +474,11 @@ html[data-theme="dark"] .undo-group .btn:last-child { border-left-color: rgba(25
 .undo-history-menu { position: fixed; z-index: 9000; min-width: 240px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(15,23,42,0.18); padding: 4px; display: flex; flex-direction: column; gap: 1px; animation: chip-menu-fade 0.12s ease-out; }
 .undo-history-head { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; padding: 6px 10px; border-bottom: 1px solid var(--border-dim); }
 .undo-history-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: transparent; border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; color: var(--text-dark); text-align: left; }
+/* R1-H1: solver staleness chip */
+.solver-stale-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, border-color 0.15s; border: 1px solid transparent; }
+.solver-stale-chip.amber { background: rgba(245,158,11,0.15); color: #b45309; border-color: #f59e0b60; }
+.solver-stale-chip.red { background: rgba(239,68,68,0.15); color: #991b1b; border-color: #ef444460; }
+.solver-stale-chip:hover, .solver-stale-chip:focus-visible { opacity: 0.85; outline: none; }
 .undo-history-item:hover, .undo-history-item:focus-visible { background: var(--surface-hover); outline: none; }
 .undo-history-step { font-size: 10px; font-weight: 700; color: var(--text-muted); flex-shrink: 0; min-width: 24px; text-align: right; font-variant-numeric: tabular-nums; }
 .undo-history-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1858,6 +1863,8 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
         <div class="portfolio-risks" id="portfolioRisks"></div>
         <div class="portfolio-section-title">Resource utilisation · next 4 sprints</div>
         <div class="portfolio-utilisation" id="portfolioUtilisation"></div>
+        <div class="portfolio-section-title">Workforce · next 4 sprints</div>
+        <div class="portfolio-utilisation" id="portfolioWorkforce"></div>
         <div class="portfolio-footer-note" role="note">Switch to a customer using the sidebar, the header selector, or by clicking a project row to plan and edit.</div>
       </div>
     </div>
@@ -1958,6 +1965,7 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
           <span class="filter-label">Manager</span>
           <div class="multi-select" id="sprintFilterManager" data-field="manager"></div>
           <label class="toolbar-chk" title="Show effort in hours on chips instead of story points"><input type="checkbox" id="chipHoursMode" onchange="Sprint.toggleChipHoursMode(this.checked)"> Hours</label>
+          <span id="solverStalenessChip" class="solver-stale-chip" style="display:none" onclick="Sprint.autoAllocate()" role="button" tabindex="0" aria-label="Solver output may be out of date — click to re-run"></span>
           <div class="toolbar-spacer"></div>
           <button class="btn btn-add btn-sm" onclick="DetailPanel.quickAdd()">+ New Project</button>
           <!-- Set Baseline button moved to the Roadmap toolbar (lives with baseline visualisation). -->
@@ -1999,6 +2007,7 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
             <label class="toolbar-chk"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
             <label class="toolbar-chk"><input type="checkbox" id="ganttCriticalPath" onchange="Gantt.toggleCriticalPath(this.checked)"> Critical path</label>
             <label class="toolbar-chk" title="One row per project with milestones only — ideal for executive briefings"><input type="checkbox" id="ganttExecutive" onchange="Gantt.toggleExecutive(this.checked)"> Executive</label>
+            <label class="toolbar-chk" title="Extend each bar with a P50→P95 forecast zone based on velocity history"><input type="checkbox" id="ganttConfidence" onchange="Gantt.toggleConfidence(this.checked)"> Confidence</label>
           </div>
           <div class="toolbar-group" role="group" aria-label="Baselines">
             <span class="toolbar-group-label">Baseline</span>
@@ -2021,6 +2030,7 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
           <div class="toolbar-group" role="group" aria-label="Export">
             <button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()" title="Baseline variance report"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Variance</button>
             <button class="btn btn-outline btn-sm" onclick="Gantt.exportPDF()" title="Print-optimised PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/></svg> PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="Gantt.exportCustomerRoadmap()" title="One-page board-ready customer roadmap — dates only, milestones, RAG strip, what-moved narrative" aria-label="Customer Roadmap Export"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/><path d="M9 4v16"/></svg> Customer Roadmap</button>
             <button class="btn btn-outline btn-sm" onclick="Gantt.exportPNG()" title="PNG image"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg> PNG</button>
           </div>
         </div>
@@ -2603,6 +2613,8 @@ const App = {
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     // M16: refresh the data-health chip after every data mutation.
     this.refreshDataHealthChip();
+    // R1-H1: refresh the solver-staleness chip whenever data changes.
+    if (typeof Sprint !== 'undefined' && Sprint.updateSolverStalenessChip) Sprint.updateSolverStalenessChip();
     if (this._refreshScheduled) return;
     this._refreshScheduled = true;
     requestAnimationFrame(() => {
@@ -8867,6 +8879,76 @@ const Portfolio = {
     this.renderCustomerGrid();
     this.renderTopRisks();
     this.renderUtilisation();
+    this.renderWorkforce();
+  },
+
+  // R3-H2: cross-customer workforce view — one row per team member with per-customer demand.
+  renderWorkforce() {
+    const el = document.getElementById('portfolioWorkforce');
+    if (!el) return;
+    if (typeof Sprint === 'undefined' || !Sprint.calcMemberCapacityForSprint) { el.innerHTML = '<div class="portfolio-empty">Capacity model unavailable.</div>'; return; }
+    const customers = App.getCustomers();
+    const sprints = (App.data.sprints || []).filter(s => {
+      const now = new Date();
+      return !s.end_date || new Date(s.end_date) >= now;
+    }).slice(0, 4);
+    const members = App.data.team_members || [];
+    if (!members.length) { el.innerHTML = '<div class="portfolio-empty">No team members configured.</div>'; return; }
+    const projectsByCust = {};
+    customers.forEach(c => { projectsByCust[c] = (App.data.projects || []).filter(p => p.customer === c); });
+    // Demand per member per customer = sum of points on slices where the member is named as assignee.
+    const rows = members.map(tm => {
+      let totalCap = 0;
+      const perCustDemand = {};
+      customers.forEach(c => { perCustDemand[c] = 0; });
+      sprints.forEach(s => {
+        // Aggregate capacity across any customer scope that includes the member.
+        const customerForCap = (tm.customer && tm.customer !== 'Both') ? tm.customer : customers[0];
+        const mc = Sprint.calcMemberCapacityForSprint(tm, s.sprint_id, customerForCap);
+        totalCap += (mc && mc.points) || 0;
+        customers.forEach(c => {
+          (projectsByCust[c] || []).forEach(p => {
+            Object.values(p.skill_splits || {}).forEach(arr => {
+              if (!Array.isArray(arr)) return;
+              arr.forEach(sp => {
+                if (sp.sprint !== s.sprint_id) return;
+                const named = (sp.assigned_to || []).some(a => a.member === tm.name);
+                const legacy = sp.assignee === tm.name;
+                if (named || legacy) perCustDemand[c] += (sp.points || 0);
+              });
+            });
+          });
+        });
+      });
+      const totalDemand = customers.reduce((a, c) => a + perCustDemand[c], 0);
+      const util = totalCap > 0 ? totalDemand / totalCap : null;
+      return { tm, totalCap: Math.round(totalCap), totalDemand: Math.round(totalDemand), perCustDemand, util };
+    }).filter(r => r.totalCap > 0 || r.totalDemand > 0);
+
+    const esc = Portfolio.esc;
+    const rowHtml = rows.map(r => {
+      const util = r.util;
+      const utilPct = util == null ? '—' : Math.round(util * 100) + '%';
+      const color = util == null ? 'var(--text-muted)' : (util <= 0.85 ? 'var(--status-green)' : util <= 1.0 ? 'var(--status-amber)' : 'var(--status-red)');
+      const per = customers.map(c => {
+        const v = r.perCustDemand[c];
+        if (v <= 0) return '';
+        const dot = App.getCustomerColor(c);
+        return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted);margin-right:8px"><span style="width:8px;height:8px;border-radius:50%;background:' + dot + '"></span>' + esc(c) + ' ' + Math.round(v) + 'pts</span>';
+      }).filter(Boolean).join('');
+      return '<tr' + (util != null && util > 1.0 ? ' style="background:rgba(239,68,68,0.06)"' : '') + '>' +
+        '<td>' + esc(r.tm.name || '(unnamed)') + (r.tm.customer === 'Both' ? ' <span style="font-size:9px;color:var(--text-muted)">(Both)</span>' : '') + '</td>' +
+        '<td style="font-size:11px">' + (per || '<span style="color:var(--text-muted)">—</span>') + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums">' + r.totalDemand + ' / ' + r.totalCap + ' pts</td>' +
+        '<td style="color:' + color + ';font-weight:700">' + utilPct + '</td>' +
+      '</tr>';
+    }).join('');
+    el.innerHTML = rows.length
+      ? '<table>' +
+          '<thead><tr><th>Team member</th><th>Per-customer demand</th><th>Demand / capacity</th><th>Utilisation</th></tr></thead>' +
+          '<tbody>' + rowHtml + '</tbody>' +
+        '</table>'
+      : '<div class="portfolio-empty">No team members have demand in the next 4 sprints.</div>';
   },
 
   renderKpis() {
@@ -12081,7 +12163,48 @@ const Gantt = {
       '<span class="gantt-legend-item" title="Related — informational only; not enforced by the solver.">' +
         '<svg width="28" height="8"><circle cx="3.5" cy="4" r="2.8" fill="white" stroke="#64748b" stroke-width="1.3"/><line x1="7" y1="4" x2="21" y2="4" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.8"/><circle cx="24.5" cy="4" r="2.8" fill="white" stroke="#64748b" stroke-width="1.3"/></svg> Related</span>' +
     '</div>';
+    // R2-H2: movers summary — visible whenever a baseline is active. Click to expand.
+    html += this._renderMoversLegendHtml();
     el.innerHTML = html;
+  },
+
+  _renderMoversLegendHtml() {
+    const customer = App.activeCustomer;
+    if (!customer) return '';
+    const baseline = this._findActiveBaselineFor(customer);
+    if (!baseline || !baseline.snapshot) return '';
+    const projects = this.getFilteredProjects();
+    const baselineDate = baseline.created_at ? new Date(baseline.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
+    const moved = [];
+    const added = [];
+    projects.forEach(p => {
+      const snap = baseline.snapshot[p.id];
+      if (!snap) { added.push(p); return; }
+      const baseEnd = snap.target_date;
+      if (!baseEnd || !p.target_date) return;
+      if (baseEnd === p.target_date) return;
+      const deltaDays = Math.round((new Date(p.target_date) - new Date(baseEnd)) / 86400000);
+      moved.push({ project: p, from: baseEnd, to: p.target_date, deltaDays });
+    });
+    const right = moved.filter(m => m.deltaDays > 0).length;
+    const left = moved.filter(m => m.deltaDays < 0).length;
+    if (!moved.length && !added.length) {
+      return '<div class="gantt-legend-group" style="width:100%;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-dim);font-size:11px;color:var(--text-muted)"><strong style="color:var(--text-dark)">Since baseline ' + Dashboard.esc(baselineDate) + ':</strong> no target dates moved.</div>';
+    }
+    const esc = Dashboard.esc;
+    const listItems = moved.slice(0, 8).map(m =>
+      '<li>' + esc(m.project.name) + ' \u2014 <strong>' + m.from + '</strong> &rarr; <strong>' + m.to + '</strong> (' + (m.deltaDays > 0 ? '+' : '') + m.deltaDays + 'd)</li>'
+    ).join('');
+    return '<div class="gantt-legend-group" style="width:100%;margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-dim);font-size:11px">' +
+      '<details>' +
+        '<summary style="cursor:pointer"><strong style="color:var(--text-dark)">Since baseline ' + esc(baselineDate) + ':</strong> ' +
+          (right ? right + ' moved right' : '') +
+          (right && left ? ', ' : '') + (left ? left + ' moved left' : '') +
+          ((right || left) && added.length ? ', ' : '') +
+          (added.length ? added.length + ' added' : '') + '</summary>' +
+        '<ul style="margin:6px 0 0 0;padding-left:18px;color:var(--text-dark-secondary)">' + (listItems || '<li>No project date movement since baseline.</li>') + '</ul>' +
+      '</details>' +
+    '</div>';
   },
 
   showTooltip(el, content) {
@@ -12534,6 +12657,13 @@ const Gantt = {
     this.render();
   },
 
+  // R2-H1: confidence bands — extend each bar with a P50→P95 forecast zone.
+  showConfidence: false,
+  toggleConfidence(on) {
+    this.showConfidence = !!on;
+    this.render();
+  },
+
   initFilter(id, options) {
     const container = document.getElementById(id);
     if (!container) return;
@@ -12871,6 +13001,32 @@ const Gantt = {
         if (ds.uat_release_date) milestoneHtml += msUat(dateToX(ds.uat_release_date), 'DT UAT Release', ds.uat_release_date);
       }
 
+      // R2-H1: confidence band — render a semi-transparent zone from the bar's end (P50) to P95.
+      let confidenceHtml = '';
+      if (this.showConfidence && typeof Forecast !== 'undefined' && Forecast.projectForecast) {
+        try {
+          const pf = Forecast.projectForecast(p);
+          if (pf && pf.distribution && !pf.insufficient) {
+            // Convert P50 / P95 offsets to dates from "today".
+            const offsetToDate = (offset) => {
+              const sid = Forecast.sprintsFromNow(p.customer, offset);
+              if (!sid) return null;
+              const sprint = (App.data.sprints || []).find(s => s.sprint_id === sid);
+              return sprint && sprint.end_date ? sprint.end_date : null;
+            };
+            const p50End = offsetToDate(pf.distribution.p50);
+            const p95End = offsetToDate(pf.distribution.p95);
+            if (p50End && p95End) {
+              const p50X = dateToX(p50End);
+              const p95X = dateToX(p95End);
+              const bandStart = Math.max(x2, p50X);
+              const bandEnd = Math.max(bandStart + 4, p95X);
+              const tipText = 'Likely by ' + new Date(p50End).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', confident by ' + (offsetToDate(pf.distribution.p80) ? new Date(offsetToDate(pf.distribution.p80)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—') + ', worst-case ' + new Date(p95End).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+              confidenceHtml = '<div class="gantt-confidence-band" title="' + Dashboard.esc(tipText) + '" style="position:absolute;left:' + bandStart + 'px;width:' + Math.max(2, bandEnd - bandStart) + 'px;top:2px;bottom:2px;background:repeating-linear-gradient(135deg,' + color + '33 0 6px,' + color + '11 6px 12px);border-radius:3px;pointer-events:auto"></div>';
+            }
+          }
+        } catch (e) { /* non-fatal */ }
+      }
       // Critical path + faded classes
       const isCritical = criticalIds.has(p.id);
       const critClass = this.showCriticalPath ? (isCritical ? ' gantt-bar-critical' : ' gantt-bar-faded') : '';
@@ -12913,6 +13069,7 @@ const Gantt = {
         '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
+        confidenceHtml +
         forecastHtml +
         baselineHtml +
         milestoneHtml +
@@ -13613,6 +13770,165 @@ const Gantt = {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+  },
+
+  // R2-C1: Customer Roadmap Export — one-page, dates-only, milestone+RAG focus,
+  // with a "what moved" narrative calculated from the active baseline. No sprint IDs
+  // anywhere in body text.
+  exportCustomerRoadmap() {
+    if (!App.data) { App.toast('Load data first', 'error'); return; }
+    const customer = App.activeCustomer;
+    if (!customer) { App.toast('Select a customer first', 'error'); return; }
+    const projects = this.getFilteredProjects();
+    if (!projects.length) { App.toast('No projects in scope', 'error'); return; }
+    const esc = Dashboard.esc;
+    const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+    const today = new Date();
+    const todayLabel = today.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    // Movers: compare current target_date to the active baseline snapshot if present.
+    const baseline = this._findActiveBaselineFor ? this._findActiveBaselineFor(customer) : null;
+    const baselineDateLabel = baseline && baseline.created_at ? new Date(baseline.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+    const movers = { moved: [], added: [], onTrack: 0 };
+    if (baseline && baseline.snapshot) {
+      const known = new Set(Object.keys(baseline.snapshot));
+      projects.forEach(p => {
+        if (!known.has(p.id)) { movers.added.push(p); return; }
+        const snap = baseline.snapshot[p.id];
+        const baselineEnd = snap && snap.target_date ? snap.target_date : null;
+        if (!baselineEnd || !p.target_date || baselineEnd === p.target_date) { movers.onTrack++; return; }
+        const deltaDays = Math.round((new Date(p.target_date) - new Date(baselineEnd)) / 86400000);
+        movers.moved.push({ project: p, from: baselineEnd, to: p.target_date, deltaDays });
+      });
+    } else {
+      movers.onTrack = projects.length;
+    }
+
+    // Upcoming milestones (next 90 days) across active projects.
+    const horizonEnd = new Date(today); horizonEnd.setDate(horizonEnd.getDate() + 90);
+    const milestones = [];
+    projects.forEach(p => {
+      if (p.hard_deadline) {
+        const d = new Date(p.hard_deadline);
+        if (d >= today && d <= horizonEnd) milestones.push({ project: p, type: 'Deadline', date: p.hard_deadline });
+      }
+      if (p.product_release_date) {
+        const d = new Date(p.product_release_date);
+        if (d >= today && d <= horizonEnd) milestones.push({ project: p, type: 'Product launch', date: p.product_release_date });
+      }
+    });
+    milestones.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // RAG strip — worst-of per project.
+    const ragMix = { Green: 0, Amber: 0, Red: 0 };
+    projects.forEach(p => {
+      const worst = [p.rag_schedule, p.rag_resourcing, p.rag_scope].filter(Boolean);
+      if (worst.includes('Red')) ragMix.Red++;
+      else if (worst.includes('Amber')) ragMix.Amber++;
+      else ragMix.Green++;
+    });
+
+    // Build the narrative intro.
+    const blocked = projects.filter(p => p.status === 'Blocked').length;
+    const atRisk = projects.filter(p => p.status === 'At Risk').length;
+    const narrative = projects.length + ' active deliverables' +
+      (blocked ? ', including ' + blocked + ' blocked' : '') +
+      (atRisk && !blocked ? ', including ' + atRisk + ' at risk' : '') +
+      (atRisk && blocked ? ' and ' + atRisk + ' at risk' : '') +
+      '. ' +
+      (movers.moved.length
+        ? movers.moved.length + ' target date' + (movers.moved.length === 1 ? '' : 's') + ' changed since the last baseline.'
+        : (baseline ? 'No target dates changed since the last baseline.' : 'No baseline set — add one to track movement over time.'));
+
+    // Branding: prefer customer-specific colour.
+    const brandColor = App.getCustomerColor(customer) || '#3b82f6';
+
+    const projectRowsHtml = projects
+      .sort((a, b) => (a.target_date || '9999').localeCompare(b.target_date || '9999'))
+      .slice(0, 12)
+      .map(p => {
+        const worst = [p.rag_schedule, p.rag_resourcing, p.rag_scope].filter(Boolean);
+        const worstRag = worst.includes('Red') ? 'Red' : worst.includes('Amber') ? 'Amber' : 'Green';
+        const ragColor = { Green: '#22c55e', Amber: '#f59e0b', Red: '#ef4444' }[worstRag];
+        return '<tr>' +
+          '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + ragColor + ';margin-right:8px;vertical-align:middle"></span>' + esc(p.name) + '</td>' +
+          '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#475569">' + esc(p.status) + '</td>' +
+          '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:11px">' + fmtDate(p.start_date) + ' \u2014 ' + fmtDate(p.target_date) + '</td>' +
+          '<td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:11px;color:' + (p.hard_deadline ? '#ef4444' : '#475569') + '">' + fmtDate(p.hard_deadline || p.product_release_date) + '</td>' +
+        '</tr>';
+      }).join('');
+
+    const moversHtml = movers.moved.length
+      ? movers.moved.slice(0, 8).map(m => {
+          const sign = m.deltaDays > 0 ? '+' : '';
+          return '<li>' + esc(m.project.name) + ' \u2014 <strong>' + fmtDate(m.from) + '</strong> \u2192 <strong>' + fmtDate(m.to) + '</strong> (' + sign + m.deltaDays + ' days)</li>';
+        }).join('')
+      : '<li style="color:#64748b">No target dates moved since the last baseline.</li>';
+
+    const milestonesHtml = milestones.length
+      ? milestones.slice(0, 6).map(m => '<li><strong>' + fmtDate(m.date) + '</strong> &middot; ' + esc(m.project.name) + ' &middot; <span style="color:#64748b">' + esc(m.type) + '</span></li>').join('')
+      : '<li style="color:#64748b">No milestones in the next 90 days.</li>';
+
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Customer Roadmap \u2014 ' + esc(customer) + ' \u2014 ' + todayLabel + '</title>' +
+      '<style>' +
+        '@page{size:A4 landscape;margin:14mm}' +
+        'body{font-family:Segoe UI,system-ui,sans-serif;color:#0f172a;margin:0;padding:0;font-size:12px;line-height:1.5}' +
+        '.page{padding:14mm 16mm}' +
+        '.cover-band{background:' + brandColor + ';color:white;padding:18px 22px;border-radius:12px;margin-bottom:18px}' +
+        '.cover-band h1{margin:0;font-size:26px;letter-spacing:-0.3px}' +
+        '.cover-band .sub{margin-top:4px;font-size:13px;opacity:0.9}' +
+        '.metrics{display:flex;gap:12px;margin-bottom:16px}' +
+        '.metric{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;text-align:center}' +
+        '.metric-num{font-size:22px;font-weight:700}' +
+        '.metric-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.3px}' +
+        '.narrative{padding:12px 16px;background:#eff6ff;border-left:4px solid ' + brandColor + ';border-radius:6px;font-size:13px;margin-bottom:16px}' +
+        'table{width:100%;border-collapse:collapse;margin-bottom:16px;page-break-inside:avoid}' +
+        'th{background:#f1f5f9;font-size:10px;text-align:left;padding:6px 10px;border-bottom:2px solid #cbd5e1;text-transform:uppercase;letter-spacing:0.3px;color:#475569}' +
+        'td{vertical-align:middle}' +
+        'tr{page-break-inside:avoid}' +
+        'h2{font-size:13px;text-transform:uppercase;letter-spacing:0.4px;color:#475569;margin:18px 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}' +
+        'ul{margin:0;padding-left:18px}' +
+        '.footer{position:fixed;bottom:10mm;left:16mm;right:16mm;display:flex;justify-content:space-between;font-size:10px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:4px}' +
+      '</style></head><body>' +
+      '<div class="page">' +
+        '<div class="cover-band">' +
+          '<h1>Delivery roadmap</h1>' +
+          '<div class="sub">' + esc(customer) + ' &middot; data as at ' + todayLabel + (baselineDateLabel ? ' &middot; baseline ' + baselineDateLabel : '') + '</div>' +
+        '</div>' +
+        '<div class="metrics">' +
+          '<div class="metric"><div class="metric-num" style="color:#22c55e">' + ragMix.Green + '</div><div class="metric-label">On track</div></div>' +
+          '<div class="metric"><div class="metric-num" style="color:#f59e0b">' + ragMix.Amber + '</div><div class="metric-label">At risk</div></div>' +
+          '<div class="metric"><div class="metric-num" style="color:#ef4444">' + ragMix.Red + '</div><div class="metric-label">Blocked / red</div></div>' +
+          '<div class="metric"><div class="metric-num">' + projects.length + '</div><div class="metric-label">Total active</div></div>' +
+        '</div>' +
+        '<div class="narrative">' + esc(narrative) + '</div>' +
+        '<h2>Delivery schedule &mdash; next 12 in date order</h2>' +
+        '<table><thead><tr><th>Project</th><th style="width:120px">Status</th><th style="width:200px">Start &mdash; target</th><th style="width:120px">Deadline</th></tr></thead>' +
+        '<tbody>' + projectRowsHtml + '</tbody></table>' +
+        '<h2>Upcoming milestones (next 90 days)</h2>' +
+        '<ul>' + milestonesHtml + '</ul>' +
+        '<h2>What changed since the last baseline' + (baselineDateLabel ? ' (' + baselineDateLabel + ')' : '') + '</h2>' +
+        '<ul>' + moversHtml + '</ul>' +
+      '</div>' +
+      '<div class="footer"><span>' + esc(customer) + ' roadmap</span><span>' + todayLabel + '</span></div>' +
+      '<scr' + 'ipt>setTimeout(function(){try{window.print();}catch(e){}}, 200);</scr' + 'ipt>' +
+      '</body></html>';
+    const w = window.open('', '_blank');
+    if (!w) { App.toast('Popup blocked \u2014 please allow popups for this site', 'error'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+    App.toast('Customer roadmap ready \u2014 use Print to save as PDF', 'success');
+  },
+
+  // Helper for R2-C1: pick the currently-active baseline for a customer.
+  _findActiveBaselineFor(customer) {
+    if (!App.data || !Array.isArray(App.data.baselines)) return null;
+    const candidates = App.data.baselines.filter(b => b.customer === customer);
+    if (!candidates.length) return null;
+    if (this._activeBaselineId) {
+      const match = candidates.find(b => b.id === this._activeBaselineId);
+      if (match) return match;
+    }
+    return candidates[candidates.length - 1];
   },
 
   // ---- REQ-GANTT-05: Print-Optimised Gantt Export ----
@@ -15080,6 +15396,36 @@ const Sprint = {
     });
   },
 
+  // R1-H1: track when the solver last ran so UI can flag staleness.
+  updateSolverStalenessChip() {
+    const el = document.getElementById('solverStalenessChip');
+    if (!el) return;
+    const customer = App.activeCustomer;
+    if (!customer || !App.data) { el.style.display = 'none'; return; }
+    const meta = (App.data.settings && App.data.settings.solverRuns && App.data.settings.solverRuns[customer]) || null;
+    if (!meta || !meta.at) { el.style.display = 'none'; return; }
+    const hoursAgo = (Date.now() - new Date(meta.at).getTime()) / 3600000;
+    const changesSince = this._countInputChangesSince(meta.at, customer);
+    if (hoursAgo < 24 && changesSince === 0) { el.style.display = 'none'; return; }
+    const red = changesSince > 0 && (App.data.projects || []).some(p => p.customer === customer && p.last_updated && new Date(p.last_updated) > new Date(meta.at) && p.hard_deadline);
+    el.className = 'solver-stale-chip ' + (red ? 'red' : 'amber');
+    el.textContent = hoursAgo >= 24
+      ? ('Solver last run ' + Math.round(hoursAgo) + 'h ago' + (changesSince ? ' · ' + changesSince + ' input(s) changed since' : '') + ' \u2014 click to re-run')
+      : (changesSince + ' input(s) changed since last run \u2014 click to re-run');
+    el.style.display = '';
+  },
+
+  _countInputChangesSince(iso, customer) {
+    if (!App.data) return 0;
+    const cutoff = new Date(iso).getTime();
+    let count = 0;
+    (App.data.projects || []).forEach(p => {
+      if (p.customer !== customer) return;
+      if (p.last_updated && new Date(p.last_updated).getTime() > cutoff) count++;
+    });
+    return count;
+  },
+
   // L17: chip hours-display toggle. When ON, chips read in hours using the SP → hours conversion.
   chipHoursMode: false,
   toggleChipHoursMode(on) {
@@ -15747,6 +16093,194 @@ const Sprint = {
     document.getElementById('allocSettingsModal').style.display = 'none';
   },
 
+  // R1-H3: save the currently-pending allocation as a named scenario.
+  saveAllocationScenario() {
+    const result = this.pendingAllocation || this._lastAllocationResult;
+    if (!result) { App.toast('No allocation to save', 'error'); return; }
+    const name = prompt('Name this scenario (e.g. "Cut scope 20%", "Hire 1 more DE"):');
+    if (!name || !name.trim()) return;
+    if (!App.data.settings) App.data.settings = {};
+    if (!Array.isArray(App.data.settings.solverScenarios)) App.data.settings.solverScenarios = [];
+    const scenarios = App.data.settings.solverScenarios;
+    App.pushUndo('Save solver scenario');
+    scenarios.push({
+      id: 'scn_' + Date.now().toString(36),
+      name: name.trim(),
+      customer: App.activeCustomer,
+      savedAt: new Date().toISOString(),
+      allocations: JSON.parse(JSON.stringify(result.allocations || {})),
+      stats: JSON.parse(JSON.stringify(result.stats || {})),
+      warnings: (result.warnings || []).slice()
+    });
+    // Prune to 5 newest per customer.
+    const perCust = {};
+    scenarios.forEach(s => { if (!perCust[s.customer]) perCust[s.customer] = []; perCust[s.customer].push(s); });
+    Object.keys(perCust).forEach(c => {
+      perCust[c].sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+      if (perCust[c].length > 5) {
+        const excess = perCust[c].slice(5);
+        excess.forEach(x => { const i = scenarios.indexOf(x); if (i >= 0) scenarios.splice(i, 1); });
+      }
+    });
+    App.markDirty();
+    App.saveToLocalStorage();
+    App.toast('Scenario saved: ' + name.trim(), 'success');
+    this.renderScenarioPicker();
+  },
+
+  renderScenarioPicker() {
+    const el = document.getElementById('allocScenarioPicker');
+    if (!el) return;
+    const customer = App.activeCustomer;
+    const scenarios = ((App.data.settings && App.data.settings.solverScenarios) || []).filter(s => s.customer === customer);
+    if (!scenarios.length) { el.innerHTML = ''; return; }
+    const esc = Dashboard.esc;
+    const opts = scenarios.map(s => {
+      const when = new Date(s.savedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return '<option value="' + esc(s.id) + '">' + esc(s.name) + ' (' + when + ')</option>';
+    }).join('');
+    el.innerHTML = '<label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Compare:' +
+      '<select id="allocScenarioSelect" onchange="Sprint.compareScenario(this.value)" style="font-size:11px;padding:3px 8px;border:1px solid var(--border-dim);border-radius:var(--radius-sm)"><option value="">None</option>' + opts + '</select>' +
+      '</label>';
+  },
+
+  compareScenario(scenarioId) {
+    if (!scenarioId) { this._scenarioComparison = null; return; }
+    const scenario = ((App.data.settings && App.data.settings.solverScenarios) || []).find(s => s.id === scenarioId);
+    const current = this.pendingAllocation || this._lastAllocationResult;
+    if (!scenario || !current) return;
+    const esc = Dashboard.esc;
+    const curProjects = new Set(Object.keys(current.allocations || {}));
+    const scnProjects = new Set(Object.keys(scenario.allocations || {}));
+    const common = [...curProjects].filter(id => scnProjects.has(id));
+    // For each common project, count how many slices changed sprint.
+    const deltas = [];
+    common.forEach(pid => {
+      const curAlloc = current.allocations[pid] || {};
+      const scnAlloc = scenario.allocations[pid] || {};
+      let changes = 0;
+      Object.keys(curAlloc).forEach(sk => {
+        const cur = (curAlloc[sk] || []).map(e => e.sprint).join(',');
+        const scn = (scnAlloc[sk] || []).map(e => e.sprint).join(',');
+        if (cur !== scn) changes++;
+      });
+      if (changes > 0) deltas.push({ pid, changes });
+    });
+    const only = {
+      current: [...curProjects].filter(id => !scnProjects.has(id)),
+      scenario: [...scnProjects].filter(id => !curProjects.has(id))
+    };
+    const projectName = (pid) => { const p = (App.data.projects || []).find(x => x.id === pid); return p ? p.name : pid; };
+    const curMakespan = (current.stats || {}).makespan || '—';
+    const scnMakespan = (scenario.stats || {}).makespan || '—';
+    const body = '<div style="padding:12px;background:#eff6ff;border:1px solid var(--accent-blue)40;border-radius:var(--radius-sm);margin-bottom:12px;font-size:12px">' +
+      '<div style="font-weight:700;margin-bottom:6px">Comparing current run to scenario: <em>' + esc(scenario.name) + '</em></div>' +
+      '<div>Makespan: current <strong>' + curMakespan + '</strong> vs scenario <strong>' + scnMakespan + '</strong></div>' +
+      '<div>Projects with sprint shifts: <strong>' + deltas.length + '</strong></div>' +
+      (only.current.length ? '<div>Only in current run: ' + only.current.map(pid => esc(projectName(pid))).join(', ') + '</div>' : '') +
+      (only.scenario.length ? '<div>Only in scenario: ' + only.scenario.map(pid => esc(projectName(pid))).join(', ') + '</div>' : '') +
+    '</div>';
+    const existing = document.getElementById('scenarioCompareBox');
+    if (existing) existing.remove();
+    const host = document.getElementById('allocResultsBody');
+    if (host) {
+      const wrap = document.createElement('div');
+      wrap.id = 'scenarioCompareBox';
+      wrap.innerHTML = body;
+      host.insertBefore(wrap, host.firstChild);
+    }
+  },
+
+  // R1-C1: open a modal that explains — in plain English and chronologically — why each
+  // slice of the project landed where it did. Combines the solver's reasons array, the
+  // active settings that caused the constraint, and any relevant warnings for this project.
+  showAllocationReasons(projectId) {
+    const result = this._lastAllocationResult;
+    if (!result) return;
+    const p = (App.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return;
+    const alloc = result.allocations[projectId] || {};
+    const warnings = (result.warnings || []).filter(w => w.project && w.project.id === projectId);
+    const esc = Dashboard.esc;
+    // Build a flat, sprint-ordered list of slices with their reasons.
+    const slices = [];
+    Object.keys(alloc).forEach(skillKey => {
+      (alloc[skillKey] || []).forEach(entry => {
+        slices.push({ skillKey, entry });
+      });
+    });
+    slices.sort((a, b) => (a.entry.sprint || '').localeCompare(b.entry.sprint || ''));
+    const humanReason = (r) => {
+      const map = {
+        earliest_available: 'placed in earliest available sprint',
+        phase_buffer: 'phase hand-off buffer reserved (2+ SP gap)',
+        buffer_slide: 'slid forward because the previous phase needed the hand-off buffer',
+        deadline_override: 'buffer dropped — hard deadline would otherwise be missed',
+        per_person_cap: 'shifted to keep a team member within their per-sprint cap',
+        one_person_one_delivery: 'shifted so no one is on two overlapping deliveries',
+        time_budget_split: 'split because the phase would have overrun a sprint\u2019s working-day budget',
+        dependency_push: 'pushed until a dependency finishes',
+        manual_lock: 'left in place (manual lock / protected past sprint)',
+        continuity: 'same person preferred for continuity'
+      };
+      return map[r] || r;
+    };
+    const SKILL_LABELS = {};
+    (App.data.skills || Sprint._STATIC_SKILLS).forEach(s => { SKILL_LABELS[s.key] = s.label || s.short || s.key; });
+    const rows = slices.map(s => {
+      const sk = SKILL_LABELS[s.skillKey] || s.skillKey;
+      const sprintLabel = (s.entry.sprint || '').replace(/CY\d+-/, '');
+      const assignees = (s.entry.assigned_to || []).map(a => a.member + ' (' + Math.round(a.points) + 'p)').join(', ');
+      const reasons = (s.entry.reasons || []).map(humanReason);
+      const reasonHtml = reasons.length
+        ? '<ul style="margin:4px 0 0 0;padding-left:18px;font-size:11px">' + reasons.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>'
+        : '<span style="color:var(--text-muted);font-size:11px">No constraints \u2014 earliest available sprint.</span>';
+      return '<div style="padding:8px 10px;border-bottom:1px solid var(--border-dim)">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center">' +
+          '<strong style="font-size:12px">' + esc(sk) + '</strong>' +
+          '<span style="font-size:11px;color:var(--text-muted)">Sprint ' + esc(sprintLabel) + ' &middot; ' + Math.round(s.entry.points || 0) + ' pts</span>' +
+        '</div>' +
+        (assignees ? '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">Assigned: ' + esc(assignees) + '</div>' : '') +
+        reasonHtml +
+      '</div>';
+    }).join('');
+    const warningHtml = warnings.length
+      ? '<div style="margin-top:10px;padding:8px 10px;background:#fef2f2;border:1px solid #ef444440;border-radius:var(--radius-sm);font-size:11px">' +
+        '<strong>Warnings emitted for this project:</strong>' +
+        '<ul style="margin:4px 0 0 0;padding-left:18px">' + warnings.map(w => '<li>' + esc(w.message || w.type) + '</li>').join('') + '</ul>' +
+      '</div>'
+      : '';
+    const existing = document.getElementById('allocReasonModal');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'split-modal-overlay';
+    overlay.id = 'allocReasonOverlay';
+    overlay.style.display = 'block';
+    overlay.onclick = () => Sprint._closeAllocReasons();
+    const modal = document.createElement('div');
+    modal.className = 'split-modal';
+    modal.id = 'allocReasonModal';
+    modal.style.display = 'block';
+    modal.style.maxWidth = '640px';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">' +
+        '<div><h3 style="margin:0">Why this allocation?</h3>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + esc(p.name) + '</div></div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="Sprint._closeAllocReasons()" aria-label="Close" style="padding:4px 8px;font-size:16px;line-height:1">&times;</button>' +
+      '</div>' +
+      '<div style="margin-top:12px;max-height:50vh;overflow-y:auto;border:1px solid var(--border-dim);border-radius:var(--radius-sm)">' + (rows || '<div style="padding:12px;color:var(--text-muted);font-size:12px">No slices yet.</div>') + '</div>' +
+      warningHtml +
+      '<div style="margin-top:10px;font-size:10px;color:var(--text-muted)">Tiebreaker order: hard deadline \u2192 MoSCoW \u2192 WSJF \u2192 manual priority.</div>';
+    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
+  },
+
+  _closeAllocReasons() {
+    ['allocReasonOverlay', 'allocReasonModal'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+  },
+
   // Apply the inline-editable quick-tuning knobs (C3). Mirrors writes into
   // App.data.settings.scheduler when available so values persist across reloads.
   applyQuickTuning() {
@@ -15850,11 +16384,16 @@ const Sprint = {
       p.last_updated = new Date().toISOString();
     });
     this.pendingAllocation = null;
+    // R1-H1: record the successful solver run so we can flag staleness later.
+    if (!App.data.settings) App.data.settings = {};
+    if (!App.data.settings.solverRuns) App.data.settings.solverRuns = {};
+    App.data.settings.solverRuns[App.activeCustomer] = { at: new Date().toISOString(), projectCount: result.stats.projectsAllocated };
     App.markDirty();
     App.saveToLocalStorage();
     App.endAuditRun();
     this.closeAllocResults();
     App.notifyDataChange();
+    this.updateSolverStalenessChip();
     App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
   },
 
@@ -15864,6 +16403,8 @@ const Sprint = {
     this.allocResultsTab = 'summary';
     document.getElementById('allocResultsOverlay').classList.add('open');
     this.renderAllocTab(result);
+    // R1-H3: refresh the scenario picker in the footer each time results open.
+    this.renderScenarioPicker();
   },
 
   switchAllocTab(tab) {
@@ -15910,18 +16451,19 @@ const Sprint = {
           if (!groups[t]) groups[t] = [];
           groups[t].push(warn);
         });
+        // R1-H2: per-warning-type "Try this" hints alongside label + severity.
         const typeMeta = {
-          deadline_miss: { sev: 'red', label: 'Deadline misses' },
-          impossible: { sev: 'red', label: 'Impossible' },
-          capacity_overflow: { sev: 'amber', label: 'Capacity overflow' },
-          buffer_push: { sev: 'amber', label: 'Buffer slides' },
-          buffer_skipped_deadline: { sev: 'amber', label: 'Buffer dropped (deadline wins)' },
-          buffer_abandoned_maxslides: { sev: 'amber', label: 'Buffer abandoned (safety stop)' },
-          person_over_cap_averted: { sev: 'amber', label: 'Per-person cap avoidances' },
-          time_budget_split: { sev: 'amber', label: 'Time-budget splits (phase carried across sprints)' },
-          circular_dependency: { sev: 'violet', label: 'Circular dependency' },
-          dependency_cross_customer: { sev: 'amber', label: 'Cross-customer dependency' },
-          zero_capacity: { sev: 'red', label: 'Zero capacity' }
+          deadline_miss: { sev: 'red', label: 'Deadline misses', hint: 'Cut scope by the over-budget amount, raise the max capacity %, or push the deadline. Check the "Why?" button for the earliest sprint each project could still make it.' },
+          impossible: { sev: 'red', label: 'Impossible', hint: 'No arrangement of the current inputs can satisfy every constraint. Review the project\u2019s size, dependencies, and capacity.' },
+          capacity_overflow: { sev: 'amber', label: 'Capacity overflow', hint: 'Raise \u201CHow busy can a skill get?\u201D in solver quick-tuning, or move some work to later sprints before re-running.' },
+          buffer_push: { sev: 'amber', label: 'Buffer slides', hint: 'Shrink \u201CSpare points between phases\u201D (phase buffer) in solver quick-tuning to 1\u20132 SP. A lower buffer packs tighter but leaves less slack.' },
+          buffer_skipped_deadline: { sev: 'amber', label: 'Buffer dropped (deadline wins)', hint: 'The solver dropped the phase buffer to hit a hard deadline. Confirm the deadline is correct, or split the affected phase.' },
+          buffer_abandoned_maxslides: { sev: 'amber', label: 'Buffer abandoned (safety stop)', hint: 'Increase \u201CHow far can a phase slide?\u201D or reduce project size \u2014 the solver gave up on the buffer after too many slides.' },
+          person_over_cap_averted: { sev: 'amber', label: 'Per-person cap avoidances', hint: 'Expected behaviour \u2014 the solver protected a team member from over-booking. If this happens often, add skill coverage or raise their per-sprint points.' },
+          time_budget_split: { sev: 'amber', label: 'Time-budget splits (phase carried across sprints)', hint: 'Normal for large phases. If unwelcome, raise the sprint\u2019s working-day budget or split the project size.' },
+          circular_dependency: { sev: 'violet', label: 'Circular dependency', hint: 'Remove one edge in the dependency cycle in the Detail Panel before re-running.' },
+          dependency_cross_customer: { sev: 'amber', label: 'Cross-customer dependency', hint: 'Either enable \u201CHonour cross-customer dependencies\u201D in System Settings, or break this dependency at the Detail Panel.' },
+          zero_capacity: { sev: 'red', label: 'Zero capacity', hint: 'No member covers this skill, or everyone covering it has zero capacity in scope. Add a team member with the skill or raise their availability.' }
         };
         html += '<div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:6px">Warnings (' + w.length + ')</div>';
         Object.keys(groups).forEach(type => {
@@ -15944,6 +16486,7 @@ const Sprint = {
               '<span style="margin-left:auto;font-size:11px;color:var(--text-muted)">' + unique.length + (duped ? ' (+' + duped + ' dup)' : '') + '</span>' +
             '</summary>' +
             '<div style="padding:4px 12px 10px 28px;font-size:11px">' +
+              (meta.hint ? '<div style="padding:6px 8px;background:#eff6ff;border-left:3px solid var(--accent-blue);margin-bottom:6px;border-radius:3px;color:var(--text-dark)"><strong>Try this:</strong> ' + esc(meta.hint) + '</div>' : '') +
               unique.map(wn => {
                 const parts = [];
                 if (wn.project) parts.push('<strong>' + esc(wn.project.name) + '</strong>');
@@ -16022,7 +16565,10 @@ const Sprint = {
       const sprints = Object.keys(result.utilizationGrid);
       let html = '<table class="alloc-plan-table"><thead><tr><th>Project</th><th>#</th>';
       sprints.forEach(sid => { html += '<th style="text-align:center">' + sid.replace(/CY\d+-/, '') + '</th>'; });
-      html += '<th>Deadline</th></tr></thead><tbody>';
+      // R1-C1: add a dedicated "Why?" column so the reason chain isn't buried in hover text.
+      html += '<th>Deadline</th><th style="width:40px">Why?</th></tr></thead><tbody>';
+      // Stash allocations on Sprint so the per-project reason modal can read them.
+      this._lastAllocationResult = result;
 
       projects.forEach(pid => {
         const p = (App.data.projects || []).find(pr => pr.id === pid);
@@ -16056,6 +16602,8 @@ const Sprint = {
         } else {
           html += '<td style="color:var(--text-muted)">-</td>';
         }
+        // R1-C1: "Why?" opens a reason-chain modal.
+        html += '<td style="text-align:center"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="Sprint.showAllocationReasons(\'' + esc(pid) + '\')" aria-label="Show reason chain for this allocation" title="Explain this allocation">Why?</button></td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -16805,6 +17353,8 @@ const Capacity = {
         });
       });
 
+      // R3-H1: build a plain-English derivation tooltip for each cell.
+      const devDays = (typeof Solver !== 'undefined' && Solver._devDaysForSprint) ? Solver._devDaysForSprint(s) : 20;
       let totalCapSum = 0, totalComSum = 0;
       const bars = this.SKILLS.map(sk => {
         const cap = totalCap[sk.key] || 0;
@@ -16814,7 +17364,28 @@ const Capacity = {
         if (cap === 0 && com === 0) return '';
         const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 100 : 0);
         const cls = App.utilClass(pct);
-        return '<div class="team-skill-row">' +
+        // Tooltip: working-day count + each contributing member's capacity, so the number is defensible.
+        const contributors = (App.data.team_members || [])
+          .filter(tm => {
+            if (customerFilter) {
+              const c = (tm.customer || '').toLowerCase();
+              if (c !== customerFilter.toLowerCase() && c !== 'both') return false;
+            }
+            const allSkills = (tm.primary_skills || []).concat(tm.secondary_skills || []);
+            const skillKeyMap = {};
+            (App.data.skills || Sprint._STATIC_SKILLS).forEach(sk2 => { skillKeyMap[sk2.label] = sk2.key; });
+            return allSkills.some(label => skillKeyMap[label] === sk.key);
+          });
+        const memberSummary = contributors.slice(0, 4).map(tm => {
+          const mc = Sprint.calcMemberCapacityForSprint(tm, s.sprint_id, customerFilter);
+          return tm.name + ': ' + Math.round(mc.points || 0) + ' pts';
+        }).join(' · ');
+        const tip = sk.short + ' capacity for ' + s.sprint_id.replace(/CY\d+-/, '') +
+          ' = ' + Math.round(cap) + ' pts across ' + contributors.length + ' member' + (contributors.length === 1 ? '' : 's') +
+          ' · ' + devDays + ' working days' +
+          (memberSummary ? ' · ' + memberSummary : '') +
+          (contributors.length > 4 ? ' · …' : '');
+        return '<div class="team-skill-row" title="' + Dashboard.esc(tip) + '">' +
           '<span class="team-skill-label">' + sk.short + '</span>' +
           '<div class="team-skill-bar"><div class="team-skill-fill ' + cls + '" style="width:' + Math.min(100, pct) + '%"></div></div>' +
           '<span class="team-skill-num">' + com + ' / ' + Math.round(cap) + '</span>' +
@@ -17080,9 +17651,76 @@ const Capacity = {
       '</div>';
     }).join('');
 
-    document.getElementById('teamGrid').innerHTML = html +
+    // R3-C1: surface a capacity-data-quality strip above the team grid so silent data
+    // errors (missing skills, unset Both split, orphaned overrides, future start without
+    // ramp) don't masquerade as valid capacity.
+    const qualityStrip = this._buildCapacityQualityStrip(teamMembers, allSprints);
+
+    document.getElementById('teamGrid').innerHTML = qualityStrip + html +
       '<div style="display:flex;gap:8px;margin-top:8px"><button class="team-add-btn" onclick="Capacity.addMember()">+ Add Team Member</button>' +
       '<button class="btn btn-outline btn-sm" onclick="Capacity.showTeamImport()" style="font-size:11px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Import Team (CSV)</button></div>';
+  },
+
+  // R3-C1: collect data-quality issues per member for the capacity view.
+  _buildCapacityQualityStrip(teamMembers, sprints) {
+    const esc = Dashboard.esc;
+    const sprintIds = new Set((sprints || []).map(s => s.sprint_id));
+    const issues = [];
+    const customers = App.getCustomers();
+    teamMembers.forEach((tm, idx) => {
+      const primary = tm.primary_skills || [];
+      const secondary = tm.secondary_skills || [];
+      if (!primary.length && !secondary.length) {
+        issues.push({ member: tm, idx, severity: 'red', text: 'No skills assigned \u2014 member contributes 0 pts to any skill bucket.' });
+      }
+      if ((tm.customer || '').toLowerCase() === 'both') {
+        const cap = tm.capacity_by_customer || {};
+        const hasAny = customers.some(c => cap[c] != null && !isNaN(Number(cap[c])));
+        if (!hasAny) {
+          issues.push({ member: tm, idx, severity: 'amber', text: 'Capacity split not set \u2014 solver will split evenly across ' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + '.' });
+        }
+      }
+      // Orphan sprint overrides
+      Object.keys(tm.sprint_overrides || {}).forEach(sid => {
+        if (!sprintIds.has(sid)) {
+          issues.push({ member: tm, idx, severity: 'amber', text: 'Sprint override references unknown sprint "' + esc(sid) + '" \u2014 orphaned after rename or removal.' });
+        }
+      });
+      // Future start with no ramp
+      if (tm.start_date) {
+        const start = new Date(tm.start_date);
+        const now = new Date();
+        if (!isNaN(start) && start > now) {
+          const ramp = (tm.ramp_profile || 'none');
+          if (ramp === 'none') {
+            issues.push({ member: tm, idx, severity: 'amber', text: 'Ramp disabled but start date ' + esc(tm.start_date) + ' is in the future \u2014 member would contribute full capacity before day one.' });
+          }
+        }
+      }
+      if (!tm.available_points_per_sprint || Number(tm.available_points_per_sprint) <= 0) {
+        issues.push({ member: tm, idx, severity: 'amber', text: 'Available points per sprint is 0 \u2014 member is effectively invisible to the solver.' });
+      }
+    });
+    if (!issues.length) return '';
+
+    const sev = issues.some(i => i.severity === 'red') ? 'red' : 'amber';
+    const bg = sev === 'red' ? '#fef2f2' : '#fffbeb';
+    const border = sev === 'red' ? '#ef4444' : '#f59e0b';
+    const rows = issues.map(i =>
+      '<div style="display:flex;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid rgba(0,0,0,0.05);font-size:11px">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + (i.severity === 'red' ? 'var(--status-red)' : 'var(--status-amber)') + ';flex-shrink:0"></span>' +
+        '<strong style="min-width:120px;color:var(--text-dark)">' + esc(i.member.name || '(unnamed)') + '</strong>' +
+        '<span style="flex:1;color:var(--text-dark)">' + esc(i.text) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="Capacity.editMember(' + i.idx + ')">Fix</button>' +
+      '</div>'
+    ).join('');
+    return '<div style="background:' + bg + ';border:1px solid ' + border + '60;border-radius:var(--radius-sm);margin-bottom:12px;overflow:hidden">' +
+      '<div style="padding:8px 10px;border-bottom:1px solid ' + border + '40;font-size:12px;font-weight:700;color:var(--text-dark);display:flex;align-items:center;gap:8px">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+        'Capacity data quality \u2014 ' + issues.length + ' issue' + (issues.length === 1 ? '' : 's') + ' found' +
+      '</div>' +
+      rows +
+    '</div>';
   },
 
   // --- Team Management ---
@@ -18061,7 +18699,10 @@ const Solver = {
 
   // Order eligible members for (sprint, skill): primaries alphabetical first, then secondaries alphabetical.
   // Only returns members with remaining > 0. Deterministic.
-  _eligibleMembers(personLedger, sprintId, skillKey) {
+  // R1-H4: if `projectPriorAssignees` is supplied (a Set of member names who already touched
+  // this project on an earlier phase), those names come first within their tier (primary/secondary)
+  // — a soft continuity bias. Falls back to alphabetical stability when equal.
+  _eligibleMembers(personLedger, sprintId, skillKey, projectPriorAssignees) {
     const bucket = personLedger[sprintId] || {};
     const primary = [], secondary = [];
     Object.keys(bucket).forEach(name => {
@@ -18070,8 +18711,16 @@ const Solver = {
       if (e.primarySkills.indexOf(skillKey) >= 0) primary.push(name);
       else if (e.secondarySkills.indexOf(skillKey) >= 0) secondary.push(name);
     });
-    primary.sort();
-    secondary.sort();
+    const priorSet = projectPriorAssignees instanceof Set ? projectPriorAssignees : null;
+    const sortBias = (a, b) => {
+      if (priorSet) {
+        const ap = priorSet.has(a), bp = priorSet.has(b);
+        if (ap !== bp) return ap ? -1 : 1;
+      }
+      return a.localeCompare(b);
+    };
+    primary.sort(sortBias);
+    secondary.sort(sortBias);
     return primary.concat(secondary);
   },
 
@@ -18116,7 +18765,20 @@ const Solver = {
   _assignToMembers(personLedger, sprintId, skillKey, target, enforcePerPerson, opts) {
     if (target <= 0) return { assigned: [], total: 0 };
     if (!enforcePerPerson) return { assigned: [], total: target }; // caller will still decrement aggregate
-    const names = this._eligibleMembers(personLedger, sprintId, skillKey);
+    // R1-H4: continuity bias — prefer members who already touched this project in earlier phases.
+    // We consult the concurrentMap to find names who have prior commitments on this project.
+    let priorSet = null;
+    if (opts && opts.concurrentMap && opts.projectId) {
+      priorSet = new Set();
+      Object.keys(opts.concurrentMap).forEach(name => {
+        const sprints = opts.concurrentMap[name] || {};
+        Object.keys(sprints).forEach(sid => {
+          (sprints[sid] || []).forEach(c => { if (c.projectId === opts.projectId) priorSet.add(name); });
+        });
+      });
+      if (!priorSet.size) priorSet = null;
+    }
+    const names = this._eligibleMembers(personLedger, sprintId, skillKey, priorSet);
     const assigned = [];
     let remaining = target;
     const o = opts || {};
@@ -18128,7 +18790,8 @@ const Solver = {
       if (enforceConcurrent && this._concurrentConflict(o.concurrentMap, sprintId, names[i], o.projectId, skillKey, o.allowedOverlapSkills)) {
         continue;
       }
-      assigned.push({ member: names[i], points: take });
+      const continuityApplied = priorSet && priorSet.has(names[i]);
+      assigned.push({ member: names[i], points: take, continuity: continuityApplied });
       entry.remaining -= take;
       remaining -= take;
       if (enforceConcurrent) this._recordCommitment(o.concurrentMap, sprintId, names[i], o.projectId, skillKey);
@@ -21184,6 +21847,8 @@ const Onboarding = {
     </div>
     <div class="alloc-results-body" id="allocResultsBody"></div>
     <div class="alloc-results-footer">
+      <span id="allocScenarioPicker"></span>
+      <button class="btn btn-outline btn-sm" onclick="Sprint.saveAllocationScenario()" title="Save this run as a named scenario — compare side-by-side without committing">Save as scenario</button>
       <button class="btn btn-outline btn-sm" onclick="Sprint.closeAllocResults()">Cancel</button>
       <button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply Allocation</button>
     </div>
