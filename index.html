@@ -83,6 +83,26 @@
   --space-7: 20px;
   --space-8: 24px;
   --space-10: 32px;
+  /* Status hover shade (UI-H10): pre-computed darker green for .btn-add:hover. */
+  --status-green-hover: #0b7a6e;
+  /* Gantt palette (UI-C2). These used to be hardcoded hex in the JS template literals
+     which left them frozen in light-mode colour under [data-theme="dark"]. Now they
+     flip with the theme. */
+  --gantt-fy-marker: #8b5cf6;
+  --gantt-critical-red: #b91c1c;
+  --gantt-critical-teal: #0f766e;
+  --gantt-critical-grey: #475569;
+  --gantt-milestone-stroke: #5b21b6;
+  --gantt-guide: #e5e7eb;
+  --gantt-baseline: #94a3b8;
+  --gantt-row-border: #f1f5f9;
+  /* Semantic soft-tint backgrounds for merge/scenario/import summary surfaces.
+     Previously inline-hex (#f0fdf4, #eff6ff, #fef2f2, #f8fafc) and therefore
+     theme-unsafe. Keep these in sync with --status-* tokens. */
+  --tint-green-weak: rgba(13, 148, 136, 0.10);
+  --tint-blue-weak:  rgba(59, 130, 246, 0.10);
+  --tint-red-weak:   rgba(220, 38, 38, 0.10);
+  --tint-amber-weak: rgba(245, 158, 11, 0.10);
 }
 /* Dark theme overrides: flip the light content area to dark while preserving the existing dark chrome */
 html[data-theme="dark"] {
@@ -100,6 +120,22 @@ html[data-theme="dark"] {
   --text-muted: #94a3b8;
   --border-light: #1f2937;
   --status-grey: #94a3b8;
+  /* Gantt palette dark-mode flips. Violet/red/teal bumped to lighter shades so
+     they remain legible against the navy chart background. */
+  --gantt-fy-marker: #a78bfa;
+  --gantt-critical-red: #f87171;
+  --gantt-critical-teal: #2dd4bf;
+  --gantt-critical-grey: #94a3b8;
+  --gantt-milestone-stroke: #c4b5fd;
+  --gantt-guide: #1f2937;
+  --gantt-baseline: #64748b;
+  --gantt-row-border: #1f2937;
+  /* Soft tints need heavier alpha on dark so they remain perceptible. */
+  --tint-green-weak: rgba(45, 212, 191, 0.14);
+  --tint-blue-weak:  rgba(96, 165, 250, 0.14);
+  --tint-red-weak:   rgba(248, 113, 113, 0.16);
+  --tint-amber-weak: rgba(251, 191, 36, 0.14);
+  --status-green-hover: #0f766e;
 }
 /* Global surface wiring: anything visually presented on a "card" uses the token. */
 .drop-zone, .filter-bar, .table-wrapper, .sprint-card, .split-modal,
@@ -327,6 +363,11 @@ html[data-theme="dark"] .evm-strip { background: #111827; }
 .error-banner .err-msg { flex: 1; font-weight: 600; }
 .error-banner button { background: var(--status-red); color: #fff; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .error-banner button.secondary { background: transparent; color: #7f1d1d; border: 1px solid #7f1d1d; }
+/* UI-C1: dark-mode variant — the original light-red banner was unreadable on
+   the navy chrome. The tint must stay ALARMING (so it's still an alert) while
+   meeting AA contrast. */
+html[data-theme="dark"] .error-banner { background: rgba(220, 38, 38, 0.16); color: #fecaca; border-bottom-color: #ef4444; }
+html[data-theme="dark"] .error-banner button.secondary { color: #fecaca; border-color: #fecaca; }
 /* Command Palette */
 .cmdk-overlay { position: fixed; inset: 0; background: rgba(15,20,25,0.5); display: none; align-items: flex-start; justify-content: center; z-index: 10500; padding-top: 10vh; backdrop-filter: blur(3px); }
 .cmdk-overlay.open { display: flex; }
@@ -724,7 +765,19 @@ textarea.field-input { resize: vertical; min-height: 60px; }
 
 /* Quick Add button in header */
 .btn-add { background: var(--status-green); color: white; }
-.btn-add:hover { background: #16a34a; }
+/* UI-H10: hover uses a token so dark theme (which re-declares --status-green-hover)
+   gets a different darker shade instead of the raw #16a34a light-mode value. */
+.btn-add:hover { background: var(--status-green-hover); }
+/* UI-H9: explicit danger variant for destructive actions. Previously every
+   destructive surface inlined its own red button; now they all share this class. */
+.btn-danger { background: var(--status-red); color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+html[data-theme="dark"] .btn-danger:hover { background: #ef4444; }
+.btn-danger:focus-visible { outline: 3px solid var(--accent-blue); outline-offset: 2px; }
+/* UI-H9 outline variant: red border + red text, transparent background. Used in
+   Scenarios/Backups UIs where a less aggressive destructive affordance fits. */
+.btn-danger-outline { background: transparent; color: var(--status-red); border: 1px solid var(--status-red); }
+.btn-danger-outline:hover { background: var(--tint-red-weak); }
 
 /* --- Drag and Drop --- */
 .drag-handle { cursor: grab; color: var(--text-muted); font-size: 14px; padding: 2px 4px; user-select: none; opacity: 0.4; transition: opacity 0.15s; }
@@ -1687,6 +1740,180 @@ html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
 .integrity-issue-type { padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .integrity-issue-type.error { background: rgba(239,68,68,0.1); color: var(--status-red); }
 .integrity-issue-type.warning { background: rgba(245,158,11,0.1); color: var(--status-amber); }
+
+/* =====================================================================
+   UX-review additions — sourced from the Part-4 fix plan.
+   Grouped so they're easy to find, easy to delete, and don't inherit
+   specificity surprises from earlier legacy rules.
+   ===================================================================== */
+
+/* --- UI-C5: focus-visible on the product's primary data surfaces -----
+   The global :focus-visible at ~L232 fires only when an element opts in
+   via a natural focusable role. Table rows and Gantt bars are <tr>/<div>,
+   so without these explicit rules keyboard Tab navigation is invisible. */
+.project-table tbody tr:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.sprint-card:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
+.forum-card:focus-visible, .forum-header:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.cmdk-item:focus-visible { outline: none; background: rgba(59,130,246,0.12); border-left-color: var(--accent-blue); }
+.gantt-bar:focus-visible, .gantt-hoverable:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.ms-option:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.filter-select:focus-visible, select.field-input:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; border-color: var(--accent-blue); }
+
+/* --- UI-H11: font-size utility classes -----
+   These replace the ~40 inline `font-size:Xpx` declarations scattered
+   through JS template literals. They map directly to --fs-* tokens so
+   presentation mode scales them via --fs-scale. */
+.fs-xs { font-size: var(--fs-xs); }
+.fs-sm { font-size: var(--fs-sm); }
+.fs-base { font-size: var(--fs-base); }
+.fs-md { font-size: var(--fs-md); }
+.fs-lg { font-size: var(--fs-lg); }
+.fs-xl { font-size: var(--fs-xl); }
+.fs-2xl { font-size: var(--fs-2xl); }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+
+/* --- UI-H12: text-colour + tint utility classes -----
+   Replace the ~60 inline `style="color:#xxxxxx"` hex leaks with these
+   token-backed classes. They flip with the theme automatically. */
+.c-status-red { color: var(--status-red); }
+.c-status-amber { color: var(--status-amber); }
+.c-status-green { color: var(--status-green); }
+.c-accent-blue { color: var(--accent-blue); }
+.c-accent-violet { color: var(--accent-violet); }
+.c-accent-teal { color: var(--accent-teal); }
+.c-text-muted { color: var(--text-muted); }
+.c-text-dark { color: var(--text-dark); }
+.bg-green-weak { background: var(--tint-green-weak); }
+.bg-blue-weak { background: var(--tint-blue-weak); }
+.bg-red-weak { background: var(--tint-red-weak); }
+.bg-amber-weak { background: var(--tint-amber-weak); }
+.bg-surface-2 { background: var(--surface-2); }
+
+/* --- UI-H7: deeper RAG row tints so "at risk" actually reads as at-risk.
+   Old values were 4% opacity; raised to ~14%. Dark-mode variants added. */
+.project-table tbody tr.row-at-risk { background: rgba(245, 158, 11, 0.14); }
+.project-table tbody tr.row-blocked { background: rgba(220, 38, 38, 0.14); }
+html[data-theme="dark"] .project-table tbody tr.row-at-risk { background: rgba(245, 158, 11, 0.22); }
+html[data-theme="dark"] .project-table tbody tr.row-blocked { background: rgba(220, 38, 38, 0.22); }
+
+/* --- UI-H15: Firefox / standard-CSS scrollbar styling. Previously only
+   ::-webkit-scrollbar was styled, so Firefox users got the default chunky
+   system scrollbar which broke sticky-header alignment. */
+html { scrollbar-color: var(--text-muted) transparent; scrollbar-width: thin; }
+
+/* --- UI-M17: theme-aware RAG-dot stroke. The old rgba(0,0,0,0.08)
+   literal went invisible on dark surfaces. */
+.rag-dot { border-color: rgba(15, 23, 42, 0.18); }
+html[data-theme="dark"] .rag-dot { border-color: rgba(248, 250, 252, 0.22); }
+
+/* --- UI-M18: tokenise the progress bar track so dark mode stops shipping
+   a bright #e9ecef / #e2e8f0 stripe on navy chrome. */
+.progress-track { background: var(--surface-inset); }
+.progress-segment.not-started { background: var(--surface-inset); }
+.progress-bar-outer { background: var(--surface-inset); }
+
+/* --- UI-L15: skip link used z-index 1000 which collided with
+   .toast-container (same z-index). Bumping above command palette so
+   it's discoverable even when a palette is open, but below the top-tier
+   progress overlays. */
+.skip-link, .app-skip-link { z-index: 10600 !important; }
+
+/* --- UI-M9: presentation-mode scaling for the high-impact data surfaces
+   the old rules missed. Boardroom mode should make the *numbers* bigger,
+   not just the chrome. */
+html[data-presentation="on"] .dash-card-value { font-size: calc(var(--fs-2xl) * var(--fs-scale)); }
+html[data-presentation="on"] .dash-card-title { font-size: calc(var(--fs-sm) * var(--fs-scale)); }
+html[data-presentation="on"] .kpi-filter-link { font-size: calc(var(--fs-xl) * var(--fs-scale)); }
+html[data-presentation="on"] .sprint-card { font-size: calc(12px * var(--fs-scale)); }
+html[data-presentation="on"] .gantt-label .label-name { font-size: calc(12px * var(--fs-scale)); }
+html[data-presentation="on"] .alloc-diff-summary .diff-stat-num { font-size: calc(18px * var(--fs-scale)); }
+
+/* --- UI-L19: default line-height. Labels at 10-11px with no line-height
+   looked cramped. 1.45 on body, tighter on the dense sprint card. */
+body { line-height: 1.45; }
+.sprint-card, .sprint-card .card-name, .sprint-card .card-manager { line-height: 1.35; }
+.dash-card-title, .dash-card-subtitle, .dash-card-footnote { line-height: 1.4; }
+
+/* --- UI-M13: print stylesheet — hide chrome that doesn't belong on paper.
+   Previously, printing with the Detail Panel open would overlay the page. */
+@media print {
+  .detail-panel, .panel-overlay, .cmdk-overlay, .toast-container,
+  .progress-overlay, .loading-overlay, .error-banner, .audit-panel,
+  .chip-context-menu, .undo-history-menu, .sl-assignee-dropdown,
+  .alloc-results-overlay, .trends-modal-overlay, .sidebar,
+  .app-header, .view-titlebar, .skip-link, .app-skip-link { display: none !important; }
+  .main-content { overflow: visible !important; }
+  body { height: auto !important; overflow: visible !important; }
+}
+
+/* --- UI-L18: alloc-diff-summary was blue-tinted for no good reason; make
+   it look like the other --surface cards so it doesn't feel like a leak. */
+.alloc-diff-summary { background: var(--surface-2) !important; border-color: var(--border-dim) !important; }
+
+/* --- UI-L8: toast warning variant — info (blue) was doing double duty. */
+.toast.warning { border-left: 3px solid var(--status-amber); }
+
+/* --- Dark-mode safety-net extensions: more inline-hex patterns the
+   original L121-131 block missed. Adding these catches backgrounds that
+   sneak in through Scenarios/Backups/Status-Report modals. */
+html[data-theme="dark"] [style*="background:#fef2f2"],
+html[data-theme="dark"] [style*="background: #fef2f2"],
+html[data-theme="dark"] [style*="background:#f0fdf4"],
+html[data-theme="dark"] [style*="background: #f0fdf4"],
+html[data-theme="dark"] [style*="background:#eff6ff"],
+html[data-theme="dark"] [style*="background: #eff6ff"] { background: var(--surface-2) !important; color: var(--text-dark) !important; }
+html[data-theme="dark"] [style*="color:#7f1d1d"],
+html[data-theme="dark"] [style*="color: #7f1d1d"],
+html[data-theme="dark"] [style*="color:#991b1b"],
+html[data-theme="dark"] [style*="color: #991b1b"] { color: #fecaca !important; }
+
+/* --- UI-M21: drag-over column highlight for the Sprint board. Previously
+   the only drag feedback was 0.4 opacity on the source card. */
+.sprint-column.drag-over { outline: 2px dashed var(--accent-blue); outline-offset: -2px; background: var(--tint-blue-weak); }
+
+/* --- UI-H4/UI-M2 helper: shared tooltip primitive. Lightweight, on-demand.
+   Used by cells that were silently truncating; pairs with `title=` on the
+   element so screen readers still get the full text. */
+.tooltip-trigger { cursor: help; }
+
+/* --- UI-M25: ellipsize the detail-panel title instead of letting long
+   project names bump the close button off-screen. */
+.panel-header .panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* --- UI-C3: App.confirm() modal. Shares the .split-modal shell but adds a
+   subtle red top border for danger variants. Uses .btn-danger for the
+   primary action so the styling is consistent across every destructive op. */
+.confirm-modal { min-width: 340px; max-width: 480px; }
+.confirm-modal.danger { border-top: 4px solid var(--status-red); }
+.confirm-modal .confirm-title { font-size: var(--fs-md); font-weight: 700; color: var(--text-dark); margin-bottom: 8px; }
+.confirm-modal .confirm-body { font-size: var(--fs-base); color: var(--text-dark-secondary); line-height: 1.5; margin-bottom: 16px; }
+.confirm-modal .confirm-body strong { color: var(--text-dark); font-weight: 600; }
+.confirm-modal .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* --- UI-M5: Forum RAG dots as data-attribute driven colours so no inline
+   hex is required in the render template. */
+.fp-rag-dot[data-rag="red"]   { background: var(--status-red); }
+.fp-rag-dot[data-rag="amber"] { background: var(--status-amber); }
+.fp-rag-dot[data-rag="green"] { background: var(--status-green); }
+.fp-rag-dot[data-rag="grey"]  { background: var(--status-grey); }
+
+/* --- UI-H8: forum toggle chevron rotates on aria-expanded. Replaces the
+   ▶ character previously used as an affordance. */
+.forum-chevron { display: inline-block; width: 10px; height: 10px; flex-shrink: 0; transition: transform 0.18s ease; color: var(--text-muted); }
+[aria-expanded="true"] > .forum-chevron { transform: rotate(90deg); }
+
+/* --- Gantt tokens wired to the actual Gantt classes. These classes
+   already existed; previously they referenced hardcoded hex inline. */
+.gantt-fy-line { background: var(--gantt-fy-marker) !important; }
+.gantt-guide-line { background: var(--gantt-guide) !important; }
+.gantt-baseline-bar { background: var(--gantt-baseline) !important; }
+
+/* --- UI-M12: detail-panel responsive clamp. Below ~540px, old fixed 480px
+   width would spill off-screen on narrow windows. */
+@media (max-width: 540px) {
+  .detail-panel { width: min(480px, 96vw); }
+}
 </style>
 </head>
 <body>
@@ -4151,8 +4378,8 @@ const App = {
     this.renderConfig();
   },
 
-  resetBacklogHealthSettings() {
-    if (!confirm('Reset Backlog Health DoR template to defaults?')) return;
+  async resetBacklogHealthSettings() {
+    if (!await App.confirm({ title: 'Reset Backlog Health DoR template?', body: 'All customisations will be replaced with the built-in default checklist.', confirmLabel: 'Reset', danger: true })) return;
     this.pushUndo('Reset Backlog Health settings');
     if (!this.data.settings) this.data.settings = {};
     this.data.settings.backlogHealth = { default: BacklogHealth.DEFAULT_DOR.slice(), byCustomer: {} };
@@ -4249,8 +4476,8 @@ const App = {
     this.renderConfig();
   },
 
-  resetSchedulingEngineSettings() {
-    if (!confirm('Reset Scheduling Engine settings to defaults?')) return;
+  async resetSchedulingEngineSettings() {
+    if (!await App.confirm({ title: 'Reset Scheduling Engine?', body: 'All allocation settings (deadline strictness, load balancing, etc.) will revert to defaults.', confirmLabel: 'Reset', danger: true })) return;
     this.pushUndo('Reset Scheduling Engine settings');
     const s = Sprint.allocSettings;
     Object.assign(s, {
@@ -4318,8 +4545,8 @@ const App = {
     this.renderConfig();
   },
 
-  resetScoringSettings() {
-    if (!confirm('Reset Scoring settings to defaults?')) return;
+  async resetScoringSettings() {
+    if (!await App.confirm({ title: 'Reset Scoring settings?', body: 'Status weights, RAG multipliers, risk and deadline tiers will revert to defaults.', confirmLabel: 'Reset', danger: true })) return;
     this.pushUndo('Reset Scoring settings');
     if (this.data && this.data.settings) {
       this.data.settings.scoring = {
@@ -4366,8 +4593,8 @@ const App = {
     this.renderConfig();
   },
 
-  resetDisplayThresholds() {
-    if (!confirm('Reset Display Thresholds to defaults?')) return;
+  async resetDisplayThresholds() {
+    if (!await App.confirm({ title: 'Reset display thresholds?', body: 'At-risk and blocked row tint thresholds will revert to defaults.', confirmLabel: 'Reset', danger: true })) return;
     this.pushUndo('Reset Display Thresholds');
     if (this.data && this.data.settings) {
       this.data.settings.thresholds = {
@@ -4699,7 +4926,7 @@ const App = {
             '<button class="btn btn-primary btn-sm" onclick="App.saveScoringSettings()">Save</button>' +
             '<button class="btn btn-outline btn-sm" onclick="App.resetScoringSettings()">Reset to defaults</button>' +
             '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()" title="Compute recommended priorities. Does NOT overwrite manual priorities.">Recompute recommendations</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="if(confirm(\'Overwrite actual priorities with recommendations for all projects?\'))App.applyAllRecommendations()" title="Copy recommended_priority \u2192 priority for every project where they differ.">Apply all recommendations</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="App.applyAllRecommendationsConfirmed()" title="Copy recommended_priority \u2192 priority for every project where they differ.">Apply all recommendations</button>' +
           '</div>' +
           '<div id="scoringPreview" style="margin-top:12px;font-size:11px;color:var(--text-muted)">' + App._renderScoringPreview() + '</div>' +
         '</div>';
@@ -5249,6 +5476,114 @@ const App = {
     setTimeout(() => { toast.style.opacity = '0'; toast.style.transform = 'translateY(10px)'; toast.style.transition = 'all 0.3s ease'; setTimeout(() => toast.remove(), 300); }, 3500);
   },
 
+  /* UI-C3: unified destructive-action confirmation.
+     Replaces window.confirm() across the app so the confirm dialog
+     matches the rest of the design system (uses .split-modal shell,
+     respects dark mode, supports keyboard Esc/Enter, honours the
+     danger styling).
+
+     Usage:
+       const ok = await App.confirm({ title: 'Delete sprint?', body: 'This is permanent.', confirmLabel: 'Delete', danger: true });
+       if (!ok) return;
+
+     Falls back to window.confirm() only if the document body isn't
+     available (e.g. during very early bootstrap).
+  */
+  confirm(opts) {
+    opts = opts || {};
+    const title = opts.title || 'Are you sure?';
+    const body = opts.body || '';
+    const confirmLabel = opts.confirmLabel || 'Confirm';
+    const cancelLabel = opts.cancelLabel || 'Cancel';
+    const danger = !!opts.danger;
+    if (!document.body) return Promise.resolve(window.confirm(title + '\n\n' + body));
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'split-modal-overlay';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-label', title);
+      const modal = document.createElement('div');
+      modal.className = 'split-modal confirm-modal' + (danger ? ' danger' : '');
+      modal.setAttribute('role', 'document');
+      const bodyHtml = body ? ('<div class="confirm-body">' + (typeof body === 'string' ? body : '') + '</div>') : '';
+      const primaryClass = danger ? 'btn-danger' : 'btn-primary';
+      modal.innerHTML =
+        '<div class="confirm-title">' + (typeof title === 'string' ? title.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) : '') + '</div>' +
+        bodyHtml +
+        '<div class="confirm-actions">' +
+          '<button type="button" class="btn btn-outline" data-role="cancel">' + cancelLabel + '</button>' +
+          '<button type="button" class="btn ' + primaryClass + '" data-role="confirm" autofocus>' + confirmLabel + '</button>' +
+        '</div>';
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      const cleanup = (result) => {
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(result);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+        else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(false); });
+      modal.querySelector('[data-role="cancel"]').addEventListener('click', () => cleanup(false));
+      modal.querySelector('[data-role="confirm"]').addEventListener('click', () => cleanup(true));
+      setTimeout(() => { const btn = modal.querySelector('[data-role="confirm"]'); if (btn) btn.focus(); }, 10);
+    });
+  },
+
+  /* Companion helper for the handful of window.prompt() sites — reuses
+     the split-modal shell with a single input. */
+  prompt(opts) {
+    opts = opts || {};
+    const title = opts.title || 'Enter value';
+    const body = opts.body || '';
+    const defaultVal = opts.defaultValue || '';
+    const confirmLabel = opts.confirmLabel || 'OK';
+    const cancelLabel = opts.cancelLabel || 'Cancel';
+    const placeholder = opts.placeholder || '';
+    if (!document.body) return Promise.resolve(window.prompt(title, defaultVal));
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'split-modal-overlay';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      const modal = document.createElement('div');
+      modal.className = 'split-modal confirm-modal';
+      const safeTitle = (typeof title === 'string' ? title.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) : '');
+      const bodyHtml = body ? ('<div class="confirm-body">' + body + '</div>') : '';
+      modal.innerHTML =
+        '<div class="confirm-title">' + safeTitle + '</div>' +
+        bodyHtml +
+        '<input type="text" class="field-input" data-role="input" style="margin-bottom:16px" />' +
+        '<div class="confirm-actions">' +
+          '<button type="button" class="btn btn-outline" data-role="cancel">' + cancelLabel + '</button>' +
+          '<button type="button" class="btn btn-primary" data-role="confirm">' + confirmLabel + '</button>' +
+        '</div>';
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      const input = modal.querySelector('[data-role="input"]');
+      input.value = defaultVal;
+      input.placeholder = placeholder;
+      const cleanup = (result) => {
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(result);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cleanup(null); }
+        else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); cleanup(input.value); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
+      modal.querySelector('[data-role="cancel"]').addEventListener('click', () => cleanup(null));
+      modal.querySelector('[data-role="confirm"]').addEventListener('click', () => cleanup(input.value));
+      setTimeout(() => input.focus(), 10);
+    });
+  },
+
   timeAgo(date) {
     const seconds = Math.floor((new Date() - date) / 1000);
     if (seconds < 60) return 'just now';
@@ -5751,6 +6086,17 @@ const App = {
     this.notifyDataChange();
   },
 
+  async applyAllRecommendationsConfirmed() {
+    const ok = await App.confirm({
+      title: 'Overwrite actual priorities with recommendations?',
+      body: 'For every project where the recommended priority differs from the current one, the recommendation will replace the manual value. This action can be undone with Undo.',
+      confirmLabel: 'Apply all',
+      danger: false,
+    });
+    if (!ok) return;
+    this.applyAllRecommendations();
+  },
+
   applyAllRecommendations() {
     if (!this.data) return;
     this.computeRecommendedPriorities();
@@ -5918,13 +6264,13 @@ const App = {
     this.toast('Added customer "' + name + '"', 'success');
   },
 
-  removeCustomer(name) {
+  async removeCustomer(name) {
     if (!this.data || !this.data.customers) return;
     const projectCount = (this.data.projects || []).filter(p => p.customer === name).length;
     if (projectCount > 0) {
-      if (!confirm('Customer "' + name + '" has ' + projectCount + ' project(s). Delete anyway? Projects will become unassigned.')) return;
+      if (!await App.confirm({ title: 'Delete customer "' + name + '"?', body: 'This customer has <strong>' + projectCount + '</strong> project(s). Deleting will leave those projects unassigned (they will not be deleted).', confirmLabel: 'Delete customer', danger: true })) return;
     } else {
-      if (!confirm('Delete customer "' + name + '"?')) return;
+      if (!await App.confirm({ title: 'Delete customer "' + name + '"?', body: 'No projects currently reference this customer.', confirmLabel: 'Delete', danger: true })) return;
     }
     this.pushUndo('Remove customer ' + name);
     this.data.customers = this.data.customers.filter(c => c.name !== name);
@@ -6010,16 +6356,17 @@ const App = {
     }
   },
 
-  removeSkill(idx) {
+  async removeSkill(idx) {
     if (!this.data || !this.data.skills || !this.data.skills[idx]) return;
     var sk = this.data.skills[idx];
-    // Check if any projects have data for this skill
     var usedCount = (this.data.projects || []).filter(function(p) { return (p[sk.key] || 0) > 0; }).length;
-    var msg = 'Delete skill "' + sk.label + '"?';
+    var bodyHtml = '';
     if (usedCount > 0) {
-      msg += '\n\n' + usedCount + ' project(s) have data for this skill. Consider retiring (deactivating) instead of deleting. Project data for this skill will be preserved but the skill will be removed from configuration.';
+      bodyHtml = '<strong>' + usedCount + '</strong> project(s) currently have data for this skill. Consider retiring the skill (deactivate) instead of deleting. Project data is preserved either way but the skill is removed from configuration.';
+    } else {
+      bodyHtml = 'No projects use this skill.';
     }
-    if (!confirm(msg)) return;
+    if (!await App.confirm({ title: 'Delete skill "' + sk.label + '"?', body: bodyHtml, confirmLabel: 'Delete skill', danger: true })) return;
     this.pushUndo('Remove skill ' + sk.label);
     this.data.skills.splice(idx, 1);
     this.markDirty();
@@ -6202,21 +6549,17 @@ const App = {
   },
 
   // --- Annual Holiday Management (REQ-CAP-02) ---
-  addAnnualHoliday() {
+  async addAnnualHoliday() {
     if (!this.data) return;
     if (!this.data.annual_holidays) this.data.annual_holidays = [];
-    const name = prompt('Holiday name (e.g. Christmas Day):');
+    const name = await App.prompt({ title: 'Add annual holiday', body: 'Name of the holiday (e.g. Christmas Day).', placeholder: 'Holiday name' });
     if (!name) return;
-    const date = prompt('Date (YYYY-MM-DD):');
+    const date = await App.prompt({ title: 'Holiday date', body: 'Enter the date in YYYY-MM-DD format.', placeholder: '2026-12-25' });
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { App.toast('Invalid date format. Use YYYY-MM-DD', 'error'); return; }
-    const recurring = confirm('Make this a recurring annual holiday?');
+    const recurring = await App.confirm({ title: 'Recurring annual holiday?', body: 'Choose Yes to repeat this date every year. Choose No for a one-off holiday.', confirmLabel: 'Yes, recurring', cancelLabel: 'One-off' });
     const customers = this.getCustomers();
-    const scopePrompt = 'Scope — which customers does this holiday apply to?\n' +
-      'Leave blank for ALL (global). Or enter comma-separated customer names from:\n' +
-      customers.join(', ');
-    const scopeRaw = prompt(scopePrompt, '');
+    const scopeRaw = await App.prompt({ title: 'Scope', body: 'Leave blank for ALL customers (global). Or enter a comma-separated list from: ' + customers.join(', '), placeholder: 'Blank for all' });
     const scope = (scopeRaw || '').split(',').map(s => s.trim()).filter(Boolean);
-    // Validate that all entered scope values are actual customers
     const unknown = scope.filter(c => customers.indexOf(c) < 0);
     if (unknown.length) { App.toast('These customer names don\u2019t exist yet: ' + unknown.join(', ') + '. Add them in Configuration \u203A Customers first, then re-add the holiday.', 'error'); return; }
     this.pushUndo('Add annual holiday');
@@ -6227,10 +6570,10 @@ const App = {
     App.toast('Annual holiday added' + (scope.length ? ' (' + scope.join(', ') + ' only)' : ' (all customers)'), 'success');
   },
 
-  removeAnnualHoliday(idx) {
+  async removeAnnualHoliday(idx) {
     if (!this.data || !this.data.annual_holidays) return;
     const h = this.data.annual_holidays[idx];
-    if (!confirm('Remove holiday "' + (h.name || '') + '"?')) return;
+    if (!await App.confirm({ title: 'Remove holiday "' + (h.name || '') + '"?', body: 'The holiday will be deleted from the team calendar.', confirmLabel: 'Remove', danger: true })) return;
     this.pushUndo('Remove annual holiday');
     this.data.annual_holidays.splice(idx, 1);
     this.markDirty();
@@ -6240,10 +6583,10 @@ const App = {
   },
 
   // --- Template Management ---
-  removeTemplate(idx) {
+  async removeTemplate(idx) {
     if (!this.data || !this.data.project_templates) return;
     const tpl = this.data.project_templates[idx];
-    if (!confirm('Delete template "' + (tpl.name || '') + '"?')) return;
+    if (!await App.confirm({ title: 'Delete template "' + (tpl.name || '') + '"?', body: 'Projects already created from this template are not affected — only the template itself is deleted.', confirmLabel: 'Delete template', danger: true })) return;
     this.pushUndo('Remove template ' + tpl.name);
     this.data.project_templates.splice(idx, 1);
     this.markDirty();
@@ -6450,7 +6793,13 @@ const Backups = {
       const store = tx.objectStore(this.STORE);
       const entry = await new Promise((res) => { const r = store.get(date); r.onsuccess = () => res(r.result); r.onerror = () => res(null); });
       if (!entry) { App.toast('Backup not found: ' + date, 'error'); return; }
-      if (!confirm('Restore backup from ' + date + '?\n\n' + entry.projectCount + ' projects · ' + Math.round(entry.size / 1024) + ' KB\n\nThis will replace the CURRENT state. A snapshot of now will be taken before restore.')) return;
+      const ok = await App.confirm({
+        title: 'Restore backup from ' + date + '?',
+        body: 'This will replace your <strong>current state</strong> with <strong>' + entry.projectCount + ' projects</strong> (' + Math.round(entry.size / 1024) + ' KB). A snapshot of right now is taken first, so you can still undo.',
+        confirmLabel: 'Restore backup',
+        danger: true,
+      });
+      if (!ok) return;
       // Snapshot current state under a "pre-restore-<timestamp>" key
       await this.record(true);
       App.pushUndo('Restore backup ' + date);
@@ -6581,10 +6930,16 @@ const Scenarios = {
     return scenario;
   },
 
-  apply(id) {
+  async apply(id) {
     const sc = this.list().find(s => s.id === id);
     if (!sc) { App.toast('Scenario not found', 'error'); return; }
-    if (!confirm('Apply scenario "' + sc.name + '"?\n\nThis will replace the current allocation state for ' + sc.projects_snapshot.length + ' project(s). A snapshot of now will be taken first.')) return;
+    const ok = await App.confirm({
+      title: 'Apply scenario "' + sc.name + '"?',
+      body: 'The allocation state of <strong>' + sc.projects_snapshot.length + '</strong> project(s) will be replaced with the snapshot. A snapshot of right now is taken first, so you can restore by applying that snapshot back.',
+      confirmLabel: 'Apply scenario',
+      danger: true,
+    });
+    if (!ok) return;
     // Auto-save current state as a pre-restore scenario for safety
     this.save('Pre-restore ' + new Date().toLocaleString('en-GB'), 'Auto-snapshot before applying "' + sc.name + '"', sc.customer_filter || null);
     App.pushUndo('Apply scenario "' + sc.name + '"');
@@ -6607,10 +6962,10 @@ const Scenarios = {
     App.toast('Applied scenario "' + sc.name + '" · ' + applied + ' projects', 'success');
   },
 
-  remove(id) {
+  async remove(id) {
     const sc = this.list().find(s => s.id === id);
     if (!sc) return;
-    if (!confirm('Delete scenario "' + sc.name + '"? This cannot be undone.')) return;
+    if (!await App.confirm({ title: 'Delete scenario "' + sc.name + '"?', body: 'This scenario will be permanently removed. Snapshots captured by the scenario cannot be recovered.', confirmLabel: 'Delete scenario', danger: true })) return;
     App.pushUndo('Delete scenario');
     App.data.scenarios = App.data.scenarios.filter(s => s.id !== id);
     App.logChange(null, 'scenario_deleted', sc.name, '', 'user');
@@ -8824,17 +9179,16 @@ const Dashboard = {
     });
   },
 
-  saveFilterPreset() {
-    const name = prompt('Enter a name for this filter preset:');
+  async saveFilterPreset() {
+    const name = await App.prompt({ title: 'Save filter preset', body: 'Name this preset so you can reapply it later.', placeholder: 'Preset name' });
     if (!name || !name.trim()) return;
     if (!App.data) return;
     if (!App.data.filter_presets) App.data.filter_presets = [];
     const state = this.saveCurrentFilterState();
     state.name = name.trim();
-    // Check for duplicate names
     const existing = App.data.filter_presets.findIndex(p => p.name === state.name);
     if (existing > -1) {
-      if (!confirm('Overwrite existing preset "' + state.name + '"?')) return;
+      if (!await App.confirm({ title: 'Overwrite "' + state.name + '"?', body: 'A preset with this name already exists. Overwrite it with the current filter state?', confirmLabel: 'Overwrite', danger: false })) return;
       App.data.filter_presets[existing] = state;
     } else {
       App.data.filter_presets.push(state);
@@ -8854,11 +9208,11 @@ const Dashboard = {
     App.toast('Applied preset "' + preset.name + '"', 'info');
   },
 
-  deleteFilterPreset(idx) {
+  async deleteFilterPreset(idx) {
     if (!App.data || !App.data.filter_presets) return;
     const preset = App.data.filter_presets[idx];
     if (!preset) return;
-    if (!confirm('Delete preset "' + preset.name + '"?')) return;
+    if (!await App.confirm({ title: 'Delete preset "' + preset.name + '"?', body: 'This filter preset will be permanently removed.', confirmLabel: 'Delete preset', danger: true })) return;
     App.data.filter_presets.splice(idx, 1);
     App.markDirty();
     App.saveToLocalStorage();
@@ -11306,7 +11660,7 @@ const DetailPanel = {
     App.notifyDataChange();
   },
 
-  onPhaseChange(el) {
+  async onPhaseChange(el) {
     const phaseName = el.dataset.phase;
     const stageKey = el.dataset.stage;
     const value = el.value;
@@ -11318,7 +11672,6 @@ const DetailPanel = {
       const order = (p.delivery_config && p.delivery_config.phase_order) || [];
       const phaseIdx = order.indexOf(phaseName);
       if (phaseIdx > 0) {
-        // Check all predecessor phases
         for (let pi = 0; pi < phaseIdx; pi++) {
           const predName = order[pi];
           const predPhase = this.PHASES.find(ph => ph.name === predName);
@@ -11330,15 +11683,20 @@ const DetailPanel = {
             predStatus = p.phase_overrides[predName];
           }
           if (predStatus !== 'Complete' && predStatus !== 'N/A') {
-            if (!confirm('Warning: ' + predName + ' is still "' + predStatus + '". Mark ' + phaseName + ' as Complete anyway?')) {
-              // Revert the select
+            const ok = await App.confirm({
+              title: 'Mark "' + phaseName + '" Complete despite predecessor?',
+              body: '<strong>' + predName + '</strong> is still "' + predStatus + '". Completing a phase while its predecessor is unfinished will be logged in the audit trail as a dependency override.',
+              confirmLabel: 'Mark Complete',
+              cancelLabel: 'Cancel',
+              danger: false,
+            });
+            if (!ok) {
               const oldVal = stageKey ? ((p.stages || {})[stageKey] || 'Not Started') : ((p.phase_overrides || {})[phaseName] || 'Not Started');
               el.value = oldVal;
               return;
             }
-            // Log override in audit trail
             App.logChange(p.id, 'phase_dependency_override', predName + ':' + predStatus, phaseName + ':Complete', 'user');
-            break; // Only warn once for the first incomplete predecessor
+            break;
           }
         }
       }
@@ -11366,10 +11724,10 @@ const DetailPanel = {
     }
   },
 
-  resetBaseline() {
+  async resetBaseline() {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
-    if (!confirm('This will capture current sizes as the new baseline. Previous baseline will be preserved in history.')) return;
+    if (!await App.confirm({ title: 'Capture a new baseline?', body: 'Current sizes will become the new baseline. The previous baseline is preserved in history — nothing is lost.', confirmLabel: 'Capture baseline' })) return;
     App.pushUndo('Reset estimate baseline');
     if (!p.baseline_history) p.baseline_history = [];
     if (p.estimate_baseline) {
@@ -12152,13 +12510,12 @@ const Gantt = {
   },
 
   // Prompt for a name and snapshot the active customer's current allocation.
-  openSetBaseline() {
+  async openSetBaseline() {
     if (!App.data) return;
     const customer = App.activeCustomer;
     if (!customer) { App.toast('Select a customer first', 'error'); return; }
     const defaultName = customer + ' — ' + new Date().toISOString().split('T')[0];
-    // Intentionally using prompt() for a lightweight MVP — can upgrade to a proper modal later.
-    const name = (window.prompt('Name this baseline:', defaultName) || '').trim();
+    const name = ((await App.prompt({ title: 'Name this baseline', body: 'The current allocation will be snapshot under this name so you can compare against it later.', defaultValue: defaultName, placeholder: 'Baseline name' })) || '').trim();
     if (!name) return;
     App.pushUndo('Set named baseline: ' + name);
     const snapshot = {};
@@ -12230,7 +12587,7 @@ const Gantt = {
     html += '<div class="gantt-legend-group">' +
       '<span class="gantt-legend-item"><span style="width:14px;height:2px;background:var(--accent-blue);display:inline-block;vertical-align:middle"></span> Today</span>' +
       '<span class="gantt-legend-item"><span style="width:14px;border-top:1.5px dashed rgba(59,130,246,0.55);display:inline-block;vertical-align:middle"></span> Sprint</span>' +
-      '<span class="gantt-legend-item"><span style="width:14px;border-top:2px solid #8b5cf6;opacity:0.35;display:inline-block;vertical-align:middle"></span> FY</span>' +
+      '<span class="gantt-legend-item"><span style="width:14px;border-top:2px solid var(--gantt-fy-marker);opacity:0.35;display:inline-block;vertical-align:middle"></span> FY</span>' +
     '</div>';
 
     // Dependency types — 'blocks' and 'blocked_by' share one edge style (tooltip clarifies direction);
@@ -13106,12 +13463,13 @@ const Gantt = {
         '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:50%;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
 
       // Deadline — calendar with an exclamation. Violet fill (NOT red) so it never reads as RAG Red.
+      // Fill/stroke wired via CSS custom properties so the icon flips with the theme.
       const msDeadline = (x, type, date) => msWrap('gantt-ms-deadline', x, type, date,
         '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<rect x="2" y="3" width="12" height="11" rx="1.5" fill="#8b5cf6" stroke="#5b21b6" stroke-width="1.2"/>' +
-          '<line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#5b21b6" stroke-width="1"/>' +
-          '<line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/>' +
-          '<line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/>' +
+          '<rect x="2" y="3" width="12" height="11" rx="1.5" style="fill:var(--gantt-fy-marker);stroke:var(--gantt-milestone-stroke);stroke-width:1.2"/>' +
+          '<line x1="2" y1="6.5" x2="14" y2="6.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1"/>' +
+          '<line x1="5" y1="1.5" x2="5" y2="4.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
+          '<line x1="11" y1="1.5" x2="11" y2="4.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
           '<line x1="8" y1="8.5" x2="8" y2="11" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
           '<circle cx="8" cy="12.5" r="0.9" fill="#fff"/>' +
         '</svg>');
@@ -13324,10 +13682,10 @@ const Gantt = {
       if (fyDate >= minDate && fyDate <= maxDate) {
         const fyx = dateToX(fyDate.toISOString().split('T')[0]);
         const fyLabel = 'FY' + String(yr).slice(2) + '/' + String(yr + 1).slice(2);
-        annotationItems += '<span style="position:absolute;left:' + (fyx + 4) + 'px;font-size:9px;font-weight:700;color:#8b5cf6;white-space:nowrap">' + fyLabel + '</span>';
+        annotationItems += '<span style="position:absolute;left:' + (fyx + 4) + 'px;font-size:9px;font-weight:700;color:var(--gantt-fy-marker);white-space:nowrap">' + fyLabel + '</span>';
       }
     }
-    const annotationRow = '<div style="height:22px;position:relative;border-bottom:1px solid var(--border-light);background:#f8fafc;width:' + totalWidth + 'px">' + annotationItems + '</div>';
+    const annotationRow = '<div style="height:22px;position:relative;border-bottom:1px solid var(--border-light);background:var(--surface-2);width:' + totalWidth + 'px">' + annotationItems + '</div>';
 
     // Vertical lines (span full height, no labels — labels are in annotation bar)
     const todayHtml = '<div class="gantt-today-line" style="left:' + todayX + 'px"></div>';
@@ -13341,7 +13699,7 @@ const Gantt = {
       if (fyDate >= minDate && fyDate <= maxDate) {
         const fyx = dateToX(fyDate.toISOString().split('T')[0]);
         // 2E: FY lines stay 2px but drop opacity so sprint + today dominate visually.
-        fyLines += '<div style="position:absolute;top:0;bottom:0;left:' + fyx + 'px;width:2px;background:#8b5cf6;z-index:2;pointer-events:none;opacity:0.3"></div>';
+        fyLines += '<div style="position:absolute;top:0;bottom:0;left:' + fyx + 'px;width:2px;background:var(--gantt-fy-marker);z-index:2;pointer-events:none;opacity:0.3"></div>';
       }
     }
 
@@ -13573,9 +13931,9 @@ const Gantt = {
       const ptsPct = p && (p.size_total || 0) > 0 ? Math.round((ptsDone / p.size_total) * 100) + '%' : '—';
       const rowCls = v.trend === 'slipping' ? 'row-red' : v.trend === 'ahead' ? '' : '';
       const trendChip = v.trend === 'slipping'
-        ? '<span style="padding:2px 8px;border-radius:999px;background:rgba(220,38,38,0.12);color:#b91c1c;font-weight:700;font-size:11px">Slipping</span>'
+        ? '<span style="padding:2px 8px;border-radius:999px;background:var(--tint-red-weak);color:var(--gantt-critical-red);font-weight:700;font-size:11px">Slipping</span>'
         : v.trend === 'ahead'
-        ? '<span style="padding:2px 8px;border-radius:999px;background:rgba(13,148,136,0.12);color:#0f766e;font-weight:700;font-size:11px">Ahead</span>'
+        ? '<span style="padding:2px 8px;border-radius:999px;background:var(--tint-green-weak);color:var(--gantt-critical-teal);font-weight:700;font-size:11px">Ahead</span>'
         : '<span style="padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--text-muted);font-weight:600;font-size:11px">On track</span>';
       const dStart = v.startDrift > 0 ? '<strong class="rp-red">+' + v.startDrift + 'd</strong>' : v.startDrift < 0 ? '<strong class="rp-green">' + v.startDrift + 'd</strong>' : '0d';
       const dEnd   = v.endDrift   > 0 ? '<strong class="rp-red">+' + v.endDrift   + 'd</strong>' : v.endDrift   < 0 ? '<strong class="rp-green">' + v.endDrift   + 'd</strong>' : '0d';
@@ -17090,11 +17448,11 @@ const Sprint = {
     App.toast('Sprint ' + newId + ' added', 'success');
   },
 
-  removeSprint(idx) {
+  async removeSprint(idx) {
     const sprints = App.data.sprints || [];
     if (!sprints[idx]) return;
     const id = sprints[idx].sprint_id;
-    if (!confirm('Delete sprint ' + id + '?')) return;
+    if (!await App.confirm({ title: 'Delete sprint ' + id + '?', body: 'Any allocations to this sprint will need to be re-scheduled. This action is undoable.', confirmLabel: 'Delete sprint', danger: true })) return;
     App.pushUndo('Remove sprint ' + id);
     sprints.splice(idx, 1);
     App.markDirty();
@@ -17445,7 +17803,7 @@ const Capacity = {
     // Sprint vertical guides + labels
     const guideLines = futureSprints.map(s => {
       const x = dateToX(s.start_date);
-      return '<div style="position:absolute;top:0;bottom:0;left:' + x + 'px;width:1px;background:#e5e7eb;pointer-events:none"></div>';
+      return '<div style="position:absolute;top:0;bottom:0;left:' + x + 'px;width:1px;background:var(--gantt-guide);pointer-events:none"></div>';
     }).join('');
     const sprintLabels = futureSprints.map(s => {
       const x = dateToX(s.start_date);
@@ -17478,21 +17836,21 @@ const Capacity = {
             ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px;margin-top:2px;color:var(--accent-blue)" onclick="Capacity._toggleTeamScheduleMember(\'' + esc(memberKey) + '\')" aria-expanded="' + expanded + '">' + (expanded ? 'Show fewer' : 'Show all ' + rankedAssigns.length) + '</button>'
             : '')
         : '<span style="font-size:10px;color:var(--text-muted);font-style:italic">No upcoming assignments</span>';
-      return '<div style="display:flex;gap:8px;align-items:stretch;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
+      return '<div class="ts-row" style="display:flex;gap:8px;align-items:stretch;padding:6px 0;border-bottom:1px solid var(--gantt-row-border)">' +
         '<div style="min-width:180px;padding:4px 8px">' +
           '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">' + esc(m.name) + '</div>' +
           '<div style="font-size:10px;color:var(--text-muted)">' + esc((m.primary_skills || []).join(', ') || m.role || '') + '</div>' +
           queue +
         '</div>' +
-        '<div style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:38px;background:#fbfbfd;border-left:1px solid var(--border-light)">' +
+        '<div class="ts-lane" style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:38px;background:var(--surface-2);border-left:1px solid var(--border-light)">' +
           guideLines + bars +
         '</div>' +
       '</div>';
     }).join('');
 
     el.innerHTML =
-      '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);background:white;overflow-x:auto">' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);background:#f8fafc">' +
+      '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--surface);overflow-x:auto">' +
+        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);background:var(--surface-2)">' +
           '<div style="min-width:180px;padding:4px 8px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Team member</div>' +
           '<div style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:20px">' + sprintLabels + '</div>' +
         '</div>' +
@@ -18149,10 +18507,10 @@ const Capacity = {
     this.render();
   },
 
-  deleteMember(idx) {
+  async deleteMember(idx) {
     const tm = App.data.team_members[idx];
     if (!tm) return;
-    if (!confirm('Remove ' + tm.name + ' from the team?')) return;
+    if (!await App.confirm({ title: 'Remove ' + tm.name + ' from the team?', body: 'Any current assignments will be left unassigned for a solver re-run. This action is undoable.', confirmLabel: 'Remove', danger: true })) return;
     App.pushUndo('Remove team member ' + tm.name);
     App.logChange(null, 'team_member_removed', tm.name, '', 'user');
     App.data.team_members.splice(idx, 1);
@@ -20879,11 +21237,11 @@ const Governance = {
     this.render();
   },
 
-  deleteForum(idx) {
+  async deleteForum(idx) {
     const forums = App.data.governance_forums || [];
     if (!forums[idx]) return;
     const name = forums[idx].name;
-    if (!confirm('Delete forum "' + name + '"? This cannot be undone.')) return;
+    if (!await App.confirm({ title: 'Delete forum "' + name + '"?', body: 'Minutes, actions and decisions logged on this forum will be lost with it. This cannot be undone.', confirmLabel: 'Delete forum', danger: true })) return;
     App.pushUndo('Delete forum');
     forums.splice(idx, 1);
     App.markDirty();
