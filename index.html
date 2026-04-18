@@ -103,7 +103,7 @@ html[data-theme="dark"] {
 }
 /* Global surface wiring: anything visually presented on a "card" uses the token. */
 .drop-zone, .filter-bar, .table-wrapper, .sprint-card, .split-modal,
-.gantt-labels, .forum-card, .risk-table, .integrity-panel, .onboarding-card,
+.gantt-labels, .forum-card, .risk-table, .integrity-panel,
 .progress-card, .cmdk-panel, .summary-card, .kpi-card, .panel-section,
 .sprint-swimlane .sl-project-cell, .velocity-panel {
   background: var(--surface);
@@ -1334,23 +1334,6 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 /* --- Accessibility: contrast fixes for muted text --- */
 .text-muted-accessible { color: #7c8ba1; }
 
-/* --- Onboarding / Guided Tour --- */
-.onboarding-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999; transition: opacity 0.3s ease; }
-.onboarding-highlight { position: absolute; z-index: 10001; box-shadow: 0 0 0 4px var(--accent-blue), 0 0 0 9999px rgba(0,0,0,0.55); border-radius: var(--radius-md); pointer-events: none; transition: all 0.35s ease; }
-.onboarding-card { position: fixed; z-index: 10002; background: white; border-radius: var(--radius-lg); box-shadow: 0 12px 40px rgba(0,0,0,0.25); padding: 20px; width: 340px; max-width: calc(100vw - 32px); }
-.onboarding-card h4 { font-size: 15px; font-weight: 700; color: var(--text-dark); margin: 0 0 8px 0; }
-.onboarding-card p { font-size: 13px; color: var(--text-dark-secondary); margin: 0 0 16px 0; line-height: 1.5; }
-.onboarding-dots { display: flex; gap: 6px; align-items: center; }
-.onboarding-dots .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border-light); transition: background 0.2s; }
-.onboarding-dots .dot.active { background: var(--accent-blue); }
-.onboarding-actions { display: flex; align-items: center; justify-content: space-between; }
-.onboarding-skip { font-size: 12px; color: var(--text-muted); cursor: pointer; background: none; border: none; padding: 4px 8px; }
-.onboarding-skip:hover { color: var(--text-dark); }
-.onboarding-next { background: var(--accent-blue); color: white; border: none; padding: 7px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; }
-.onboarding-next:hover { background: var(--accent-blue-hover); }
-.onboarding-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); margin-top: 12px; }
-.onboarding-check input { margin: 0; }
-
 /* --- View Help Button --- */
 .view-help-btn { background: none; border: 1px solid var(--border-light); color: var(--text-muted); width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; font-weight: 700; flex-shrink: 0; transition: all 0.15s; }
 .view-help-btn:hover { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
@@ -1373,7 +1356,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .forum-delete-btn:hover { color: var(--status-red); }
 
 @media print {
-  .sidebar, .app-header, .panel-overlay, .detail-panel, .split-modal, .split-modal-overlay, .team-edit-modal, .team-edit-overlay, .onboarding-overlay, .onboarding-highlight, .onboarding-card, .view-help-panel { display: none !important; }
+  .sidebar, .app-header, .panel-overlay, .detail-panel, .split-modal, .split-modal-overlay, .team-edit-modal, .team-edit-overlay, .view-help-panel { display: none !important; }
   .main-content { overflow: visible !important; }
 }
 
@@ -2862,10 +2845,6 @@ const App = {
     this.captureSnapshot();
     this.toast('Loaded ' + this.data.projects.length + ' projects from ' + (this.fileName || 'session'), 'success');
     console.log('[PCC] Data loaded:', this.data.projects.length, 'projects');
-    // Trigger onboarding if not previously completed
-    if (!localStorage.getItem('pcc-onboarding-complete')) {
-      setTimeout(function() { Onboarding.start(); }, 600);
-    }
     // REQ-UX-02: Run data integrity check on load
     this._integrityIssues = this.validateDataIntegrity();
     if (this._integrityIssues.length > 0) {
@@ -3774,13 +3753,6 @@ const App = {
             '</div>';
           }).join('');
         })() +
-      '</div>' +
-
-      // Guided Tour
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Help & Onboarding</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Walk through the key features of Portfolio Command Centre with an interactive guided tour.</div>' +
-        '<button class="btn btn-outline btn-sm" onclick="Onboarding.start()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Re-run Guided Tour</button>' +
       '</div>';
   },
 
@@ -16224,42 +16196,10 @@ const TrendsModal = {
 };
 
 /* ============================================================
-   Onboarding — Guided Tour & View Help
+   Onboarding — inline per-view help (multi-step tour removed).
+   Retained: showViewHelp(viewName) powers the "?" button on each view's toolbar.
    ============================================================ */
 const Onboarding = {
-  LS_KEY: 'pcc-onboarding-complete',
-  currentStep: 0,
-  steps: [
-    {
-      target: '#dropZone, #viewDashboard',
-      fallback: '#mainContent',
-      title: 'Upload Data',
-      desc: 'Start by loading your portfolio JSON file. Drag and drop it onto the drop zone, or click to browse. You can also restore a previous session from localStorage.',
-      position: 'bottom'
-    },
-    {
-      target: '#globalCustomer, #headerCustomer',
-      fallback: '.app-header',
-      title: 'Select Customer',
-      desc: 'Every view is scoped by customer. Use the customer selector in the header to switch between GCC, KS, or DR&I — the choice applies everywhere.',
-      position: 'bottom'
-    },
-    {
-      target: '.sidebar',
-      fallback: '.sidebar',
-      title: 'Navigate Views',
-      desc: 'Use the sidebar to switch between the six views: Dashboard, Sprint Planning, Roadmap, Capacity, Governance Forums, and Configuration.',
-      position: 'right'
-    },
-    {
-      target: '#btnAddProject',
-      fallback: '.app-header',
-      title: 'Add Projects',
-      desc: 'Click "+ New Project" to create a new project. Fill in the details in the side panel that opens. Projects are auto-saved to your browser.',
-      position: 'bottom'
-    }
-  ],
-
   viewHelp: {
     dashboard: {
       title: 'Dashboard View',
@@ -16288,145 +16228,7 @@ const Onboarding = {
   },
 
   init() {
-    // Nothing to do at init time; onboarding is triggered after data load
-  },
-
-  start() {
-    this.currentStep = 0;
-    this._showStep();
-  },
-
-  _getTargetEl(step) {
-    const selectors = step.target.split(',').map(function(s) { return s.trim(); });
-    for (var i = 0; i < selectors.length; i++) {
-      var el = document.querySelector(selectors[i]);
-      if (el && el.offsetParent !== null) return el;
-      if (el) return el;
-    }
-    return document.querySelector(step.fallback);
-  },
-
-  _showStep() {
-    this._removeOverlay();
-    if (this.currentStep >= this.steps.length) {
-      this._finish();
-      return;
-    }
-
-    const step = this.steps[this.currentStep];
-    const targetEl = this._getTargetEl(step);
-
-    // Overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'onboarding-overlay';
-    overlay.id = 'onboardingOverlay';
-    document.body.appendChild(overlay);
-
-    // Highlight
-    if (targetEl) {
-      const rect = targetEl.getBoundingClientRect();
-      const highlight = document.createElement('div');
-      highlight.className = 'onboarding-highlight';
-      highlight.id = 'onboardingHighlight';
-      highlight.style.top = (rect.top + window.scrollY - 4) + 'px';
-      highlight.style.left = (rect.left + window.scrollX - 4) + 'px';
-      highlight.style.width = (rect.width + 8) + 'px';
-      highlight.style.height = (rect.height + 8) + 'px';
-      document.body.appendChild(highlight);
-    }
-
-    // Card
-    const card = document.createElement('div');
-    card.className = 'onboarding-card';
-    card.id = 'onboardingCard';
-
-    var dots = '';
-    for (var i = 0; i < this.steps.length; i++) {
-      dots += '<div class="dot' + (i === this.currentStep ? ' active' : '') + '"></div>';
-    }
-
-    card.innerHTML =
-      '<h4>' + Dashboard.esc(step.title) + '</h4>' +
-      '<p>' + step.desc + '</p>' +
-      '<div class="onboarding-actions">' +
-        '<div class="onboarding-dots">' + dots + '</div>' +
-        '<div style="display:flex;gap:8px;align-items:center">' +
-          '<button class="onboarding-skip" onclick="Onboarding.skip()">Skip</button>' +
-          '<button class="onboarding-next" onclick="Onboarding.nextStep()">' + (this.currentStep === this.steps.length - 1 ? 'Finish' : 'Next') + '</button>' +
-        '</div>' +
-      '</div>' +
-      '<label class="onboarding-check"><input type="checkbox" id="onboardingDontShow"> Don\'t show again</label>';
-
-    document.body.appendChild(card);
-
-    // Position card near target
-    this._positionCard(card, targetEl, step.position);
-  },
-
-  _positionCard(card, targetEl, position) {
-    if (!targetEl) {
-      card.style.top = '50%';
-      card.style.left = '50%';
-      card.style.transform = 'translate(-50%, -50%)';
-      return;
-    }
-
-    const rect = targetEl.getBoundingClientRect();
-    const cardW = 340;
-    const gap = 16;
-
-    if (position === 'right') {
-      card.style.top = Math.max(16, rect.top) + 'px';
-      card.style.left = (rect.right + gap) + 'px';
-    } else if (position === 'bottom') {
-      card.style.top = (rect.bottom + gap) + 'px';
-      card.style.left = Math.max(16, Math.min(rect.left, window.innerWidth - cardW - 16)) + 'px';
-    } else if (position === 'left') {
-      card.style.top = Math.max(16, rect.top) + 'px';
-      card.style.left = Math.max(16, rect.left - cardW - gap) + 'px';
-    } else {
-      card.style.top = Math.max(16, rect.top - card.offsetHeight - gap) + 'px';
-      card.style.left = Math.max(16, Math.min(rect.left, window.innerWidth - cardW - 16)) + 'px';
-    }
-  },
-
-  nextStep() {
-    this._checkDontShow();
-    this.currentStep++;
-    this._showStep();
-  },
-
-  skip() {
-    this._checkDontShow();
-    this._removeOverlay();
-    this._finish();
-  },
-
-  _checkDontShow() {
-    var cb = document.getElementById('onboardingDontShow');
-    if (cb && cb.checked) {
-      try { localStorage.setItem(this.LS_KEY, '1'); } catch (e) {}
-    }
-  },
-
-  _finish() {
-    this._removeOverlay();
-    // Mark complete if not already
-    try {
-      if (!localStorage.getItem(this.LS_KEY)) {
-        localStorage.setItem(this.LS_KEY, '1');
-      }
-    } catch (e) {}
-    App.toast('Guided tour complete. Click the ? button in any view for help.', 'success');
-  },
-
-  _removeOverlay() {
-    var overlay = document.getElementById('onboardingOverlay');
-    if (overlay) overlay.remove();
-    var highlight = document.getElementById('onboardingHighlight');
-    if (highlight) highlight.remove();
-    var card = document.getElementById('onboardingCard');
-    if (card) card.remove();
+    // No-op kept for call-site back-compat (App.init still calls it).
   },
 
   showViewHelp(viewName) {
