@@ -9433,6 +9433,62 @@ const Gantt = {
     self._hoverState = self._hoverState || { el: null, hideTimer: 0 };
     const HIDE_DELAY_MS = 120;
 
+    // Shared helper — a per-phase breakdown table. Used by the `phase` tooltip (full detail for one
+    // phase) and appended to bar/label tooltips (compact status-per-phase overview).
+    const PHASE_SKILL_MAP = Solver && Solver.PHASE_SKILL_MAP ? Solver.PHASE_SKILL_MAP : {};
+    const SKILL_PHASE_MAP = {}; // reverse — skill_key → phase name
+    Object.keys(PHASE_SKILL_MAP).forEach(phase => { SKILL_PHASE_MAP[PHASE_SKILL_MAP[phase]] = phase; });
+
+    const phaseRowHtml = (proj, skillKey, options) => {
+      const compact = options && options.compact;
+      const splits = (proj && proj.skill_splits && proj.skill_splits[skillKey]) || [];
+      const total = proj ? (proj[skillKey] || 0) : 0;
+      if (total <= 0) return '';
+      const skillMeta = Sprint.SKILLS.find(s => s.key === skillKey) || {};
+      const skillShort = skillMeta.short || skillKey;
+      const skillLong = SKILL_PHASE_MAP[skillKey] || skillMeta.label || skillShort;
+      const colour = Sprint.SKILL_COLORS[skillKey] || '#666';
+      const completed = splits.reduce((acc, en) => acc + (en.completed || 0), 0);
+      const allDone = splits.length > 0 && splits.every(en => en.status === 'complete');
+      const anyInProg = splits.some(en => en.status === 'in_progress');
+      const status = allDone ? 'complete' : (anyInProg ? 'in_progress' : (splits.length === 0 ? 'unplanned' : 'pending'));
+      const statusDot = {
+        complete:   'background:var(--status-green)',
+        in_progress:'background:var(--accent-blue)',
+        pending:    'background:#cbd5e1',
+        unplanned:  'background:transparent;border:1px dashed var(--text-muted)'
+      }[status];
+      const statusLabel = { complete: 'Complete', in_progress: completed + '/' + total + ' in progress', pending: 'Pending', unplanned: 'Not yet allocated' }[status];
+      if (compact) {
+        return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11px">' +
+          '<span style="width:8px;height:8px;border-radius:2px;background:' + colour + ';flex-shrink:0"></span>' +
+          '<span style="flex:1;color:var(--text-dark)">' + esc(skillLong) + '</span>' +
+          '<span style="width:6px;height:6px;border-radius:50%;' + statusDot + '"></span>' +
+          '<span style="color:var(--text-muted);font-size:10px;min-width:40px;text-align:right">' + statusLabel + '</span>' +
+        '</div>';
+      }
+      // Full detail (used inside the phase tooltip itself)
+      const sprintList = splits.map(en => (en.sprint || '').replace(/CY\d+-/, '')).filter(Boolean).join(', ');
+      return '<div style="margin-top:4px">' +
+        '<div style="font-size:11px;color:var(--text-muted)">Status <span style="font-weight:600;color:var(--text-dark)">' + statusLabel + '</span></div>' +
+        (sprintList ? '<div style="font-size:11px;color:var(--text-muted)">Sprints <span style="font-weight:600;color:var(--text-dark)">' + esc(sprintList) + '</span></div>' : '') +
+        '<div style="font-size:11px;color:var(--text-muted)">Points <span style="font-weight:600;color:var(--text-dark)">' + total + '</span></div>' +
+      '</div>';
+    };
+
+    // Compact per-phase breakdown block for a whole project. Returns '' if the project has no sized phases.
+    const buildPhaseBreakdown = (proj) => {
+      if (!proj || !proj.delivery_config) return '';
+      const phaseOrder = (proj.delivery_config.phase_order || []);
+      const skillKeys = phaseOrder.map(ph => PHASE_SKILL_MAP[ph]).filter(Boolean);
+      const rows = skillKeys.map(sk => phaseRowHtml(proj, sk, { compact: true })).filter(Boolean).join('');
+      if (!rows) return '';
+      return '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light)">' +
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">Delivery phases</div>' +
+        rows +
+      '</div>';
+    };
+
     const buildTooltip = (type, el) => {
       if (type === 'seg') {
         const parentBar = el.closest('.gantt-bar');
@@ -9471,7 +9527,28 @@ const Gantt = {
           '<div class="gantt-tooltip-row"><span style="font-size:10px;font-weight:600;color:' + App.statusColor(p.status) + '">' + esc(p.status) + '</span> ' + ragDot(p.rag_schedule) + ragDot(p.rag_resourcing) + ragDot(p.rag_scope) +
           (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
           (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
-          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' + buildAssigneeLine(p, null) + buildProjectSummary(p);
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' +
+          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildProjectSummary(p);
+      }
+      // Phase-specific tooltip — fired when hovering a detailed sub-row bar. Shows just the
+      // hovered phase in full detail plus a compact header identifying the parent project.
+      if (type === 'phase') {
+        const id = el.dataset.id;
+        const skillKey = el.dataset.skillKey;
+        const overrun = el.dataset.overrun === '1';
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        if (!p || !skillKey) return '';
+        const skillMeta = Sprint.SKILLS.find(s => s.key === skillKey) || {};
+        const phaseName = SKILL_PHASE_MAP[skillKey] || skillMeta.label || skillKey;
+        const color = Sprint.SKILL_COLORS[skillKey] || '#666';
+        const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
+          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
+        const phaseHeader = '<div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--text-dark)">' +
+          '<span style="width:12px;height:12px;border-radius:3px;background:' + color + '"></span>' +
+          esc(phaseName) +
+          (overrun ? ' <span style="font-size:9px;padding:1px 5px;border-radius:999px;background:var(--status-red);color:white;font-weight:700">past target</span>' : '') +
+        '</div>';
+        return projHeader + phaseHeader + phaseRowHtml(p, skillKey, { compact: false }) + buildAssigneeLine(p, skillKey);
       }
       if (type === 'milestone') {
         const info = (() => { try { return JSON.parse(el.dataset.info || '{}'); } catch (_) { return {}; } })();
@@ -10041,11 +10118,14 @@ const Gantt = {
           const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:' + (subRowH / 2) + 'px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
           // D8: per-phase highlight — phase-level bars get a red inner border when they extend past target_date.
           const phaseOverruns = (subX1 + subW) > (x2 + 2);
-          const subBarStyle = 'position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.9' +
+          const subBarStyle = 'position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.9;cursor:pointer' +
             (phaseOverruns ? ';box-shadow:0 0 0 1.5px var(--status-red) inset' : '');
+          // Phase-aware hover: the detailed sub-row bar becomes a .gantt-hoverable carrying the project-id
+          // + skill-key + phase overrun flag. buildTooltip('phase', el) reads these and renders a
+          // focused tooltip for the specific delivery phase.
           mainRow += '<div class="gantt-sub-row" style="height:' + subRowH + 'px;position:relative;border-bottom:1px solid #f8fafc;width:' + totalWidth + 'px">' +
             connector +
-            '<div style="' + subBarStyle + '" title="' + Dashboard.esc(skillLabel) + ' · ' + pts + ' pts' + (phaseOverruns ? ' — extends past target_date' : '') + '">' + inlineLabel + '</div>' +
+            '<div class="gantt-hoverable gantt-phase-bar" data-hover-type="phase" data-id="' + p.id + '" data-skill-key="' + sk + '" data-overrun="' + (phaseOverruns ? '1' : '0') + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(skillLabel) + ' phase of ' + Dashboard.esc(p.name) + '" style="' + subBarStyle + '">' + inlineLabel + '</div>' +
             floatLabel +
           '</div>';
           prevEnd = subX1 + subW;
