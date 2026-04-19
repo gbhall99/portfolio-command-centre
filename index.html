@@ -1914,6 +1914,39 @@ html[data-theme="dark"] [style*="color: #991b1b"] { color: #fecaca !important; }
    element so screen readers still get the full text. */
 .tooltip-trigger { cursor: help; }
 
+/* --- UI-M2: styled tooltip primitive. Alternative to browser native `title`
+   when a themed, no-hover-delay tooltip is wanted. Opt in by adding
+   class="pcc-tooltip" data-tip="..." to any inline element. Falls back to
+   doing nothing if data-tip is absent, so it composes with existing
+   title-based tooltips without conflict. */
+.pcc-tooltip { position: relative; }
+.pcc-tooltip[data-tip]:hover::after,
+.pcc-tooltip[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 120px;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: var(--text-dark);
+  color: var(--bg-card);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  z-index: 9500;
+  pointer-events: none;
+  animation: pcc-tt-in 0.12s ease-out;
+}
+html[data-theme="dark"] .pcc-tooltip[data-tip]:hover::after,
+html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background: var(--surface-hover); color: var(--text-dark); }
+@keyframes pcc-tt-in { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
 /* --- UI-M25: ellipsize the detail-panel title instead of letting long
    project names bump the close button off-screen. */
 .panel-header .panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -7779,14 +7812,25 @@ const Dashboard = {
 
     const trigger = document.createElement('div');
     trigger.className = 'ms-trigger';
+    // UI-M16: make the trigger focusable and expose the dropdown's open state
+    // to screen readers so keyboard users can reach and operate the menu.
+    trigger.setAttribute('role', 'combobox');
+    trigger.setAttribute('tabindex', '0');
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
     trigger.innerHTML = '<span class="ms-placeholder">All</span><span class="ms-arrow">▾</span>';
 
     const dropdown = document.createElement('div');
     dropdown.className = 'ms-dropdown';
-    options.forEach(opt => {
+    dropdown.setAttribute('role', 'listbox');
+    dropdown.setAttribute('aria-multiselectable', 'true');
+    options.forEach((opt, i) => {
       const el = document.createElement('div');
       el.className = 'ms-option';
       el.dataset.value = opt;
+      el.setAttribute('role', 'option');
+      el.setAttribute('tabindex', '-1');
+      el.setAttribute('aria-selected', 'false');
       el.innerHTML = '<span class="ms-check"></span><span>' + this.esc(opt) + '</span>';
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -7799,11 +7843,52 @@ const Dashboard = {
     container.appendChild(trigger);
     container.appendChild(dropdown);
 
+    const setOpen = (open) => {
+      container.classList.toggle('open', open);
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        const first = dropdown.querySelector('.ms-option');
+        if (first) first.focus();
+      }
+    };
+
     trigger.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Close all other multi-selects
       document.querySelectorAll('.multi-select.open').forEach(ms => { if (ms.id !== id) ms.classList.remove('open'); });
-      container.classList.toggle('open');
+      setOpen(!container.classList.contains('open'));
+    });
+
+    // UI-M16: arrow-key navigation + Enter/Space toggle + Esc close.
+    trigger.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+      } else if (e.key === 'Escape' && container.classList.contains('open')) {
+        e.preventDefault();
+        setOpen(false);
+      }
+    });
+    dropdown.addEventListener('keydown', (e) => {
+      const opts = [...dropdown.querySelectorAll('.ms-option')];
+      const cur = opts.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = opts[Math.min(opts.length - 1, cur + 1)];
+        if (next) next.focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (cur <= 0) { trigger.focus(); return; }
+        opts[cur - 1].focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (cur >= 0) opts[cur].click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setOpen(false);
+        trigger.focus();
+      } else if (e.key === 'Tab') {
+        setOpen(false);
+      }
     });
   },
 
@@ -7813,9 +7898,11 @@ const Dashboard = {
     if (idx > -1) {
       sel.splice(idx, 1);
       optionEl.classList.remove('selected');
+      optionEl.setAttribute('aria-selected', 'false');
     } else {
       sel.push(value);
       optionEl.classList.add('selected');
+      optionEl.setAttribute('aria-selected', 'true');
     }
     this.multiSelections[filterId] = sel;
     this.updateMultiTrigger(filterId);
