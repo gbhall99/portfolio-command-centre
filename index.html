@@ -289,6 +289,10 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+/* UI-L13: dark theme uses a lower-contrast thumb so it doesn't overwhelm
+   the navy chrome. */
+html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.35); }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(203, 213, 225, 0.55); }
 
 .app-header {
   height: var(--header-height);
@@ -621,7 +625,7 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
   display: flex; align-items: center; gap: 8px; padding: 7px 10px;
   cursor: pointer; font-size: 13px; color: var(--text-dark); transition: background 0.1s;
 }
-.multi-select .ms-option:hover { background: #f8fafc; }
+.multi-select .ms-option:hover { background: var(--surface-hover); }
 .multi-select .ms-option .ms-check {
   width: 16px; height: 16px; border: 1.5px solid var(--border-light); border-radius: 3px;
   display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;
@@ -1039,9 +1043,15 @@ html[data-theme="dark"] .btn-danger:hover { background: #ef4444; }
 
 .sprint-card.order-warning { border-color: var(--status-amber); background: rgba(245,158,11,0.04); }
 .sprint-card .warning-badge { position: absolute; top: -4px; right: -4px; width: 14px; height: 14px; background: var(--status-amber); color: white; border-radius: 50%; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-.sprint-card .split-btn { position: absolute; bottom: 3px; right: 3px; width: 18px; height: 18px; border: none; background: var(--bg-content); color: var(--text-muted); border-radius: 3px; font-size: 10px; cursor: pointer; display: none; align-items: center; justify-content: center; }
-.sprint-card:hover .split-btn { display: flex; }
-.sprint-card .split-btn:hover { background: var(--accent-blue); color: white; }
+/* UI-L10: split-btn visibility. Was hidden except on hover, which left it
+   keyboard-undiscoverable. Now shows when the card has focus too, and
+   uses opacity (not display) so it also participates in the tab order
+   when the card is focused. */
+.sprint-card .split-btn { position: absolute; bottom: 3px; right: 3px; width: 18px; height: 18px; border: none; background: var(--bg-content); color: var(--text-muted); border-radius: 3px; font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s ease, background 0.15s ease; }
+.sprint-card:hover .split-btn,
+.sprint-card:focus-within .split-btn,
+.sprint-card .split-btn:focus-visible { opacity: 1; }
+.sprint-card .split-btn:hover, .sprint-card .split-btn:focus-visible { background: var(--accent-blue); color: white; }
 
 /* Sprint collapse/expand column button */
 .sprint-col-toggle { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 2px; font-size: 12px; display: flex; align-items: center; }
@@ -6293,6 +6303,24 @@ const App = {
       if (c) return c.color;
     }
     return { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Initech': '#8b5cf6' }[name] || '#6366f1';
+  },
+
+  /* UI-L6: pick #fff or #0f172a based on bg luminance so customer badges
+     stay readable even if an admin picks a pale brand colour (e.g. a
+     light yellow) where white text fails AA contrast. Uses the WCAG
+     relative-luminance formula at 50% threshold — simple, good enough
+     for badges. */
+  contrastColor(bgHex) {
+    if (!bgHex || bgHex[0] !== '#') return '#fff';
+    const h = bgHex.slice(1);
+    const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+    if (n.length !== 6) return '#fff';
+    const r = parseInt(n.slice(0, 2), 16) / 255;
+    const g = parseInt(n.slice(2, 4), 16) / 255;
+    const b = parseInt(n.slice(4, 6), 16) / 255;
+    const toLin = (v) => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    const L = 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+    return L > 0.55 ? '#0f172a' : '#fff';
   },
 
   getCustomerColorVar(name) {
