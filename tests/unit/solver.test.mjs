@@ -270,7 +270,8 @@ describe('Solver — overflow slice integrity (bug fix regression)', () => {
       projects: [proj], sprints: [past1, past2, future], team_members: [member]
     }));
     // Expect an overflow warning because all-past + small future can't fit 15 SP.
-    expect(plan.warnings.some(w => w.type === 'capacity_overflow')).toBe(true);
+    // The horizon-terminal shape applies here — no hard_deadline constrains the window.
+    expect(plan.warnings.some(w => w.type === 'capacity_overflow_horizon' || w.type === 'capacity_overflow')).toBe(true);
     // Every NON-overflow slice must have slice.points === Σ(assigned_to[].points).
     allSlices(plan).forEach(s => {
       const isOverflow = (s.reasons || []).includes('overflow');

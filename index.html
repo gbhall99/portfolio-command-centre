@@ -1200,12 +1200,23 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .gantt-labels-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.12s; }
 .gantt-labels-resizer:hover::after, .gantt-labels-resizer.dragging::after { background: var(--accent-blue); }
 body.gantt-labels-dragging { cursor: col-resize; user-select: none; }
-.gantt-label-row { height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
+.gantt-label-row { height: 36px; display: flex; align-items: stretch; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
 .gantt-label-row:hover { background: var(--surface-hover); }
 .gantt-label-row .label-rag { display: inline-flex; gap: 3px; flex-shrink: 0; margin-right: 6px; }
 .gantt-label-row .label-rag .rag-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .gantt-label-row .label-name { font-size: 12px; color: var(--text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .gantt-label-row .label-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+/* Priority column — fixed-width cell on the far left of each label row + matching header cell.
+   Width is tokenised so the small-screen and print breakpoints below can shrink it without
+   touching the rendering code. */
+:root { --gantt-pri-col-w: 68px; }
+.gantt-label-pri-head { width: var(--gantt-pri-col-w); min-width: var(--gantt-pri-col-w); display: flex; align-items: center; justify-content: center; height: 100%; border-right: 1px solid var(--border-light); background: var(--bg-content); font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.gantt-label-pri { width: var(--gantt-pri-col-w); min-width: var(--gantt-pri-col-w); display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 6px; border-right: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; }
+html[data-theme="dark"] .gantt-label-pri-head { border-right-color: #1f2937; }
+html[data-theme="dark"] .gantt-label-pri { border-right-color: #1f2937; }
+.gantt-label-pri-num { font-size: 11px; color: var(--text-dark); font-weight: 700; flex-shrink: 0; }
+.gantt-label-pri-rec { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--accent-violet); color: white; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+.gantt-label-body { flex: 1; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; min-width: 0; }
 
 .gantt-chart-area { flex: 1 0 auto; position: relative; overflow: visible; }
 .gantt-header { height: 48px; display: flex; border-bottom: 2px solid var(--border-light); background: var(--bg-content); position: sticky; top: 0; z-index: 10; isolation: isolate; }
@@ -1730,10 +1741,13 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
   .gantt-container { padding: 10px; gap: 8px; min-height: 0; }
   .gantt-toolbar { gap: 4px; }
   .gantt-toolbar .filter-label { display: none; }
-  :root { --gantt-labels-width: 120px; }
-  .gantt-label-row { padding: 0 6px; height: 32px; }
+  :root { --gantt-labels-width: 140px; --gantt-pri-col-w: 44px; }
+  .gantt-label-row { padding: 0; height: 32px; }
   .gantt-label-row .label-name { font-size: 10px; }
-  .gantt-label-header { padding: 0 6px; height: 40px; font-size: 10px; }
+  .gantt-label-pri-num { font-size: 10px; }
+  .gantt-label-pri-rec { display: none; }
+  .gantt-label-body { padding: 0 6px; }
+  .gantt-label-header { padding: 0; height: 40px; font-size: 10px; }
   .gantt-header { height: 40px; }
   .gantt-header-cell { font-size: 9px; }
   .gantt-row { height: 32px; }
@@ -1798,8 +1812,9 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
   .sprint-toolbar .filter-label { display: none; }
   .sprint-col-header .capacity-label { width: 30px; font-size: 9px; }
   .sprint-col-header .capacity-num { display: none; }
-  :root { --gantt-labels-width: 80px; }
+  :root { --gantt-labels-width: 100px; --gantt-pri-col-w: 36px; }
   .gantt-label-row .label-name { font-size: 9px; }
+  .gantt-label-pri .why-rank-btn { display: none; }
 }
 
 /* REQ-SPRINT-02: Velocity tracking */
@@ -13991,7 +14006,13 @@ const Gantt = {
     }
 
     // Render labels
-    let labelsHtml = '<div class="gantt-label-header">Project</div>' +
+    // Priority sits in its own column on the far left so the rank is the first thing the eye
+    // lands on when scanning the roadmap. `--gantt-pri-col-w` lets the layout scale at the
+    // small-screen and print breakpoints without hard-coding a width in multiple places.
+    let labelsHtml = '<div class="gantt-label-header" style="padding:0;align-items:stretch">' +
+        '<div class="gantt-label-pri-head">#</div>' +
+        '<div style="flex:1;padding:0 12px;display:flex;align-items:center">Project</div>' +
+      '</div>' +
       '<div style="height:22px;border-bottom:1px solid var(--border-dim);background:var(--surface-2);display:flex;align-items:center;padding:0 12px;font-size:10px;color:var(--text-muted);font-weight:700;letter-spacing:0.6px;text-transform:uppercase">Timeline</div>';
     let lastGroup = null;
     // Reset zebra-index for this render pass — used to alternate shading per project (labels + rows).
@@ -14022,23 +14043,27 @@ const Gantt = {
           blockedCountChip = '<span title="Blocked by ' + deps.length + ' project' + (deps.length === 1 ? '' : 's') + '" style="font-size:9px;padding:1px 5px;border-radius:3px;background:#1e293b;color:white;font-weight:700;flex-shrink:0" aria-label="Blocked by ' + deps.length + ' dependenc' + (deps.length === 1 ? 'y' : 'ies') + '">&#x21BB;' + deps.length + '</span>';
         }
       }
-      const priChip =
-        '<span style="font-size:9px;color:var(--text-muted);font-weight:600;flex-shrink:0">#' + (p.priority || '—') + '</span>' +
-        (recPri && recPri !== p.priority
-          ? '<span title="Recommended #' + recPri + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;flex-shrink:0">\u2192#' + recPri + '</span>'
-          : '') +
-        blockedCountChip +
-        '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
+      const priCell =
+        '<div class="gantt-label-pri">' +
+          '<span class="gantt-label-pri-num">#' + (p.priority || '—') + '</span>' +
+          (recPri && recPri !== p.priority
+            ? '<span title="Recommended #' + recPri + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" class="gantt-label-pri-rec">\u2192#' + recPri + '</span>'
+            : '') +
+          '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>' +
+        '</div>';
       // L7: right-click a label to add a dependency via the existing Detail Panel dep-add flow.
       // Zebra-stripe alternating projects so it's easy to tell where one project ends and the next
       // begins, especially in detailed mode where a single project spans several sub-rows.
       const zebra = (this._projectZebraIndex || 0) % 2 === 0 ? 'gantt-proj-zebra-0' : 'gantt-proj-zebra-1';
       this._projectZebraIndex = (this._projectZebraIndex || 0) + 1;
       const detailedCls = isDetailed ? ' gantt-label-row-in-block' : '';
-      labelsHtml += '<div class="gantt-label-row gantt-hoverable ' + zebra + detailedCls + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')" oncontextmenu="event.preventDefault();DetailPanel.open(\'' + p.id + '\');setTimeout(function(){var el=document.querySelector(\'[data-section=&quot;dependencies&quot;]\');if(el)el.scrollIntoView({behavior:\'smooth\'})},150)">' +
-        ragDotsHtml +
-        '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
-        priChip +
+      labelsHtml += '<div class="gantt-label-row gantt-hoverable ' + zebra + detailedCls + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')" oncontextmenu="event.preventDefault();DetailPanel.open(\'' + p.id + '\');setTimeout(function(){var el=document.querySelector(\'[data-section=&quot;dependencies&quot;]\');if(el)el.scrollIntoView({behavior:\'smooth\'})},150)" style="padding:0">' +
+        priCell +
+        '<div class="gantt-label-body">' +
+          ragDotsHtml +
+          '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+          blockedCountChip +
+        '</div>' +
       '</div>';
       if (isDetailed) {
         // In detailed mode each sub-row is an empty placeholder on the label side (phase labels
@@ -17875,7 +17900,9 @@ const Sprint = {
   _WARNING_META: {
     deadline_miss:             { label: 'Deadline will be missed',          resolved: false, action: 'Cut scope, raise the "how busy can a skill get" cap, or push the deadline. The project\'s "Why?" button shows the earliest sprint it could still land.' },
     impossible:                { label: 'Cannot be scheduled',              resolved: false, action: 'No arrangement of the current inputs satisfies every constraint. Review the project\'s size, dependencies, and team capacity.' },
-    capacity_overflow:         { label: 'Skill is overloaded',              resolved: false, action: 'Too much work for this skill in this sprint. Raise the capacity ceiling, or move some work to a later sprint before re-running.' },
+    capacity_overflow_horizon: { label: 'No room in the horizon',           resolved: false, action: 'Every sprint in the horizon is already full for this skill. Add a new sprint after the last one, raise per-sprint capacity, or cut lower-priority scope.' },
+    capacity_overflow_deadline:{ label: 'Won\u2019t fit before deadline',    resolved: false, action: 'This project\u2019s hard deadline caps the horizon and the work doesn\u2019t fit inside it. Extend the deadline, add capacity in the earlier sprints, or cut scope.' },
+    capacity_overflow:         { label: 'Skill is overloaded',              resolved: false, action: 'No sprint in the current horizon could take this work. Raise capacity, cut scope, or extend the horizon.' },
     zero_capacity:             { label: 'No one can do this skill',         resolved: false, action: 'No team member covers this skill in the active customer, or everyone who does has zero capacity. Add coverage or raise availability, then re-run.' },
     circular_dependency:       { label: 'Circular dependency',              resolved: false, action: 'Two projects depend on each other. Remove one edge of the cycle in the Dependencies tab before re-running.' },
     buffer_push:               { label: 'Phase pushed later by buffer',     resolved: true,  action: 'Solver slid the phase to preserve the hand-off gap. Shrink the "spare points between phases" buffer if you want it to pack tighter next time.' },
@@ -17883,7 +17910,9 @@ const Sprint = {
     buffer_abandoned_maxslides:{ label: 'Phase gave up sliding',            resolved: true,  action: 'Solver tried to preserve the buffer but bailed after too many cascading pushes. Phase is placed, but tight. Raise "how far can a phase slide" or reduce size to recover the buffer.' },
     person_over_cap_averted:   { label: 'Avoided over-booking a person',    resolved: true,  action: 'Solver moved a slice to a later sprint because a team member would have exceeded their per-sprint cap. Add skill coverage or raise per-sprint points if this happens often.' },
     time_budget_split:         { label: 'Phase split across sprints',       resolved: true,  action: 'Solver split the phase because it didn\'t fit one sprint\'s working-day budget. Raise the sprint\'s time budget, or split the project size, to keep it together.' },
-    dependency_cross_customer: { label: 'Cross-customer dependency',        resolved: true,  action: 'Solver honoured a dependency that crosses customers. Turn off "honour cross-customer dependencies" in System Settings, or break the dependency, to change this.' }
+    dependency_cross_customer: { label: 'Cross-customer dependency',        resolved: true,  action: 'Solver honoured a dependency that crosses customers. Turn off "honour cross-customer dependencies" in System Settings, or break the dependency, to change this.' },
+    dependency_push:           { label: 'Start pushed by a dependency',     resolved: true,  action: 'Solver delayed the first sprint for this project until the blocking dependency finishes. To start earlier, break or reorder the dependency.' },
+    past_sprint_protected:     { label: 'Past-sprint work preserved',       resolved: true,  action: 'History in already-finished sprints was kept as-is — the solver routes new work into future sprints only. Turn off "Protect past sprints" in System Settings to re-plan everything.' }
   },
 
   _warningSeverity(type) {
@@ -20525,6 +20554,8 @@ const Solver = {
     const plain = {
       deadline_miss: 'Deadline miss',
       impossible: 'Impossible constraint',
+      capacity_overflow_horizon: 'Capacity overflow (horizon saturated)',
+      capacity_overflow_deadline: 'Capacity overflow (before deadline)',
       capacity_overflow: 'Capacity overflow',
       buffer_push: 'Buffer slide',
       buffer_skipped_deadline: 'Buffer dropped (deadline wins)',
@@ -20863,7 +20894,22 @@ const Solver = {
       const phases = {};
       skills.forEach(sk => { if (!phases[sk.phase]) phases[sk.phase] = []; phases[sk.phase].push(sk); });
       const phaseNums = Object.keys(phases).map(Number).sort((a, b) => a - b);
-      let minIdx = Math.max(0, p._depEarliest);
+      // Re-check dependencies against the LIVE finishCache. `p._depEarliest` was computed once at
+      // sort-time, before Pass 1 ran any placements. If this project's dependency was already
+      // allocated earlier in Pass 1 (or during Pass 2's retry), its finish index is now known and
+      // must gate this project's start. Without this live re-check a dependent project could
+      // start in the same sprint its dependency finishes — violating the ordering contract.
+      let liveDepMin = p._depEarliest || 0;
+      this.normalizeDepsBidirectional(p, reverseBlocks).forEach(depId => {
+        if (cycleSet.has(p.id) && cycleSet.has(depId)) return;
+        const depProject = allProjectMap[depId];
+        if (depProject && depProject.customer !== customer && !lockedIds.has(depId)) {
+          if (!(enforceCrossCust && lockedIds.has(depId))) return;
+        }
+        const f = finishCache[depId];
+        if (typeof f === 'number' && f >= 0 && f + 1 > liveDepMin) liveDepMin = f + 1;
+      });
+      let minIdx = Math.max(0, liveDepMin);
       let allMet = true;
 
       phaseNums.forEach((phaseNum, phaseIdx) => {
@@ -21087,10 +21133,25 @@ const Solver = {
               // slice.points but leaves assigned_to untouched, making `points` and Σassigned_to
               // diverge (capacity view over-reports, per-person ledger under-reserves).
               allMet = false;
+              // Two distinct failure shapes share this fall-through:
+              //   (a) horizon-terminal — no deadline ceiling (or the ceiling is the last sprint
+              //       anyway), and every sprint is already saturated. "Move to a later sprint"
+              //       is meaningless — the user has to extend the horizon, add capacity, or
+              //       cut scope on lower-priority projects.
+              //   (b) deadline-ceiling — a hard_deadline capped the horizon artificially and
+              //       the work doesn't fit inside the allowed window. Moving to a later sprint
+              //       would miss the deadline — the user has to extend the deadline, add
+              //       capacity in the earlier sprints, or cut scope.
+              const isDeadlineBounded = ceilingIdx >= 0 && ceilingIdx < sprints.length - 1;
               const lastSid = sprints[(ceilingIdx >= 0 ? Math.min(ceilingIdx, sprints.length - 1) : sprints.length - 1)].sprint_id;
-              allocations[p.id][sk.key].push({ sprint: lastSid, points: pointsLeft, assigned_to: [], reasons: ['overflow'] });
-              this._warn(warnings, 'capacity_overflow', p, sk.label, lastSid,
-                p.name + ': ' + sk.label + ' overflows by ' + pointsLeft + ' pts');
+              const warnType = isDeadlineBounded ? 'capacity_overflow_deadline' : 'capacity_overflow_horizon';
+              const horizonFirst = sprints[0].sprint_id;
+              const horizonLast = sprints[sprints.length - 1].sprint_id;
+              const detail = isDeadlineBounded
+                ? (p.name + ': ' + sk.label + ' — ' + pointsLeft + ' pts could not fit before the hard deadline (last allowed sprint: ' + lastSid + '). Options: extend the deadline, add capacity in sprints up to ' + lastSid + ', or cut scope.')
+                : (p.name + ': ' + sk.label + ' — ' + pointsLeft + ' pts could not fit anywhere in the horizon (' + horizonFirst + '..' + horizonLast + '). Options: add sprints after ' + horizonLast + ', raise per-sprint capacity, or cut scope on lower-priority projects.');
+              allocations[p.id][sk.key].push({ sprint: lastSid, points: pointsLeft, assigned_to: [], reasons: ['overflow', isDeadlineBounded ? 'overflow-deadline' : 'overflow-horizon'] });
+              this._warn(warnings, warnType, p, sk.label, lastSid, detail);
               pointsLeft = 0;
               break;
             }
@@ -21134,9 +21195,25 @@ const Solver = {
           if (remaining[sp.sprint] && remaining[sp.sprint][skillKey] !== undefined) {
             remaining[sp.sprint][skillKey] += sp.points;
           }
-          this._releaseFromMembers(personLedger, sp.sprint, sp.assigned_to);
+          // Pass releaseOpts so the R12 concurrent map entry for this slice is also torn down.
+          // Without it, Pass 2's retry could be spuriously blocked by commitments from the Pass 1
+          // placement we just rolled back.
+          this._releaseFromMembers(personLedger, sp.sprint, sp.assigned_to, {
+            concurrentMap, projectId: p.id, skillKey
+          });
         });
       });
+      // Prune this project's overflow warnings — if Pass 2 still can't place the work it will emit
+      // fresh ones, and if it CAN, the Pass 1 "no room" warnings were stale and would mislead the
+      // user (they'd see "won't fit before deadline" next to an allocation that now meets the
+      // deadline).
+      for (let i = warnings.length - 1; i >= 0; i--) {
+        const w = warnings[i];
+        if (!w || !w.project || w.project.id !== p.id) continue;
+        if (w.type === 'capacity_overflow_horizon' || w.type === 'capacity_overflow_deadline' || w.type === 'capacity_overflow') {
+          warnings.splice(i, 1);
+        }
+      }
       totalPoints -= SKILLS.reduce((sum, sk) => sum + ((p[sk.key] || 0)), 0);
       delete allocations[p.id];
       delete projectPhaseFootprint[p.id];
