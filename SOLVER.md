@@ -62,7 +62,6 @@ All configurable via the **Settings** button in Sprint Planning.
 | `phaseBufferPoints` | `2` | Hand-off buffer between consecutive phases (expressed in SP; converted to calendar days internally). `0` disables. |
 | `enforcePerPersonCap` | `true` | HARD constraint — no member ever exceeds their sprint-adjusted `available_points_per_sprint`. |
 | `maxBufferSlides` | `4` | Safety stop for cascading buffer pushes (sprints). Once exceeded, the solver accepts overlap and emits `buffer_abandoned_maxslides`. |
-| `priorityWeight` | `3` | Kept for back-compat; NOT currently consumed. Priority ordering is driven by `project.priority` + `hard_deadline`. |
 
 ---
 
@@ -103,7 +102,7 @@ For each project P, each sprint S, the solver maintains `projectTime[P][S] = { p
 4. Build the aggregate `baseCap[sid][skillKey]`, apply `maxCapacityPct`.
 5. Reserve locked projects' capacity (aggregate + per-person when `assigned_to` is populated).
 6. Filter to allocatable projects. Detect circular dependencies; emit `circular_dependency` warning.
-7. Sort projects by: deadline sprint (asc, `-1` → last) → `priority` (asc) → `id` (lex, stable).
+7. Sort projects by: deadline sprint (asc, `-1` → last) → MoSCoW band (Must → Should → Could → Won't, asc) → WSJF score (desc) → `priority` (asc) → `id` (lex, stable).
 
 ### Pass 1 — Forward Schedule
 For each project P in sorted order: call the shared `allocateProject(P, -1)` primitive.
@@ -216,7 +215,7 @@ Emitted on the `warnings: [ { type, project: {id,name}|null, skill: string|null,
 
 ## 11. One-page cheat sheet
 
-- **Priority order**: `hard_deadline_sprint ASC → priority ASC → id ASC`. Stable.
+- **Priority order**: `hard_deadline_sprint ASC → MoSCoW band ASC → WSJF score DESC → priority ASC → id ASC`. Stable.
 - **Capacity grid per sprint**: aggregate `min(skill_cap × maxCapacityPct, sum_of_eligible_member_caps)`.
 - **Per-person cap** (R4): `member.available_points_per_sprint` after override/ramp/holiday/contract-end, per sprint.
 - **Day budget per sprint**: `devDays = working days from start_date to hardening_start`.
