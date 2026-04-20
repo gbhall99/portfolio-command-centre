@@ -3298,9 +3298,59 @@ const App = {
     }
     // F-037: back-fill sprint capacity/committed so velocity/burndown have inputs on first load.
     try { if (typeof Sprint !== 'undefined' && typeof Sprint.recomputeCapacity === 'function') Sprint.recomputeCapacity(data); } catch (_e) { /* module may load later */ }
+    // F-041: sprint IDs must carry the calendar year of the sprint's END date as their `CYxx`
+    // prefix. Older datasets may have been generated before this rule was enforced (the legacy
+    // addSprint copied the first sprint's prefix forward unchanged), so a Jan 2027 sprint could
+    // be stored as CY26-S9. One-shot, idempotent migration: fix the prefix, keep the S-number,
+    // rewrite every skill_splits reference. Guarded by meta.sprintLabelMigration so it never
+    // re-runs and therefore never clobbers deliberate manual edits.
+    try { this._migrateSprintLabelYears(data); } catch (_e) { /* diagnostic only */ }
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
     return data;
+  },
+
+  _migrateSprintLabelYears(data) {
+    if (!data || !Array.isArray(data.sprints)) return;
+    if (data.meta && data.meta.sprintLabelMigration === 'v1') return;
+    const renames = {};
+    const used = new Set(data.sprints.map(x => x && x.sprint_id).filter(Boolean));
+    data.sprints.forEach(s => {
+      if (!s || !s.sprint_id || !s.end_date) return;
+      if (typeof Sprint === 'undefined' || !Sprint.yearPrefixFromDate) return;
+      const correctPrefix = Sprint.yearPrefixFromDate(s.end_date);
+      const currentPrefix = (s.sprint_id.match(/^(CY\d+)-/) || [])[1];
+      if (!currentPrefix || currentPrefix === correctPrefix) return;
+      const tail = s.sprint_id.replace(/^CY\d+-/, '');
+      let candidate = correctPrefix + '-' + tail;
+      let n = 2;
+      while (used.has(candidate)) {
+        candidate = correctPrefix + '-' + tail + '-' + n;
+        n++;
+      }
+      used.delete(s.sprint_id);
+      used.add(candidate);
+      renames[s.sprint_id] = candidate;
+      s.sprint_id = candidate;
+    });
+    if (Object.keys(renames).length) {
+      (data.projects || []).forEach(p => {
+        if (p && p.skill_splits && typeof p.skill_splits === 'object') {
+          Object.keys(p.skill_splits).forEach(k => {
+            const arr = p.skill_splits[k];
+            if (!Array.isArray(arr)) return;
+            arr.forEach(sp => { if (sp && sp.sprint && renames[sp.sprint]) sp.sprint = renames[sp.sprint]; });
+          });
+        }
+        if (p && p.current_sprint && renames[p.current_sprint]) p.current_sprint = renames[p.current_sprint];
+        if (p && p.target_sprint && renames[p.target_sprint]) p.target_sprint = renames[p.target_sprint];
+      });
+      if (data.settings && data.settings.startFromSprint && renames[data.settings.startFromSprint]) {
+        data.settings.startFromSprint = renames[data.settings.startFromSprint];
+      }
+    }
+    if (!data.meta) data.meta = {};
+    data.meta.sprintLabelMigration = 'v1';
   },
 
   captureSnapshot() {
@@ -4467,8 +4517,8 @@ const App = {
       html += '<table><tr><th>#</th><th>Project</th><th>Role</th><th>Status</th><th>RAG</th><th>Manager</th><th>Start</th><th>End</th><th>Est</th><th>Done</th></tr>';
       custProjects.forEach(p => {
         const ptsDone = Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0);
-        const startSp = (p.current_sprint || '').replace('CY26-', '');
-        const endSp = (p.target_sprint || '').replace('CY26-', '');
+        const startSp = (p.current_sprint || '').replace(/^CY\d+-/, '');
+        const endSp = (p.target_sprint || '').replace(/^CY\d+-/, '');
         const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
         html += '<tr><td>' + (p.priority || '') + '</td>' +
           '<td>' + esc(p.name) + '</td>' +
@@ -4962,7 +5012,7 @@ const App = {
       (function() {
         const sched = (App.data.settings && App.data.settings.scheduler) || {};
         const sprintsOpts = '<option value="">First available</option>' +
-          (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace('CY26-', '') + '</option>').join('');
+          (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace(/^CY\d+-/, '') + '</option>').join('');
         const numInput = (id, val, min, max, title) =>
           '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + '" title="' + title + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
         // Rules R1–R11 reference — derived from SOLVER.md §4. Each row declares whether the rule is
@@ -9346,7 +9396,7 @@ const Dashboard = {
           const com = committed[sk.key] || 0;
           if (cap > 0 && com > cap) {
             const pct = Math.round((com / cap) * 100);
-            overloaded.push({ id: null, name: sk.short + ' at ' + pct + '% in ' + s.sprint_id.replace('CY26-', ''), reason: com + '/' + Math.round(cap) + ' pts', color: 'var(--status-red)' });
+            overloaded.push({ id: null, name: sk.short + ' at ' + pct + '% in ' + s.sprint_id.replace(/^CY\d+-/, ''), reason: com + '/' + Math.round(cap) + ' pts', color: 'var(--status-red)' });
           }
         });
       });
@@ -10808,7 +10858,7 @@ const DetailPanel = {
       return '<select class="field-input" data-field="' + name + '" onchange="DetailPanel.onFieldChange(this)">' +
         '<option value="">-- Select --</option>' +
         sprintData.map(s => {
-          const label = s.sprint_id.replace('CY26-', '') + ' (' + fmtShort(s.start_date) + ' \u2013 ' + fmtShort(s.end_date) + ')';
+          const label = s.sprint_id.replace(/^CY\d+-/, '') + ' (' + fmtShort(s.start_date) + ' \u2013 ' + fmtShort(s.end_date) + ')';
           return '<option value="' + s.sprint_id + '"' + (s.sprint_id === current ? ' selected' : '') + '>' + label + '</option>';
         }).join('') + '</select>';
     };
@@ -12797,7 +12847,7 @@ const DetailPanel = {
         const preview = Sprint.suggestPriorityTimeline({ customer: custVal, size_total: size, size_requirements: size }, chosen);
         if (preview && preview.startSprint && preview.endSprint) {
           const tail = preview.warnings && preview.warnings.length ? ' · ' + preview.warnings[0] : '';
-          summary.textContent = 'Reserves ' + preview.startSprint.replace('CY26-', '') + ' → ' + preview.endSprint.replace('CY26-', '') + ' at priority ' + chosen + tail;
+          summary.textContent = 'Reserves ' + preview.startSprint.replace(/^CY\d+-/, '') + ' → ' + preview.endSprint.replace(/^CY\d+-/, '') + ' at priority ' + chosen + tail;
         } else {
           summary.textContent = 'No capacity found in the current sprint horizon.';
         }
@@ -13035,7 +13085,7 @@ const DetailPanel = {
           newProject.current_sprint = suggestion.startSprint;
           newProject.target_sprint = suggestion.endSprint;
           newProject.skill_splits = suggestion.reservedSplits || {};
-          App.toast('Timeline reserved: ' + suggestion.startSprint.replace('CY26-', '') + ' → ' + suggestion.endSprint.replace('CY26-', '') + ' at priority ' + prio, 'success');
+          App.toast('Timeline reserved: ' + suggestion.startSprint.replace(/^CY\d+-/, '') + ' → ' + suggestion.endSprint.replace(/^CY\d+-/, '') + ' at priority ' + prio, 'success');
         } else {
           App.toast('Project created at priority ' + prio + ' — no sprint capacity reserved (review manually)', 'info');
         }
@@ -14425,7 +14475,7 @@ const Gantt = {
     annotationItems += '<span style="position:absolute;left:' + (todayX - 1) + 'px;font-size:9px;font-weight:700;color:#1e293b;white-space:nowrap;transform:translateX(-50%)">Today</span>';
     (App.data.sprints || []).forEach(s => {
       const sx = dateToX(s.start_date);
-      annotationItems += '<span style="position:absolute;left:' + (sx + 4) + 'px;font-size:10px;font-weight:600;color:var(--accent-blue);opacity:0.75;white-space:nowrap">' + s.sprint_id.replace('CY26-', '') + '</span>';
+      annotationItems += '<span style="position:absolute;left:' + (sx + 4) + 'px;font-size:10px;font-weight:600;color:var(--accent-blue);opacity:0.75;white-space:nowrap">' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>';
     });
     const fyStartYear = minDate.getFullYear();
     const fyEndYear = maxDate.getFullYear() + 1;
@@ -15325,6 +15375,32 @@ const Sprint = {
   multiSelections: {},
   viewMode: 'swimlane',
 
+  // Sprint IDs are named `CY{YY}-S{N}` where YY is the two-digit calendar year the sprint
+  // FINISHES in (end_date) and N is a per-year counter. Helpers below are the single source of
+  // truth for constructing and parsing these labels so year-rollover (a Dec 2026 sprint finishing
+  // in Jan 2027 becomes CY27-*) is consistent across the UI and the solver.
+  shortLabel(sprintId) {
+    if (sprintId == null) return '';
+    return String(sprintId).replace(/^CY\d+-/, '');
+  },
+  yearPrefixFromDate(isoDate) {
+    const fallback = 'CY' + String(new Date().getFullYear()).slice(-2);
+    if (!isoDate) return fallback;
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return fallback;
+    return 'CY' + String(d.getFullYear()).slice(-2);
+  },
+  nextSprintNumberInYear(yearPrefix, existingSprints) {
+    let maxN = 0;
+    (existingSprints || []).forEach(s => {
+      const sid = s && s.sprint_id;
+      if (!sid || sid.indexOf(yearPrefix + '-') !== 0) return;
+      const m = sid.match(/-S(\d+)$/);
+      if (m) maxN = Math.max(maxN, parseInt(m[1], 10));
+    });
+    return maxN + 1;
+  },
+
   // Keep project-level date fields in sync with skill_splits. The Gantt reads start_date /
   // target_date for bar position; Sprint Planning reads skill_splits for column placement.
   // When Sprint's drag/drop or Auto-Allocate apply mutates skill_splits without touching
@@ -15506,7 +15582,7 @@ const Sprint = {
       const cards = (bySprint[s.sprint_id] || []).sort((a, b) => (a.project.priority || 999) - (b.project.priority || 999));
       const dateRange = this.formatDateRange(s.start_date, s.end_date);
       const sprintCapacity = this.calcSkillCapacityForSprint(boardCustomerFilter || undefined, s.sprint_id);
-      html += this.renderColumn(s.sprint_id, s.sprint_id.replace('CY26-', ''), dateRange, cards, sprintCapacity, false);
+      html += this.renderColumn(s.sprint_id, s.sprint_id.replace(/^CY\d+-/, ''), dateRange, cards, sprintCapacity, false);
     });
 
     board.innerHTML = html;
@@ -16056,7 +16132,7 @@ const Sprint = {
       const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:8px;color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
       thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700">' +
-          '<span>' + s.sprint_id.replace('CY26-', '') + '</span>' +
+          '<span>' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
         '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
@@ -16332,7 +16408,7 @@ const Sprint = {
       const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:8px;color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
       thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700">' +
-          '<span>' + s.sprint_id.replace('CY26-', '') + '</span>' +
+          '<span>' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
         '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
@@ -16371,7 +16447,7 @@ const Sprint = {
         const chips = entries.map(e => {
           const pts = Math.round(e.points);
           const projEsc = Dashboard.esc(e.projectName).replace(/\x27/g, "\\'");
-          const tip = 'Project: ' + projEsc + ' · Sprint: ' + s.sprint_id.replace('CY26-', '');
+          const tip = 'Project: ' + projEsc + ' · Sprint: ' + s.sprint_id.replace(/^CY\d+-/, '');
           return '<span class="sl-skill-chip sl-team-chip" style="color:' + skillColors[e.skill] + ';background:' + skillColors[e.skill] + '12;cursor:pointer" onclick="DetailPanel.open(\'' + e.projectId + '\')" title="' + tip + '">' +
             Sprint.skillShape(e.skill) + (skillShort[e.skill] || '') + ' <strong>' + pts + '</strong>' +
             ' <span style="font-size:9px;opacity:0.75">· ' + Dashboard.esc(e.projectName.length > 18 ? e.projectName.slice(0, 17) + '…' : e.projectName) + '</span>' +
@@ -17033,7 +17109,7 @@ const Sprint = {
     modal.setAttribute('aria-modal', 'true');
     const opts = (App.data.sprints || []).map(s => {
       const selected = s.sprint_id === sprintId ? ' selected' : '';
-      return '<option value="' + s.sprint_id + '"' + selected + '>' + s.sprint_id.replace('CY26-', '') + ' &middot; ' + (s.start_date || '') + '</option>';
+      return '<option value="' + s.sprint_id + '"' + selected + '>' + s.sprint_id.replace(/^CY\d+-/, '') + ' &middot; ' + (s.start_date || '') + '</option>';
     }).join('');
     modal.innerHTML =
       '<h3 style="margin-top:0">Move to sprint</h3>' +
@@ -17252,7 +17328,7 @@ const Sprint = {
     App.markDirty();
     App.saveToLocalStorage();
     App.notifyDataChange();
-    const baseToast = (skillLabel ? skillLabel.label : 'Skill') + ' moved to ' + toSprint.replace('CY26-', '');
+    const baseToast = (skillLabel ? skillLabel.label : 'Skill') + ' moved to ' + toSprint.replace(/^CY\d+-/, '');
     App.toast(isPastSprint ? baseToast + ' — auto-marked complete' : baseToast, 'success');
   },
 
@@ -17424,7 +17500,7 @@ const Sprint = {
     const s = this.allocSettings;
     const sprints = (App.data.sprints || []);
     const sprintOpts = '<option value="">First available</option>' +
-      sprints.map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace('CY26-', '') + '</option>').join('');
+      sprints.map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace(/^CY\d+-/, '') + '</option>').join('');
 
     // Live SP → days conversion for the active customer's team, using the first sprint in the horizon.
     // This is illustrative only — the solver recomputes per-sprint.
@@ -17455,7 +17531,7 @@ const Sprint = {
     // plus the delivery pipeline visual and the priority weights legend (both are contextual
     // aids during allocation, not settings). An "Edit in System Settings" button deep-links.
     const yesNo = (v) => v ? '<span style="color:var(--status-green);font-weight:600">ON</span>' : '<span style="color:var(--text-muted)">off</span>';
-    const startLabel = s.startFromSprint ? s.startFromSprint.replace('CY26-', '') : 'First available';
+    const startLabel = s.startFromSprint ? s.startFromSprint.replace(/^CY\d+-/, '') : 'First available';
     const body = document.getElementById('allocSettingsBody');
     body.innerHTML =
       '<div style="display:flex;flex-direction:column;gap:10px">' +
@@ -18420,22 +18496,15 @@ const Sprint = {
     if (!App.data.sprints) App.data.sprints = [];
     const sprints = App.data.sprints;
     App.pushUndo('Add sprint');
-    // Generate next sprint ID
-    let nextNum = 1;
-    if (sprints.length) {
-      const lastId = sprints[sprints.length - 1].sprint_id;
-      const match = lastId.match(/S(\d+)/);
-      if (match) nextNum = parseInt(match[1]) + 1;
-    }
-    const yearPrefix = sprints.length ? sprints[0].sprint_id.split('-')[0] : 'CY26';
-    const newId = yearPrefix + '-S' + nextNum;
-    // Start date = last sprint end + 1 day (next Monday)
+    // Compute start + end FIRST so the sprint ID can encode the calendar year the sprint
+    // actually finishes in. The old logic reused the first sprint's year prefix unchanged, so
+    // a sprint that rolled into the following January was still labelled with the previous
+    // year's CYxx.
     let startDate;
     if (sprints.length) {
       const lastEnd = new Date(sprints[sprints.length - 1].end_date);
       startDate = new Date(lastEnd);
       startDate.setDate(startDate.getDate() + 1);
-      // Advance to next Monday if needed
       while (startDate.getDay() !== 1) startDate.setDate(startDate.getDate() + 1);
     } else {
       startDate = new Date();
@@ -18443,6 +18512,10 @@ const Sprint = {
     }
     const hardening = new Date(startDate); hardening.setDate(hardening.getDate() + 28);
     const end = new Date(startDate); end.setDate(end.getDate() + 34);
+    const endIso = end.toISOString().split('T')[0];
+    const yearPrefix = Sprint.yearPrefixFromDate(endIso);
+    const nextNum = Sprint.nextSprintNumberInYear(yearPrefix, sprints);
+    const newId = yearPrefix + '-S' + nextNum;
     sprints.push({
       sprint_id: newId,
       start_date: startDate.toISOString().split('T')[0],
@@ -18538,7 +18611,7 @@ const Sprint = {
     App.markDirty();
     App.saveToLocalStorage();
     this.render();
-    const label = sprintId === 'backlog' ? 'Backlog' : sprintId.replace('CY26-', '');
+    const label = sprintId === 'backlog' ? 'Backlog' : sprintId.replace(/^CY\d+-/, '');
     App.toast(Dashboard.esc(p.name) + ' → ' + label, 'success');
   },
 
@@ -18582,7 +18655,7 @@ const Sprint = {
       const ex = existing.find(e => e.sprint === s.sprint_id);
       const pts = ex ? ex.points : 0;
       return '<div class="split-row">' +
-        '<label>' + s.sprint_id.replace('CY26-', '') + '</label>' +
+        '<label>' + s.sprint_id.replace(/^CY\d+-/, '') + '</label>' +
         '<input type="number" min="0" step="1" max="' + totalPts + '" value="' + pts + '" data-sprint="' + s.sprint_id + '" oninput="Sprint.updateSplitRemaining()">' +
       '</div>';
     }).join('');
@@ -18834,7 +18907,7 @@ const Capacity = {
     const sprintHeader = futureSprints.map(s => {
       const x = dateToX(s.start_date);
       const w = Math.max(20, dateToX(s.end_date) - x);
-      const short = esc(s.sprint_id.replace('CY26-', ''));
+      const short = esc(s.sprint_id.replace(/^CY\d+-/, ''));
       return '<div class="ts-sprint-chip" style="position:absolute;left:' + x + 'px;width:' + w + 'px" title="' + esc(s.sprint_id) + ' · ' + dateLabel(s.start_date) + ' \u2013 ' + dateLabel(s.end_date) + '">' + short + '</div>';
     }).join('');
     const dateTicks = [];
@@ -19071,7 +19144,7 @@ const Capacity = {
       const fmt = (d) => { const dt = new Date(d); return dt.getDate() + ' ' + dt.toLocaleString('en', { month: 'short' }); };
 
       return '<div class="sprint-cap-card">' +
-        '<div class="sprint-cap-title">' + s.sprint_id.replace('CY26-', '') + '</div>' +
+        '<div class="sprint-cap-title">' + s.sprint_id.replace(/^CY\d+-/, '') + '</div>' +
         '<div class="sprint-cap-dates">' + fmt(s.start_date) + ' \u2013 ' + fmt(s.end_date) + '</div>' +
         '<div class="sprint-cap-bars">' + (bars || '<span style="font-size:11px;color:var(--text-muted)">No capacity data</span>') + totalBar + '</div>' +
       '</div>';
@@ -19600,7 +19673,7 @@ const Capacity = {
     // Build: for each team member + sprint, what projects/skills are they working on?
     let thead = '<tr><th style="position:sticky;left:0;background:white;z-index:2;min-width:140px;padding:8px;font-size:11px">Team Member</th>';
     sprints.forEach(s => {
-      thead += '<th style="text-align:center;padding:6px;font-size:11px;min-width:100px">' + s.sprint_id.replace('CY26-', '') + '</th>';
+      thead += '<th style="text-align:center;padding:6px;font-size:11px;min-width:100px">' + s.sprint_id.replace(/^CY\d+-/, '') + '</th>';
     });
     thead += '</tr>';
 
@@ -19661,7 +19734,7 @@ const Capacity = {
     }).join('');
 
     const body = document.getElementById('teamEditFields');
-    document.getElementById('teamEditTitle').textContent = 'Sprint Capacity: ' + sprintId.replace('CY26-', '');
+    document.getElementById('teamEditTitle').textContent = 'Sprint Capacity: ' + sprintId.replace(/^CY\d+-/, '');
     body.innerHTML =
       '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + teamMembers.length + ' team member' + (teamMembers.length !== 1 ? 's' : '') + ' for ' + (customer || 'all') + '</div>' +
       rows +
@@ -19693,7 +19766,7 @@ const Capacity = {
         ? '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px;color:var(--text-muted)" onclick="Capacity.clearSprintOverride(' + idx + ',\'' + s.sprint_id + '\',\'available_points\')" title="Clear override and return to default">Clear</button>'
         : '<span style="font-size:10px;color:var(--text-muted)" title="Using member default capacity">fallback</span>';
       return '<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9' + (isPast ? ';opacity:0.5' : '') + '">' +
-        '<span style="min-width:60px;font-weight:600;font-size:11px">' + s.sprint_id.replace('CY26-', '') + '</span>' +
+        '<span style="min-width:60px;font-weight:600;font-size:11px">' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
         '<input type="number" value="' + explicitPts + '" min="0" step="1" placeholder="' + placeholderText + '" aria-label="Available points for ' + s.sprint_id + ' (default ' + defaultPts + ')" style="width:70px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.onSprintOverrideChange(' + idx + ',\'' + s.sprint_id + '\',\'available_points\',this.value)">' +
         '<span style="font-size:10px;color:var(--text-muted);flex:1">pts</span>' +
         hintHtml +
