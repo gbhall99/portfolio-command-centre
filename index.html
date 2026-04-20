@@ -1091,6 +1091,20 @@ html[data-theme="dark"] .btn-danger:hover { background: #ef4444; }
 .sprint-swimlane .sl-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 .sprint-swimlane .sl-cell { text-align: center; min-width: 130px; }
 .sprint-swimlane .sl-cell-active { background: rgba(59,130,246,0.04); }
+/* Team-view capacity strip — read-only, sits above the swimlane so "who is under/over?" is
+   the first signal. Editing flows still live in the Capacity view (linked via the header). */
+.tv-cap-strip { background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 12px; overflow: hidden; }
+html[data-theme="dark"] .tv-cap-strip { background: var(--bg-card); border-color: #1f2937; }
+.tv-cap-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-dim); background: var(--bg-content); }
+.tv-cap-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.tv-cap-row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border-dim); }
+.tv-cap-row:last-child { border-bottom: none; }
+.tv-cap-row-head { background: var(--bg-content); border-bottom: 2px solid var(--border-light); }
+.tv-cap-name { width: 160px; min-width: 160px; padding: 6px 10px; font-size: 11px; font-weight: 600; color: var(--text-dark); border-right: 1px solid var(--border-dim); display: flex; align-items: center; }
+.tv-cap-row-head .tv-cap-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.tv-cap-cell { flex: 1; min-width: 0; padding: 4px 6px; text-align: center; font-size: 10px; border-right: 1px solid var(--border-dim); display: flex; flex-direction: column; justify-content: center; }
+.tv-cap-cell:last-child { border-right: none; }
+.tv-cap-row-head .tv-cap-cell { font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 6px; }
 .sl-skill-chip {
   display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600;
   padding: 3px 8px; border-radius: 4px; margin: 2px; white-space: nowrap;
@@ -4696,7 +4710,7 @@ const App = {
       if (isNaN(v)) return fallback;
       return Math.max(min, Math.min(max, v));
     };
-    s.maxCapacityPct = readInt('seMaxCap', 50, 100, 85);
+    s.maxCapacityPct = readInt('seMaxCap', 50, 100, 95);
     s.phaseBufferPoints = readInt('seBuffer', 0, 10, 2);
     s.maxBufferSlides = readInt('seMaxSlides', 1, 10, 4);
     sched.loadBalanceIterations = readInt('seIter', 1, 10, 3);
@@ -4776,7 +4790,7 @@ const App = {
     this.pushUndo('Reset Scheduling Engine settings');
     const s = Sprint.allocSettings;
     Object.assign(s, {
-      maxCapacityPct: 85,
+      maxCapacityPct: 95,
       phaseBufferPoints: 2,
       maxBufferSlides: 4,
       startFromSprint: '',
@@ -5072,7 +5086,7 @@ const App = {
           '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity limits</div>' +
           '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
             '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How busy can a skill get? (%)' + ch('seMaxCap', 'The highest share of the team\u2019s available points we\u2019ll assign to any one skill (e.g. Data Engineering) in a single sprint. 85% leaves some breathing room. Raising it speeds up delivery but risks overload.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Spare points between phases (SP)' + ch('seBuffer', 'When two phases of one project share a sprint, leave this many points free as a buffer for slippage. Zero means phases butt straight up against each other. 2\u20133 is a sensible default.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
+            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hand-off buffer (SP) — gap between consecutive phases' + ch('seBuffer', 'When two phases of one project share a sprint, leave this many points free as a buffer for slippage. Zero means phases butt straight up against each other. 2\u20133 is a sensible default.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
             '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How far can a phase slide?' + ch('seMaxSlides', 'If a phase can\u2019t fit in its intended sprint, we push it to the next one. This is the most sprints we\u2019ll push before giving up on the buffer altogether. Higher is more forgiving, lower forces the schedule to reshape.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
           '</div>' +
 
@@ -16515,10 +16529,17 @@ const Sprint = {
         const chips = entries.map(e => {
           const pts = Math.round(e.points);
           const projEsc = Dashboard.esc(e.projectName).replace(/\x27/g, "\\'");
-          const tip = 'Project: ' + projEsc + ' · Sprint: ' + s.sprint_id.replace(/^CY\d+-/, '');
-          return '<span class="sl-skill-chip sl-team-chip" style="color:' + skillColors[e.skill] + ';background:' + skillColors[e.skill] + '12;cursor:pointer" onclick="DetailPanel.open(\'' + e.projectId + '\')" title="' + tip + '">' +
+          const tip = 'Project: ' + projEsc + ' · Sprint: ' + s.sprint_id.replace(/^CY\d+-/, '') + ' · right-click or \u22EE for options';
+          // The Team-view chip now opens the same context menu as the Projects view (Move,
+          // Assign, Progress, Split, Why) so shifts are available from either surface. Left
+          // click still opens the project detail panel — the overflow button is the
+          // discoverable path for move/transfer actions.
+          const menuCall = 'event.stopPropagation();Sprint.openChipMenu(event, \'' + e.projectId + '\', \'' + e.skill + '\', \'' + s.sprint_id + '\')';
+          const ctxMenuCall = 'event.preventDefault();Sprint.openChipMenu(event, \'' + e.projectId + '\', \'' + e.skill + '\', \'' + s.sprint_id + '\')';
+          return '<span class="sl-skill-chip sl-team-chip" style="color:' + skillColors[e.skill] + ';background:' + skillColors[e.skill] + '12;cursor:pointer" onclick="DetailPanel.open(\'' + e.projectId + '\')" oncontextmenu="' + ctxMenuCall + '" title="' + tip + '">' +
             Sprint.skillShape(e.skill) + (skillShort[e.skill] || '') + ' <strong>' + pts + '</strong>' +
             ' <span style="font-size:9px;opacity:0.75">· ' + Dashboard.esc(e.projectName.length > 18 ? e.projectName.slice(0, 17) + '…' : e.projectName) + '</span>' +
+            '<button class="sl-chip-overflow" onclick="' + menuCall + '" aria-label="Chip options" title="Options">\u22EE</button>' +
           '</span>';
         }).join('');
 
@@ -16532,7 +16553,39 @@ const Sprint = {
       tbody += '</tr>';
     });
 
-    board.innerHTML = '<div class="sprint-swimlane-wrap"><table class="sprint-swimlane">' +
+    // Per-person capacity summary — read-only strip above the swimlane, so the PM sees
+    // "is anyone over / under?" before scanning the cells. The full editor (holidays,
+    // sprint overrides, customer splits) is one click away via "Edit capacity".
+    let capStripHtml = '';
+    try {
+      const headerCells = sprints.map(s => '<div class="tv-cap-cell" style="font-weight:700;color:var(--text-muted)">' + s.sprint_id.replace(/^CY\d+-/, '') + '</div>').join('');
+      const rowsHtml = members.map(tm => {
+        const cells = sprints.map(s => {
+          const mc = this.calcMemberCapacityForSprint(tm, s.sprint_id, customer);
+          const cap = mc ? Math.round(mc.points || 0) : 0;
+          const entries = (byPerson[tm.name] && byPerson[tm.name][s.sprint_id]) || [];
+          const used = Math.round(entries.reduce((sum, it) => sum + (it.points || 0), 0));
+          const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
+          const tone = pct > 100 ? 'var(--status-red)' : pct > 85 ? 'var(--status-amber)' : used > 0 ? 'var(--status-green)' : 'var(--text-muted)';
+          const primary = cap > 0 ? (used + '/' + cap) : (used > 0 ? used + ' pts' : '—');
+          const secondary = cap > 0 ? (pct + '%') : 'no cap';
+          return '<div class="tv-cap-cell" style="color:' + tone + ';font-weight:700">' + primary + '<div style="font-size:9px;font-weight:500;opacity:0.75">' + secondary + '</div></div>';
+        }).join('');
+        return '<div class="tv-cap-row"><div class="tv-cap-name">' + Dashboard.esc(tm.name) + '</div>' + cells + '</div>';
+      }).join('');
+      capStripHtml =
+        '<div class="tv-cap-strip">' +
+          '<div class="tv-cap-header">' +
+            '<div class="tv-cap-title">Team capacity \u00b7 used / total (% used)</div>' +
+            '<button class="btn btn-ghost btn-sm" onclick="App.navigate(\'capacity\')" title="Open the full Capacity editor (holidays, sprint overrides, per-customer splits)">Edit capacity</button>' +
+          '</div>' +
+          '<div class="tv-cap-row tv-cap-row-head"><div class="tv-cap-name">Member</div>' + headerCells + '</div>' +
+          rowsHtml +
+        '</div>';
+    } catch (_e) { capStripHtml = ''; }
+
+    board.innerHTML = capStripHtml +
+      '<div class="sprint-swimlane-wrap"><table class="sprint-swimlane">' +
       '<thead>' + thead + '</thead>' +
       '<tbody>' + tbody + '</tbody>' +
       '</table></div>';
@@ -17203,6 +17256,19 @@ const Sprint = {
     if (!toSprint || toSprint === fromSprint) { this._closeChipMove(); return; }
     const entry = (p.skill_splits && p.skill_splits[skillKey] || []).find(sp => sp.sprint === fromSprint);
     const points = entry ? (entry.points || 0) : 0;
+
+    // Guard the move — hard-fail refuses outright, soft warnings go through a confirm dialog
+    // so the user sees WHY the move is risky before committing it.
+    const verdict = this._validateSliceMove({ projectId, skillKey, fromSprint, toSprint, points });
+    if (verdict.hardFail) {
+      this._closeChipMove();
+      App.toast('Move refused: ' + verdict.warnings.slice(0, 2).join(' · '), 'error', 5000);
+      return;
+    }
+    if (verdict.warnings.length) {
+      const proceed = confirm('This move has warnings:\n\n\u2022 ' + verdict.warnings.join('\n\u2022 ') + '\n\nProceed anyway?');
+      if (!proceed) { this._closeChipMove(); return; }
+    }
     this._closeChipMove();
     this.moveSkillToSprint(projectId, skillKey, fromSprint, toSprint, points);
   },
@@ -17314,6 +17380,98 @@ const Sprint = {
     App.saveToLocalStorage();
     App.toast(assignee ? 'Assigned ' + assignee : 'Unassigned', 'success');
     this.render();
+  },
+
+  // Pre-check for a proposed slice move. Returns { ok, hardFail, warnings } where:
+  //   hardFail: the move would produce an invalid plan — refuse it (no skilled member at
+  //             destination, or destination is after the project's hard_deadline).
+  //   warnings: soft issues — phase-order inversion inside the same project, or surrendering
+  //             an earlier slot to a lower-priority project. The UI should surface these via
+  //             confirm() before proceeding.
+  // Wired into _saveChipMove so every Move-to-Sprint action (from Projects view + Team view +
+  // future drag-drop) passes through the same guard.
+  _validateSliceMove(args) {
+    const out = { ok: true, hardFail: false, warnings: [] };
+    const args_ = args || {};
+    const projectId = args_.projectId;
+    const skillKey = args_.skillKey;
+    const fromSprint = args_.fromSprint;
+    const toSprint = args_.toSprint;
+    const p = App.data && App.data.projects ? App.data.projects.find(pr => pr.id === projectId) : null;
+    if (!p) { out.ok = false; out.hardFail = true; out.warnings.push('Project not found'); return out; }
+    const sprints = (App.data && App.data.sprints) || [];
+    const sprintIdx = sid => sprints.findIndex(s => s.sprint_id === sid);
+    const fromIdx = sprintIdx(fromSprint);
+    const toIdx = sprintIdx(toSprint);
+    if (toIdx < 0) { out.ok = false; out.hardFail = true; out.warnings.push('Destination sprint is not in the horizon'); return out; }
+
+    const skillLabel = (this.SKILLS.find(s => s.key === skillKey) || {}).label || skillKey;
+    const shortSid = sid => (sid || '').replace(/^CY\d+-/, '');
+
+    // Hard-fail 1: destination sprint has no capacity for this skill (no skilled member, or all
+    // on leave / zero available_points_per_sprint).
+    const capMap = (typeof this.calcSkillCapacityForSprint === 'function')
+      ? (this.calcSkillCapacityForSprint(p.customer, toSprint) || {})
+      : {};
+    const skillCap = capMap[skillKey] || 0;
+    if (skillCap <= 0) {
+      out.hardFail = true;
+      out.warnings.push('No capacity for ' + skillLabel + ' in ' + shortSid(toSprint) + ' — no skilled member is available in that sprint.');
+    }
+
+    // Hard-fail 2: destination is past the project's hard deadline.
+    if (p.hard_deadline) {
+      const dlIdx = (typeof Solver !== 'undefined' && typeof Solver.dateToSprintIdx === 'function')
+        ? Solver.dateToSprintIdx(p.hard_deadline, sprints) : -1;
+      if (dlIdx >= 0 && toIdx > dlIdx) {
+        out.hardFail = true;
+        const dl = new Date(p.hard_deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        out.warnings.push('Destination ' + shortSid(toSprint) + ' is after the hard deadline (' + dl + ').');
+      }
+    }
+
+    // Soft warning: phase-order inversion against sibling slices in the same project.
+    const phaseMap = (typeof Solver !== 'undefined' && typeof Solver.getProjectPhaseMap === 'function')
+      ? Solver.getProjectPhaseMap(p) : {};
+    const movedPhase = phaseMap[skillKey];
+    if (movedPhase) {
+      Object.keys(p.skill_splits || {}).forEach(otherKey => {
+        if (otherKey === skillKey) return;
+        const otherPhase = phaseMap[otherKey];
+        if (!otherPhase) return;
+        (p.skill_splits[otherKey] || []).forEach(sp => {
+          const idx = sprintIdx(sp.sprint);
+          if (idx < 0) return;
+          const otherLabel = (this.SKILLS.find(s => s.key === otherKey) || {}).label || otherKey;
+          if (otherPhase > movedPhase && idx <= toIdx) {
+            out.warnings.push(skillLabel + ' would land in or after ' + otherLabel + ' (phase ' + otherPhase + ' already in ' + shortSid(sp.sprint) + ').');
+          }
+          if (otherPhase < movedPhase && idx > toIdx) {
+            out.warnings.push(skillLabel + ' would start before ' + otherLabel + ' finishes in ' + shortSid(sp.sprint) + '.');
+          }
+        });
+      });
+    }
+
+    // Soft warning: moving this slice later while a lower-priority project holds an earlier slot
+    // for the same skill — the move surrenders a slot that would be hard to reclaim.
+    if (fromIdx >= 0 && toIdx > fromIdx) {
+      const myPri = p.priority || 999;
+      (App.data.projects || []).forEach(other => {
+        if (!other || other.id === p.id) return;
+        if (other.customer !== p.customer) return;
+        const otherPri = other.priority || 999;
+        if (otherPri <= myPri) return;
+        (((other.skill_splits || {})[skillKey]) || []).forEach(sp => {
+          const idx = sprintIdx(sp.sprint);
+          if (idx < 0 || idx >= toIdx) return;
+          out.warnings.push('Lower-priority project "' + (other.name || other.id) + '" already holds ' + skillLabel + ' capacity in ' + shortSid(sp.sprint) + ' — moving this slice later surrenders the earlier slot.');
+        });
+      });
+    }
+
+    if (out.hardFail) out.ok = false;
+    return out;
   },
 
   moveSkillToSprint(projectId, skillKey, fromSprint, toSprint, points) {
@@ -17537,7 +17695,10 @@ const Sprint = {
 
   // --- Auto-Allocation Engine ---
   allocSettings: {
-    maxCapacityPct: 85,          // Target max capacity per skill per sprint (%)
+    maxCapacityPct: 95,          // Target max capacity per skill per sprint (%) — was 85;
+                                  // raised so earlier sprints pack tightly before the solver moves on.
+                                  // Per-person cap (R4) is still the hard constraint, so real
+                                  // over-booking cannot happen — only the aggregate headroom shrinks.
     respectSkillOrder: true,      // Respect delivery_config.phase_order; phase N+1 never starts before phase N
     spreadWork: true,             // Distribute work across sprints (load-balance Pass 3)
     lockCompleted: true,          // Don't move Complete/Closed projects
@@ -17615,7 +17776,7 @@ const Sprint = {
               '<input type="number" id="saMaxCap" value="' + s.maxCapacityPct + '" min="50" max="100" aria-label="Maximum capacity percentage per skill" style="padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
             '</label>' +
             '<label style="font-size:11px;display:flex;flex-direction:column;gap:3px">' +
-              '<span style="color:var(--text-muted);font-weight:600">Spare points between phases (SP)</span>' +
+              '<span style="color:var(--text-muted);font-weight:600">Hand-off buffer (SP) — gap between consecutive phases</span>' +
               '<input type="number" id="saBuffer" value="' + (s.phaseBufferPoints != null ? s.phaseBufferPoints : 2) + '" min="0" max="10" aria-label="Phase hand-off buffer in story points" style="padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
               (bufferDaysText ? '<span style="color:var(--text-muted);font-size:10px">' + Dashboard.esc(bufferDaysText) + '</span>' : '') +
             '</label>' +
@@ -18029,7 +18190,23 @@ const Sprint = {
     this.closeAllocResults();
     App.notifyDataChange();
     this.updateSolverStalenessChip();
-    App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
+    // Enriched headline — surface deadline misses and overflow counts so the user doesn't have
+    // to reopen the modal to see whether the run landed cleanly or left action items behind.
+    const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+    const deadlineMisses = warnings.filter(w => w && w.type === 'deadline_miss').length;
+    const overflowCount = warnings.filter(w => w && (w.type === 'capacity_overflow_horizon' || w.type === 'capacity_overflow_deadline' || w.type === 'capacity_overflow')).length;
+    const zeroCap = warnings.filter(w => w && w.type === 'zero_capacity').length;
+    const actionable = deadlineMisses + overflowCount + zeroCap;
+    const base = 'Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints';
+    if (actionable > 0) {
+      const parts = [];
+      if (deadlineMisses) parts.push(deadlineMisses + ' deadline miss' + (deadlineMisses === 1 ? '' : 'es'));
+      if (overflowCount) parts.push(overflowCount + ' overflow');
+      if (zeroCap) parts.push(zeroCap + ' skill with no capacity');
+      App.toast(base + ' \u2014 ' + parts.join(', ') + '. Check Warnings tab.', 'error', 6000);
+    } else {
+      App.toast(base + ' \u2014 clean run.', 'success');
+    }
   },
 
   allocResultsTab: 'options',
@@ -20959,14 +21136,19 @@ const Solver = {
       return (a.id || '').localeCompare(b.id || '');
     });
 
-    // Zero-capacity skill warnings
+    // Zero-capacity skill warnings — name the blocked projects so the user can act without
+    // cross-referencing the project list.
     SKILLS.forEach(sk => {
       const totalCap = sprints.reduce((sum, s) => sum + (baseCap[s.sprint_id][sk.key] || 0), 0);
       if (totalCap === 0) {
         const affected = projects.filter(p => (p[sk.key] || 0) > 0);
         if (affected.length) {
+          const names = affected.map(p => p.name || p.id);
+          const list = names.length > 6
+            ? names.slice(0, 6).join(', ') + ' (+' + (names.length - 6) + ' more)'
+            : names.join(', ');
           this._warn(warnings, 'zero_capacity', null, sk.label, null,
-            'No ' + sk.label + ' capacity for ' + customer + '. ' + affected.length + ' project(s) need it.');
+            'No ' + sk.label + ' capacity for ' + customer + '. Blocked: ' + list + '.');
         }
       }
     });
