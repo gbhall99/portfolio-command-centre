@@ -2283,7 +2283,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <button class="btn btn-outline btn-sm" onclick="Sprint.autoAllocate()" title="Auto-allocate projects to sprints based on capacity and priority"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Auto-Allocate</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()" title="Allocation settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()" title="Manage sprints"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sprints</button>
-          <button class="btn btn-outline btn-sm" onclick="Sprint.openVelocityModal()" title="Committed vs completed velocity per sprint"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> Velocity</button>
+          <button class="btn btn-outline btn-sm" onclick="Sprint.openVelocityModal()" title="Committed vs completed story points per sprint window (customer-scoped throughput, not per-team Scrum velocity)" aria-label="Portfolio throughput"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> Portfolio throughput</button>
           <button class="view-help-btn" onclick="Onboarding.showViewHelp('sprint')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
         </div>
         <div class="view-help-panel" id="helpSprint"></div>
@@ -2633,6 +2633,13 @@ const App = {
   LS_CUSTOMER_KEY: 'portfolio-command-centre-activeCustomer',
   AUTO_SAVE_MS: 60000,
   REQUIRED_FIELDS: ['id', 'name', 'customer', 'status'],
+  // F-034: fields required for "active" status transitions. Caller-facing helper
+  // App.missingRequiredForStatus(p) returns the list of missing fields; callers
+  // decide whether to block (hard gate) or surface (data-quality chip).
+  REQUIRED_FIELDS_FOR_STATUS: {
+    'In Progress': ['priority', 'target_date', 'manager'],
+    'At Risk':     ['priority', 'target_date', 'manager']
+  },
   SCHEMA_VERSION: '1.1',
   storageAvailable: true,
   undoStack: [],
@@ -3654,6 +3661,37 @@ const App = {
     data.team_members = data.team_members || [];
     data.sprints = data.sprints || [];
     data.workflow_templates = data.workflow_templates || [];
+    // F-036: populate default workflow templates if they ship empty (covers new + imported datasets).
+    if (data.workflow_templates.length === 0 || data.workflow_templates.every(t => !Array.isArray(t.stages) || t.stages.length === 0)) {
+      data.workflow_templates = [
+        { id: 'tpl-bau-dashboard', name: 'BAU Dashboard',
+          description: 'Standard reporting dashboard with internal data — Requirements → DE → Tableau → UAT → Hypercare.',
+          stages: [
+            { name: 'Requirements', skillKey: 'size_requirements', suggestedSize: 3 },
+            { name: 'Data Engineering', skillKey: 'size_engineering', suggestedSize: 8 },
+            { name: 'Tableau', skillKey: 'size_tableau', suggestedSize: 8 },
+            { name: 'UAT', skillKey: 'size_uat_adoption', suggestedSize: 3 },
+            { name: 'Hypercare', skillKey: 'size_hypercare', suggestedSize: 2 }
+          ] },
+        { id: 'tpl-data-science', name: 'Data Science Model',
+          description: 'Predictive / prescriptive model with external data — adds Data Sourcing and Data Science stages.',
+          stages: [
+            { name: 'Requirements', skillKey: 'size_requirements', suggestedSize: 5 },
+            { name: 'Data Sourcing', skillKey: null, suggestedSize: 0 },
+            { name: 'Data Engineering', skillKey: 'size_engineering', suggestedSize: 8 },
+            { name: 'Data Science', skillKey: 'size_data_science', suggestedSize: 13 },
+            { name: 'UAT', skillKey: 'size_uat_adoption', suggestedSize: 5 },
+            { name: 'Hypercare', skillKey: 'size_hypercare', suggestedSize: 3 }
+          ] },
+        { id: 'tpl-rapid-insight', name: 'Rapid Insight',
+          description: 'Quick-turn ad hoc insight — Requirements, Tableau, UAT only.',
+          stages: [
+            { name: 'Requirements', skillKey: 'size_requirements', suggestedSize: 2 },
+            { name: 'Tableau', skillKey: 'size_tableau', suggestedSize: 5 },
+            { name: 'UAT', skillKey: 'size_uat_adoption', suggestedSize: 2 }
+          ] }
+      ];
+    }
     data.governance_forums = data.governance_forums || [];
     data.settings = data.settings || {};
     data.audit_log = data.audit_log || [];
@@ -6640,6 +6678,26 @@ const App = {
     return x.toFixed(d);
   },
 
+  // F-034: returns the list of required fields missing for the project's current status,
+  // or an empty array when the project's status doesn't gate on additional fields.
+  missingRequiredForStatus(project) {
+    if (!project || !project.status) return [];
+    const required = this.REQUIRED_FIELDS_FOR_STATUS[project.status];
+    if (!required) return [];
+    return required.filter(f => {
+      const v = project[f];
+      if (v == null) return true;
+      if (typeof v === 'string' && !v.trim()) return true;
+      return false;
+    });
+  },
+  projectsMissingRequiredForStatus() {
+    if (!this.data || !this.data.projects) return [];
+    return this.data.projects
+      .map(p => ({ project: p, missing: this.missingRequiredForStatus(p) }))
+      .filter(x => x.missing.length > 0);
+  },
+
   // --- RAG Auto-Scoring ---
   evaluateRagRules(project) {
     if (!this.data || !this.data.settings || !this.data.settings.ragRules) return;
@@ -9005,15 +9063,15 @@ const Dashboard = {
         ]
       }),
       renderHero({
-        title: 'Remaining & Velocity',
+        title: 'Remaining & throughput',
         subtitle: 'Points left · trend',
         value: '<span style="color:var(--accent-violet)">' + remaining + '</span> <span style="font-size:12px;color:var(--text-muted);font-weight:500">pts</span>',
         color: 'var(--text-dark)',
-        footnote: rollingLabel !== '—' ? 'Velocity ' + rollingLabel + ' / sp' : 'Velocity pending',
+        footnote: rollingLabel !== '—' ? 'Throughput ' + rollingLabel + ' / sp' : 'Throughput pending',
         spark: sparklineSvg(burnSpark),
         tip: [
           '<strong>Total size:</strong> ' + totalPoints + ' pts · <strong>Consumed:</strong> ' + consumedPoints + ' pts',
-          '<strong>Rolling velocity (3 sp):</strong> ' + rollingLabel + (velocityDelta !== undefined ? ' (Δ ' + (velocityDelta >= 0 ? '+' : '') + velocityDelta + ')' : ''),
+          '<strong>Rolling throughput (3 sp):</strong> ' + rollingLabel + (velocityDelta !== undefined ? ' (Δ ' + (velocityDelta >= 0 ? '+' : '') + velocityDelta + ')' : ''),
           '<strong>Delivery confidence:</strong> ' + deliveryLabel + ' (completed / committed, last 3 sprints)'
         ]
       }),
@@ -9745,10 +9803,10 @@ const Portfolio = {
         footnote: consumed + ' of ' + totalPoints + ' consumed'
       }),
       card({
-        title: 'Rolling Velocity',
+        title: 'Rolling throughput',
         subtitle: 'Last 3 sprints · sum of customers',
         value: velocityLabel,
-        footnote: sprintsCounted ? 'Averaged across ' + sprintsCounted + ' sprint(s)' : 'Velocity pending'
+        footnote: sprintsCounted ? 'Averaged across ' + sprintsCounted + ' sprint(s)' : 'Throughput pending'
       })
     ].join('');
   },
@@ -15926,8 +15984,8 @@ const Sprint = {
     var html = '<div class="velocity-panel">' +
       '<div class="velocity-panel-header" onclick="Sprint._velocityCollapsed=!Sprint._velocityCollapsed;var body=this.nextElementSibling;body.style.display=body.style.display===\'none\'?\'\':\'none\';this.querySelector(\'.velocity-panel-toggle\').classList.toggle(\'collapsed\')">' +
         '<svg class="velocity-panel-toggle' + toggleCls + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
-        '<h3>Sprint Velocity</h3>' +
-        '<span style="font-size:10px;color:var(--text-muted);margin-left:auto">Completed vs Committed points per sprint</span>' +
+        '<h3>Portfolio throughput</h3>' +
+        '<span style="font-size:10px;color:var(--text-muted);margin-left:auto">Completed vs Committed points per sprint window</span>' +
       '</div>' +
       '<div' + collapsedCls + '>' +
         '<div class="velocity-bars" style="height:' + (barHeight + 30) + 'px">';
@@ -18013,9 +18071,9 @@ const Sprint = {
     o.innerHTML =
       '<div style="background:var(--surface);border-radius:var(--radius-lg);padding:20px 24px;max-width:860px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.35);color:var(--text-dark)">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">' +
-          '<div><h3 style="margin:0;font-size:var(--fs-lg);font-weight:700">Sprint velocity</h3>' +
-          '<div style="font-size:var(--fs-sm);color:var(--text-muted);margin-top:2px">Committed vs completed story points for ' + (customerFilter || 'all customers') + '.</div></div>' +
-          '<button onclick="document.getElementById(\'' + id + '\').remove()" style="background:transparent;border:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close velocity">&times;</button>' +
+          '<div><h3 style="margin:0;font-size:var(--fs-lg);font-weight:700">Portfolio throughput</h3>' +
+          '<div style="font-size:var(--fs-sm);color:var(--text-muted);margin-top:2px">Committed vs completed story points per sprint window for ' + (customerFilter || 'all customers') + '. PCC sprints are 5-week capacity windows, not team Scrum sprints — this is portfolio throughput, not per-team velocity.</div></div>' +
+          '<button onclick="document.getElementById(\'' + id + '\').remove()" style="background:transparent;border:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close portfolio throughput">&times;</button>' +
         '</div>' +
         '<div class="velocity-panel" style="background:var(--surface-2);border:1px solid var(--border-dim);margin:0">' +
           velocityHtml.replace('<div class="velocity-panel"', '<div') +
