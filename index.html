@@ -17632,23 +17632,33 @@ const Sprint = {
 
   // Plain-English metadata for solver warnings. Surfaces as a single table in the Summary tab
   // (one row per distinct issue) so users don't have to translate the solver's internal codes.
+  //
+  // `resolved: true` means the solver already handled it — the row is informational and you
+  //   only need to act if you're unhappy with the choice the solver made.
+  // `resolved: false` means the solver could not fix it inside the current constraints — the
+  //   row is a to-do for the user.
   _WARNING_META: {
-    deadline_miss:             { label: 'Deadline will be missed',        hint: 'Cut scope, raise the "how busy can a skill get" cap, or push the deadline. The project\'s "Why?" button shows the earliest sprint it could still land.' },
-    impossible:                { label: 'Cannot be scheduled',            hint: 'No arrangement of the current inputs satisfies every constraint. Review the project\'s size, dependencies, and team capacity.' },
-    capacity_overflow:         { label: 'Skill is overloaded',            hint: 'Too much work for the skill in this sprint. Raise the capacity ceiling, or move some work to a later sprint.' },
-    buffer_push:               { label: 'Phase pushed later by buffer',   hint: 'A hand-off gap between phases forced this phase to slide. Shrink the "spare points between phases" buffer to pack tighter.' },
-    buffer_skipped_deadline:   { label: 'Hand-off gap skipped for deadline', hint: 'The solver dropped the phase buffer to hit a hard deadline. Confirm the deadline is correct, or split the phase.' },
-    buffer_abandoned_maxslides:{ label: 'Phase gave up sliding',          hint: 'Too many cascading pushes. Increase the "how far can a phase slide" cap, or reduce the project\'s size.' },
-    person_over_cap_averted:   { label: 'Avoided over-booking a person',  hint: 'Expected behaviour — someone\'s per-sprint cap would have been exceeded so the slice moved to a later sprint.' },
-    time_budget_split:         { label: 'Phase split across sprints',     hint: 'Phase was too big for one sprint\'s working-day budget. Normal for large phases. Raise the sprint\'s time budget, or split the project size, to keep it together.' },
-    circular_dependency:       { label: 'Circular dependency',            hint: 'Two projects depend on each other. Remove one edge of the cycle in the Dependencies tab before re-running.' },
-    dependency_cross_customer: { label: 'Cross-customer dependency',      hint: 'Dependency crosses customers. Enable "honour cross-customer dependencies" in System Settings, or break the dependency.' },
-    zero_capacity:             { label: 'No one can do this skill',       hint: 'No team member covers this skill in the active customer, or everyone who does has zero capacity. Add coverage or raise availability.' }
+    deadline_miss:             { label: 'Deadline will be missed',          resolved: false, action: 'Cut scope, raise the "how busy can a skill get" cap, or push the deadline. The project\'s "Why?" button shows the earliest sprint it could still land.' },
+    impossible:                { label: 'Cannot be scheduled',              resolved: false, action: 'No arrangement of the current inputs satisfies every constraint. Review the project\'s size, dependencies, and team capacity.' },
+    capacity_overflow:         { label: 'Skill is overloaded',              resolved: false, action: 'Too much work for this skill in this sprint. Raise the capacity ceiling, or move some work to a later sprint before re-running.' },
+    zero_capacity:             { label: 'No one can do this skill',         resolved: false, action: 'No team member covers this skill in the active customer, or everyone who does has zero capacity. Add coverage or raise availability, then re-run.' },
+    circular_dependency:       { label: 'Circular dependency',              resolved: false, action: 'Two projects depend on each other. Remove one edge of the cycle in the Dependencies tab before re-running.' },
+    buffer_push:               { label: 'Phase pushed later by buffer',     resolved: true,  action: 'Solver slid the phase to preserve the hand-off gap. Shrink the "spare points between phases" buffer if you want it to pack tighter next time.' },
+    buffer_skipped_deadline:   { label: 'Hand-off gap dropped for deadline', resolved: true,  action: 'Solver skipped the phase buffer to hit the hard deadline. Confirm the deadline is correct, or split the phase to avoid the tight hand-off.' },
+    buffer_abandoned_maxslides:{ label: 'Phase gave up sliding',            resolved: true,  action: 'Solver tried to preserve the buffer but bailed after too many cascading pushes. Phase is placed, but tight. Raise "how far can a phase slide" or reduce size to recover the buffer.' },
+    person_over_cap_averted:   { label: 'Avoided over-booking a person',    resolved: true,  action: 'Solver moved a slice to a later sprint because a team member would have exceeded their per-sprint cap. Add skill coverage or raise per-sprint points if this happens often.' },
+    time_budget_split:         { label: 'Phase split across sprints',       resolved: true,  action: 'Solver split the phase because it didn\'t fit one sprint\'s working-day budget. Raise the sprint\'s time budget, or split the project size, to keep it together.' },
+    dependency_cross_customer: { label: 'Cross-customer dependency',        resolved: true,  action: 'Solver honoured a dependency that crosses customers. Turn off "honour cross-customer dependencies" in System Settings, or break the dependency, to change this.' }
   },
 
   _warningSeverity(type) {
     if (type === 'deadline_miss' || type === 'impossible' || type === 'zero_capacity' || type === 'circular_dependency') return 'high';
     return 'medium';
+  },
+
+  _warningResolved(type) {
+    const meta = this._WARNING_META[type];
+    return meta ? !!meta.resolved : false;
   },
 
   // Renders the Options tab — the knobs the solver uses for the run, plus the primary Run button.
@@ -17761,7 +17771,8 @@ const Sprint = {
       '</div>';
 
       if (w.length) {
-        // One-row-per-distinct-issue table. Problem | Project | Where | What to try.
+        // One-row-per-distinct-issue table. Status column tells the user immediately whether the
+        // solver resolved it (informational row) or left it for them to fix (action row).
         const rows = [];
         const seen = new Set();
         w.forEach(wn => {
@@ -17771,36 +17782,54 @@ const Sprint = {
           rows.push(wn);
         });
         const dupCount = w.length - rows.length;
-        const highFirst = rows.slice().sort((a, b) => {
+        // Sort: action-needed first (by severity), then solver-resolved rows at the bottom.
+        const sorted = rows.slice().sort((a, b) => {
+          const aResolved = this._warningResolved(a.type) ? 1 : 0;
+          const bResolved = this._warningResolved(b.type) ? 1 : 0;
+          if (aResolved !== bResolved) return aResolved - bResolved;
           const aHi = this._warningSeverity(a.type) === 'high' ? 0 : 1;
           const bHi = this._warningSeverity(b.type) === 'high' ? 0 : 1;
           return aHi - bHi;
         });
-        html += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">' +
-          '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">Warnings (' + rows.length + (dupCount ? ', ' + dupCount + ' duplicates hidden' : '') + ')</div>' +
-          '<div style="font-size:11px;color:var(--text-muted)">High-priority first</div>' +
+        const actionCount = sorted.filter(wn => !this._warningResolved(wn.type)).length;
+        const resolvedCount = sorted.length - actionCount;
+        html += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;gap:10px;flex-wrap:wrap">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">Warnings (' + sorted.length + (dupCount ? ', ' + dupCount + ' duplicates hidden' : '') + ')</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">' +
+            (actionCount ? '<strong style="color:var(--status-red)">' + actionCount + ' need action</strong>' : '') +
+            (actionCount && resolvedCount ? ' · ' : '') +
+            (resolvedCount ? '<strong style="color:var(--status-green)">' + resolvedCount + ' handled by solver</strong>' : '') +
+          '</div>' +
         '</div>';
         html += '<table class="alloc-warn-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">' +
           '<thead><tr style="background:var(--surface-2);text-align:left;border-bottom:1px solid var(--border-light)">' +
-            '<th style="padding:8px 10px;font-weight:600;width:28%">Problem</th>' +
-            '<th style="padding:8px 10px;font-weight:600;width:24%">Project</th>' +
-            '<th style="padding:8px 10px;font-weight:600;width:18%">Where</th>' +
-            '<th style="padding:8px 10px;font-weight:600">What to try</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:17%">Status</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:22%">Problem</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:20%">Project</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:14%">Where</th>' +
+            '<th style="padding:8px 10px;font-weight:600">What the solver did / what to do next</th>' +
           '</tr></thead><tbody>';
-        highFirst.forEach(wn => {
-          const meta = this._WARNING_META[wn.type] || { label: wn.type || 'Issue', hint: wn.detail || '' };
+        sorted.forEach(wn => {
+          const meta = this._WARNING_META[wn.type] || { label: wn.type || 'Issue', action: wn.detail || '', resolved: false };
+          const resolved = this._warningResolved(wn.type);
           const sev = this._warningSeverity(wn.type);
-          const dot = '<span aria-hidden="true" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:' + (sev === 'high' ? 'var(--status-red)' : 'var(--status-amber)') + '"></span>';
+          const statusColor = resolved ? 'var(--status-green)' : (sev === 'high' ? 'var(--status-red)' : 'var(--status-amber)');
+          const statusBg = resolved ? 'rgba(15,118,110,0.12)' : (sev === 'high' ? 'rgba(220,38,38,0.12)' : 'rgba(245,158,11,0.12)');
+          const statusLabel = resolved
+            ? '<svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Handled by solver'
+            : '<svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:4px"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Action needed';
+          const statusPill = '<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:' + statusBg + ';color:' + statusColor + ';font-size:10px;font-weight:700;white-space:nowrap">' + statusLabel + '</span>';
           const where = [];
           if (wn.sprint) where.push(esc(wn.sprint));
           if (wn.skill) where.push(esc(wn.skill));
           const whereText = where.length ? where.join(' · ') : '<span style="color:var(--text-muted)">—</span>';
           const projectName = wn.project ? esc(wn.project.name) : '<span style="color:var(--text-muted)">—</span>';
           html += '<tr style="border-bottom:1px solid var(--border-light)">' +
-            '<td style="padding:8px 10px;vertical-align:top">' + dot + esc(meta.label) + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top">' + statusPill + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top">' + esc(meta.label) + '</td>' +
             '<td style="padding:8px 10px;vertical-align:top">' + projectName + '</td>' +
             '<td style="padding:8px 10px;vertical-align:top;color:var(--text-dark-secondary)">' + whereText + '</td>' +
-            '<td style="padding:8px 10px;vertical-align:top;color:var(--text-dark-secondary)">' + esc(meta.hint || wn.detail || '') + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top;color:var(--text-dark-secondary)">' + esc(meta.action || wn.detail || '') + '</td>' +
           '</tr>';
         });
         html += '</tbody></table>';
