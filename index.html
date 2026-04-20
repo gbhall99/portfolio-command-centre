@@ -20420,10 +20420,12 @@ const Solver = {
   // Optional opts = { concurrentMap, allowedOverlapSkills, projectId, enforceConcurrent } enables R12.
   // Returns { assigned: [{ member, points }], total }.
   _assignToMembers(personLedger, sprintId, skillKey, target, enforcePerPerson, opts) {
+    // Story points must be whole numbers when assigned to a person. Floor `target` + each
+    // per-person take so a person never receives fractional points from the solver.
+    target = Math.max(0, Math.floor(target));
     if (target <= 0) return { assigned: [], total: 0 };
     if (!enforcePerPerson) return { assigned: [], total: target }; // caller will still decrement aggregate
     // R1-H4: continuity bias — prefer members who already touched this project in earlier phases.
-    // We consult the concurrentMap to find names who have prior commitments on this project.
     let priorSet = null;
     if (opts && opts.concurrentMap && opts.projectId) {
       priorSet = new Set();
@@ -20442,7 +20444,7 @@ const Solver = {
     const enforceConcurrent = !!o.enforceConcurrent;
     for (let i = 0; i < names.length && remaining > 0; i++) {
       const entry = personLedger[sprintId][names[i]];
-      const take = Math.min(entry.remaining, remaining);
+      const take = Math.min(Math.floor(entry.remaining), remaining);
       if (take <= 0) continue;
       if (enforceConcurrent && this._concurrentConflict(o.concurrentMap, sprintId, names[i], o.projectId, skillKey, o.allowedOverlapSkills)) {
         continue;
@@ -20454,6 +20456,27 @@ const Solver = {
       if (enforceConcurrent) this._recordCommitment(o.concurrentMap, sprintId, names[i], o.projectId, skillKey);
     }
     return { assigned, total: target - remaining };
+  },
+
+  // Rescale a list of { member, points } entries to sum exactly to `target` with every
+  // `points` value a non-negative integer. Uses largest-remainder distribution so the total
+  // matches the target whenever possible. Used by the spread-work pass where proportional
+  // maths would otherwise produce fractional per-person shares.
+  _roundAssignmentsToIntegers(list, target) {
+    target = Math.max(0, Math.floor(target));
+    if (!Array.isArray(list) || !list.length) return list ? list.map(a => ({ ...a, points: 0 })) : [];
+    const floored = list.map(a => ({ member: a.member, _raw: a.points || 0, points: Math.floor(a.points || 0) }));
+    let sum = floored.reduce((s, a) => s + a.points, 0);
+    let leftover = target - sum;
+    if (leftover > 0) {
+      const byFrac = floored.map((a, i) => ({ i, frac: a._raw - a.points })).sort((a, b) => b.frac - a.frac);
+      for (let k = 0; k < byFrac.length && leftover > 0; k++) { floored[byFrac[k].i].points += 1; leftover -= 1; }
+    } else if (leftover < 0) {
+      // Shouldn't happen (we floored), but defensive: shave from largest allocations.
+      const byPts = floored.map((a, i) => ({ i, pts: a.points })).sort((a, b) => b.pts - a.pts);
+      for (let k = 0; k < byPts.length && leftover < 0; k++) { if (floored[byPts[k].i].points > 0) { floored[byPts[k].i].points -= 1; leftover += 1; } }
+    }
+    return floored.map(a => ({ member: a.member, points: a.points }));
   },
 
   // Reverse of _assignToMembers: credit back per-person capacity when a slice is released.
@@ -20928,7 +20951,9 @@ const Solver = {
 
               let maxAssign = pointsLeft;
               if (spreadWork && pointsLeft > assignable) maxAssign = assignable;
-              let assign = Math.min(pointsLeft, assignable, maxAssign);
+              // Story points are whole numbers on a human's plate — floor so the solver never
+              // writes a fractional slice to a sprint.
+              let assign = Math.floor(Math.min(pointsLeft, assignable, maxAssign));
               if (assign <= 0) continue;
 
               // ---------- R11: calendar-day budget check ----------
@@ -21228,12 +21253,17 @@ const Solver = {
                 if (shift <= 0) return;
                 if (!canShift(pid, sk.key, sid, nextSid, shift, entry.assigned_to)) return;
 
-                // Apply shift
-                // Move per-person allocation proportionally
+                // Apply shift. Moving per-person allocations proportionally produces fractional
+                // values; rescale both sides to integer points summing to the right target so no
+                // person ends up with a 1.5 SP assignment.
                 const totalAT = (entry.assigned_to || []).reduce((s, a) => s + a.points, 0) || 1;
-                const movedAT = (entry.assigned_to || []).map(a => ({ member: a.member, points: (a.points / totalAT) * shift }));
+                const rawMoved = (entry.assigned_to || []).map(a => ({ member: a.member, points: (a.points / totalAT) * shift }));
+                const movedAT = this._roundAssignmentsToIntegers(rawMoved, shift);
                 entry.points -= shift;
-                if (entry.assigned_to) entry.assigned_to = entry.assigned_to.map(a => ({ member: a.member, points: a.points * (entry.points / (entry.points + shift) || 0) }));
+                if (entry.assigned_to) {
+                  const rawRetained = entry.assigned_to.map(a => ({ member: a.member, points: a.points * ((entry.points / (entry.points + shift)) || 0) }));
+                  entry.assigned_to = this._roundAssignmentsToIntegers(rawRetained, entry.points);
+                }
 
                 // Release per-person at source, re-consume at dest
                 this._releaseFromMembers(personLedger, sid, movedAT);
