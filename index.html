@@ -2633,7 +2633,7 @@ const App = {
   LS_CUSTOMER_KEY: 'portfolio-command-centre-activeCustomer',
   AUTO_SAVE_MS: 60000,
   REQUIRED_FIELDS: ['id', 'name', 'customer', 'status'],
-  SCHEMA_VERSION: '1.0',
+  SCHEMA_VERSION: '1.1',
   storageAvailable: true,
   undoStack: [],
   redoStack: [],
@@ -2774,11 +2774,16 @@ const App = {
     if (!this.data) return;
     if (!this.data.audit_log) this.data.audit_log = [];
     const project = this.data.projects.find(p => p.id === projectId);
+    // F-001: coerce `field` to string so downstream filters that expect `entry.field.includes(...)` never crash.
+    let fieldStr;
+    if (typeof field === 'string') fieldStr = field;
+    else if (field == null) fieldStr = '';
+    else { try { fieldStr = JSON.stringify(field); } catch (_e) { fieldStr = String(field); } console.warn('[PCC] logChange: non-string field coerced', field); }
     const entry = {
       timestamp: new Date().toISOString(),
       projectId: projectId || null,
       projectName: project ? project.name : (projectId || 'System'),
-      field: field,
+      field: fieldStr,
       oldValue: oldValue !== undefined ? String(oldValue) : '',
       newValue: newValue !== undefined ? String(newValue) : '',
       source: source || 'user'
@@ -3074,19 +3079,21 @@ const App = {
        'phase_status', 'current_phase', 'workflow_template', 'risks', 'governance_class',
        'factor_impact', 'factor_complexity', 'factor_value', 'factor_urgency', 'priority_score',
        'deadline_type', 'forum_cadence'].forEach(f => { delete p[f]; });
-      // Progress tracking: add status/completed to existing skill_splits entries
-      if (p.skill_splits) {
-        Object.keys(p.skill_splits).forEach(sk => {
-          const arr = p.skill_splits[sk];
-          if (Array.isArray(arr)) {
-            arr.forEach(entry => {
-              if (!entry.status) entry.status = 'pending';
-              if (entry.completed === undefined) entry.completed = 0;
-              if (entry.assignee === undefined) entry.assignee = '';
-            });
-          }
-        });
+      // F-024: skill_splits shape invariant — { skillKey: Array<entry> }, each entry typed.
+      // Defensive against null, arrays, primitives, or keyed-but-non-array values.
+      if (p.skill_splits == null || typeof p.skill_splits !== 'object' || Array.isArray(p.skill_splits)) {
+        p.skill_splits = {};
       }
+      Object.keys(p.skill_splits).forEach(sk => {
+        const arr = p.skill_splits[sk];
+        if (!Array.isArray(arr)) { p.skill_splits[sk] = []; return; }
+        arr.forEach(entry => {
+          if (!entry.status) entry.status = 'pending';
+          if (entry.completed === undefined) entry.completed = 0;
+          if (entry.assignee === undefined) entry.assignee = '';
+          if (entry.points === undefined) entry.points = 0;
+        });
+      });
       // Ensure baseline fields exist
       if (!p.estimate_baseline) p.estimate_baseline = null;
       if (!p.allocation_baseline) p.allocation_baseline = null;
@@ -3132,12 +3139,12 @@ const App = {
       const existingCustomers = [...new Set((data.projects || []).map(p => p.customer).filter(Boolean))].sort();
       const defaultColors = { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Initech': '#8b5cf6' };
       if (existingCustomers.length) {
-        data.customers = existingCustomers.map(name => ({ name: name, color: defaultColors[name] || '#6366f1', staleThreshold: 7 }));
+        data.customers = existingCustomers.map(name => ({ name: name, color: defaultColors[name] || '#6366f1', staleThreshold: 14 }));
       } else {
         data.customers = [
-          { name: 'Acme Industries', color: '#3b82f6', staleThreshold: 7 },
-          { name: 'Globex', color: '#14b8a6', staleThreshold: 7 },
-          { name: 'Initech', color: '#8b5cf6', staleThreshold: 7 }
+          { name: 'Acme Industries', color: '#3b82f6', staleThreshold: 14 },
+          { name: 'Globex', color: '#14b8a6', staleThreshold: 14 },
+          { name: 'Initech', color: '#8b5cf6', staleThreshold: 14 }
         ];
       }
     }
@@ -3178,6 +3185,18 @@ const App = {
         });
       });
     }
+    // F-001: repair any legacy audit_log entries whose `field` is not a string.
+    if (Array.isArray(data.audit_log)) {
+      data.audit_log.forEach(e => {
+        if (typeof e.field !== 'string') {
+          try { e.field = JSON.stringify(e.field); } catch (_err) { e.field = String(e.field); }
+        }
+        if (typeof e.oldValue !== 'string') e.oldValue = e.oldValue == null ? '' : String(e.oldValue);
+        if (typeof e.newValue !== 'string') e.newValue = e.newValue == null ? '' : String(e.newValue);
+      });
+    }
+    // F-037: back-fill sprint capacity/committed so velocity/burndown have inputs on first load.
+    try { if (typeof Sprint !== 'undefined' && typeof Sprint.recomputeCapacity === 'function') Sprint.recomputeCapacity(data); } catch (_e) { /* module may load later */ }
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
     return data;
@@ -3749,7 +3768,7 @@ const App = {
       forecastP80Sprints: { green: 4,   amber: 8 },
       deliveryRate:       { green: 85,  amber: 65 },  // higher is better — green is the upper bound
       evmIndex:           { green: 0.95, amber: 0.80 }, // higher is better
-      staleActivityDays:  7
+      staleActivityDays:  14
     }, s.thresholds || {});
   },
 
@@ -3979,6 +3998,11 @@ const App = {
     if (!this.storageAvailable) return;
     this._updateSavedIndicator('saving', 'Saving…');
     try {
+      // F-016: keep risk_score and rule-derived RAG in sync on every save.
+      (this.data.projects || []).forEach(p => {
+        if (typeof this.calculateRiskScore === 'function') p.risk_score = this.calculateRiskScore(p);
+        if (typeof this.evaluateRagRules === 'function') this.evaluateRagRules(p);
+      });
       const json = JSON.stringify(this.data);
       localStorage.setItem(this.LS_KEY, json);
       localStorage.setItem(this.LS_META_KEY, JSON.stringify({ savedAt: new Date().toISOString(), projectCount: this.data.projects.length }));
@@ -4674,7 +4698,7 @@ const App = {
     t.forecastP80Sprints = { green: readNum('tFcGreen', 4),     amber: readNum('tFcAmber', 8) };
     t.deliveryRate       = { green: readNum('tDrGreen', 85),    amber: readNum('tDrAmber', 65) };
     t.evmIndex           = { green: readNum('tEvmGreen', 0.95), amber: readNum('tEvmAmber', 0.80) };
-    t.staleActivityDays  = readNum('tStaleDays', 7);
+    t.staleActivityDays  = readNum('tStaleDays', 14);
     this.markDirty();
     this.saveToLocalStorage();
     this.toast('Display thresholds saved', 'success');
@@ -4691,7 +4715,7 @@ const App = {
         forecastP80Sprints: { green: 4,   amber: 8 },
         deliveryRate:       { green: 85,  amber: 65 },
         evmIndex:           { green: 0.95, amber: 0.80 },
-        staleActivityDays:  7
+        staleActivityDays:  14
       };
     }
     this.markDirty();
@@ -5041,7 +5065,7 @@ const App = {
             '<tr><td style="padding:5px 7px">Forecast P80 (sprints)</td><td style="padding:5px 7px">' + numInput('tFcGreen', (t.forecastP80Sprints || {}).green != null ? t.forecastP80Sprints.green : 4, 1, 52) + '</td><td style="padding:5px 7px">' + numInput('tFcAmber', (t.forecastP80Sprints || {}).amber != null ? t.forecastP80Sprints.amber : 8, 1, 52) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Fewer is better</td></tr>' +
             '<tr><td style="padding:5px 7px">Delivery rate (%)</td><td style="padding:5px 7px">' + numInput('tDrGreen', (t.deliveryRate || {}).green != null ? t.deliveryRate.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tDrAmber', (t.deliveryRate || {}).amber != null ? t.deliveryRate.amber : 65, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better — green is the floor</td></tr>' +
             '<tr><td style="padding:5px 7px">SPI / CPI (ratio)</td><td style="padding:5px 7px">' + numInput('tEvmGreen', (t.evmIndex || {}).green != null ? t.evmIndex.green : 0.95, 0, 2, '0.01') + '</td><td style="padding:5px 7px">' + numInput('tEvmAmber', (t.evmIndex || {}).amber != null ? t.evmIndex.amber : 0.80, 0, 2, '0.01') + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better</td></tr>' +
-            '<tr><td style="padding:5px 7px">Stale activity (days)</td><td style="padding:5px 7px" colspan="2">' + numInput('tStaleDays', t.staleActivityDays != null ? t.staleActivityDays : 7, 1, 90) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Global default (per-customer overrides still apply)</td></tr>' +
+            '<tr><td style="padding:5px 7px">Stale activity (days)</td><td style="padding:5px 7px" colspan="2">' + numInput('tStaleDays', t.staleActivityDays != null ? t.staleActivityDays : 14, 1, 90) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Global default (per-customer overrides still apply)</td></tr>' +
           '</tbody></table>' +
 
           '<div style="margin-top:10px;display:flex;gap:8px">' +
@@ -5150,7 +5174,7 @@ const App = {
             tbl += '<tr>' +
               '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
               '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-              '<td><input type="number" value="' + (c.staleThreshold || 7) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
+              '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
               '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
               '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + c.name.replace(/'/g, "\\'") + '\')">' +
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
@@ -6328,11 +6352,13 @@ const App = {
   },
 
   getStaleThreshold(customer) {
+    // F-022: prefer customer-level value; fall back to settings.thresholds.staleActivityDays; default 14.
     if (this.data && this.data.customers) {
       const c = this.data.customers.find(c => c.name === customer);
       if (c && c.staleThreshold) return c.staleThreshold;
     }
-    return 7;
+    const fallback = this.data && this.data.settings && this.data.settings.thresholds && this.data.settings.thresholds.staleActivityDays;
+    return fallback || 14;
   },
 
   // REQ-CFG-02: Dynamic skills
@@ -6413,7 +6439,7 @@ const App = {
     const colors = ['#6366f1', '#ec4899', '#f97316', '#06b6d4', '#84cc16', '#a855f7'];
     const usedColors = this.data.customers.map(c => c.color);
     const nextColor = colors.find(c => !usedColors.includes(c)) || '#6366f1';
-    this.data.customers.push({ name: name, color: nextColor, staleThreshold: 7 });
+    this.data.customers.push({ name: name, color: nextColor, staleThreshold: 14 });
     this.markDirty();
     this.saveToLocalStorage();
     this.renderConfig();
@@ -6459,7 +6485,7 @@ const App = {
     if (!this.data || !this.data.customers) return;
     const c = this.data.customers.find(c => c.name === name);
     if (c) {
-      c.staleThreshold = parseInt(days) || 7;
+      c.staleThreshold = parseInt(days) || 14;
       this.markDirty();
       this.saveToLocalStorage();
     }
@@ -6649,16 +6675,43 @@ const App = {
         }
       }
     });
-    // Apply results only if not manually overridden
+    // F-018: accept both legacy boolean + canonical { value, reason, set_at } override shapes.
+    // If an object-shape override matches the rule outcome, clear it (redundant, no information lost).
     ['rag_schedule', 'rag_resourcing', 'rag_scope'].forEach(dim => {
-      if (project.rag_manual_override[dim]) return;
+      const ov = project.rag_manual_override[dim];
+      if (ov && typeof ov === 'object' && ov.value) {
+        if (results[dim] && results[dim] === ov.value) {
+          delete project.rag_manual_override[dim];
+          project[dim] = results[dim];
+          return;
+        }
+        project[dim] = ov.value;
+        return;
+      }
+      if (ov) return; // legacy boolean override — respect but don't refresh value
       if (results[dim]) {
         project[dim] = results[dim];
       } else if (!project[dim]) {
-        // Default to Green if no rule matched and no value set
         project[dim] = 'Green';
       }
     });
+  },
+
+  // F-018: canonical helpers for read/write. Callers should use these rather than mutate the field directly.
+  isRagOverridden(project, dim) {
+    if (!project || !project.rag_manual_override) return false;
+    const ov = project.rag_manual_override[dim];
+    if (!ov) return false;
+    if (typeof ov === 'object') return !!ov.value;
+    return true;
+  },
+  ragOverrideReason(project, dim) {
+    const ov = project && project.rag_manual_override && project.rag_manual_override[dim];
+    return (ov && typeof ov === 'object' && ov.reason) ? ov.reason : '';
+  },
+  ragOverrideCount() {
+    if (!this.data || !this.data.projects) return 0;
+    return this.data.projects.filter(p => ['rag_schedule', 'rag_resourcing', 'rag_scope'].some(d => this.isRagOverridden(p, d))).length;
   },
 
   // --- RAG Rule Management ---
@@ -7490,7 +7543,8 @@ const ProjectImport = {
         p[f] = patch[f];
         if (f.startsWith('rag_')) {
           if (!p.rag_manual_override) p.rag_manual_override = {};
-          p.rag_manual_override[f] = true;
+          // F-018: bulk edits carry a generic reason so the override is still trustable.
+          p.rag_manual_override[f] = { value: patch[f], reason: 'bulk-edit', set_at: new Date().toISOString() };
         }
         App.logChange(id, f, oldVal == null ? '' : String(oldVal), String(patch[f]), 'bulk-edit');
       });
@@ -10492,10 +10546,12 @@ const DetailPanel = {
 
     const ragSel = (label, field, current) => {
       const colors = ['Green', 'Amber', 'Red'];
-      const isManual = p.rag_manual_override && p.rag_manual_override[field];
+      const isManual = App.isRagOverridden(p, field);
+      const reason = App.ragOverrideReason(p, field);
       const modeLabel = isManual ? 'manual' : 'auto';
       const modeColor = isManual ? 'var(--accent-violet)' : 'var(--accent-teal)';
-      const clearBtn = isManual ? ' <span style="font-size:9px;color:var(--accent-blue);cursor:pointer;text-decoration:underline" onclick="DetailPanel.clearRagOverride(\'' + field + '\')">[clear]</span>' : '';
+      const reasonTip = reason ? ' title="Reason: ' + Dashboard.esc(reason) + '"' : '';
+      const clearBtn = isManual ? ' <span style="font-size:9px;color:var(--accent-blue);cursor:pointer;text-decoration:underline"' + reasonTip + ' onclick="DetailPanel.clearRagOverride(\'' + field + '\')">[clear]</span>' : '';
       return '<div class="field-group"><div class="field-label">' + label + '</div>' +
         '<div class="rag-selector">' +
         colors.map(c => '<div class="rag-option ' + c.toLowerCase() + (c === current ? ' active' : '') + '" data-field="' + field + '" data-value="' + c + '" title="' + c + '" onclick="DetailPanel.onRagClick(this)"></div>').join('') +
@@ -11846,7 +11902,11 @@ const DetailPanel = {
     const p = App.data.projects.find(pr => pr.id === projectId);
     if (p) {
       if (!Array.isArray(p.rag_history)) p.rag_history = [];
-      p.rag_history.push({ at: new Date().toISOString(), field, from: oldValue, to: newValue, reason });
+      const setAt = new Date().toISOString();
+      p.rag_history.push({ at: setAt, field, from: oldValue, to: newValue, reason });
+      // F-018: upgrade the override to carry its reason + set_at inline so the trust signal lives with the value.
+      if (!p.rag_manual_override) p.rag_manual_override = {};
+      p.rag_manual_override[field] = { value: newValue, reason: reason, set_at: setAt };
       App.logChange(projectId, field + '_reason', oldValue, newValue + ' \u2014 ' + reason, 'user');
       App.markDirty();
       App.saveToLocalStorage();
@@ -15002,6 +15062,37 @@ const Sprint = {
   },
 
   SPRINT_DEV_WEEKS: 4, // dev weeks per sprint (excluding hardening)
+
+  // F-037: recompute sprint capacity_points + committed_points from team + skill_splits ground truth.
+  // Idempotent; called from App.migrateSchema so velocity/burndown render on first load.
+  recomputeCapacity(data) {
+    data = data || (typeof App !== 'undefined' ? App.data : null);
+    if (!data || !Array.isArray(data.sprints)) return;
+    const tm = data.team_members || [];
+    (data.sprints || []).forEach(s => {
+      let cap = 0;
+      tm.forEach(m => {
+        const ov = m.sprint_overrides && m.sprint_overrides[s.sprint_id];
+        if (ov && typeof ov.available_points_per_sprint === 'number') cap += ov.available_points_per_sprint;
+        else if (typeof m.available_points_per_sprint === 'number') cap += m.available_points_per_sprint;
+        else if (typeof m.story_points_per_sprint === 'number') cap += m.story_points_per_sprint;
+      });
+      s.capacity_points = Math.round(cap);
+      let committed = 0;
+      (data.projects || []).forEach(p => {
+        if (!p.skill_splits || typeof p.skill_splits !== 'object') return;
+        Object.values(p.skill_splits).forEach(arr => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (sp.sprint === s.sprint_id && (sp.status === 'pending' || sp.status === 'in_progress')) {
+              committed += (sp.points || 0);
+            }
+          });
+        });
+      });
+      s.committed_points = committed;
+    });
+  },
 
   calcSkillCapacity(customerFilter) {
     // Map team member primary skills to capacity per skill type
