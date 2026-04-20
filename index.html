@@ -10376,24 +10376,23 @@ const DetailPanel = {
     const ev = Forecast.earnedValue(p);
     if (!ev) return '';
     if (ev.insufficient && ev.BAC === 0) {
-      return '<div class="evm-strip"><div class="evm-insufficient">Earned Value unavailable — set total project size to enable SPI / CPI / EAC.</div></div>';
+      return '<div class="evm-strip"><div class="evm-insufficient">Earned-value metrics unavailable — set the total project size to enable schedule-vs-plan, efficiency, and forecast-total.</div></div>';
     }
     const fmt = (n) => n == null ? '—' : (Math.abs(n) >= 100 ? Math.round(n) : (Math.round(n * 10) / 10));
     const spi = Forecast.evRag(ev.SPI, 'SPI');
     const cpi = Forecast.evRag(ev.CPI, 'CPI');
     const pct = (ev.BAC > 0) ? Math.round((ev.EV / ev.BAC) * 100) : 0;
 
-    // Each cell carries a tooltip that explains the acronym on first hover.
-    // Sub-labels rewritten in plain English (Issue 1).
+    // Each cell's label is spelled out; tooltips keep the formal acronym definition for reference.
     const cells = [
-      { label: 'BAC', tip: 'Budget at Completion — the total story points this project is planned to cost.',                 val: fmt(ev.BAC), sub: 'total points planned' },
-      { label: 'EV',  tip: 'Earned Value — story points we\u2019ve already marked complete.',                                 val: fmt(ev.EV),  sub: pct + '% done' },
-      { label: 'PV',  tip: 'Planned Value — points we should have completed by today if we were on plan. Needs a start and target date.', val: ev.PV == null ? '—' : fmt(ev.PV), sub: ev.PV == null ? 'needs dates' : 'expected by today' },
-      { label: 'AC',  tip: 'Actual Cost — points we\u2019ve already put into sprints (our effort spend so far).',             val: fmt(ev.AC), sub: 'committed to sprints' },
-      { label: 'SPI', tip: 'Schedule Performance Index = EV \u00F7 PV. 1.0 means on plan; above 1.0 means ahead; below 1.0 means behind.', val: spi.label,  sub: ev.SPI == null ? 'no PV' : (ev.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'), color: spi.color },
-      { label: 'CPI', tip: 'Cost Performance Index = EV \u00F7 AC. 1.0 means we\u2019re earning points as fast as we commit them; below 1.0 means we\u2019re over-consuming.', val: cpi.label,  sub: ev.CPI == null ? 'no AC' : (ev.CPI >= 1 ? 'efficient' : 'over-consuming'), color: cpi.color },
-      { label: 'EAC', tip: 'Estimate at Completion = AC + (BAC \u2212 EV) \u00F7 CPI — forecast of total points when done, given current efficiency.', val: ev.EAC == null ? '—' : fmt(ev.EAC), sub: 'forecast total' },
-      { label: 'ETC', tip: 'Estimate to Complete = EAC \u2212 AC — remaining story points still to spend.', val: ev.ETC == null ? '—' : fmt(ev.ETC), sub: 'remaining work' }
+      { label: 'Total planned',     tip: 'Budget at Completion (BAC) — the total story points this project is planned to cost.',                 val: fmt(ev.BAC), sub: 'total points planned' },
+      { label: 'Points delivered',  tip: 'Earned Value (EV) — story points we\u2019ve already marked complete.',                                  val: fmt(ev.EV),  sub: pct + '% done' },
+      { label: 'Expected by today', tip: 'Planned Value (PV) — points we should have completed by today if we were on plan. Needs a start and target date.', val: ev.PV == null ? '—' : fmt(ev.PV), sub: ev.PV == null ? 'needs dates' : 'expected by today' },
+      { label: 'Effort spent',      tip: 'Actual Cost (AC) — points we\u2019ve already put into sprints (our effort spend so far).',              val: fmt(ev.AC), sub: 'committed to sprints' },
+      { label: 'Schedule vs plan',  tip: 'Schedule Performance Index (SPI) = delivered \u00F7 expected-by-today. 1.0 means on plan; above 1.0 means ahead; below 1.0 means behind.', val: spi.label,  sub: ev.SPI == null ? 'no planned value' : (ev.SPI >= 1 ? 'on/ahead of plan' : 'behind plan'), color: spi.color },
+      { label: 'Efficiency',        tip: 'Cost Performance Index (CPI) = delivered \u00F7 effort-spent. 1.0 means we\u2019re earning points as fast as we commit them; below 1.0 means we\u2019re over-consuming.',                           val: cpi.label,  sub: ev.CPI == null ? 'no effort spent' : (ev.CPI >= 1 ? 'efficient' : 'over-consuming'), color: cpi.color },
+      { label: 'Forecast total',    tip: 'Estimate at Completion (EAC) = effort-spent + (total-planned \u2212 delivered) \u00F7 efficiency. Forecast of total points when done, given current efficiency.', val: ev.EAC == null ? '—' : fmt(ev.EAC), sub: 'forecast total' },
+      { label: 'Remaining work',    tip: 'Estimate to Complete (ETC) = forecast-total \u2212 effort-spent. Remaining story points still to spend.', val: ev.ETC == null ? '—' : fmt(ev.ETC), sub: 'remaining work' }
     ];
     const esc = Dashboard.esc;
     // H5: baseline provenance — make explicit what the EVM measures against.
@@ -10590,6 +10589,56 @@ const DetailPanel = {
       return '<input type="' + type + '" class="field-input" data-field="' + name + '" value="' + Dashboard.esc(value || '') + '" onchange="DetailPanel.onFieldChange(this)">';
     };
 
+    // WSJF 1–10 scale with plain-English labels per step. Stored value stays numeric so downstream
+    // scoring, migrations, and imports are unchanged; only the dropdown options get readable text.
+    const scaleSel = (name, value, labels) => {
+      const cur = (value == null || value === '') ? '' : String(value);
+      let html = '<select class="field-input" data-field="' + name + '" onchange="DetailPanel.onFieldChange(this)">';
+      html += '<option value=""' + (cur === '' ? ' selected' : '') + '>— not set —</option>';
+      for (let i = 1; i <= 10; i++) {
+        const label = labels[i - 1] || '';
+        html += '<option value="' + i + '"' + (cur === String(i) ? ' selected' : '') + '>' + i + ' — ' + label + '</option>';
+      }
+      html += '</select>';
+      return html;
+    };
+    const BUSINESS_VALUE_LABELS = [
+      'Trivial (cosmetic, no measurable impact)',
+      'Low (nice to have)',
+      'Minor improvement',
+      'Useful',
+      'Moderate benefit',
+      'Valuable',
+      'Significant',
+      'Strategic',
+      'Major',
+      'Transformational (market-moving)'
+    ];
+    const TIME_CRITICALITY_LABELS = [
+      'No deadline pressure',
+      'Can wait months',
+      'Wait is fine',
+      'Some urgency',
+      'Moderate urgency',
+      'Slipping costs money',
+      'Value decays weekly',
+      'Days matter',
+      'Window closing',
+      'Missing window = lost opportunity'
+    ];
+    const RISK_OPPORTUNITY_LABELS = [
+      'No risk reduction / opportunity',
+      'Minor',
+      'Small de-risk',
+      'Useful hedge',
+      'Moderate de-risk',
+      'Opens options',
+      'Removes real risk',
+      'Unlocks future work',
+      'Major enabler',
+      'Critical enabler'
+    ];
+
     const textarea = (name, value) => {
       return '<textarea class="field-input" data-field="' + name + '" onchange="DetailPanel.onFieldChange(this)">' + Dashboard.esc(value || '') + '</textarea>';
     };
@@ -10694,9 +10743,9 @@ const DetailPanel = {
         '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">' +
           '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Prioritisation (WSJF + MoSCoW)</div>' +
           '<div class="field-grid">' +
-            '<div class="field-group"><div class="field-label" title="Business value: how much does this deliver to customers/users/revenue? 1 = negligible, 10 = transformational.">Business value (1–10)</div>' + inp('business_value', p.business_value, 'number') + '</div>' +
-            '<div class="field-group"><div class="field-label" title="Time-criticality: how much value decays as we delay? 1 = no decay, 10 = value lost if not done imminently.">Time-criticality (1–10)</div>' + inp('time_criticality', p.time_criticality, 'number') + '</div>' +
-            '<div class="field-group"><div class="field-label" title="Risk reduction / opportunity enablement: how much does this de-risk the portfolio or open new opportunities? 1 = none, 10 = unlocks major downstream value.">Risk / opportunity (1–10)</div>' + inp('risk_reduction_opportunity', p.risk_reduction_opportunity, 'number') + '</div>' +
+            '<div class="field-group"><div class="field-label" title="Business value: how much does this deliver to customers/users/revenue? 1 = negligible, 10 = transformational.">Business value (1–10)</div>' + scaleSel('business_value', p.business_value, BUSINESS_VALUE_LABELS) + '</div>' +
+            '<div class="field-group"><div class="field-label" title="Time-criticality: how much value decays as we delay? 1 = no decay, 10 = value lost if not done imminently.">Time-criticality (1–10)</div>' + scaleSel('time_criticality', p.time_criticality, TIME_CRITICALITY_LABELS) + '</div>' +
+            '<div class="field-group"><div class="field-label" title="Risk reduction / opportunity enablement: how much does this de-risk the portfolio or open new opportunities? 1 = none, 10 = unlocks major downstream value.">Risk / opportunity (1–10)</div>' + scaleSel('risk_reduction_opportunity', p.risk_reduction_opportunity, RISK_OPPORTUNITY_LABELS) + '</div>' +
             '<div class="field-group"><div class="field-label" title="MoSCoW classification partitions priority bands. Must > Should > Could > Won\u2019t.">MoSCoW</div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won\u2019t'], p.moscow || '') + '</div>' +
           '</div>' +
           (function() {
@@ -10781,7 +10830,7 @@ const DetailPanel = {
         return '<div class="panel-section">' +
           '<div class="panel-section-title">Delivery Setup</div>' +
           '<div style="display:flex;flex-direction:column;gap:6px">' +
-            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data Source</span>' + dsSelect + '</div>' +
+            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data sourcing</span>' + dsSelect + '</div>' +
             extFields +
             '<div style="padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
               '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Flow <span style="font-weight:400">(check to include, arrows to reorder)</span></div>' +
@@ -17329,15 +17378,71 @@ const Sprint = {
   pendingAllocation: null,
 
   autoAllocate() {
+    // Single entry point: open the modal in "options" mode so the user chooses how the solver
+    // runs before seeing results. Previously this ran the solver immediately which made the
+    // options-vs-outcome relationship opaque.
     if (!App.data) return;
     const customer = App.activeCustomer;
     if (!customer) { App.toast('Select a customer from the filter bar first', 'error'); return; }
     const sprints = App.data.sprints || [];
     if (!sprints.length) { App.toast('No sprints defined', 'error'); return; }
+    this.pendingAllocation = null;
+    this.allocResultsTab = 'options';
+    this._openAllocResultsShell();
+    this.renderAllocTab(null);
+    this.renderScenarioPicker();
+    this._syncAllocFooter();
+  },
 
+  // Execute the solver with the current allocSettings and switch to the Summary tab.
+  runAllocationFromOptions() {
+    if (!App.data) return;
+    const customer = App.activeCustomer;
+    if (!customer) { App.toast('Select a customer from the filter bar first', 'error'); return; }
+    // Pull knob values from the Options form before running so the user's latest edits apply.
+    this._readAllocOptionsForm();
     const result = Solver.solve(customer, this.allocSettings, App.data, this);
     this.pendingAllocation = result;
-    this.showAllocResults(result);
+    this.allocResultsTab = 'summary';
+    document.querySelectorAll('.alloc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'summary'));
+    this.renderAllocTab(result);
+    this._syncAllocFooter();
+  },
+
+  _openAllocResultsShell() {
+    document.getElementById('allocResultsOverlay').classList.add('open');
+    document.querySelectorAll('.alloc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === this.allocResultsTab));
+  },
+
+  // Read every knob in the Options form and write it back to Sprint.allocSettings so the
+  // solver run uses the latest values. Mirrors the _persist() path in openAllocSettings.
+  _readAllocOptionsForm() {
+    const f = (id) => document.getElementById(id);
+    const num = (id, fallback) => { const el = f(id); if (!el) return fallback; const v = parseInt(el.value, 10); return isNaN(v) ? fallback : v; };
+    const bool = (id) => { const el = f(id); return el ? !!el.checked : null; };
+    const s = this.allocSettings;
+    const mc = num('optMaxCap', s.maxCapacityPct); if (mc != null) s.maxCapacityPct = Math.min(100, Math.max(0, mc));
+    const pb = num('optPhaseBuffer', s.phaseBufferPoints); if (pb != null) s.phaseBufferPoints = Math.max(0, pb);
+    const lc = bool('optLockCompleted'); if (lc != null) s.lockCompleted = lc;
+    const lp = bool('optLockInProgress'); if (lp != null) s.lockInProgress = lp;
+    const pp = bool('optEnforcePerPersonCap'); if (pp != null) s.enforcePerPersonCap = pp;
+    const sp = bool('optSpreadWork'); if (sp != null) s.spreadWork = sp;
+    const ro = bool('optRespectSkillOrder'); if (ro != null) s.respectSkillOrder = ro;
+    const start = f('optStartFromSprint'); if (start) s.startFromSprint = start.value || '';
+  },
+
+  // Enable / disable the Apply + Save buttons so they're only live when a run has completed.
+  _syncAllocFooter() {
+    const applyBtn = document.querySelector('.alloc-results-footer .btn-apply-alloc');
+    const saveBtn = document.querySelector('.alloc-results-footer .btn-save-scenario');
+    const disabled = !this.pendingAllocation;
+    [applyBtn, saveBtn].forEach(b => {
+      if (!b) return;
+      b.disabled = disabled;
+      b.style.opacity = disabled ? '0.4' : '';
+      b.style.cursor = disabled ? 'not-allowed' : '';
+      b.title = disabled ? 'Run the allocation first to enable this action' : '';
+    });
   },
 
   applyAllocation() {
@@ -17382,29 +17487,115 @@ const Sprint = {
     App.toast('Allocation applied: ' + result.stats.projectsAllocated + ' projects across ' + result.stats.makespan + ' sprints', 'success');
   },
 
-  allocResultsTab: 'summary',
+  allocResultsTab: 'options',
+
+  // Plain-English metadata for solver warnings. Surfaces as a single table in the Summary tab
+  // (one row per distinct issue) so users don't have to translate the solver's internal codes.
+  _WARNING_META: {
+    deadline_miss:             { label: 'Deadline will be missed',        hint: 'Cut scope, raise the "how busy can a skill get" cap, or push the deadline. The project\'s "Why?" button shows the earliest sprint it could still land.' },
+    impossible:                { label: 'Cannot be scheduled',            hint: 'No arrangement of the current inputs satisfies every constraint. Review the project\'s size, dependencies, and team capacity.' },
+    capacity_overflow:         { label: 'Skill is overloaded',            hint: 'Too much work for the skill in this sprint. Raise the capacity ceiling, or move some work to a later sprint.' },
+    buffer_push:               { label: 'Phase pushed later by buffer',   hint: 'A hand-off gap between phases forced this phase to slide. Shrink the "spare points between phases" buffer to pack tighter.' },
+    buffer_skipped_deadline:   { label: 'Hand-off gap skipped for deadline', hint: 'The solver dropped the phase buffer to hit a hard deadline. Confirm the deadline is correct, or split the phase.' },
+    buffer_abandoned_maxslides:{ label: 'Phase gave up sliding',          hint: 'Too many cascading pushes. Increase the "how far can a phase slide" cap, or reduce the project\'s size.' },
+    person_over_cap_averted:   { label: 'Avoided over-booking a person',  hint: 'Expected behaviour — someone\'s per-sprint cap would have been exceeded so the slice moved to a later sprint.' },
+    time_budget_split:         { label: 'Phase split across sprints',     hint: 'Phase was too big for one sprint\'s working-day budget. Normal for large phases. Raise the sprint\'s time budget, or split the project size, to keep it together.' },
+    circular_dependency:       { label: 'Circular dependency',            hint: 'Two projects depend on each other. Remove one edge of the cycle in the Dependencies tab before re-running.' },
+    dependency_cross_customer: { label: 'Cross-customer dependency',      hint: 'Dependency crosses customers. Enable "honour cross-customer dependencies" in System Settings, or break the dependency.' },
+    zero_capacity:             { label: 'No one can do this skill',       hint: 'No team member covers this skill in the active customer, or everyone who does has zero capacity. Add coverage or raise availability.' }
+  },
+
+  _warningSeverity(type) {
+    if (type === 'deadline_miss' || type === 'impossible' || type === 'zero_capacity' || type === 'circular_dependency') return 'high';
+    return 'medium';
+  },
+
+  // Renders the Options tab — the knobs the solver uses for the run, plus the primary Run button.
+  _renderAllocOptionsTab() {
+    const s = this.allocSettings;
+    const esc = Dashboard.esc;
+    const sprints = (App.data.sprints || []).map(sp => sp.sprint_id);
+    const startOptions = '<option value="">First available</option>' +
+      sprints.map(id => '<option value="' + esc(id) + '"' + (s.startFromSprint === id ? ' selected' : '') + '>' + esc(id) + '</option>').join('');
+    return '<div style="padding:4px 20px 16px">' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">' +
+        'These are the options the solver will use. Adjust, then click <strong>Run allocation</strong> to see the plan. ' +
+        'Nothing changes in your portfolio until you click <strong>Apply allocation</strong>.' +
+      '</div>' +
+      '<table class="alloc-options-table" style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<tbody>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top;width:52%"><label for="optMaxCap" style="display:block;font-weight:600">How busy can a skill get per sprint?</label>' +
+            '<div style="color:var(--text-muted);font-size:11px;margin-top:2px">Leave headroom for unplanned work. 85% is a sensible default; 70% is conservative; 100% packs tight.</div></td>' +
+            '<td style="padding:8px 6px;vertical-align:top;white-space:nowrap"><input type="number" id="optMaxCap" min="30" max="100" step="5" value="' + s.maxCapacityPct + '" style="width:70px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"> <span style="color:var(--text-muted)">%</span></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top"><label for="optPhaseBuffer" style="display:block;font-weight:600">Spare points between hand-off phases</label>' +
+            '<div style="color:var(--text-muted);font-size:11px;margin-top:2px">Prevents two phases of the same project sharing a tight sprint. 0 packs tightest; 2 is balanced.</div></td>' +
+            '<td style="padding:8px 6px;vertical-align:top;white-space:nowrap"><input type="number" id="optPhaseBuffer" min="0" max="10" step="1" value="' + s.phaseBufferPoints + '" style="width:70px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"> <span style="color:var(--text-muted)">pts</span></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top"><label for="optStartFromSprint" style="display:block;font-weight:600">Start from sprint</label>' +
+            '<div style="color:var(--text-muted);font-size:11px;margin-top:2px">Earliest sprint the solver is allowed to place work in. Leave as "first available" to use the earliest non-past sprint.</div></td>' +
+            '<td style="padding:8px 6px;vertical-align:top"><select id="optStartFromSprint" style="padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + startOptions + '</select></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top" colspan="2">' +
+            '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="optLockCompleted" ' + (s.lockCompleted ? 'checked' : '') + ' style="margin-top:2px">' +
+              '<span><strong>Leave completed projects alone</strong><div style="color:var(--text-muted);font-size:11px">Already finished or closed projects keep whatever allocation they have. Recommended.</div></span></label></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top" colspan="2">' +
+            '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="optLockInProgress" ' + (s.lockInProgress ? 'checked' : '') + ' style="margin-top:2px">' +
+              '<span><strong>Leave in-progress projects alone</strong><div style="color:var(--text-muted);font-size:11px">Don\'t re-shuffle work that\'s already under way. Off by default — turn on to preserve momentum.</div></span></label></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top" colspan="2">' +
+            '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="optEnforcePerPersonCap" ' + (s.enforcePerPersonCap ? 'checked' : '') + ' style="margin-top:2px">' +
+              '<span><strong>Respect each person\'s per-sprint limit</strong><div style="color:var(--text-muted);font-size:11px">Never over-book a single team member. Strongly recommended.</div></span></label></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top" colspan="2">' +
+            '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="optSpreadWork" ' + (s.spreadWork ? 'checked' : '') + ' style="margin-top:2px">' +
+              '<span><strong>Spread work across sprints</strong><div style="color:var(--text-muted);font-size:11px">Load-balance rather than front-load. Smoother sprints, later finishes.</div></span></label></td></tr>' +
+          '<tr><td style="padding:8px 6px;vertical-align:top" colspan="2">' +
+            '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="optRespectSkillOrder" ' + (s.respectSkillOrder ? 'checked' : '') + ' style="margin-top:2px">' +
+              '<span><strong>Respect delivery pipeline order</strong><div style="color:var(--text-muted);font-size:11px">A later phase (e.g. UAT) never starts before an earlier one (e.g. Data Engineering). Leave on.</div></span></label></td></tr>' +
+        '</tbody>' +
+      '</table>' +
+      '<div style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;gap:12px">' +
+        '<a href="#" onclick="event.preventDefault();Sprint.openSchedulingSettings()" style="font-size:11px;color:var(--accent-blue)">Advanced options (System Settings)</a>' +
+        '<button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600;padding:8px 18px" onclick="Sprint.runAllocationFromOptions()">Run allocation</button>' +
+      '</div>' +
+    '</div>';
+  },
 
   showAllocResults(result) {
+    // Back-compat path for internal callers (e.g. scenario apply) that still call this directly.
+    // For user-triggered allocation, autoAllocate() now opens the Options tab first.
+    this.pendingAllocation = result;
     this.allocResultsTab = 'summary';
-    document.getElementById('allocResultsOverlay').classList.add('open');
+    this._openAllocResultsShell();
     this.renderAllocTab(result);
-    // R1-H3: refresh the scenario picker in the footer each time results open.
     this.renderScenarioPicker();
+    this._syncAllocFooter();
   },
 
   switchAllocTab(tab) {
+    // The Options tab is always rendered; result-only tabs (summary/changes/plan/capacity)
+    // render a hint when no allocation has been run yet.
     this.allocResultsTab = tab;
     document.querySelectorAll('.alloc-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-    if (this.pendingAllocation) this.renderAllocTab(this.pendingAllocation);
+    this.renderAllocTab(this.pendingAllocation);
   },
 
   renderAllocTab(result) {
     const body = document.getElementById('allocResultsBody');
     if (!body) return;
     const esc = Dashboard.esc;
+    const tab = this.allocResultsTab;
+
+    if (tab === 'options') {
+      body.innerHTML = this._renderAllocOptionsTab();
+      return;
+    }
+    if (!result) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">' +
+        '<div style="font-size:13px;font-weight:600;margin-bottom:4px">Nothing to show yet</div>' +
+        '<div style="font-size:12px">Review the options on the first tab, then click <strong>Run allocation</strong> to see the plan and warnings here.</div>' +
+        '<button class="btn btn-primary btn-sm" style="margin-top:14px" onclick="Sprint.switchAllocTab(\'options\')">Back to options</button>' +
+      '</div>';
+      return;
+    }
     const s = result.stats;
     const w = result.warnings;
-    const tab = this.allocResultsTab;
 
     if (tab === 'summary') {
       const hasBad = w.some(x => x.type === 'deadline_miss' || x.type === 'impossible');
@@ -17429,62 +17620,51 @@ const Sprint = {
       '</div>';
 
       if (w.length) {
-        // Group warnings by type, deduplicate per project + sprint
-        const groups = {};
-        w.forEach(warn => {
-          const t = warn.type || 'other';
-          if (!groups[t]) groups[t] = [];
-          groups[t].push(warn);
+        // One-row-per-distinct-issue table. Problem | Project | Where | What to try.
+        const rows = [];
+        const seen = new Set();
+        w.forEach(wn => {
+          const key = (wn.type || 'other') + '|' + (wn.project && wn.project.id ? wn.project.id : '') + '|' + (wn.sprint || '') + '|' + (wn.skill || '');
+          if (seen.has(key)) return;
+          seen.add(key);
+          rows.push(wn);
         });
-        // R1-H2: per-warning-type "Try this" hints alongside label + severity.
-        const typeMeta = {
-          deadline_miss: { sev: 'red', label: 'Deadline misses', hint: 'Cut scope by the over-budget amount, raise the max capacity %, or push the deadline. Check the "Why?" button for the earliest sprint each project could still make it.' },
-          impossible: { sev: 'red', label: 'Impossible', hint: 'No arrangement of the current inputs can satisfy every constraint. Review the project\u2019s size, dependencies, and capacity.' },
-          capacity_overflow: { sev: 'amber', label: 'Capacity overflow', hint: 'Raise \u201CHow busy can a skill get?\u201D in solver quick-tuning, or move some work to later sprints before re-running.' },
-          buffer_push: { sev: 'amber', label: 'Buffer slides', hint: 'Shrink \u201CSpare points between phases\u201D (phase buffer) in solver quick-tuning to 1\u20132 SP. A lower buffer packs tighter but leaves less slack.' },
-          buffer_skipped_deadline: { sev: 'amber', label: 'Buffer dropped (deadline wins)', hint: 'The solver dropped the phase buffer to hit a hard deadline. Confirm the deadline is correct, or split the affected phase.' },
-          buffer_abandoned_maxslides: { sev: 'amber', label: 'Buffer abandoned (safety stop)', hint: 'Increase \u201CHow far can a phase slide?\u201D or reduce project size \u2014 the solver gave up on the buffer after too many slides.' },
-          person_over_cap_averted: { sev: 'amber', label: 'Per-person cap avoidances', hint: 'Expected behaviour \u2014 the solver protected a team member from over-booking. If this happens often, add skill coverage or raise their per-sprint points.' },
-          time_budget_split: { sev: 'amber', label: 'Time-budget splits (phase carried across sprints)', hint: 'Normal for large phases. If unwelcome, raise the sprint\u2019s working-day budget or split the project size.' },
-          circular_dependency: { sev: 'violet', label: 'Circular dependency', hint: 'Remove one edge in the dependency cycle in the Detail Panel before re-running.' },
-          dependency_cross_customer: { sev: 'amber', label: 'Cross-customer dependency', hint: 'Either enable \u201CHonour cross-customer dependencies\u201D in System Settings, or break this dependency at the Detail Panel.' },
-          zero_capacity: { sev: 'red', label: 'Zero capacity', hint: 'No member covers this skill, or everyone covering it has zero capacity in scope. Add a team member with the skill or raise their availability.' }
-        };
-        html += '<div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:6px">Warnings (' + w.length + ')</div>';
-        Object.keys(groups).forEach(type => {
-          const meta = typeMeta[type] || { sev: 'grey', label: type };
-          const sevColor = meta.sev === 'red' ? 'var(--status-red)' : meta.sev === 'amber' ? 'var(--status-amber)' : meta.sev === 'violet' ? 'var(--accent-violet)' : 'var(--text-muted)';
-          // Deduplicate by project+sprint
-          const seen = new Set();
-          const unique = [];
-          groups[type].forEach(wn => {
-            const key = (wn.project && wn.project.id ? wn.project.id : '') + '|' + (wn.sprint || '') + '|' + (wn.skill || '');
-            if (seen.has(key)) return;
-            seen.add(key);
-            unique.push(wn);
-          });
-          const duped = groups[type].length - unique.length;
-          html += '<details class="alloc-warn-group" style="border:1px solid var(--border-light);border-radius:6px;margin-bottom:6px;background:white">' +
-            '<summary style="padding:8px 10px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px">' +
-              '<span style="color:' + sevColor + '">&#9888;</span>' +
-              '<span>' + esc(meta.label) + '</span>' +
-              '<span style="margin-left:auto;font-size:11px;color:var(--text-muted)">' + unique.length + (duped ? ' (+' + duped + ' dup)' : '') + '</span>' +
-            '</summary>' +
-            '<div style="padding:4px 12px 10px 28px;font-size:11px">' +
-              (meta.hint ? '<div style="padding:6px 8px;background:#eff6ff;border-left:3px solid var(--accent-blue);margin-bottom:6px;border-radius:3px;color:var(--text-dark)"><strong>Try this:</strong> ' + esc(meta.hint) + '</div>' : '') +
-              unique.map(wn => {
-                const parts = [];
-                if (wn.project) parts.push('<strong>' + esc(wn.project.name) + '</strong>');
-                if (wn.skill) parts.push(esc(wn.skill));
-                if (wn.sprint) parts.push('@' + esc(wn.sprint));
-                const locator = parts.length ? parts.join(' · ') + ' — ' : '';
-                return '<div style="padding:3px 0;color:var(--text-dark-secondary)">' + locator + esc(wn.detail || '') + '</div>';
-              }).join('') +
-            '</div>' +
-          '</details>';
+        const dupCount = w.length - rows.length;
+        const highFirst = rows.slice().sort((a, b) => {
+          const aHi = this._warningSeverity(a.type) === 'high' ? 0 : 1;
+          const bHi = this._warningSeverity(b.type) === 'high' ? 0 : 1;
+          return aHi - bHi;
         });
+        html += '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">Warnings (' + rows.length + (dupCount ? ', ' + dupCount + ' duplicates hidden' : '') + ')</div>' +
+          '<div style="font-size:11px;color:var(--text-muted)">High-priority first</div>' +
+        '</div>';
+        html += '<table class="alloc-warn-table" style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">' +
+          '<thead><tr style="background:var(--surface-2);text-align:left;border-bottom:1px solid var(--border-light)">' +
+            '<th style="padding:8px 10px;font-weight:600;width:28%">Problem</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:24%">Project</th>' +
+            '<th style="padding:8px 10px;font-weight:600;width:18%">Where</th>' +
+            '<th style="padding:8px 10px;font-weight:600">What to try</th>' +
+          '</tr></thead><tbody>';
+        highFirst.forEach(wn => {
+          const meta = this._WARNING_META[wn.type] || { label: wn.type || 'Issue', hint: wn.detail || '' };
+          const sev = this._warningSeverity(wn.type);
+          const dot = '<span aria-hidden="true" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:' + (sev === 'high' ? 'var(--status-red)' : 'var(--status-amber)') + '"></span>';
+          const where = [];
+          if (wn.sprint) where.push(esc(wn.sprint));
+          if (wn.skill) where.push(esc(wn.skill));
+          const whereText = where.length ? where.join(' · ') : '<span style="color:var(--text-muted)">—</span>';
+          const projectName = wn.project ? esc(wn.project.name) : '<span style="color:var(--text-muted)">—</span>';
+          html += '<tr style="border-bottom:1px solid var(--border-light)">' +
+            '<td style="padding:8px 10px;vertical-align:top">' + dot + esc(meta.label) + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top">' + projectName + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top;color:var(--text-dark-secondary)">' + whereText + '</td>' +
+            '<td style="padding:8px 10px;vertical-align:top;color:var(--text-dark-secondary)">' + esc(meta.hint || wn.detail || '') + '</td>' +
+          '</tr>';
+        });
+        html += '</tbody></table>';
       } else {
-        html += '<div style="font-size:12px;color:var(--status-green);font-weight:600;padding:12px 0">No warnings - all constraints satisfied</div>';
+        html += '<div style="font-size:12px;color:var(--status-green);font-weight:600;padding:12px 0">No warnings — every constraint was satisfied.</div>';
       }
 
       // Preview Changes summary (REQ-SPRINT-01)
@@ -22885,7 +23065,8 @@ const Onboarding = {
       <button class="audit-panel-close" onclick="Sprint.closeAllocResults()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="alloc-tabs">
-      <div class="alloc-tab active" data-tab="summary" onclick="Sprint.switchAllocTab('summary')">Summary</div>
+      <div class="alloc-tab active" data-tab="options" onclick="Sprint.switchAllocTab('options')">Options</div>
+      <div class="alloc-tab" data-tab="summary" onclick="Sprint.switchAllocTab('summary')">Summary</div>
       <div class="alloc-tab" data-tab="changes" onclick="Sprint.switchAllocTab('changes')">Changes</div>
       <div class="alloc-tab" data-tab="plan" onclick="Sprint.switchAllocTab('plan')">Allocation Plan</div>
       <div class="alloc-tab" data-tab="capacity" onclick="Sprint.switchAllocTab('capacity')">Capacity Grid</div>
@@ -22893,9 +23074,9 @@ const Onboarding = {
     <div class="alloc-results-body" id="allocResultsBody"></div>
     <div class="alloc-results-footer">
       <span id="allocScenarioPicker"></span>
-      <button class="btn btn-outline btn-sm" onclick="Sprint.saveAllocationScenario()" title="Save this run as a named scenario — compare side-by-side without committing">Save as scenario</button>
+      <button class="btn btn-outline btn-sm btn-save-scenario" onclick="Sprint.saveAllocationScenario()" title="Save this run as a named scenario — compare side-by-side without committing">Save as scenario</button>
       <button class="btn btn-outline btn-sm" onclick="Sprint.closeAllocResults()">Cancel</button>
-      <button class="btn btn-sm" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply Allocation</button>
+      <button class="btn btn-sm btn-apply-alloc" style="background:var(--accent-blue);color:white;font-weight:600" onclick="Sprint.applyAllocation()">Apply allocation</button>
     </div>
   </div>
 </div>
