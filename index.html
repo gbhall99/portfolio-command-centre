@@ -10530,16 +10530,27 @@ const DetailPanel = {
     }
     // After the blur flush, check whether any field still has a DOM value that disagrees with
     // stored state. That would mean a pending change that couldn't be auto-saved — warn first.
+    // Both sides normalise through the same function so edge cases don't trigger false
+    // positives: missing stored booleans were previously compared as "" vs "false" on every
+    // unchecked checkbox, firing the warning even when the user hadn't touched the panel.
     const p = this.currentId && App.data ? App.data.projects.find(pr => pr.id === this.currentId) : null;
     if (p) {
+      const normalize = (v, isBool) => {
+        if (isBool) return v ? 'true' : 'false';
+        if (v == null) return '';
+        return String(v).trim();
+      };
       const pending = [];
       panel.querySelectorAll('[data-field]').forEach(el => {
         const f = el.dataset.field;
         if (!f) return;
-        const domVal = el.type === 'checkbox' ? !!el.checked : (el.value == null ? '' : String(el.value));
-        const stored = p[f];
-        const dataVal = stored == null ? '' : (typeof stored === 'boolean' ? stored : String(stored));
-        if (String(domVal) !== String(dataVal)) pending.push(f);
+        // Skip elements that aren't real form inputs (e.g. filter multi-selects tagged with
+        // data-field for other purposes) — they'd always mismatch the flat p[f] lookup.
+        if (!('value' in el) && el.type !== 'checkbox') return;
+        const isCheckbox = el.type === 'checkbox';
+        const domVal = isCheckbox ? normalize(el.checked, true) : normalize(el.value, false);
+        const dataVal = isCheckbox ? normalize(!!p[f], true) : normalize(p[f], false);
+        if (domVal !== dataVal) pending.push(f);
       });
       if (pending.length) {
         const sample = pending.slice(0, 3).join(', ') + (pending.length > 3 ? ' (+' + (pending.length - 3) + ' more)' : '');
