@@ -2449,11 +2449,8 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <div class="capacity-section-title">Team Members</div>
           <div class="team-grid" id="teamGrid"></div>
         </div>
-        <!-- Issue 6: Scrum Master view — per-member delivery timeline. -->
-        <div class="capacity-section">
-          <div class="capacity-section-title">Scrum Master Schedule <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px">— what each person is doing, in priority order, with due dates</span></div>
-          <div id="teamScheduleGantt"></div>
-        </div>
+        <!-- Scrum Master Schedule section removed — per-member delivery timeline now lives
+             under Sprint Planning → Team view where capacity-vs-commitment is the context. -->
       </div>
     </div>
     <div class="view" id="viewGovernance">
@@ -10799,6 +10796,17 @@ const DetailPanel = {
       '</div>' +
       // EVM metrics strip
       this.renderEvmStrip(p) +
+      // Status & Health — promoted to the top so RAG health is the first thing the user sees
+      // after the project header. Status sits alongside the three RAG dimensions.
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Status & Health</div>' +
+        '<div class="field-grid">' +
+          '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
+          ragSel('Schedule Health', 'rag_schedule', p.rag_schedule) +
+          ragSel('Resource Health', 'rag_resourcing', p.rag_resourcing) +
+          ragSel('Scope Health', 'rag_scope', p.rag_scope) +
+        '</div>' +
+      '</div>' +
       // Identity
       '<div class="panel-section">' +
         '<div class="panel-section-title">Identity</div>' +
@@ -10867,16 +10875,7 @@ const DetailPanel = {
         })() +
       '</div>' +
 
-      // Status & Health — now focused only on status + RAG; priority moved to Prioritisation.
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Status & Health</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
-          ragSel('Schedule Health', 'rag_schedule', p.rag_schedule) +
-          ragSel('Resource Health', 'rag_resourcing', p.rag_resourcing) +
-          ragSel('Scope Health', 'rag_scope', p.rag_scope) +
-        '</div>' +
-      '</div>' +
+      // (Status & Health lives at the top now — see above, before Identity.)
 
       // Timeline
       '<div class="panel-section">' +
@@ -16228,17 +16227,61 @@ const Sprint = {
     };
     const phaseLabel = { past: 'Past', current: 'Current', future: 'Future' };
 
+    // Same per-sprint capacity summary that the Projects view carries, so Team view users can
+    // see load vs capacity at the sprint-level too, not just per-person.
+    const sprintCapCache = {};
+    sprints.forEach(s => { sprintCapCache[s.sprint_id] = this.calcSkillCapacityForSprint(customer || undefined, s.sprint_id); });
+    const sprintTotals = {};
+    sprints.forEach(s => { sprintTotals[s.sprint_id] = {}; this.SKILLS.forEach(sk => { sprintTotals[s.sprint_id][sk.key] = 0; }); });
+    projects.forEach(p => {
+      const splits = p.skill_splits || {};
+      this.SKILLS.forEach(sk => {
+        const arr = splits[sk.key];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (!sp.sprint || !sprintTotals[sp.sprint]) return;
+          sprintTotals[sp.sprint][sk.key] = (sprintTotals[sp.sprint][sk.key] || 0) + (sp.points || 0);
+        });
+      });
+    });
+
     // Header
     let thead = '<tr><th class="sl-project-cell">Team member</th>';
     sprints.forEach(s => {
       const ph = sprintPhase(s);
       const dateRange = this.formatDateRange(s.start_date, s.end_date);
-      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '">' +
+      const totals = sprintTotals[s.sprint_id] || {};
+      const spCap = sprintCapCache[s.sprint_id] || {};
+      const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
+      let totalCommitted = 0, totalCap = 0;
+      const capBars = this.SKILLS.map(sk => {
+        const com = totals[sk.key] || 0;
+        const cap = Math.floor((spCap[sk.key] || 0) * capPct);
+        totalCommitted += com;
+        totalCap += cap;
+        if (cap === 0 && com === 0) return '';
+        const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 999 : 0);
+        const barColor = App.utilColor(pct);
+        const numStyle = pct > 100 ? 'color:var(--status-red);font-weight:700' : 'color:var(--text-muted)';
+        return '<div style="display:flex;align-items:center;gap:3px;font-size:9px">' +
+          '<span style="width:24px;color:' + skillColors[sk.key] + ';font-weight:600">' + sk.short + '</span>' +
+          '<div style="flex:1;height:4px;background:#e9ecef;border-radius:2px;overflow:hidden;min-width:30px">' +
+            '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + barColor + ';border-radius:2px"></div>' +
+          '</div>' +
+          '<span style="width:32px;text-align:right;font-size:8px;font-variant-numeric:tabular-nums;' + numStyle + '">' + com + '/' + Math.round(cap) + '</span>' +
+        '</div>';
+      }).filter(Boolean).join('');
+      const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
+      const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
+      const overallBadge = totalCap > 0 ? '<div style="font-size:10px;font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:8px;color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
+      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700">' +
           '<span>' + s.sprint_id.replace('CY26-', '') + '</span>' +
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
         '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
+        (capBars ? '<div class="sl-cap-bars" style="margin-top:4px;display:flex;flex-direction:column;gap:1px">' + capBars + '</div>' : '') +
+        overallBadge +
       '</th>';
     });
     thead += '</tr>';
@@ -18640,7 +18683,9 @@ const Capacity = {
     if (!App.data) return;
     this.renderSprintCapacity();
     this.renderTeamGrid();
-    this.renderTeamSchedule();
+    // renderTeamSchedule() removed — Scrum Master timeline was retired from the Capacity page.
+    // The helper is kept for back-compat; callers should now use the Team view in Sprint Planning.
+    if (typeof this.renderTeamSchedule === 'function' && document.getElementById('teamScheduleGantt')) this.renderTeamSchedule();
   },
 
   // Issue 6: Scrum Master view — per-member horizontal timeline showing each member's
