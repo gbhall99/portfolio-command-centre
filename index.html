@@ -1164,7 +1164,7 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .sprint-group-single .sprint-card { border: none; border-radius: 0; }
 .sprint-group-single .sprint-card .card-top { display: flex; }
 
-.split-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 300; width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; }
+.split-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 300; width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; overflow-y: auto; }
 .split-modal > *:not(.split-actions) { flex-shrink: 1; min-height: 0; }
 .split-modal > .split-body, .split-modal > .split-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .split-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 299; }
@@ -1314,6 +1314,7 @@ html[data-theme="dark"] .gantt-label-active { background: rgba(59,130,246,0.16) 
 .gantt-bar-critical { box-shadow: 0 0 0 2px #f59e0b !important; z-index: 5; }
 .gantt-bar-faded { opacity: 0.4; }
 .gantt-label-faded { opacity: 0.4; }
+.gantt-row-search-match { background: var(--tint-amber-weak) !important; transition: background 0.3s; }
 
 /* --- Gantt Resize Handles --- */
 .gantt-resize-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 6; }
@@ -1326,8 +1327,9 @@ html[data-theme="dark"] .gantt-label-active { background: rgba(59,130,246,0.16) 
 .gantt-search-input { padding: 5px 8px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); font-size: 12px; font-family: var(--font-sans); width: 140px; outline: none; }
 .gantt-search-input:focus { border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
 .gantt-toolbar-secondary { margin-top: -4px; padding-top: 0 !important; border-top: 1px dashed var(--border-dim); padding-top: 8px !important; gap: 14px; }
-.toolbar-group { display: inline-flex; align-items: center; gap: 6px; }
+.toolbar-group { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--border-dim); border-radius: var(--radius-sm); background: var(--bg-content); }
 .toolbar-group-label { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); font-weight: 700; padding-right: 4px; }
+html[data-theme="dark"] .toolbar-group { border-color: #1f2937; background: transparent; }
 .toolbar-chk { font-size: var(--fs-base); display: flex; align-items: center; gap: 4px; color: var(--text-dark-secondary); cursor: pointer; user-select: none; }
 .toolbar-chk input { accent-color: var(--accent-blue); }
 .gantt-sprint-links { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
@@ -6385,11 +6387,17 @@ const App = {
           wsjfInputs +
         '</div>' +
       '</div>' +
-      '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px">Score breakdown (hybrid components)</div>' +
+      // The breakdown table below reflects the hybrid composite score. When the project is being
+      // ranked WSJF-first, the hybrid numbers are not what the solver used, so label + suppress
+      // them accordingly so the modal's banner ("WSJF-first") no longer contradicts the table.
+      (useWsjf
+        ? '<div style="font-size:11px;line-height:1.6;padding:8px 10px;background:var(--tint-violet-weak,rgba(139,92,246,0.08));border:1px solid var(--accent-violet);border-radius:var(--radius-sm);margin-bottom:6px"><strong>WSJF-first ranking applied.</strong> This project is ordered by WSJF = ' + (wsjf && wsjf.wsjf != null ? Number(wsjf.wsjf).toFixed(2) : '—') + ' (value &divide; effort). The hybrid composite score below is shown for reference only.</div>'
+        : '') +
+      '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:4px">' + (useWsjf ? 'Hybrid composite (reference only)' : 'Score breakdown (hybrid components)') + '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px">' +
         '<thead><tr style="color:var(--text-muted);font-size:10px;text-transform:uppercase;letter-spacing:0.3px"><th style="padding:2px 6px;text-align:left">Component</th><th style="padding:2px 6px;text-align:left">Input</th><th style="padding:2px 6px;text-align:right">Contribution</th></tr></thead>' +
         '<tbody>' + breakdownRows + '</tbody>' +
-        '<tfoot><tr style="font-weight:700"><td style="padding:4px 6px" colspan="2">Total (hybrid)</td><td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums;color:var(--accent-blue)">' + (explain ? explain.total : '—') + '</td></tr></tfoot>' +
+        '<tfoot><tr style="font-weight:700"><td style="padding:4px 6px" colspan="2">' + (useWsjf ? 'Hybrid subtotal (not applied)' : 'Total (hybrid)') + '</td><td style="padding:4px 6px;text-align:right;font-variant-numeric:tabular-nums;color:var(--accent-blue)">' + (explain ? explain.total : '—') + '</td></tr></tfoot>' +
       '</table>' +
       (confidence.reasons.length ? '<div style="margin-top:6px;padding:6px 8px;background:#fffbeb;border:1px solid #f59e0b40;border-radius:var(--radius-sm);font-size:11px;color:var(--text-dark)"><strong>Why confidence is ' + confidence.level + ':</strong> ' + confidence.reasons.map(r => esc(r)).join('; ') + '.</div>' : '') +
       tiebreaker +
@@ -10959,18 +10967,16 @@ const DetailPanel = {
 
       // (Status & Health lives at the top now — see above, before Identity.)
 
-      // Timeline
+      // Timeline — switched to the shared .field-grid two-column layout so Sprint + Date rows
+      // align with every other paired-field section. Labels now name the date explicitly
+      // ("Start Date" / "Target Date") instead of repeating a bare "Date" under each sprint.
       '<div class="panel-section">' +
         '<div class="panel-section-title">Timeline</div>' +
-        '<div style="display:flex;flex-direction:column;gap:8px">' +
-          '<div style="display:flex;gap:8px;align-items:end">' +
-            '<div class="field-group" style="flex:1.2"><div class="field-label">Start Sprint</div>' + sprintSel('current_sprint', p.current_sprint) + '</div>' +
-            '<div class="field-group" style="flex:0.8"><div class="field-label">Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
-          '</div>' +
-          '<div style="display:flex;gap:8px;align-items:end">' +
-            '<div class="field-group" style="flex:1.2"><div class="field-label">End Sprint</div>' + sprintSel('target_sprint', p.target_sprint) + '</div>' +
-            '<div class="field-group" style="flex:0.8"><div class="field-label">Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
-          '</div>' +
+        '<div class="field-grid">' +
+          '<div class="field-group"><div class="field-label">Start Sprint</div>' + sprintSel('current_sprint', p.current_sprint) + '</div>' +
+          '<div class="field-group"><div class="field-label">Start Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
+          '<div class="field-group"><div class="field-label">End Sprint</div>' + sprintSel('target_sprint', p.target_sprint) + '</div>' +
+          '<div class="field-group"><div class="field-label">Target Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
           (p.category === 'Product Release' ? '<div class="field-group"><div class="field-label">Product Release Date</div>' + inp('product_release_date', p.product_release_date, 'date') + '</div>' : '') +
           '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
         '</div>' +
@@ -11280,11 +11286,10 @@ const DetailPanel = {
     if (this._collapseHandlerInstalled) return;
     const body = document.getElementById('panelBody');
     if (!body) return;
-    body.addEventListener('click', (e) => {
-      const title = e.target.closest('.panel-section-title');
+    // Shared toggle — runs for mouse click AND Enter/Space on a keyboard-focused title so the
+    // `role="button"` + `tabindex="0"` on `.panel-section-title` is fulfilled end-to-end.
+    const toggleSection = (title) => {
       if (!title) return;
-      // Skip if click originated inside an interactive control inside the title
-      if (e.target.closest('button, input, a, select, textarea')) return;
       const section = title.parentElement;
       if (!section || !section.classList.contains('panel-section')) return;
       const key = (title.textContent || '').replace(/\d+/g, '').trim().toLowerCase();
@@ -11297,11 +11302,23 @@ const DetailPanel = {
         if (i >= 0) collapsed.splice(i, 1);
       }
       this._setCollapsed(collapsed);
-      // Record that the user explicitly interacted with this section. Default-collapsed sections
-      // (e.g. Change History) stop defaulting to collapsed after the first click either way.
       const toggled = this._getToggled();
       if (!toggled.includes(key)) { toggled.push(key); this._setToggled(toggled); }
       title.setAttribute('aria-expanded', section.classList.contains('collapsed') ? 'false' : 'true');
+    };
+    body.addEventListener('click', (e) => {
+      const title = e.target.closest('.panel-section-title');
+      if (!title) return;
+      if (e.target.closest('button, input, a, select, textarea')) return;
+      toggleSection(title);
+    });
+    body.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const title = e.target.closest && e.target.closest('.panel-section-title');
+      if (!title) return;
+      if (e.target !== title) return; // only act when focus is on the title, not a child control
+      e.preventDefault();
+      toggleSection(title);
     });
     this._collapseHandlerInstalled = true;
   },
@@ -11579,7 +11596,9 @@ const DetailPanel = {
     // click handler installed by _installCollapseHandler.
     const entries = App.getProjectAuditLog(projectId);
     const totalCount = App.data && App.data.audit_log ? App.data.audit_log.filter(e => e.projectId === projectId).length : entries.length;
-    const headerLabel = 'Change History' + (entries.length ? ' (' + totalCount + ')' : '');
+    // Match the `.risk-count` chip pattern used by every other register section title (Risks,
+    // Issues, Stakeholders, etc.) so Change History reads the same visual rhythm.
+    const headerLabel = 'Change History' + (entries.length ? ' <span class="risk-count">' + totalCount + '</span>' : '');
     if (!entries.length) {
       return '<div class="panel-section collapsed" data-default-collapsed="change-history">' +
         '<div class="panel-section-title">' + headerLabel + '</div>' +
@@ -13938,7 +13957,31 @@ const Gantt = {
     }
     // Category filter
     if (categoryFilters.length) projects = projects.filter(p => categoryFilters.includes(p.category));
-    return projects.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+    // Match the solver's tiebreaker chain so the "#" column reflects allocation order:
+    //   hard_deadline (earliest first) → MoSCoW band → WSJF (higher first) → manual priority → id.
+    // A project whose hard_deadline or WSJF dominates the solver's sort otherwise appeared low
+    // on the Gantt (because `priority` alone didn't pick it up), misleading the user about why it
+    // got allocated first.
+    const sprintsForSort = (App.data && App.data.sprints) || [];
+    const dlIdx = (p) => p && p.hard_deadline && Solver && typeof Solver.dateToSprintIdx === 'function'
+      ? Solver.dateToSprintIdx(p.hard_deadline, sprintsForSort)
+      : -1;
+    const wsjfOf = (p) => (App.calculateWsjf && p ? (App.calculateWsjf(p).wsjf || 0) : 0);
+    const moscowOf = (p) => App.moscowBand ? App.moscowBand(p) : 2;
+    return projects.sort((a, b) => {
+      const da = dlIdx(a), db = dlIdx(b);
+      // -1 (no deadline) sorts last
+      const aHas = da >= 0, bHas = db >= 0;
+      if (aHas !== bHas) return aHas ? -1 : 1;
+      if (aHas && da !== db) return da - db;
+      const ma = moscowOf(a), mb = moscowOf(b);
+      if (ma !== mb) return ma - mb;
+      const wa = wsjfOf(a), wb = wsjfOf(b);
+      if (wa !== wb) return wb - wa;
+      const pa = a.priority || 999, pb = b.priority || 999;
+      if (pa !== pb) return pa - pb;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
   },
 
   render() {
@@ -14095,11 +14138,13 @@ const Gantt = {
       }
       const priCell =
         '<div class="gantt-label-pri">' +
-          '<span class="gantt-label-pri-num">#' + (p.priority || '—') + '</span>' +
+          // Number only — the column header already reads "#", so repeating it on every row was
+          // double-hash noise ("##3") at narrow widths.
+          '<span class="gantt-label-pri-num">' + (p.priority || '—') + '</span>' +
           (recPri && recPri !== p.priority
             ? '<span title="Recommended #' + recPri + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" class="gantt-label-pri-rec">\u2192#' + recPri + '</span>'
             : '') +
-          '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>' +
+          '<button class="why-rank-btn why-rank-info" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>' +
         '</div>';
       // L7: right-click a label to add a dependency via the existing Detail Panel dep-add flow.
       // Zebra-stripe alternating projects so it's easy to tell where one project ends and the next
@@ -14616,12 +14661,22 @@ const Gantt = {
         }
       });
     });
+    // Compute the full stack height — including phase sub-rows in Detailed mode — BEFORE drawing
+    // the dep SVG. Previously svgH was `22 + projects.length * rowH`, which ignored sub-rows and
+    // clipped any dep arrow aimed at a row below the main-row band in Detailed mode.
+    let totalRowHForSvg = projects.length * rowH + 22;
+    if (isDetailed) {
+      projects.forEach(p => {
+        const po = (p.delivery_config && p.delivery_config.phase_order) || [];
+        const psm2 = Solver.PHASE_SKILL_MAP;
+        po.forEach(ph => { const sk = psm2[ph]; if (sk && (p[sk] || 0) > 0) totalRowHForSvg += subRowH; });
+      });
+    }
     let depSvg = '';
     // R2-L4: Executive mode suppresses dependency arrows in favour of a per-project count chip
     // painted on the label column — the chart stays one-page and legible for board audiences.
     if (depLines && !this.executiveMode) {
-      const svgH = 22 + projects.length * rowH;
-      depSvg = '<svg style="position:absolute;top:0;left:0;width:' + (totalWidth + 100) + 'px;height:' + svgH + 'px;z-index:4;overflow:visible">' +
+      depSvg = '<svg style="position:absolute;top:0;left:0;width:' + (totalWidth + 100) + 'px;height:' + totalRowHForSvg + 'px;z-index:4;overflow:visible">' +
         '<defs>' +
           // 2F: single arrowhead style for blocked_by + blocks (same semantic edge, drawn once).
           '<marker id="depArrowBlocks" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1e293b"/></marker>' +
@@ -14933,8 +14988,10 @@ const Gantt = {
     const matchRow = Array.from(labelRows).find(r => r.dataset.id === match.id);
     if (matchRow) {
       matchRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      matchRow.style.background = '#fef3c7';
-      setTimeout(() => { matchRow.style.background = ''; }, 2000);
+      // Class-based highlight so the colour goes through the tint tokens (dark-mode safe) and
+      // a stale inline style can't survive a theme switch mid-flash.
+      matchRow.classList.add('gantt-row-search-match');
+      setTimeout(() => { matchRow.classList.remove('gantt-row-search-match'); }, 2000);
     }
 
     // Scroll horizontally to centre the bar
