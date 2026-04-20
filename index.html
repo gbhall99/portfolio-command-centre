@@ -1178,8 +1178,18 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 
 .gantt-scroll { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); position: relative; min-height: 0; }
 .gantt-wrapper { display: flex; min-height: 100%; min-width: max-content; }
-.gantt-labels { flex-shrink: 0; width: 220px; border-right: 1px solid var(--border-light); background: white; z-index: 12; position: sticky; left: 0; }
-.gantt-label-header { height: 48px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); background: var(--bg-content); }
+/* Labels column: horizontally sticky (left:0). Width is driven by --gantt-labels-width so the
+   user can drag the border between labels and chart to reveal long project names.
+   Min 140px / max 560px to keep the chart usable at any size. */
+.gantt-labels { flex-shrink: 0; width: var(--gantt-labels-width, 220px); min-width: 140px; max-width: 560px; border-right: 1px solid var(--border-light); background: white; z-index: 12; position: sticky; left: 0; }
+/* Label-header sticks to the TOP as well so the "PROJECT" title stays visible when the list
+   scrolls — previously the title scrolled away and project names bled into the header area. */
+.gantt-label-header { position: sticky; top: 0; z-index: 14; height: 48px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); background: var(--bg-content); }
+/* Drag handle on the right edge of the labels column — click-and-drag to resize. */
+.gantt-labels-resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 15; user-select: none; }
+.gantt-labels-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.12s; }
+.gantt-labels-resizer:hover::after, .gantt-labels-resizer.dragging::after { background: var(--accent-blue); }
+body.gantt-labels-dragging { cursor: col-resize; user-select: none; }
 .gantt-label-row { height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
 .gantt-label-row:hover { background: var(--surface-hover); }
 .gantt-label-row .label-rag { display: inline-flex; gap: 3px; flex-shrink: 0; margin-right: 6px; }
@@ -1194,6 +1204,20 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .gantt-header-cell.weekend { background: rgba(0,0,0,0.02); }
 .gantt-rows { position: relative; min-height: 100px; }
 .gantt-row { height: 36px; border-bottom: 1px solid #f1f5f9; position: relative; }
+/* Alternate shading by project (not skill). Applied in detailed mode so the whole project
+   block — main row + its sub-rows — carries one consistent background. The zebra classes
+   are also applied to the label-row + .gantt-label-sub placeholders so the left column
+   shades exactly match the chart side. */
+.gantt-proj-zebra-1 { background: rgba(15,23,42,0.025); }
+html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03); }
+/* In detailed mode the project name appears once (on the main row); the sub-rows below it
+   carry no internal top/bottom borders so the project name reads as a single continuous cell. */
+.gantt-row-in-block { border-bottom: none; }
+.gantt-sub-row { border-bottom: none !important; }
+.gantt-sub-row[data-sub-last="1"] { border-bottom: 1px solid var(--border-light) !important; }
+.gantt-label-row-in-block { border-bottom: none !important; }
+.gantt-label-sub { border-bottom: none; }
+.gantt-label-sub-last { border-bottom: 1px solid var(--border-light); }
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
@@ -1295,6 +1319,32 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .capacity-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; overflow: auto; }
 .capacity-section { background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); }
 .capacity-section-title { font-size: 13px; font-weight: 700; color: var(--text-dark); margin-bottom: 12px; }
+
+/* Scrum Master Schedule — a proper timeline with stacked overlapping assignments.
+   Left column: name + role (no verbose queue list). Right lane: date-aligned bars, one per
+   assignment, stacked vertically when they overlap so nothing gets hidden. Sprint + calendar
+   date header. Hover on a bar reveals full details + the next-phase handover target. */
+.ts-container { border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--surface); overflow-x: auto; }
+.ts-header { display: flex; gap: 8px; padding: 0; border-bottom: 1px solid var(--border-light); background: var(--surface-2); }
+.ts-header .ts-name { padding: 6px 8px 4px 8px; font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.ts-name { min-width: 180px; padding: 6px 8px; border-right: 1px solid var(--border-light); flex-shrink: 0; }
+.ts-name-strong { font-size: 12px; font-weight: 700; color: var(--text-dark); }
+.ts-name-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+.ts-lane { position: relative; flex: 1; }
+.ts-lane-header { height: 44px; }
+.ts-sprint-row { position: relative; height: 22px; border-bottom: 1px solid var(--border-dim); }
+.ts-sprint-chip { top: 4px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--accent-blue); background: rgba(37,99,235,0.08); border-radius: 3px; padding: 0 6px; letter-spacing: 0.3px; }
+.ts-date-row { position: relative; height: 22px; }
+.ts-date-tick { position: absolute; top: 4px; font-size: 9px; color: var(--text-muted); transform: translateX(-50%); white-space: nowrap; }
+.ts-row { display: flex; gap: 8px; border-bottom: 1px solid var(--gantt-row-border); }
+.ts-row:last-child { border-bottom: none; }
+.ts-sprint-guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--gantt-guide, var(--border-dim)); pointer-events: none; opacity: 0.5; }
+.ts-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent-blue); opacity: 0.7; pointer-events: none; }
+.ts-bar { position: absolute; border-radius: 3px; padding: 0 6px; font-size: 10px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.12); cursor: pointer; border: 1px solid rgba(0,0,0,0.08); display: flex; align-items: center; }
+.ts-bar:hover { filter: brightness(1.08); box-shadow: 0 2px 6px rgba(0,0,0,0.18); z-index: 2; }
+.ts-bar:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 1px; }
+.ts-bar-label { text-overflow: ellipsis; overflow: hidden; }
+.ts-empty { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--text-muted); font-style: italic; }
 
 .team-grid { display: flex; flex-direction: column; gap: 10px; }
 .team-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
@@ -1582,7 +1632,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
   .sidebar-footer .version { display: none; }
 
   .detail-panel { width: 420px; }
-  .gantt-labels { width: 160px; }
+  :root { --gantt-labels-width: 160px; }
   .sprint-column { min-width: 180px; flex: 1 1 180px; }
   .sprint-column.backlog { flex: 0 0 200px; min-width: 200px; }
   .sprint-column.collapsed-col { flex: 0 0 40px; min-width: 40px; }
@@ -1649,7 +1699,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
   .gantt-container { padding: 10px; gap: 8px; min-height: 0; }
   .gantt-toolbar { gap: 4px; }
   .gantt-toolbar .filter-label { display: none; }
-  .gantt-labels { width: 120px; }
+  :root { --gantt-labels-width: 120px; }
   .gantt-label-row { padding: 0 6px; height: 32px; }
   .gantt-label-row .label-name { font-size: 10px; }
   .gantt-label-header { padding: 0 6px; height: 40px; font-size: 10px; }
@@ -1717,7 +1767,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
   .sprint-toolbar .filter-label { display: none; }
   .sprint-col-header .capacity-label { width: 30px; font-size: 9px; }
   .sprint-col-header .capacity-num { display: none; }
-  .gantt-labels { width: 80px; }
+  :root { --gantt-labels-width: 80px; }
   .gantt-label-row .label-name { font-size: 9px; }
 }
 
@@ -13472,6 +13522,9 @@ const Gantt = {
       this.initFilter('ganttFilterCategory', App.getUniqueValues('category'));
       this.initialized = true;
     }
+    // Restore the saved labels-column width before first render so project names are legible.
+    this._restoreLabelsWidth();
+    this._attachLabelsResizer();
     // H10: Executive mode defaults ON in Boardroom/Presentation mode — auto-set once on entry.
     const presOn = document.documentElement.getAttribute('data-presentation') === 'on';
     if (presOn && !this._executiveBoardroomAutoSet) {
@@ -13482,6 +13535,64 @@ const Gantt = {
     if (execChk) execChk.checked = !!this.executiveMode;
     this.renderSprintLinks();
     this.render();
+  },
+
+  LS_LABELS_WIDTH_KEY: 'pcc-gantt-labels-width',
+
+  _restoreLabelsWidth() {
+    try {
+      const raw = localStorage.getItem(this.LS_LABELS_WIDTH_KEY);
+      const w = raw ? parseInt(raw, 10) : NaN;
+      if (!isNaN(w)) document.documentElement.style.setProperty('--gantt-labels-width', Math.max(140, Math.min(560, w)) + 'px');
+    } catch (_e) { /* private mode */ }
+  },
+
+  _attachLabelsResizer() {
+    const labels = document.getElementById('ganttLabels');
+    if (!labels || labels.querySelector('.gantt-labels-resizer')) return;
+    const handle = document.createElement('div');
+    handle.className = 'gantt-labels-resizer';
+    handle.setAttribute('role', 'separator');
+    handle.setAttribute('aria-orientation', 'vertical');
+    handle.setAttribute('aria-label', 'Resize project column');
+    handle.tabIndex = 0;
+    handle.title = 'Drag to resize';
+    labels.appendChild(handle);
+    let startX = 0, startW = 0;
+    const onDown = (e) => {
+      startX = (e.touches ? e.touches[0].clientX : e.clientX);
+      startW = labels.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+      document.body.classList.add('gantt-labels-dragging');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp, { once: true });
+      e.preventDefault();
+    };
+    const onMove = (e) => {
+      const dx = (e.touches ? e.touches[0].clientX : e.clientX) - startX;
+      const w = Math.max(140, Math.min(560, Math.round(startW + dx)));
+      document.documentElement.style.setProperty('--gantt-labels-width', w + 'px');
+    };
+    const onUp = () => {
+      handle.classList.remove('dragging');
+      document.body.classList.remove('gantt-labels-dragging');
+      document.removeEventListener('mousemove', onMove);
+      const current = getComputedStyle(document.documentElement).getPropertyValue('--gantt-labels-width').trim();
+      const px = parseInt(current, 10);
+      if (!isNaN(px)) { try { localStorage.setItem(this.LS_LABELS_WIDTH_KEY, String(px)); } catch (_e) {} }
+    };
+    handle.addEventListener('mousedown', onDown);
+    handle.addEventListener('touchstart', onDown, { passive: false });
+    // Keyboard: arrow keys step the column width for non-mouse users.
+    handle.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const delta = e.key === 'ArrowLeft' ? -20 : 20;
+      const cur = labels.getBoundingClientRect().width;
+      const w = Math.max(140, Math.min(560, Math.round(cur + delta)));
+      document.documentElement.style.setProperty('--gantt-labels-width', w + 'px');
+      try { localStorage.setItem(this.LS_LABELS_WIDTH_KEY, String(w)); } catch (_e) {}
+    });
   },
 
   // H10: toggle executive mode and re-render.
@@ -13592,6 +13703,7 @@ const Gantt = {
 
     if (!projects.length) {
       document.getElementById('ganttLabels').innerHTML = '<div class="gantt-label-header">Project</div>';
+      this._attachLabelsResizer();
       document.getElementById('ganttHeader').innerHTML = '';
       document.getElementById('ganttRows').innerHTML = '<div class="gantt-empty"><div style="font-weight:700;margin-bottom:4px">No projects with start + end dates</div><div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Add start_date and target_date to a project to see it on the timeline.</div><button class="btn btn-outline btn-sm" onclick="DetailPanel.quickAdd()">+ New project with dates</button></div>';
       return;
@@ -13699,6 +13811,8 @@ const Gantt = {
     let labelsHtml = '<div class="gantt-label-header">Project</div>' +
       '<div style="height:22px;border-bottom:1px solid var(--border-dim);background:var(--surface-2);display:flex;align-items:center;padding:0 12px;font-size:10px;color:var(--text-muted);font-weight:700;letter-spacing:0.6px;text-transform:uppercase">Timeline</div>';
     let lastGroup = null;
+    // Reset zebra-index for this render pass — used to alternate shading per project (labels + rows).
+    this._projectZebraIndex = 0;
     projects.forEach(p => {
       // R2-M3: emit a slim group header whenever the group key changes.
       if (this.groupBy) {
@@ -13733,24 +13847,36 @@ const Gantt = {
         blockedCountChip +
         '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
       // L7: right-click a label to add a dependency via the existing Detail Panel dep-add flow.
-      labelsHtml += '<div class="gantt-label-row gantt-hoverable' + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')" oncontextmenu="event.preventDefault();DetailPanel.open(\'' + p.id + '\');setTimeout(function(){var el=document.querySelector(\'[data-section=&quot;dependencies&quot;]\');if(el)el.scrollIntoView({behavior:\'smooth\'})},150)">' +
+      // Zebra-stripe alternating projects so it's easy to tell where one project ends and the next
+      // begins, especially in detailed mode where a single project spans several sub-rows.
+      const zebra = (this._projectZebraIndex || 0) % 2 === 0 ? 'gantt-proj-zebra-0' : 'gantt-proj-zebra-1';
+      this._projectZebraIndex = (this._projectZebraIndex || 0) + 1;
+      const detailedCls = isDetailed ? ' gantt-label-row-in-block' : '';
+      labelsHtml += '<div class="gantt-label-row gantt-hoverable ' + zebra + detailedCls + labelFaded + '" data-hover-type="label" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" onclick="DetailPanel.open(\'' + p.id + '\')" oncontextmenu="event.preventDefault();DetailPanel.open(\'' + p.id + '\');setTimeout(function(){var el=document.querySelector(\'[data-section=&quot;dependencies&quot;]\');if(el)el.scrollIntoView({behavior:\'smooth\'})},150)">' +
         ragDotsHtml +
         '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
         priChip +
       '</div>';
       if (isDetailed) {
-        // Keep sub-row spacing in the left panel but without duplicate phase labels —
-        // the phase label is placed on the actual bar in the chart area (see sub-row render below).
+        // In detailed mode each sub-row is an empty placeholder on the label side (phase labels
+        // ride on the bars themselves). Sub-rows share the project's zebra stripe; only the LAST
+        // sub-row carries a bottom border so the project-name reads as one continuous cell.
         const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
         const psm = Solver.PHASE_SKILL_MAP;
+        const phaseRows = [];
         phaseOrder.forEach(ph => {
           const sk = psm[ph];
           if (!sk || !(p[sk] > 0)) return;
-          labelsHtml += '<div style="height:' + subRowH + 'px;border-bottom:1px solid #f8fafc"></div>';
+          phaseRows.push(ph);
+        });
+        phaseRows.forEach((_ph, i) => {
+          const lastCls = i === phaseRows.length - 1 ? ' gantt-label-sub-last' : '';
+          labelsHtml += '<div class="gantt-label-sub ' + zebra + lastCls + '" style="height:' + subRowH + 'px"></div>';
         });
       }
     });
     document.getElementById('ganttLabels').innerHTML = labelsHtml;
+    this._attachLabelsResizer();
 
     // Render header
     const headerHtml = cols.map(c => {
@@ -13777,6 +13903,7 @@ const Gantt = {
     // R2-M3: prepend a spacer row in the chart area whenever the group key changes so
     // the bars stay aligned with the group header rows in the label column.
     let _lastChartGroup = null;
+    let _chartZebraIndex = 0;
     const rowsHtml = projects.map(p => {
       // R2-M3: emit a group-header spacer whenever the group key changes, to match the labels column.
       let groupSpacer = '';
@@ -13956,7 +14083,10 @@ const Gantt = {
         }
       }
 
-      let mainRow = groupSpacer + '<div class="gantt-row" style="width:' + totalWidth + 'px">' +
+      const rowZebra = _chartZebraIndex % 2 === 0 ? 'gantt-proj-zebra-0' : 'gantt-proj-zebra-1';
+      _chartZebraIndex += 1;
+      const mainRowCls = 'gantt-row ' + rowZebra + (isDetailed ? ' gantt-row-in-block' : '');
+      let mainRow = groupSpacer + '<div class="' + mainRowCls + '" style="width:' + totalWidth + 'px">' +
         '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
@@ -14052,13 +14182,16 @@ const Gantt = {
           // Phase-aware hover: the detailed sub-row bar becomes a .gantt-hoverable carrying the project-id
           // + skill-key + phase overrun flag. buildTooltip('phase', el) reads these and renders a
           // focused tooltip for the specific delivery phase.
-          mainRow += '<div class="gantt-sub-row" style="height:' + subRowH + 'px;position:relative;border-bottom:1px solid #f8fafc;width:' + totalWidth + 'px">' +
+          mainRow += '<div class="gantt-sub-row ' + rowZebra + '" style="height:' + subRowH + 'px;position:relative;width:' + totalWidth + 'px">' +
             connector +
             '<div class="gantt-hoverable gantt-phase-bar" data-hover-type="phase" data-id="' + p.id + '" data-skill-key="' + sk + '" data-overrun="' + (phaseOverruns ? '1' : '0') + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(skillLabel) + ' phase of ' + Dashboard.esc(p.name) + '" style="' + subBarStyle + '">' + inlineLabel + '</div>' +
             floatLabel +
           '</div>';
           prevEnd = subX1 + subW;
         });
+        // Close the project-block visually with a single border under the last sub-row so the
+        // whole project reads as one continuous cell in the labels column.
+        mainRow = mainRow.replace(/(<div class="gantt-sub-row [^"]+")(?![\s\S]*<div class="gantt-sub-row)/, '$1 data-sub-last="1"');
       }
 
       return mainRow;
@@ -18327,105 +18460,156 @@ const Capacity = {
     if (!members.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No team members assigned to ' + Dashboard.esc(customer) + '.</div>'; return; }
     const sprints = App.data.sprints || [];
     const todayISO = new Date().toISOString().split('T')[0];
-    // Horizon: current + next 3 sprints (or all remaining if fewer).
     const futureSprints = sprints.filter(s => s.end_date >= todayISO).slice(0, 4);
     if (!futureSprints.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No upcoming sprints.</div>'; return; }
 
     const esc = Dashboard.esc;
-    // Collect assignments per member: { member: [{ project, skillKey, sprintId, points, phaseName, wsjf, projectPriority, startDate, endDate }] }
+    const psm = Solver.PHASE_SKILL_MAP;
+    const skToPhase = {};
+    Object.entries(psm).forEach(([ph, k]) => { skToPhase[k] = ph; });
+
+    // Collect assignments per member across the horizon.
     const perMember = {};
     members.forEach(m => { perMember[m.name] = []; });
     (App.data.projects || []).filter(p => p.customer === customer && !['Complete', 'Closed'].includes(p.status)).forEach(p => {
       const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
-      const psm = Solver.PHASE_SKILL_MAP;
       Object.entries(p.skill_splits || {}).forEach(([skKey, arr]) => {
         (arr || []).forEach(sp => {
           if (!futureSprints.find(s => s.sprint_id === sp.sprint)) return;
           (sp.assigned_to || []).forEach(a => {
             if (!perMember[a.member]) return;
             const sprint = sprints.find(s => s.sprint_id === sp.sprint);
-            let phaseName = skKey;
-            Object.entries(psm).forEach(([ph, k]) => { if (k === skKey) phaseName = ph; });
             perMember[a.member].push({
-              project: p,
-              skillKey: skKey,
-              sprintId: sp.sprint,
+              project: p, skillKey: skKey, sprintId: sp.sprint,
               points: a.points || 0,
-              phaseName,
+              phaseName: skToPhase[skKey] || skKey,
+              phaseOrder,
               startDate: sp.work_start_date || (sprint && sprint.start_date),
               endDate: sp.work_end_date || (sprint && sprint.end_date),
-              priority: p.priority,
-              wsjf: App.calculateWsjf ? App.calculateWsjf(p).wsjf : 0
+              priority: p.priority
             });
           });
         });
       });
     });
 
-    // Render one row per member with a date-aligned bar strip.
+    // Build a lookup: next-handover for each assignment (who picks up the following phase
+    // of the same project). Scans the project's phase_order for the next phase that has
+    // an assignee and returns { phase, member }.
+    const nextHandoverFor = (a) => {
+      const order = a.phaseOrder || [];
+      const myIdx = order.indexOf(a.phaseName);
+      if (myIdx < 0 || myIdx >= order.length - 1) return null;
+      for (let i = myIdx + 1; i < order.length; i++) {
+        const nextSk = psm[order[i]];
+        if (!nextSk) continue;
+        const splits = (a.project.skill_splits || {})[nextSk] || [];
+        // Earliest future split's earliest assignee wins.
+        const sorted = splits.slice().sort((x, y) => (x.sprint || '').localeCompare(y.sprint || ''));
+        for (const sp of sorted) {
+          if ((sp.assigned_to || []).length) return { phase: order[i], member: sp.assigned_to[0].member };
+        }
+      }
+      return null;
+    };
+
+    // Timeline geometry: calendar-day resolution, fixed render width, horizontal scroll if overflowing.
     const minDate = new Date(futureSprints[0].start_date);
     const maxDate = new Date(futureSprints[futureSprints.length - 1].end_date);
     const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
-    const totalWidth = 720; // px — fixed rendering width; horizontal scroll if it overflows
+    const totalWidth = 760;
     const dateToX = (iso) => {
       if (!iso) return 0;
       const d = new Date(iso);
       return Math.max(0, Math.min(totalWidth, ((d - minDate) / 86400000 / totalDays) * totalWidth));
     };
+    const dateLabel = (iso) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
 
-    // Sprint vertical guides + labels
+    // Header row: sprint names + calendar-date ticks (1st and 15th of each month within horizon).
+    const sprintHeader = futureSprints.map(s => {
+      const x = dateToX(s.start_date);
+      const w = Math.max(20, dateToX(s.end_date) - x);
+      const short = esc(s.sprint_id.replace('CY26-', ''));
+      return '<div class="ts-sprint-chip" style="position:absolute;left:' + x + 'px;width:' + w + 'px" title="' + esc(s.sprint_id) + ' · ' + dateLabel(s.start_date) + ' \u2013 ' + dateLabel(s.end_date) + '">' + short + '</div>';
+    }).join('');
+    const dateTicks = [];
+    const tickCursor = new Date(minDate);
+    tickCursor.setDate(1);
+    while (tickCursor <= maxDate) {
+      [1, 15].forEach(day => {
+        const d = new Date(tickCursor.getFullYear(), tickCursor.getMonth(), day);
+        if (d >= minDate && d <= maxDate) {
+          const x = dateToX(d.toISOString().split('T')[0]);
+          dateTicks.push('<span class="ts-date-tick" style="left:' + x + 'px">' + d.getDate() + ' ' + d.toLocaleString('en', { month: 'short' }) + '</span>');
+        }
+      });
+      tickCursor.setMonth(tickCursor.getMonth() + 1);
+    }
     const guideLines = futureSprints.map(s => {
       const x = dateToX(s.start_date);
-      return '<div style="position:absolute;top:0;bottom:0;left:' + x + 'px;width:1px;background:var(--gantt-guide);pointer-events:none"></div>';
+      return '<div class="ts-sprint-guide" style="left:' + x + 'px"></div>';
     }).join('');
-    const sprintLabels = futureSprints.map(s => {
-      const x = dateToX(s.start_date);
-      return '<span style="position:absolute;left:' + (x + 4) + 'px;top:2px;font-size:9px;color:var(--text-muted);font-weight:600">' + esc(s.sprint_id.replace('CY26-', '')) + '</span>';
-    }).join('');
+    const todayX = dateToX(todayISO);
+    const todayLine = (todayX >= 0 && todayX <= totalWidth) ? '<div class="ts-today-line" style="left:' + todayX + 'px"></div>' : '';
 
+    // Stack overlapping assignments onto lanes so they're all visible at once.
+    const LANE_H = 18, LANE_GAP = 2, MIN_ROW = 26;
     const rows = members.map(m => {
       const assigns = perMember[m.name].slice().sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
-      // Rank within this member's own work queue (chronological).
-      const rankedAssigns = assigns.map((a, i) => ({ ...a, memberRank: i + 1 }));
-      const bars = rankedAssigns.map((a, i) => {
+      if (!assigns.length) {
+        return '<div class="ts-row">' +
+          '<div class="ts-name"><div class="ts-name-strong">' + esc(m.name) + '</div><div class="ts-name-sub">' + esc((m.primary_skills || []).join(', ') || m.role || '') + '</div></div>' +
+          '<div class="ts-lane" style="min-width:' + totalWidth + 'px;height:' + MIN_ROW + 'px">' + guideLines + todayLine +
+            '<div class="ts-empty">No upcoming assignments</div>' +
+          '</div>' +
+        '</div>';
+      }
+      // Greedy lane packing: place each assignment in the first lane where it doesn't overlap.
+      const lanes = [];
+      const laneOf = assigns.map(a => {
+        const aStart = (a.startDate || '');
+        const aEnd = (a.endDate || '');
+        for (let i = 0; i < lanes.length; i++) {
+          if (lanes[i] < aStart) { lanes[i] = aEnd; return i; }
+        }
+        lanes.push(aEnd);
+        return lanes.length - 1;
+      });
+      const rowHeight = Math.max(MIN_ROW, lanes.length * (LANE_H + LANE_GAP) + LANE_GAP);
+      const bars = assigns.map((a, i) => {
         const x1 = dateToX(a.startDate);
         const x2 = dateToX(a.endDate);
-        const w = Math.max(6, x2 - x1);
-        const custColor = App.customerColor(a.project.customer);
-        const phaseColor = Sprint.SKILL_COLORS[a.skillKey] || custColor;
-        const dueDate = a.endDate ? new Date(a.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
-        const label = '#' + a.memberRank + ' ' + a.project.name.slice(0, 20) + ' \u00B7 ' + a.phaseName + ' (' + a.points + 'pt)';
-        const tooltip = esc(a.project.name + ' — ' + a.phaseName + ' (' + a.points + 'pts). Due ' + dueDate + '. Priority #' + (a.priority || '?') + ', WSJF ' + (a.wsjf || 0));
-        return '<div style="position:absolute;left:' + x1 + 'px;top:6px;width:' + w + 'px;height:24px;background:' + phaseColor + ';border-radius:3px;padding:2px 6px;font-size:10px;color:white;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 2px rgba(0,0,0,0.1);cursor:pointer" title="' + tooltip + '" onclick="DetailPanel.open(\'' + esc(a.project.id) + '\')">' + esc(label) + '</div>';
+        const w = Math.max(12, x2 - x1);
+        const y = LANE_GAP + laneOf[i] * (LANE_H + LANE_GAP);
+        const phaseColor = Sprint.SKILL_COLORS[a.skillKey] || App.customerColor(a.project.customer);
+        const handover = nextHandoverFor(a);
+        // Compact bar label: just the project name. Everything else goes in the tooltip.
+        const label = esc(a.project.name);
+        const tipLines = [
+          a.project.name + ' — ' + a.phaseName,
+          a.points + ' pts · ' + dateLabel(a.startDate) + ' \u2013 ' + dateLabel(a.endDate) + ' (' + a.sprintId + ')',
+          'Priority #' + (a.priority || '?'),
+          handover ? 'Hand over to ' + handover.member + ' (' + handover.phase + ')' : 'No next phase'
+        ];
+        const tip = esc(tipLines.join(' \u2022 '));
+        return '<div class="ts-bar" style="left:' + x1 + 'px;top:' + y + 'px;width:' + w + 'px;height:' + LANE_H + 'px;background:' + phaseColor + '" title="' + tip + '" onclick="DetailPanel.open(\'' + esc(a.project.id) + '\')" role="button" aria-label="' + tip + '" tabindex="0"><span class="ts-bar-label">' + label + '</span></div>';
       }).join('');
-      // M12: show-all toggle per member — default to top 5, expand to full list on demand.
-      const memberKey = 'tsQ_' + m.name.replace(/\W+/g, '_');
-      const expanded = !!Capacity._teamScheduleExpanded[memberKey];
-      const limit = expanded ? rankedAssigns.length : 5;
-      const shown = rankedAssigns.slice(0, limit);
-      const queue = rankedAssigns.length
-        ? '<ol style="margin:0;padding-left:16px;font-size:10px;color:var(--text-dark-secondary);line-height:1.5">' + shown.map(a => '<li>' + esc(a.project.name) + ' \u2014 ' + esc(a.phaseName) + ' <span style="color:var(--text-muted)">(due ' + esc(a.endDate ? new Date(a.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '?') + ')</span></li>').join('') + '</ol>' +
-          (rankedAssigns.length > 5
-            ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px;margin-top:2px;color:var(--accent-blue)" onclick="Capacity._toggleTeamScheduleMember(\'' + esc(memberKey) + '\')" aria-expanded="' + expanded + '">' + (expanded ? 'Show fewer' : 'Show all ' + rankedAssigns.length) + '</button>'
-            : '')
-        : '<span style="font-size:10px;color:var(--text-muted);font-style:italic">No upcoming assignments</span>';
-      return '<div class="ts-row" style="display:flex;gap:8px;align-items:stretch;padding:6px 0;border-bottom:1px solid var(--gantt-row-border)">' +
-        '<div style="min-width:180px;padding:4px 8px">' +
-          '<div style="font-size:12px;font-weight:700;color:var(--text-dark)">' + esc(m.name) + '</div>' +
-          '<div style="font-size:10px;color:var(--text-muted)">' + esc((m.primary_skills || []).join(', ') || m.role || '') + '</div>' +
-          queue +
-        '</div>' +
-        '<div class="ts-lane" style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:38px;background:var(--surface-2);border-left:1px solid var(--border-light)">' +
-          guideLines + bars +
+      const sub = esc((m.primary_skills || []).join(', ') || m.role || '') + (assigns.length > 1 ? ' · ' + assigns.length + ' upcoming' : '');
+      return '<div class="ts-row">' +
+        '<div class="ts-name"><div class="ts-name-strong">' + esc(m.name) + '</div><div class="ts-name-sub">' + sub + '</div></div>' +
+        '<div class="ts-lane" style="min-width:' + totalWidth + 'px;height:' + rowHeight + 'px">' + guideLines + todayLine + bars +
         '</div>' +
       '</div>';
     }).join('');
 
     el.innerHTML =
-      '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);background:var(--surface);overflow-x:auto">' +
-        '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-light);background:var(--surface-2)">' +
-          '<div style="min-width:180px;padding:4px 8px;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Team member</div>' +
-          '<div style="position:relative;flex:1;min-width:' + totalWidth + 'px;height:20px">' + sprintLabels + '</div>' +
+      '<div class="ts-container">' +
+        '<div class="ts-header">' +
+          '<div class="ts-name ts-name-header">Team member</div>' +
+          '<div class="ts-lane ts-lane-header" style="min-width:' + totalWidth + 'px">' +
+            '<div class="ts-sprint-row">' + sprintHeader + '</div>' +
+            '<div class="ts-date-row">' + dateTicks.join('') + '</div>' +
+          '</div>' +
         '</div>' +
         rows +
       '</div>';
