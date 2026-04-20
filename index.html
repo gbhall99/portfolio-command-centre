@@ -450,13 +450,8 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 
 /* --- Dashboard --- */
 .dashboard-container { padding: 14px 24px; display: block; }
-/* Issue 11: Projects view hides the portfolio-health KPIs to give the table full focus.
-   Dashboard view shows everything (unchanged legacy behaviour so existing habits still work). */
-.dashboard-container.view-mode-projects #execSummary,
-.dashboard-container.view-mode-projects #summaryCards,
-.dashboard-container.view-mode-projects #kpiCards,
-.dashboard-container.view-mode-projects #attentionPanel,
-.dashboard-container.view-mode-projects .watching-section { display: none !important; }
+/* Projects page renders the full dashboard container (summary + KPIs + table).
+   The former stripped-down Projects mode was consolidated into a single page. */
 .dashboard-container > * { margin-bottom: 10px; }
 .dashboard-container > *:last-child { margin-bottom: 0; }
 .dashboard-container > .view-help-panel:empty,
@@ -659,7 +654,11 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 
 .project-name-cell { font-weight: 500; color: var(--text-dark); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-name-cell .gov-flag { font-size: 11px; margin-left: 4px; opacity: 0.5; }
-.priority-cell { font-weight: 700; font-size: 12px; color: var(--text-muted); width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Priority cell: number left, rec-chip + warning + "?" inline to the right so low-confidence
+   rows stay on a single line and the column doesn't stretch vertically. */
+.priority-cell { font-weight: 700; font-size: 12px; color: var(--text-muted); width: 72px; padding-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.priority-cell > span:first-child { display: inline-block; min-width: 18px; text-align: right; margin-right: 4px; }
+.priority-cell .why-rank-btn { margin-left: 3px; vertical-align: middle; }
 /* C3: small "why this rank?" info button that appears in priority cells and Gantt labels */
 .why-rank-btn { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 3px; padding: 0; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-muted); border-radius: 50%; font-size: 9px; font-weight: 700; line-height: 1; cursor: pointer; opacity: 0.55; transition: opacity 0.15s, border-color 0.15s, color 0.15s; vertical-align: middle; }
 .why-rank-btn:hover { opacity: 1; border-color: var(--accent-blue); color: var(--accent-blue); }
@@ -1155,7 +1154,9 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .sprint-group-single .sprint-card { border: none; border-radius: 0; }
 .sprint-group-single .sprint-card .card-top { display: flex; }
 
-.split-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 300; width: 340px; }
+.split-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 300; width: 340px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; }
+.split-modal > *:not(.split-actions) { flex-shrink: 1; min-height: 0; }
+.split-modal > .split-body, .split-modal > .split-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .split-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 299; }
 .split-modal h3 { font-size: 15px; font-weight: 700; color: var(--text-dark); margin-bottom: 4px; }
 .split-modal .split-subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
@@ -2073,11 +2074,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
       </div>
       <div class="nav-item active" data-view="dashboard" onclick="App.navigate('dashboard')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-        Dashboard <span class="nav-badge" id="navBadgeTotal">0</span>
-      </div>
-      <div class="nav-item" data-view="projects" onclick="App.navigate('projects')">
-        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-        Projects
+        Projects <span class="nav-badge" id="navBadgeTotal">0</span>
       </div>
       <div class="nav-item" data-view="sprint" onclick="App.navigate('sprint')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 4 21 10 15 10"/></svg>
@@ -2091,11 +2088,6 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Capacity
       </div>
-      <!-- Activity is a full page (was a slide-in side panel; promoted for usability). -->
-      <div class="nav-item" data-view="activity" id="navActivity" onclick="App.navigate('activity')">
-        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
-        Activity
-      </div>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Governance</div>
@@ -2108,6 +2100,11 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         Forums <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
       <div class="nav-section-label">System</div>
+      <!-- Activity moved here from the Portfolio section — audit-trail browsing is an admin/system task. -->
+      <div class="nav-item" data-view="activity" id="navActivity" onclick="App.navigate('activity')">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+        Activity
+      </div>
       <!-- data-view="config" kept for back-compat (App.navigate key); visible label is "System Settings". -->
       <div class="nav-item" data-view="config" onclick="App.navigate('config')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -2281,7 +2278,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <!-- Set Baseline button moved to the Roadmap toolbar (lives with baseline visualisation). -->
 
           <button class="btn btn-outline btn-sm" onclick="Sprint.autoAllocate()" title="Auto-allocate projects to sprints based on capacity and priority"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Auto-Allocate</button>
-          <button class="btn btn-outline btn-sm" onclick="Sprint.openAllocSettings()" title="Allocation settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
+          <button class="btn btn-outline btn-sm" onclick="Sprint.openSchedulingSettings()" title="Open System Settings → Scheduling Engine"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()" title="Manage sprints"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sprints</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openVelocityModal()" title="Committed vs completed story points per sprint window (customer-scoped throughput, not per-team Scrum velocity)" aria-label="Portfolio throughput"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> Portfolio throughput</button>
           <button class="view-help-btn" onclick="Onboarding.showViewHelp('sprint')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
@@ -2388,7 +2385,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         </div>
         <!-- Issue 6: Scrum Master view — per-member delivery timeline. -->
         <div class="capacity-section">
-          <div class="capacity-section-title">Scrum Master Schedule <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px">\u2014 what each person is doing, in priority order, with due dates</span></div>
+          <div class="capacity-section-title">Scrum Master Schedule <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px">— what each person is doing, in priority order, with due dates</span></div>
           <div id="teamScheduleGantt"></div>
         </div>
       </div>
@@ -2594,12 +2591,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 
 <!-- Why This Rank Modal (C3) -->
 <div class="split-modal-overlay" id="whyRankOverlay" style="display:none" onclick="App.closeWhyRank()"></div>
-<div class="split-modal" id="whyRankModal" style="display:none;max-width:560px" role="dialog" aria-labelledby="whyRankTitle" aria-modal="true">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+<div class="split-modal" id="whyRankModal" style="display:none;max-width:560px;width:560px" role="dialog" aria-labelledby="whyRankTitle" aria-modal="true">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-shrink:0">
     <h3 id="whyRankTitle" style="margin:0">Why this rank?</h3>
     <button class="btn btn-ghost btn-sm" onclick="App.closeWhyRank()" aria-label="Close" style="padding:4px 8px;font-size:16px;line-height:1">&times;</button>
   </div>
-  <div id="whyRankBody" style="margin-top:10px;font-size:12px;line-height:1.5"></div>
+  <div id="whyRankBody" class="split-scroll" style="margin-top:10px;font-size:12px;line-height:1.5"></div>
 </div>
 
 <!-- Auto-Prioritise Dry-Run Modal (C3 / H14) -->
@@ -4415,16 +4412,11 @@ const App = {
       else item.removeAttribute('aria-current');
     });
     document.querySelectorAll('.view').forEach(view => { view.classList.remove('active'); });
-    // Issue 11: Dashboard and Projects share the same DOM container; toggle a view-mode class
-    // on the container to hide/show summary vs. table sections. Same render pipeline, two views.
-    const dashContainer = document.querySelector('#viewDashboard .dashboard-container');
+    // Dashboard and Projects are now a single page ("Projects") backed by #viewDashboard. The
+    // `projects` key is kept as an alias so existing shortcuts / deep-links still resolve.
     if (viewName === 'dashboard' || viewName === 'projects') {
       const target = document.getElementById('viewDashboard');
       if (target) target.classList.add('active');
-      if (dashContainer) {
-        dashContainer.classList.toggle('view-mode-projects', viewName === 'projects');
-        dashContainer.classList.toggle('view-mode-dashboard', viewName === 'dashboard');
-      }
     } else {
       const target = document.getElementById('view' + viewName.charAt(0).toUpperCase() + viewName.slice(1));
       if (target) target.classList.add('active');
@@ -4450,7 +4442,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Dashboard', projects: 'Projects', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -8347,7 +8339,7 @@ const Dashboard = {
       return '<tr' + rowClass + ' data-id="' + p.id + '" draggable="true">' +
         '<td class="drag-handle" title="Drag to reorder (sort by Priority ↑ to enable drag reorder)">⠿</td>' +
         '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon + '</td>' +
-        '<td class="priority-cell">' + (p.priority || '') + recChip + warnChip + whyBtn + '</td>' +
+        '<td class="priority-cell"><span>' + (p.priority || '') + '</span>' + recChip + warnChip + whyBtn + '</td>' +
         '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon + '</td>' +
         '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
         '<td>' + this.esc(p.category || '') + '</td>' +
@@ -8508,7 +8500,7 @@ const Dashboard = {
     const rec2 = p.recommended_priority;
     const warnChip2 = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
     const whyBtn = '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
-    const priCell = '<td class="priority-cell">' + (p.priority || '') +
+    const priCell = '<td class="priority-cell"><span>' + (p.priority || '') + '</span>' +
       (rec2 && rec2 !== p.priority
         ? ' <span title="Recommended priority #' + rec2 + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + rec2 + '</span>'
         : '') + warnChip2 + whyBtn +
@@ -16963,6 +16955,19 @@ const Sprint = {
     maxBufferSlides: 4,           // Safety stop for cascading buffer pushes (sprints)
     enforceConcurrentSinglePerson: true, // R12: one person is never on two deliveries at once (sprint-overlap), except for the allow-list below
     concurrentOverlapAllowedSkills: ['size_requirements', 'size_uat_adoption'], // skills where overlap is permitted (collaborative/async phases)
+  },
+
+  // User-facing "Settings" button on Sprint Planning now navigates to System Settings
+  // (Scheduling Engine card) rather than opening a duplicate modal. The modal-building
+  // openAllocSettings is retained for internal callers (e.g. re-open after an edit).
+  openSchedulingSettings() {
+    App.navigate('config');
+    setTimeout(() => {
+      const el = document.getElementById('schedulingEngineCard');
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 60);
   },
 
   openAllocSettings() {
