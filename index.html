@@ -333,6 +333,10 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .btn-outline { background: transparent; color: var(--text-dark-secondary); border: 1px solid var(--border-light); }
 .btn-outline:hover { background: var(--bg-content); border-color: var(--text-muted); }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
+/* Icon-only button: square, no min-width, no extra horizontal padding. Use together with
+   .btn-ghost / .btn-outline so the hover / focus rings stay consistent with the rest of
+   the button system instead of each icon button inventing its own inline style. */
+.btn-icon { padding: 5px; min-width: 0; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .unsaved-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-amber); display: none; }
 .unsaved-dot.visible { display: inline-block; }
@@ -366,11 +370,16 @@ html[data-theme="dark"] .evm-strip { background: #111827; }
 .progress-card .progress-cancel { background: transparent; border: 1px solid var(--border-light); color: var(--text-dark-secondary); font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
 .progress-card .progress-cancel:hover { background: var(--bg-tertiary); }
 /* Error boundary banner */
-.error-banner { position: fixed; top: 0; left: 0; right: 0; background: #fef2f2; color: #7f1d1d; border-bottom: 2px solid var(--status-red); padding: 10px 16px; z-index: 9999; display: none; align-items: center; gap: 12px; font-size: 12px; }
+.error-banner { position: fixed; top: 0; left: 0; right: 0; background: var(--tint-red-weak); color: #7f1d1d; border-bottom: 2px solid var(--status-red); padding: 10px 16px; z-index: 9999; display: none; align-items: center; gap: 12px; font-size: 12px; }
 .error-banner.visible { display: flex; }
 .error-banner .err-msg { flex: 1; font-weight: 600; }
-.error-banner button { background: var(--status-red); color: #fff; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
+/* Align error-banner buttons with the rest of the .btn system (token radius, consistent
+   padding) — the old bare-button overrides drifted over time and rendered out of step with
+   every other button in the app. */
+.error-banner button { background: var(--status-red); color: #fff; border: none; padding: 5px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+.error-banner button:hover { background: var(--accent-blue-hover); }
 .error-banner button.secondary { background: transparent; color: #7f1d1d; border: 1px solid #7f1d1d; }
+.error-banner button.secondary:hover { background: rgba(127, 29, 29, 0.08); }
 /* UI-C1: dark-mode variant — the original light-red banner was unreadable on
    the navy chrome. The tint must stay ALARMING (so it's still an alert) while
    meeting AA contrast. */
@@ -1870,6 +1879,7 @@ html[data-theme="dark"] .sl-chip-overflow:hover, html[data-theme="dark"] .sl-chi
 .chip-menu-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
 html[data-theme="dark"] .chip-context-menu { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
 .sl-assignee-dropdown { position: absolute; z-index: 200; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 4px 0; min-width: 180px; max-height: 220px; overflow-y: auto; }
+html[data-theme="dark"] .sl-assignee-dropdown { background: var(--bg-card); border-color: #1f2937; color: var(--text-dark); }
 .sl-assignee-dropdown .sl-assignee-option { padding: 6px 12px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
 .sl-assignee-dropdown .sl-assignee-option:hover { background: var(--bg-content); }
 .sl-assignee-dropdown .sl-assignee-option.selected { background: rgba(59,130,246,0.08); font-weight: 600; }
@@ -2397,7 +2407,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         </div>
         <div class="view-help-panel" id="helpSprint"></div>
         <div style="display:flex;gap:4px;margin-bottom:8px">
-          <button class="btn btn-sm" id="sprintViewProjects" style="font-size:10px;background:var(--accent-blue);color:white" onclick="Sprint.setSprintView('projects')">Projects</button>
+          <button class="btn btn-primary btn-sm" id="sprintViewProjects" style="font-size:10px" onclick="Sprint.setSprintView('projects')">Projects</button>
           <!-- D4: Team view replaces Resources. Rows = team members, columns = sprints, cells = assigned work for this customer. -->
           <button class="btn btn-outline btn-sm" id="sprintViewTeam" style="font-size:10px" onclick="Sprint.setSprintView('team')">Team</button>
         </div>
@@ -18969,8 +18979,11 @@ const Sprint = {
     this.sprintView = view;
     const p = document.getElementById('sprintViewProjects');
     const t = document.getElementById('sprintViewTeam');
-    if (p) { p.className = view === 'projects' ? 'btn btn-sm' : 'btn btn-outline btn-sm'; p.style.background = view === 'projects' ? 'var(--accent-blue)' : ''; p.style.color = view === 'projects' ? 'white' : ''; }
-    if (t) { t.className = view === 'team' ? 'btn btn-sm' : 'btn btn-outline btn-sm'; t.style.background = view === 'team' ? 'var(--accent-blue)' : ''; t.style.color = view === 'team' ? 'white' : ''; }
+    // Use the .btn-primary / .btn-outline variants already defined for the rest of the app
+    // instead of hand-toggling inline styles — the previous inline-style dance left stale
+    // styles lingering whenever theme changed.
+    if (p) p.className = view === 'projects' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+    if (t) t.className = view === 'team' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
     this.render();
   },
 
