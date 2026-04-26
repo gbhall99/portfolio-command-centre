@@ -35,7 +35,7 @@ export async function loadApp(fixture, opts = {}) {
   // </body> only — the source contains other </body> substrings inside JS template strings (report
   // generation code), and replacing those would corrupt the inline scripts.
   const bridge =
-    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast };</script>';
+    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report };</script>';
   const lastBody = indexHtml.lastIndexOf('</body>');
   if (lastBody === -1) throw new Error('Could not find </body> in index.html');
   indexHtml = indexHtml.slice(0, lastBody) + bridge + indexHtml.slice(lastBody);
@@ -119,6 +119,7 @@ export async function loadApp(fixture, opts = {}) {
     DetailPanel: handles.DetailPanel,
     AuditPanel: handles.AuditPanel,
     Forecast: handles.Forecast,
+    Report: handles.Report,
     teardown
   };
 }
