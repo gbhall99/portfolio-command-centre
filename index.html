@@ -4239,6 +4239,52 @@ const App = {
 
   dismissRestore() { document.getElementById('restoreBanner').classList.add('hidden'); },
 
+  // Scenarios — named what-if snapshots persisted alongside the live data.
+  saveScenario(name) {
+    if (!this.data) return null;
+    if (!this.data._scenarios) this.data._scenarios = [];
+    const id = 'sc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    const snapshot = JSON.parse(JSON.stringify({
+      projects: this.data.projects,
+      sprints: this.data.sprints,
+      team_members: this.data.team_members
+    }));
+    this.data._scenarios.push({ id, name: String(name || 'Scenario').slice(0, 80), created_at: new Date().toISOString(), snapshot });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return id;
+  },
+
+  listScenarios() {
+    return ((this.data && this.data._scenarios) || []).map(s => ({ id: s.id, name: s.name, created_at: s.created_at }));
+  },
+
+  loadScenario(id) {
+    if (!this.data || !Array.isArray(this.data._scenarios)) return false;
+    const sc = this.data._scenarios.find(s => s.id === id);
+    if (!sc) return false;
+    if (typeof this.pushUndo === 'function') this.pushUndo('Load scenario: ' + sc.name);
+    if (sc.snapshot.projects) this.data.projects = JSON.parse(JSON.stringify(sc.snapshot.projects));
+    if (sc.snapshot.sprints) this.data.sprints = JSON.parse(JSON.stringify(sc.snapshot.sprints));
+    if (sc.snapshot.team_members) this.data.team_members = JSON.parse(JSON.stringify(sc.snapshot.team_members));
+    this.markDirty();
+    this.saveToLocalStorage();
+    if (this.notifyDataChange) this.notifyDataChange();
+    return true;
+  },
+
+  deleteScenario(id) {
+    if (!this.data || !Array.isArray(this.data._scenarios)) return false;
+    const len = this.data._scenarios.length;
+    this.data._scenarios = this.data._scenarios.filter(s => s.id !== id);
+    if (this.data._scenarios.length !== len) {
+      this.markDirty();
+      this.saveToLocalStorage();
+      return true;
+    }
+    return false;
+  },
+
   saveToLocalStorage() {
     if (!this.data) return;
     if (!this.storageAvailable) return;
