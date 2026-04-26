@@ -14381,6 +14381,18 @@ const Gantt = {
 
       const barBg = segmentsHtml ? 'transparent' : color;
 
+      // Cone of uncertainty: a dashed extension to the right of the bar showing
+      // worst-case footprint when total *_max exceeds total point estimate.
+      let coneHtml = '';
+      const sizeKeys = ['size_requirements','size_tableau','size_engineering','size_data_science','size_uat_adoption'];
+      const coneTotal = sizeKeys.reduce((sum, k) => sum + (p[k] || 0), 0);
+      const coneTotalMax = sizeKeys.reduce((sum, k) => sum + Math.max(p[k + '_max'] || 0, p[k] || 0), 0);
+      if (coneTotalMax > coneTotal && coneTotal > 0 && w > 0) {
+        const coneFrac = (coneTotalMax - coneTotal) / coneTotal;
+        const coneW = Math.max(8, Math.round(w * coneFrac));
+        coneHtml = '<div class="gantt-cone" style="position:absolute;left:' + (x1 + w) + 'px;top:0;bottom:0;width:' + coneW + 'px;border:1px dashed ' + color + ';border-left:none;background:repeating-linear-gradient(45deg,' + color + '12,' + color + '12 4px,transparent 4px,transparent 8px);opacity:0.8" title="Worst case: +' + (coneTotalMax - coneTotal) + ' SP"></div>';
+      }
+
       let baselineHtml = '';
       if (showBaseline) {
         // Preferred: span computed from the selected named baseline's snapshot for this project.
@@ -14543,6 +14555,7 @@ const Gantt = {
         confidenceHtml +
         forecastHtml +
         baselineHtml +
+        coneHtml +
         milestoneHtml +
         overrunHtml +
       '</div>';
