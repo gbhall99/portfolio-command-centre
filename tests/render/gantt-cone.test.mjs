@@ -42,3 +42,25 @@ describe('Gantt cone of uncertainty', () => {
     app.teardown();
   });
 });
+
+describe('Gantt — TBD phase bar', () => {
+  it('renders a dashed open-ended bar for projects with a tbd phase', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(3);
+    const proj = makeProject({
+      name: 'Discovery only',
+      start_date: '2026-01-05', target_date: '2026-02-09',
+      size_requirements: 5,
+      delivery_config: { phase_order: ['Requirements', { phase: 'Data Engineering', status: 'tbd' }] }
+    });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({
+      projects: [proj], sprints, team_members: [makeMember({ primary_skills: ['Requirements'] })]
+    }));
+    app.App.activeCustomer = 'GCC';
+    app.Gantt.render();
+    const html = app.window.document.getElementById('ganttRows').innerHTML;
+    expect(html).toMatch(/gantt-tbd/);
+    app.teardown();
+  });
+});
