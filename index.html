@@ -22506,6 +22506,57 @@ const Solver = {
    Governance — Forum Calendar
    ============================================================ */
 const Governance = {
+  buildAgendaDoc(forumId) {
+    const forum = (App.data && App.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
+    if (!forum) return null;
+    const esc = Dashboard.esc;
+    const linkedProjects = (App.data && App.data.projects || []).filter(p =>
+      p.governance_forum === forum.id || p.governance_forum === forum.name
+    );
+    const projectsHtml = linkedProjects.length
+      ? '<ul>' + linkedProjects.map(p => '<li><strong>' + esc(p.name) + '</strong> &mdash; ' + esc(p.status) + ' &middot; ' +
+          'RAG ' + esc(p.rag_schedule || '') + '/' + esc(p.rag_resourcing || '') + '/' + esc(p.rag_scope || '') +
+        '</li>').join('') + '</ul>'
+      : '<p>No projects linked to this forum.</p>';
+    const actions = forum.actions || [];
+    const openActions = actions.filter(a => a.status !== 'Done');
+    const actionsHtml = openActions.length
+      ? '<table><tr><th>Action</th><th>Owner</th><th>Due</th></tr>' +
+        openActions.map(a => '<tr><td>' + esc(a.description || '') + '</td><td>' + esc(a.owner || '') + '</td><td>' + esc(a.due_date || '—') + '</td></tr>').join('') +
+        '</table>'
+      : '<p>No open actions.</p>';
+    const escalated = [];
+    linkedProjects.forEach(p => (p.risks_register || []).forEach(r => {
+      if ((r.escalation_severity || '').toLowerCase() === 'high' || ((r.impact || 0) * (r.probability || 0)) >= 16) {
+        escalated.push({ project: p.name, description: r.description, score: (r.impact || 0) * (r.probability || 0) });
+      }
+    }));
+    const risksHtml = escalated.length
+      ? '<ul>' + escalated.sort((a, b) => b.score - a.score).slice(0, 10).map(r => '<li><strong>' + esc(r.project) + '</strong>: ' + esc(r.description || '') + ' (score ' + r.score + ')</li>').join('') + '</ul>'
+      : '<p>No escalated risks.</p>';
+    return (typeof Report !== 'undefined' && Report.buildDoc)
+      ? Report.buildDoc({
+          customer: linkedProjects[0] ? linkedProjects[0].customer : '',
+          title: 'Forum Agenda — ' + forum.name,
+          subtitle: forum.next_date ? ('Next meeting ' + forum.next_date) : 'Pre-read',
+          reportType: 'Forum Agenda',
+          sections: [
+            { id: 'fa-projects', title: 'Linked projects', html: projectsHtml },
+            { id: 'fa-actions',  title: 'Open actions',   html: actionsHtml },
+            { id: 'fa-risks',    title: 'Escalated risks', html: risksHtml }
+          ],
+          includeAppendix: false
+        })
+      : ('<html><body><h1>Forum Agenda — ' + esc(forum.name) + '</h1><h2>Linked projects</h2>' + projectsHtml + '<h2>Open actions</h2>' + actionsHtml + '<h2>Escalated risks</h2>' + risksHtml + '</body></html>');
+  },
+
+  exportForumAgenda(forumId) {
+    const doc = this.buildAgendaDoc(forumId);
+    if (!doc) { App.toast('Forum not found', 'error'); return; }
+    if (typeof Report !== 'undefined' && Report.open) Report.open(doc);
+    App.toast('Forum agenda opened — use Print > Save as PDF', 'success');
+  },
+
   activeTab: 'forums',
 
   switchTab(tab) {
