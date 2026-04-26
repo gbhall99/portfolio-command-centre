@@ -82,3 +82,27 @@ describe('Gantt._projectBaselineSpan — tolerates new shape', () => {
     app.teardown();
   });
 });
+
+describe('Variance Report — reads named baseline first', () => {
+  it('returns drift relative to the active named baseline, not p.baseline_start/end', async () => {
+    const { app, proj } = await setup();
+    await app.Gantt.openSetBaseline();
+    proj.target_date = '2026-07-28';
+    const variance = app.Gantt.getBaselineVariance();
+    expect(variance).toHaveLength(1);
+    expect(variance[0].endDrift).toBe(28);
+    expect(variance[0].trend).toBe('slipping');
+    app.teardown();
+  });
+
+  it('falls back to p.baseline_start/end when no named baseline is active', async () => {
+    const { app, proj } = await setup();
+    proj.baseline_start = '2026-04-01';
+    proj.baseline_end = '2026-06-30';
+    proj.target_date = '2026-07-28';
+    const variance = app.Gantt.getBaselineVariance();
+    expect(variance).toHaveLength(1);
+    expect(variance[0].endDrift).toBe(28);
+    app.teardown();
+  });
+});
