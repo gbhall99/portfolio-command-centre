@@ -23692,6 +23692,63 @@ const Governance = {
    Report — Reusable customer-branded report framework
    ============================================================ */
 const Report = {
+  // Build a one-page sponsor pack for a single project. Pure: returns the
+  // doc shape consumed by Report.open / Report.buildDoc; no DOM mutation.
+  buildProjectPackDoc(projectId) {
+    const p = (App.data && App.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return null;
+    const esc = Dashboard.esc;
+    const ev = (typeof Forecast !== 'undefined' && Forecast.earnedValue) ? Forecast.earnedValue(p) : null;
+    const risks = (p.risks_register || []).slice().sort((a, b) =>
+      ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0))
+    ).slice(0, 5);
+    const lifecycle = (typeof App.lifecycleStageChip === 'function') ? App.lifecycleStageChip(p) : '';
+    const narrative = '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; ' + lifecycle + '</p>' +
+      '<p><strong>Status:</strong> ' + esc(p.status) + ' &middot; <strong>RAG:</strong> S=' + esc(p.rag_schedule || '') + ' R=' + esc(p.rag_resourcing || '') + ' P=' + esc(p.rag_scope || '') + '</p>' +
+      '<p><strong>Dates:</strong> ' + esc(p.start_date || '—') + ' → ' + esc(p.target_date || '—') + (p.hard_deadline ? ' (hard ' + esc(p.hard_deadline) + ')' : '') + '</p>' +
+      (p.notes ? '<p>' + esc(p.notes) + '</p>' : '');
+    const milestones = '<ul>' +
+      (p.target_date ? '<li>Target: ' + esc(p.target_date) + '</li>' : '') +
+      (p.hard_deadline ? '<li>Hard deadline: ' + esc(p.hard_deadline) + '</li>' : '') +
+      ((p.data_sourcing && p.data_sourcing.uat_release_date) ? '<li>UAT release: ' + esc(p.data_sourcing.uat_release_date) + '</li>' : '') +
+      '</ul>';
+    const risksHtml = risks.length
+      ? '<table><tr><th>Risk</th><th>Owner</th><th>I</th><th>P</th><th>Score</th></tr>' +
+        risks.map(r => '<tr><td>' + esc(r.description || '') + '</td><td>' + esc(r.owner || '') + '</td><td>' + (r.impact || '') + '</td><td>' + (r.probability || '') + '</td><td><strong>' + ((r.impact || 0) * (r.probability || 0)) + '</strong></td></tr>').join('') +
+        '</table>'
+      : '<p>No open risks.</p>';
+    const evmHtml = ev
+      ? '<p>BAC ' + (ev.BAC || '—') + ' &middot; EV ' + (ev.EV || 0) + ' &middot; PV ' + (ev.PV != null ? ev.PV : '—') + ' &middot; AC ' + (ev.AC || 0) + ' &middot; SPI ' + (ev.SPI != null ? ev.SPI.toFixed(2) : '—') + ' &middot; CPI ' + (ev.CPI != null ? ev.CPI.toFixed(2) : '—') + '</p>'
+      : '<p>EVM unavailable (no baseline).</p>';
+    return (typeof Report !== 'undefined' && Report.buildDoc)
+      ? Report.buildDoc({
+          customer: p.customer,
+          title: 'Sponsor Pack — ' + p.name,
+          subtitle: 'One-page brief for the project sponsor',
+          reportType: 'Sponsor Pack',
+          sections: [
+            { id: 'pp-narrative',  title: 'Narrative',  html: narrative },
+            { id: 'pp-milestones', title: 'Milestones', html: milestones },
+            { id: 'pp-risks',      title: 'Risks',      html: risksHtml },
+            { id: 'pp-evm',        title: 'EVM',        html: evmHtml }
+          ],
+          includeAppendix: false
+        })
+      : { title: 'Sponsor Pack — ' + p.name, sections: [
+          { id: 'pp-narrative',  title: 'Narrative',  html: narrative },
+          { id: 'pp-milestones', title: 'Milestones', html: milestones },
+          { id: 'pp-risks',      title: 'Risks',      html: risksHtml },
+          { id: 'pp-evm',        title: 'EVM',        html: evmHtml }
+        ] };
+  },
+
+  exportProjectPack(projectId) {
+    const doc = this.buildProjectPackDoc(projectId);
+    if (!doc) { App.toast('Project not found', 'error'); return; }
+    if (this.open) this.open(doc);
+    App.toast('Sponsor pack opened — use Print > Save as PDF', 'success');
+  },
+
   branding(customer) {
     const settings = (App.data && App.data.settings) || {};
     const b = (settings.branding || {})[customer] || {};
