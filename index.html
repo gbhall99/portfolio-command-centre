@@ -2122,6 +2122,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 <body>
 
 <a class="skip-link" href="#mainContent" style="position:absolute;top:-100px;left:0;background:var(--accent-blue);color:white;padding:8px 16px;z-index:1000;font-size:14px;transition:top 0.2s" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to main content</a>
+<div id="sandboxBanner" style="display:none;background:#fbbf24;color:#7c2d12;font-size:11px;font-weight:700;padding:4px 12px;text-align:center">SANDBOX MODE — edits are isolated. Use Scenarios to save / discard.</div>
 <header class="app-header" role="banner">
   <button class="btn btn-ghost btn-sm mobile-menu-btn" onclick="App.toggleMobileMenu()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <div class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:2px"><polygon points="12 2 22 12 12 22 2 12 12 2"/></svg> Portfolio Command Centre</div>
@@ -4339,6 +4340,43 @@ const App = {
       });
     });
     return { BAC: Math.round(BAC), EV: Math.round(EV), AC: Math.round(AC), currency: 'GBP' };
+  },
+
+  sandboxMode: false,
+
+  toggleSandboxMode() {
+    this.sandboxMode = !this.sandboxMode;
+    const banner = document.getElementById('sandboxBanner');
+    if (banner) banner.style.display = this.sandboxMode ? '' : 'none';
+    if (typeof this.toast === 'function') {
+      this.toast(this.sandboxMode ? 'Sandbox mode ON — changes are isolated' : 'Sandbox mode OFF', this.sandboxMode ? 'warn' : 'success');
+    }
+  },
+
+  compareScenarios(idA, idB) {
+    const all = (this.data && this.data._scenarios) || [];
+    const a = all.find(s => s.id === idA);
+    const b = all.find(s => s.id === idB);
+    if (!a || !b) return null;
+    const projA = (a.snapshot && a.snapshot.projects) || [];
+    const projB = (b.snapshot && b.snapshot.projects) || [];
+    const byIdA = {}; projA.forEach(p => { byIdA[p.id] = p; });
+    const byIdB = {}; projB.forEach(p => { byIdB[p.id] = p; });
+    const changedProjects = [];
+    const trackedFields = ['name', 'status', 'size_total', 'priority', 'lifecycle_stage', 'target_date', 'hard_deadline'];
+    Object.keys(Object.assign({}, byIdA, byIdB)).forEach(id => {
+      const pa = byIdA[id], pb = byIdB[id];
+      if (!pa || !pb) {
+        changedProjects.push({ id, field: '__presence', from: pa ? 'present' : 'absent', to: pb ? 'present' : 'absent' });
+        return;
+      }
+      trackedFields.forEach(f => {
+        if ((pa[f] || null) !== (pb[f] || null)) {
+          changedProjects.push({ id, name: pb.name || pa.name, field: f, from: pa[f], to: pb[f] });
+        }
+      });
+    });
+    return { aName: a.name, bName: b.name, changedProjects };
   },
 
   // Scenarios — named what-if snapshots persisted alongside the live data.
