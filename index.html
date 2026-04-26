@@ -4281,6 +4281,27 @@ const App = {
     document.body.appendChild(overlay);
   },
 
+  // Bus-factor per skill — count eligible team members per skill needed by the project.
+  // Returns { [skillKey]: N }.
+  computeBusFactor(project) {
+    const skills = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'];
+    const skillKeyToLabel = { size_requirements: 'Requirements', size_tableau: 'Tableau', size_engineering: 'Data Engineering', size_data_science: 'Data Science', size_uat_adoption: 'UAT' };
+    const members = (this.data && this.data.team_members || []).filter(tm => {
+      const c = (tm.customer || '').toLowerCase();
+      return c === (project.customer || '').toLowerCase() || c === 'both';
+    });
+    const out = {};
+    skills.forEach(k => {
+      if (!project[k]) return;
+      const label = skillKeyToLabel[k];
+      const count = members.filter(tm =>
+        (tm.primary_skills || []).indexOf(label) >= 0 || (tm.secondary_skills || []).indexOf(label) >= 0
+      ).length;
+      out[k] = count;
+    });
+    return out;
+  },
+
   // Cost helper. Reads rate_card from settings and applies the default employment-mix (perm).
   // Returns { BAC, EV, AC, currency }.
   computeProjectCost(p) {
