@@ -12824,6 +12824,9 @@ const DetailPanel = {
           '<label style="font-size:11px;font-weight:600">Customer<br><select id="qaCustomer" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
           '<label style="font-size:11px;font-weight:600">Template<br><select id="qaTemplate" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
           '<label style="font-size:11px;font-weight:600">Total size (SP)<br><input type="number" id="qaSize" value="20" min="0" step="1" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"><div style="font-size:10px;color:var(--text-muted);margin-top:2px">Split evenly across the chosen template\'s phases; edit per-phase in the detail panel.</div></label>' +
+          '<label style="font-size:11px;font-weight:600">Conviction<br><select id="qaLifecycleStage" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+            App.LIFECYCLE_STAGES.map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === App.LIFECYCLE_STAGE_DEFAULT ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('') +
+          '</select><div style="font-size:10px;color:var(--text-muted);margin-top:2px">Idea / Discovery / POC sort below committed Implementations in WSJF.</div></label>' +
         '</div>' +
 
         '<div style="border-top:1px solid var(--border-light);padding-top:12px;margin-top:4px">' +
@@ -13081,8 +13084,10 @@ const DetailPanel = {
     const tplEl = document.getElementById('qaTemplate');
     const sizeEl = document.getElementById('qaSize');
     const prioEl = document.getElementById('qaPriority');
+    const lifecycleEl = document.getElementById('qaLifecycleStage');
     const modeEl = document.querySelector('input[name="qaTimelineMode"]:checked');
     if (!nameEl || !custEl || !modeEl) return;
+    const lifecycleVal = (lifecycleEl && lifecycleEl.value) || App.LIFECYCLE_STAGE_DEFAULT;
 
     const name = nameEl.value.trim() || (tplEl && tplEl.value ? ('New ' + (tplEl.options[tplEl.selectedIndex].text || 'Project')) : 'New Project');
     const cust = custEl.value;
@@ -13105,7 +13110,9 @@ const DetailPanel = {
 
     const newProject = {
       id, name, customer: cust,
-      ownership: 'We Own', category: (tpl && tpl.category) || 'General', visibility: 'Internal',
+      ownership: 'We Own', category: (tpl && tpl.category) || 'General',
+      lifecycle_stage: lifecycleVal,
+      visibility: 'Internal',
       sponsor: '', manager: '',
       teams_involved: [],
       assumptions: '',
