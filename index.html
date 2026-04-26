@@ -4305,6 +4305,106 @@ const App = {
     document.body.appendChild(overlay);
   },
 
+  startWalkthrough(customer, attendees) {
+    if (!this.data) return null;
+    if (!Array.isArray(this.data.walkthroughs)) this.data.walkthroughs = [];
+    const id = 'wt_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    this.data.walkthroughs.push({
+      id, customer, started_at: new Date().toISOString(), completed_at: null,
+      attendees: Array.isArray(attendees) ? attendees.slice() : [],
+      section_notes: {}, section_status: {}, decisions: [], actions: [], minutes_html: null
+    });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return id;
+  },
+
+  getActiveWalkthrough(customer) {
+    return ((this.data && this.data.walkthroughs) || []).slice().reverse()
+      .find(w => w.customer === customer && !w.completed_at) || null;
+  },
+
+  _findWalkthrough(id) {
+    return ((this.data && this.data.walkthroughs) || []).find(w => w.id === id) || null;
+  },
+
+  recordWalkthroughDecision(walkthroughId, opts) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return false;
+    opts = opts || {};
+    const entry = { project_id: opts.projectId || null, text: String(opts.text || '').slice(0, 400), rationale: String(opts.rationale || '').slice(0, 400), recorded_at: new Date().toISOString() };
+    wt.decisions.push(entry);
+    if (typeof this.logChange === 'function') {
+      this.logChange(opts.projectId || null, 'walkthrough_decision', '', entry.text, 'walkthrough', { rationale: entry.rationale });
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  recordWalkthroughAction(walkthroughId, opts) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return false;
+    opts = opts || {};
+    const action = {
+      description: String(opts.description || '').slice(0, 200),
+      owner: String(opts.owner || '').slice(0, 80),
+      due_date: opts.due_date || null,
+      status: 'Open',
+      created_at: new Date().toISOString(),
+      walkthrough_id: walkthroughId
+    };
+    wt.actions.push(action);
+    if (opts.forumId) {
+      const forum = ((this.data && this.data.governance_forums) || []).find(f => f.id === opts.forumId || f.name === opts.forumId);
+      if (forum) {
+        if (!Array.isArray(forum.actions)) forum.actions = [];
+        forum.actions.push({ description: action.description, owner: action.owner, due_date: action.due_date, status: 'Open', source: 'walkthrough:' + walkthroughId });
+      }
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  completeWalkthrough(walkthroughId) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return false;
+    wt.completed_at = new Date().toISOString();
+    if (typeof Report !== 'undefined' && Report.buildWalkthroughMinutesDoc) {
+      try { wt.minutes_html = Report.buildWalkthroughMinutesDoc(walkthroughId); } catch (e) { wt.minutes_html = '<html><body><h1>Minutes</h1></body></html>'; }
+    } else {
+      wt.minutes_html = '<html><body><h1>Walkthrough — ' + (wt.customer || '') + '</h1><p>Completed ' + wt.completed_at + '</p></body></html>';
+    }
+    if (this.data.walkthroughs.length > 52) {
+      if (!Array.isArray(this.data.walkthroughs_archive)) this.data.walkthroughs_archive = [];
+      const overflow = this.data.walkthroughs.length - 52;
+      const archived = this.data.walkthroughs.splice(0, overflow);
+      Array.prototype.push.apply(this.data.walkthroughs_archive, archived);
+    }
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  setWalkthroughSectionStatus(walkthroughId, sectionId, status) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return false;
+    wt.section_status[sectionId] = status;
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  setWalkthroughSectionNote(walkthroughId, sectionId, note) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return false;
+    wt.section_notes[sectionId] = String(note || '').slice(0, 2000);
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
   // Weekly walkthrough agenda — pure compute. Returns 9 sections in stable order with
   // typed signals derived from real data (audit log, risks, status, forums, capacity).
   computeWalkthroughAgenda(customer) {
