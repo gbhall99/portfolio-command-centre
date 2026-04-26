@@ -4282,6 +4282,24 @@ const App = {
     document.body.appendChild(overlay);
   },
 
+  // Backlog bucketing — groups customer-scoped not-started/on-hold projects into
+  // Unrefined (no size or no rank), Refined (sized AND ranked), Parked (Won't or On Hold).
+  computeBacklogBuckets(customer) {
+    const projects = (this.data && this.data.projects || []).filter(p => p.customer === customer);
+    const unrefined = [], refined = [], parked = [];
+    projects.forEach(p => {
+      if (p.status === 'Complete' || p.status === 'Closed') return;
+      const isParked = p.status === 'On Hold' || (p.moscow === "Won't" || p.moscow === 'Won’t');
+      if (isParked) { parked.push(p); return; }
+      const sized = (p.size_total || 0) > 0;
+      const wsjf = (typeof this.calculateWsjf === 'function') ? this.calculateWsjf(p) : { populated: 0 };
+      const ranked = wsjf.populated > 0 || !!p.priority;
+      if (sized && ranked) refined.push(p);
+      else unrefined.push(p);
+    });
+    return { unrefined, refined, parked };
+  },
+
   // Bus-factor per skill — count eligible team members per skill needed by the project.
   // Returns { [skillKey]: N }.
   computeBusFactor(project) {
@@ -9123,6 +9141,25 @@ const Dashboard = {
       }
     }
     return { verdict, justification, inputs };
+  },
+
+  renderBacklogTab(customer) {
+    const host = document.getElementById('backlogTabBody');
+    if (!host) return;
+    const cust = customer || App.activeCustomer;
+    if (!cust) { host.innerHTML = '<div style="padding:14px;color:var(--text-muted)">Select a customer.</div>'; return; }
+    const buckets = App.computeBacklogBuckets(cust);
+    const esc = Dashboard.esc;
+    const card = (p) => '<div class="backlog-card" style="padding:8px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;background:var(--surface)" onclick="DetailPanel.open(\'' + esc(p.id) + '\')">' +
+      '<div style="font-weight:600;font-size:12px">' + esc(p.name) + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</div>' +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(p.status) + ' · ' + (p.size_total || 0) + ' SP · ' + esc(p.moscow || '—') + '</div>' +
+    '</div>';
+    const col = (title, list) => '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-bottom:8px">' + title + ' (' + list.length + ')</div>' + (list.length ? list.map(card).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">None.</div>') + '</div>';
+    host.innerHTML = '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:14px">' +
+      col('Unrefined', buckets.unrefined) +
+      col('Refined &amp; ranked', buckets.refined) +
+      col('Parked', buckets.parked) +
+    '</div>';
   },
 
   renderExecSummary() {
