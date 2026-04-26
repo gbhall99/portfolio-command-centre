@@ -2911,7 +2911,7 @@ const App = {
     this._currentRunId = null;
     this._currentRunLabel = null;
   },
-  logChange(projectId, field, oldValue, newValue, source) {
+  logChange(projectId, field, oldValue, newValue, source, opts) {
     if (!this.data) return;
     if (!this.data.audit_log) this.data.audit_log = [];
     const project = this.data.projects.find(p => p.id === projectId);
@@ -2927,16 +2927,22 @@ const App = {
       field: fieldStr,
       oldValue: oldValue !== undefined ? String(oldValue) : '',
       newValue: newValue !== undefined ? String(newValue) : '',
-      source: source || 'user'
+      source: source || 'user',
+      rationale: (opts && opts.rationale) ? String(opts.rationale).slice(0, 200) : null
     };
     if (this._currentRunId) {
       entry.run_id = this._currentRunId;
       entry.run_label = this._currentRunLabel;
     }
     this.data.audit_log.push(entry);
-    // Keep last 1000 entries max
+    // Persistent archive — when the live log exceeds 1000 entries, move surplus
+    // rows into audit_log_archive instead of dropping them. Lets us run forensic
+    // reports later without losing year-old entries.
     if (this.data.audit_log.length > 1000) {
-      this.data.audit_log = this.data.audit_log.slice(-1000);
+      if (!this.data.audit_log_archive) this.data.audit_log_archive = [];
+      const overflow = this.data.audit_log.length - 1000;
+      const archived = this.data.audit_log.splice(0, overflow);
+      Array.prototype.push.apply(this.data.audit_log_archive, archived);
     }
   },
 
