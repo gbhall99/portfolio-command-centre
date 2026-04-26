@@ -24232,6 +24232,54 @@ const Report = {
       : ('<html><body><h1>Business Case — ' + esc(p.name) + '</h1><h2>Cost</h2>' + costHtml + '<h2>Benefit</h2>' + benefitHtml + '<h2>NPV</h2>' + npvHtml + '</body></html>');
   },
 
+  buildSprintBriefDoc(customer, sprintId) {
+    const sprint = (App.data && App.data.sprints || []).find(s => s.sprint_id === sprintId);
+    if (!sprint) return null;
+    const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer);
+    const members = (App.data && App.data.team_members || []).filter(tm => {
+      const c = (tm.customer || '').toLowerCase();
+      return !customer || c === customer.toLowerCase() || c === 'both';
+    });
+    const esc = Dashboard.esc;
+    const sections = members.map(tm => {
+      const items = [];
+      projects.forEach(p => {
+        Object.entries(p.skill_splits || {}).forEach(([sk, arr]) => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (sp.sprint !== sprintId) return;
+            (sp.assigned_to || []).forEach(a => {
+              if (a.member === tm.name) items.push({ project: p.name, skill: sk.replace(/^size_/, ''), points: a.points || 0, lifecycle: p.lifecycle_stage || 'Implementation' });
+            });
+          });
+        });
+      });
+      const html = items.length
+        ? '<table><tr><th>Project</th><th>Skill</th><th>Points</th><th>Stage</th></tr>' +
+          items.map(i => '<tr><td>' + esc(i.project) + '</td><td>' + esc(i.skill) + '</td><td>' + i.points + '</td><td>' + esc(i.lifecycle) + '</td></tr>').join('') +
+          '</table>'
+        : '<p>No assignments this sprint.</p>';
+      return { id: 'sb-' + tm.name.replace(/\s+/g, '-'), title: tm.name, html };
+    });
+    return (typeof Report !== 'undefined' && Report.buildDoc)
+      ? Report.buildDoc({
+          customer,
+          title: 'Sprint Brief — ' + sprintId,
+          subtitle: 'Per-member work plan for ' + sprintId,
+          reportType: 'Sprint Brief',
+          sections,
+          includeAppendix: false
+        })
+      : ('<html><body><h1>Sprint Brief — ' + esc(sprintId) + '</h1>' + sections.map(s => '<h2>' + esc(s.title) + '</h2>' + s.html).join('') + '</body></html>');
+  },
+
+  exportSprintBrief(customer, sprintId) {
+    const doc = this.buildSprintBriefDoc(customer, sprintId);
+    if (!doc) { App.toast('Sprint not found', 'error'); return; }
+    if (this.open) this.open(doc);
+    App.toast('Sprint brief opened — use Print > Save as PDF', 'success');
+  },
+
   exportBusinessCase(projectId) {
     const doc = this.buildBusinessCaseDoc(projectId);
     if (!doc) { App.toast('Project not found', 'error'); return; }
