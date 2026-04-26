@@ -9241,6 +9241,17 @@ const Dashboard = {
       parts.push('<strong>Attention required:</strong> ' + attention.join('; ') + '.');
     }
 
+    // What-changed sentence — pulls last-7-day audit entries scoped to active customer.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    const customerProjectIds = new Set(all.map(p => p.id));
+    const changes7d = ((App.data && App.data.audit_log) || []).filter(e => e.timestamp >= sevenDaysAgo && customerProjectIds.has(e.projectId));
+    if (changes7d.length) {
+      const fields = {};
+      changes7d.forEach(e => { fields[e.field] = (fields[e.field] || 0) + 1; });
+      const topFields = Object.entries(fields).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([f, n]) => f + ' ×' + n);
+      parts.push('<strong>' + changes7d.length + ' changes</strong> in the last 7 days (' + topFields.join(', ') + ').');
+    }
+
     el.innerHTML =
       '<div class="exec-summary-header"><span class="es-dot"></span> Executive Summary <span class="es-meta">as at ' +
       todayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +

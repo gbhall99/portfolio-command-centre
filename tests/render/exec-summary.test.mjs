@@ -56,3 +56,23 @@ describe('Dashboard.renderExecSummary — RAG/status reconciliation', () => {
     app.teardown();
   });
 });
+
+describe('Exec Summary — What Changed', () => {
+  it('renders a 7-day change summary when the audit log has entries', async () => {
+    resetIdSeq();
+    const proj = makeProject({ name: 'P', status: 'In Progress' });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({ projects: [proj], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.logChange(proj.id, 'priority', 5, 1, 'user');
+    let host = app.window.document.getElementById('execSummary');
+    if (!host) {
+      host = app.window.document.createElement('div');
+      host.id = 'execSummary';
+      app.window.document.body.appendChild(host);
+    }
+    app.Dashboard.renderExecSummary();
+    expect(host.innerHTML).toMatch(/changes.*last 7 days/i);
+    app.teardown();
+  });
+});
