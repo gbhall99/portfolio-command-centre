@@ -8857,6 +8857,64 @@ const Dashboard = {
     return ss + '\u2013' + se;
   },
 
+  // On-Track Verdict — combines RAG mover count, blocked count, and capacity
+  // pressure into a single defensible verdict per customer.
+  computeOnTrackVerdict(customer) {
+    const all = (App.data && App.data.projects ? App.data.projects : []).filter(p => p.customer === customer);
+    const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    if (!active.length) {
+      return { verdict: 'On Track', justification: 'No active projects.', inputs: [] };
+    }
+    const redRagCount = active.filter(p =>
+      p.rag_schedule === 'Red' || p.rag_resourcing === 'Red' || p.rag_scope === 'Red'
+    ).length;
+    const blockedCount = active.filter(p => p.status === 'Blocked').length;
+    let redCapacityCells = 0;
+    if (typeof Capacity !== 'undefined' && Capacity.computeResourcingGap) {
+      try {
+        const gap = Capacity.computeResourcingGap(customer);
+        gap.bySkill.forEach(row => {
+          row.bySprint.forEach(cell => { if (cell.gap < 0) redCapacityCells++; });
+        });
+      } catch (e) { /* capacity gap is optional; ignore */ }
+    }
+    const inputs = [
+      { name: 'Red RAG projects', value: redRagCount, threshold: 0 },
+      { name: 'Blocked projects', value: blockedCount, threshold: 0 },
+      { name: 'Capacity deficit cells', value: redCapacityCells, threshold: 0 }
+    ];
+    let redSignals = 0;
+    if (redRagCount > 0) redSignals++;
+    if (blockedCount > 0) redSignals++;
+    if (redCapacityCells > 0) redSignals++;
+    let verdict, justification;
+    if (redSignals >= 2) {
+      verdict = 'Off Track';
+      const parts = [];
+      if (redRagCount) parts.push(redRagCount + ' Red RAG');
+      if (blockedCount) parts.push(blockedCount + ' blocked');
+      if (redCapacityCells) parts.push(redCapacityCells + ' capacity deficit cells');
+      justification = 'Multiple red signals: ' + parts.join(', ') + '.';
+    } else if (redSignals === 1) {
+      verdict = 'Watch';
+      justification = redRagCount ? (redRagCount + ' projects with Red RAG.')
+        : blockedCount ? (blockedCount + ' projects blocked.')
+        : (redCapacityCells + ' sprint capacity deficits.');
+    } else {
+      const amberCount = active.filter(p =>
+        p.rag_schedule === 'Amber' || p.rag_resourcing === 'Amber' || p.rag_scope === 'Amber'
+      ).length;
+      if (amberCount > 0) {
+        verdict = 'Watch';
+        justification = amberCount + ' projects with Amber RAG. No reds.';
+      } else {
+        verdict = 'On Track';
+        justification = active.length + ' active projects, all green, no capacity deficit.';
+      }
+    }
+    return { verdict, justification, inputs };
+  },
+
   renderExecSummary() {
     const el = document.getElementById('execSummary');
     if (!el) return;
