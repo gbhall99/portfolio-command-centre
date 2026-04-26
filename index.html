@@ -14824,6 +14824,23 @@ const Gantt = {
           const bx1 = Math.max(0, dateToX(bStart));
           const bx2 = Math.max(bx1 + 4, dateToX(bEnd));
           baselineHtml = '<div class="gantt-bar-baseline" data-baseline-project="' + Dashboard.esc(p.id) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px;background:' + color + '"></div>';
+          // Baseline → current connector: arrow from baseline end to current end when slipped.
+          if (p.target_date && p.target_date !== bEnd) {
+            const cx2 = bx2;
+            const tx2 = Math.max(cx2 + 4, dateToX(p.target_date));
+            const dir = tx2 > cx2 ? 1 : -1;
+            const left = Math.min(cx2, tx2);
+            const width = Math.max(8, Math.abs(tx2 - cx2));
+            const arrowColor = dir > 0 ? 'var(--status-red)' : 'var(--status-green)';
+            const headPts = dir > 0
+              ? width + ',7 ' + (width - 6) + ',3 ' + (width - 6) + ',11'
+              : '0,7 6,3 6,11';
+            baselineHtml += '<svg class="baseline-arrow" style="position:absolute;left:' + left + 'px;top:50%;width:' + width + 'px;height:14px;pointer-events:none;overflow:visible" aria-hidden="true">' +
+              '<line x1="0" y1="7" x2="' + width + '" y2="7" stroke="' + arrowColor + '" stroke-width="1.6" stroke-dasharray="3,2"/>' +
+              '<polygon points="' + headPts + '" fill="' + arrowColor + '"/>' +
+              '<title>Baseline ' + Dashboard.esc(bEnd) + ' → current ' + Dashboard.esc(p.target_date) + '</title>' +
+            '</svg>';
+          }
         }
       }
 
