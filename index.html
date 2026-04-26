@@ -20804,6 +20804,22 @@ const Solver = {
   // Phase name → skill key mapping
   PHASE_SKILL_MAP: { 'Requirements': 'size_requirements', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'Tableau': 'size_tableau', 'UAT': 'size_uat_adoption' },
 
+  // Normalise phase_order entries — accept strings OR { phase, status }. Returns
+  // an array of { phase, status } with status defaulting to 'planned'. Entries with
+  // status 'tbd' are excluded from scheduling but preserved for Gantt rendering.
+  _normalisePhaseOrder(phaseOrder) {
+    if (!Array.isArray(phaseOrder)) return [];
+    return phaseOrder.map(e => {
+      if (typeof e === 'string') return { phase: e, status: 'planned' };
+      if (e && typeof e === 'object' && e.phase) return { phase: e.phase, status: e.status || 'planned' };
+      return null;
+    }).filter(Boolean);
+  },
+
+  _activePhaseOrder(phaseOrder) {
+    return this._normalisePhaseOrder(phaseOrder).filter(e => e.status !== 'tbd').map(e => e.phase);
+  },
+
   // Derive phase numbers from a project's delivery_config.phase_order
   getProjectPhaseMap(project) {
     const order = (project.delivery_config && project.delivery_config.phase_order) || null;
