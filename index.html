@@ -14796,14 +14796,29 @@ const Gantt = {
     }
   },
 
-  // Baseline variance analysis
+  // Baseline variance — prefers the active named baseline (D2.4 shape) and
+  // falls back to legacy per-project p.baseline_start / p.baseline_end fields.
   getBaselineVariance() {
     if (!App.data) return [];
+    const named = this._activeBaseline();
     return App.data.projects
-      .filter(p => p.start_date && p.target_date && p.baseline_start && p.baseline_end)
       .map(p => {
-        const planStart = new Date(p.baseline_start);
-        const planEnd = new Date(p.baseline_end);
+        let planStart = null, planEnd = null, source = null;
+        if (named && named.snapshot && named.snapshot[p.id]) {
+          const node = named.snapshot[p.id];
+          if (node.start_date && node.target_date) {
+            planStart = new Date(node.start_date);
+            planEnd = new Date(node.target_date);
+            source = 'named:' + named.name;
+          }
+        }
+        if (!planStart || !planEnd) {
+          if (!p.baseline_start || !p.baseline_end) return null;
+          planStart = new Date(p.baseline_start);
+          planEnd = new Date(p.baseline_end);
+          source = 'project';
+        }
+        if (!p.start_date || !p.target_date) return null;
         const actualStart = new Date(p.start_date);
         const actualEnd = new Date(p.target_date);
         const startDrift = Math.round((actualStart - planStart) / (1000 * 60 * 60 * 24));
@@ -14814,9 +14829,11 @@ const Gantt = {
           id: p.id, name: p.name, customer: p.customer,
           startDrift, endDrift, planDuration, actualDuration,
           durationVariance: actualDuration - planDuration,
-          trend: endDrift > 7 ? 'slipping' : endDrift < -7 ? 'ahead' : 'on-track'
+          trend: endDrift > 7 ? 'slipping' : endDrift < -7 ? 'ahead' : 'on-track',
+          source
         };
       })
+      .filter(Boolean)
       .sort((a, b) => b.endDrift - a.endDrift);
   },
 
