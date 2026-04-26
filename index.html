@@ -19955,6 +19955,75 @@ const Capacity = {
     return { customer, horizonSprints: horizonSprints.map(s => s.sprint_id), bySkill };
   },
 
+  // Member impact simulator — return what changes if the named member is dropped
+  // from the named sprint forwards. Pure: computes against snapshots, mutates nothing.
+  simulateMemberImpact(memberName, fromSprintId) {
+    const customer = App.activeCustomer;
+    const sprints = (App.data && App.data.sprints || []).slice();
+    const fromIdx = Math.max(0, sprints.findIndex(s => s.sprint_id === fromSprintId));
+    const allMembers = (App.data && App.data.team_members || []);
+    const supplyFor = (members, sid) => {
+      const original = App.data.team_members;
+      App.data.team_members = members;
+      const cap = (typeof Sprint !== 'undefined' && Sprint.calcSkillCapacityForSprint)
+        ? Sprint.calcSkillCapacityForSprint(customer, sid) : {};
+      App.data.team_members = original;
+      let total = 0;
+      Object.values(cap).forEach(v => { total += v || 0; });
+      return Math.round(total);
+    };
+    const before = { totalSupply: 0 };
+    sprints.forEach(s => { before.totalSupply += supplyFor(allMembers, s.sprint_id); });
+    const after = { totalSupply: 0 };
+    const affectedSprints = [];
+    const reduced = allMembers.map(m => m.name === memberName ? Object.assign({}, m, { available_points_per_sprint: 0 }) : m);
+    sprints.forEach((s, i) => {
+      const fullSupply = supplyFor(allMembers, s.sprint_id);
+      if (i < fromIdx) { after.totalSupply += fullSupply; return; }
+      const reducedSupply = supplyFor(reduced, s.sprint_id);
+      after.totalSupply += reducedSupply;
+      affectedSprints.push({ sprintId: s.sprint_id, supplyDelta: reducedSupply - fullSupply });
+    });
+    return { member: memberName, fromSprintId, before, after, supplyDelta: after.totalSupply - before.totalSupply, affectedSprints };
+  },
+
+  openMemberImpactModal(memberName) {
+    const sprints = (App.data && App.data.sprints || []);
+    if (!sprints.length) { App.toast('No sprints', 'error'); return; }
+    const existing = document.getElementById('memberImpactOverlay');
+    if (existing) existing.remove();
+    const esc = Dashboard.esc;
+    const opts = sprints.map(s => '<option value="' + esc(s.sprint_id) + '">' + esc(s.sprint_id.replace(/^CY\d+-/, '')) + '</option>').join('');
+    const overlay = document.createElement('div');
+    overlay.id = 'memberImpactOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:560px;width:100%;color:var(--text-dark)">' +
+        '<h3 style="margin:0 0 12px;font-size:14px;font-weight:700">Member impact — ' + esc(memberName) + '</h3>' +
+        '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:8px">Drop from sprint<br><select id="miFromSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + opts + '</select></label>' +
+        '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+          '<button class="btn btn-primary btn-sm" onclick="Capacity._runMemberImpact(\'' + esc(memberName) + '\')">Simulate</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'memberImpactOverlay\').remove()">Close</button>' +
+        '</div>' +
+        '<div id="memberImpactOutput" style="font-size:12px;background:var(--surface-2);padding:10px;border-radius:var(--radius-sm);min-height:60px"></div>' +
+      '</div>';
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  },
+
+  _runMemberImpact(memberName) {
+    const sid = document.getElementById('miFromSprint').value;
+    const r = this.simulateMemberImpact(memberName, sid);
+    const out = document.getElementById('memberImpactOutput');
+    if (!out) return;
+    const esc = Dashboard.esc;
+    const rows = r.affectedSprints.slice(0, 10).map(s =>
+      '<li>' + esc(s.sprintId) + ' — supply &Delta; <strong style="color:var(--status-red)">' + s.supplyDelta + '</strong></li>'
+    ).join('');
+    out.innerHTML = '<div><strong>Total supply delta:</strong> <span style="color:var(--status-red)">' + r.supplyDelta + ' SP</span></div>' +
+      '<ul style="margin:6px 0 0 0;padding-left:18px">' + rows + '</ul>';
+  },
+
   // Sustainable-pace heuristic — return team members with >=90% utilisation across
   // 3 or more consecutive sprints in the active horizon.
   computeSustainedHighLoad(customer, opts) {
