@@ -24009,6 +24009,45 @@ const Report = {
     App.toast('Sponsor pack opened — use Print > Save as PDF', 'success');
   },
 
+  buildBusinessCaseDoc(projectId) {
+    const p = (App.data && App.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return null;
+    const cost = (App.computeProjectCost ? App.computeProjectCost(p) : { BAC: 0, currency: 'GBP' });
+    const benefitAnnual = Number(p.benefit_annual_gbp || 0);
+    const horizonYears = Number(p.benefit_horizon_years || 3);
+    const rate = Number((App.data.settings && App.data.settings.business_case_discount_rate) || 0.07);
+    let npv = -cost.BAC;
+    for (let y = 1; y <= horizonYears; y++) npv += benefitAnnual / Math.pow(1 + rate, y);
+    const wsjf = (typeof App.calculateWsjf === 'function') ? App.calculateWsjf(p) : { wsjf: 0, populated: 0 };
+    const esc = Dashboard.esc;
+    const costHtml = '<p>BAC: <strong>£' + Number(cost.BAC).toLocaleString('en-GB') + '</strong></p>';
+    const benefitHtml = '<p>Annual benefit: <strong>£' + benefitAnnual.toLocaleString('en-GB') + '</strong> over ' + horizonYears + ' year' + (horizonYears === 1 ? '' : 's') + '</p>';
+    const npvHtml = '<p>Discount rate: <strong>' + (rate * 100).toFixed(1) + '%</strong></p>' +
+      '<p>NPV: <strong>£' + Math.round(npv).toLocaleString('en-GB') + '</strong></p>' +
+      '<p>WSJF: <strong>' + (wsjf.wsjf || 0) + '</strong> (CoD ' + (wsjf.cod || 0) + ' / size ' + (wsjf.size || 1) + ', ' + wsjf.populated + ' inputs populated)</p>';
+    return (typeof Report !== 'undefined' && Report.buildDoc)
+      ? Report.buildDoc({
+          customer: p.customer,
+          title: 'Business Case — ' + p.name,
+          subtitle: 'Outline: cost / benefit / NPV / WSJF',
+          reportType: 'Business Case',
+          sections: [
+            { id: 'bc-cost',    title: 'Cost',    html: costHtml },
+            { id: 'bc-benefit', title: 'Benefit', html: benefitHtml },
+            { id: 'bc-npv',     title: 'NPV',     html: npvHtml }
+          ],
+          includeAppendix: false
+        })
+      : ('<html><body><h1>Business Case — ' + esc(p.name) + '</h1><h2>Cost</h2>' + costHtml + '<h2>Benefit</h2>' + benefitHtml + '<h2>NPV</h2>' + npvHtml + '</body></html>');
+  },
+
+  exportBusinessCase(projectId) {
+    const doc = this.buildBusinessCaseDoc(projectId);
+    if (!doc) { App.toast('Project not found', 'error'); return; }
+    if (this.open) this.open(doc);
+    App.toast('Business case opened — use Print > Save as PDF', 'success');
+  },
+
   branding(customer) {
     const settings = (App.data && App.data.settings) || {};
     const b = (settings.branding || {})[customer] || {};
