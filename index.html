@@ -18094,6 +18094,43 @@ const Sprint = {
   // User-facing "Settings" button on Sprint Planning now navigates to System Settings
   // (Scheduling Engine card) rather than opening a duplicate modal. The modal-building
   // openAllocSettings is retained for internal callers (e.g. re-open after an edit).
+  openWalkthrough() {
+    if (!App.data) return;
+    const customer = App.activeCustomer;
+    if (!customer) { App.toast('Select a customer first', 'error'); return; }
+    const existing = document.getElementById('walkthroughOverlay');
+    if (existing) existing.remove();
+    const projects = App.data.projects.filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+    const queue = [];
+    projects.forEach(p => {
+      Object.entries(p.skill_splits || {}).forEach(([skKey, arr]) => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach((sp, idx) => {
+          if (sp.status === 'complete') return;
+          const remaining = (sp.points || 0) - (sp.completed || 0);
+          if (remaining <= 0) return;
+          queue.push({ projectId: p.id, projectName: p.name, skillKey: skKey, sprintId: sp.sprint, idx, points: sp.points, completed: sp.completed || 0, remaining });
+        });
+      });
+    });
+    const esc = Dashboard.esc;
+    const overlay = document.createElement('div');
+    overlay.id = 'walkthroughOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
+    const items = queue.slice(0, 50).map(q => '<li style="padding:6px 0;border-bottom:1px solid var(--border-light)"><strong>' + esc(q.projectName) + '</strong> &middot; ' + esc(q.skillKey.replace(/^size_/, '')) + ' in ' + esc(q.sprintId) + ' &middot; Pending: <strong>' + q.remaining + '</strong> SP <button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="Sprint.openChipProgressEditor && Sprint.openChipProgressEditor(\'' + esc(q.projectId) + '\',\'' + esc(q.skillKey) + '\',\'' + esc(q.sprintId) + '\')">Edit</button></li>').join('');
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:720px;width:100%;color:var(--text-dark);max-height:90vh;overflow:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">' +
+          '<h3 style="margin:0;font-size:var(--fs-lg);font-weight:700">Walkthrough — weekly progress review</h3>' +
+          '<button onclick="document.getElementById(\'walkthroughOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + queue.length + ' open chips. Click <strong>Edit</strong> to update completed SP per chip.</div>' +
+        '<ul style="margin:0;padding-left:18px;font-size:12px">' + (items || '<li>No open chips for this customer.</li>') + '</ul>' +
+      '</div>';
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  },
+
   openSchedulingSettings() {
     App.navigate('config');
     setTimeout(() => {
