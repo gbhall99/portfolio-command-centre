@@ -13262,10 +13262,23 @@ const Gantt = {
     App.data.projects.forEach(p => {
       if (p.customer !== customer) return;
       if (!p.skill_splits || !Object.keys(p.skill_splits).length) return;
-      snapshot[p.id] = JSON.parse(JSON.stringify(p.skill_splits));
+      snapshot[p.id] = {
+        skill_splits: JSON.parse(JSON.stringify(p.skill_splits)),
+        start_date:    p.start_date    || null,
+        target_date:   p.target_date   || null,
+        hard_deadline: p.hard_deadline || null,
+        size_total:           p.size_total           || 0,
+        size_requirements:    p.size_requirements    || 0,
+        size_tableau:         p.size_tableau         || 0,
+        size_engineering:     p.size_engineering     || 0,
+        size_data_science:    p.size_data_science    || 0,
+        size_uat_adoption:    p.size_uat_adoption    || 0,
+        moscow:        p.moscow        || null,
+        priority:      p.priority      || null
+      };
       count++;
-      // Also populate legacy single-baseline field so existing variance exports keep working.
-      p.allocation_baseline = snapshot[p.id];
+      // Keep the legacy per-project allocation_baseline alive for any callers that read it directly.
+      p.allocation_baseline = snapshot[p.id].skill_splits;
     });
     if (!count) { App.toast('No allocated projects to snapshot for ' + customer, 'error'); return; }
     const entry = {
