@@ -4277,6 +4277,26 @@ const App = {
     document.body.appendChild(overlay);
   },
 
+  // Cost helper. Reads rate_card from settings and applies the default employment-mix (perm).
+  // Returns { BAC, EV, AC, currency }.
+  computeProjectCost(p) {
+    const rates = (this.data && this.data.settings && this.data.settings.rate_card) || {};
+    const skills = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'];
+    let BAC = 0, AC = 0, EV = 0;
+    skills.forEach(k => {
+      const rate = (rates[k] && (rates[k].perm || rates[k].contract)) || 0;
+      const planned = p[k] || 0;
+      BAC += planned * rate;
+      const splits = (p.skill_splits || {})[k] || [];
+      splits.forEach(sp => {
+        AC += (sp.points || 0) * rate;
+        const ev = sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0);
+        EV += ev * rate;
+      });
+    });
+    return { BAC: Math.round(BAC), EV: Math.round(EV), AC: Math.round(AC), currency: 'GBP' };
+  },
+
   // Scenarios — named what-if snapshots persisted alongside the live data.
   saveScenario(name) {
     if (!this.data) return null;
