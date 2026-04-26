@@ -10995,7 +10995,18 @@ const DetailPanel = {
         '<button type="button" onclick="DetailPanel.showEvmGlossary(\'' + esc(p.id) + '\')" style="border:none;background:transparent;color:var(--accent-blue);cursor:pointer;font-size:11px;text-decoration:underline;padding:0">What do these mean?</button>' +
       '</div>' +
     '</div>';
-    return '<div class="evm-strip" aria-label="Earned Value metrics">' + header + baselineBanner + cells.map(c =>
+    // BF1 badges — surface single-threaded skills (bus-factor=1) so the manager
+    // sees which skill needs cross-skilling before someone goes on leave.
+    const skillKeyToShort = { size_requirements: 'Req', size_tableau: 'Tab', size_engineering: 'DE', size_data_science: 'DS', size_uat_adoption: 'UAT' };
+    const busFactor = (typeof App.computeBusFactor === 'function') ? App.computeBusFactor(p) : {};
+    const bf1Skills = Object.entries(busFactor).filter(([, n]) => n === 1).map(([k]) => skillKeyToShort[k] || k.replace(/^size_/, ''));
+    const coverageStrip = bf1Skills.length
+      ? '<div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;color:var(--text-dark-secondary)">' +
+          '<span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-size:10px">Coverage</span>' +
+          bf1Skills.map(s => '<span title="Bus-factor 1 — only one team member can do this skill" style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--tint-red-weak);color:var(--status-red);font-size:10px;font-weight:700">BF1: ' + esc(s) + '</span>').join('') +
+        '</div>'
+      : '';
+    return '<div class="evm-strip" aria-label="Earned Value metrics">' + header + coverageStrip + baselineBanner + cells.map(c =>
       '<div class="evm-cell" title="' + esc(c.tip) + '">' +
         '<div class="evm-label">' + c.label + '</div>' +
         '<div class="evm-val"' + (c.color ? ' style="color:' + c.color + '"' : '') + '>' + c.val + '</div>' +
