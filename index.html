@@ -4345,6 +4345,53 @@ const App = {
   sandboxMode: false,
   viewAsMember: null,
 
+  convertToImplementation(projectId, opts) {
+    opts = opts || {};
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    if (p.lifecycle_stage === 'Implementation' || p.lifecycle_stage === 'Run/BAU') return false;
+    const before = p.lifecycle_stage;
+    p.lifecycle_stage = 'Implementation';
+    if (p.start_date) p.baseline_start = p.start_date;
+    if (p.target_date) p.baseline_end = p.target_date;
+    p.baseline_set_date = new Date().toISOString();
+    if (opts.sponsor) p.sponsor = opts.sponsor;
+    if (opts.notes) p.notes = (p.notes ? p.notes + '\n\n' : '') + 'Converted to Implementation: ' + opts.notes;
+    this.logChange(projectId, 'lifecycle_stage', before || 'Unknown', 'Implementation', 'user', { rationale: opts.notes || 'Converted to Implementation' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    if (this.notifyDataChange) this.notifyDataChange();
+    return true;
+  },
+
+  promoteTbdPhase(projectId, phaseName, opts) {
+    opts = opts || {};
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p || !p.delivery_config || !Array.isArray(p.delivery_config.phase_order)) return false;
+    let changed = false;
+    const before = JSON.parse(JSON.stringify(p.delivery_config.phase_order));
+    p.delivery_config.phase_order = p.delivery_config.phase_order.map(e => {
+      if (typeof e === 'object' && e && e.phase === phaseName && e.status === 'tbd') {
+        changed = true;
+        return { phase: phaseName, status: 'planned' };
+      }
+      return e;
+    });
+    if (!changed) return false;
+    if (typeof opts.sizePoints === 'number' && opts.sizePoints > 0) {
+      const map = { 'Requirements': 'size_requirements', 'Data Engineering': 'size_engineering', 'Data Science': 'size_data_science', 'Tableau': 'size_tableau', 'UAT': 'size_uat_adoption' };
+      const key = map[phaseName];
+      if (key) p[key] = opts.sizePoints;
+      p.size_total = ['size_requirements','size_tableau','size_engineering','size_data_science','size_uat_adoption']
+        .reduce((s, k) => s + (p[k] || 0), 0);
+    }
+    this.logChange(projectId, 'phase_order', JSON.stringify(before), JSON.stringify(p.delivery_config.phase_order), 'user', { rationale: opts.rationale || 'Promoted ' + phaseName + ' from TBD' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    if (this.notifyDataChange) this.notifyDataChange();
+    return true;
+  },
+
   setViewAsMember(name) {
     this.viewAsMember = name || null;
     if (this.notifyDataChange) this.notifyDataChange();
