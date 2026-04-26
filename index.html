@@ -19397,6 +19397,63 @@ const Capacity = {
     el.innerHTML = html;
   },
 
+  // Resourcing Gap — for each skill, for each sprint in horizon, compute
+  // demand (sum of skill_splits points) minus supply (Sprint.calcSkillCapacityForSprint),
+  // and translate the aggregated negative gap into an FTE-equivalent at the team's
+  // average available_points_per_sprint for members who can do that skill.
+  computeResourcingGap(customer) {
+    const horizonSprints = (App.data && App.data.sprints) ? App.data.sprints.slice() : [];
+    const projects = (App.data && App.data.projects)
+      ? App.data.projects.filter(p => !customer || p.customer === customer)
+      : [];
+    const members = (App.data && App.data.team_members) ? App.data.team_members : [];
+
+    const skills = (typeof Sprint !== 'undefined' && Sprint.SKILLS) ? Sprint.SKILLS : [];
+    const skillLabelToKey = {};
+    skills.forEach(sk => { skillLabelToKey[sk.label] = sk.key; });
+
+    const bySkill = skills.map(sk => {
+      const bySprint = horizonSprints.map(s => {
+        const capMap = Sprint.calcSkillCapacityForSprint(customer, s.sprint_id) || {};
+        const supply = Math.round(capMap[sk.key] || 0);
+        let demand = 0;
+        projects.forEach(p => {
+          const arr = (p.skill_splits || {})[sk.key];
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => { if (sp.sprint === s.sprint_id) demand += sp.points || 0; });
+        });
+        return { sprintId: s.sprint_id, demand, supply, gap: supply - demand };
+      });
+      const totalGap = bySprint.reduce((sum, row) => sum + row.gap, 0);
+      const eligible = members.filter(tm => {
+        if (customer) {
+          const c = (tm.customer || '').toLowerCase();
+          if (c !== customer.toLowerCase() && c !== 'both') return false;
+        }
+        const all = (tm.primary_skills || []).concat(tm.secondary_skills || []);
+        return all.some(label => skillLabelToKey[label] === sk.key);
+      });
+      const avgMemberCap = eligible.length
+        ? eligible.reduce((sum, tm) => sum + (tm.available_points_per_sprint || 0), 0) / eligible.length
+        : 0;
+      const sprintsWithGap = bySprint.filter(r => r.gap < 0).length || 1;
+      const gapFte = totalGap < 0 && avgMemberCap > 0
+        ? Math.round((Math.abs(totalGap) / sprintsWithGap / avgMemberCap) * 100) / 100
+        : 0;
+      return {
+        skillKey: sk.key,
+        skillLabel: sk.label,
+        skillShort: sk.short,
+        bySprint,
+        totalGap,
+        gapFte,
+        avgMemberCap: Math.round(avgMemberCap * 10) / 10
+      };
+    });
+
+    return { customer, horizonSprints: horizonSprints.map(s => s.sprint_id), bySkill };
+  },
+
   renderSprintCapacity() {
     const sprints = App.data.sprints || [];
     const customerFilter = App.activeCustomer || '';
