@@ -19477,6 +19477,9 @@ const Capacity = {
     if (document.getElementById('capacityGapPanel')) {
       this.renderResourcingGap(App.activeCustomer);
     }
+    if (document.getElementById('sustainedPacePanel')) {
+      this.renderSustainedHighLoad(App.activeCustomer);
+    }
     // renderTeamSchedule() removed — Scrum Master timeline was retired from the Capacity page.
     // The helper is kept for back-compat; callers should now use the Team view in Sprint Planning.
     if (typeof this.renderTeamSchedule === 'function' && document.getElementById('teamScheduleGantt')) this.renderTeamSchedule();
@@ -19778,6 +19781,76 @@ const Capacity = {
     });
 
     return { customer, horizonSprints: horizonSprints.map(s => s.sprint_id), bySkill };
+  },
+
+  // Sustainable-pace heuristic — return team members with >=90% utilisation across
+  // 3 or more consecutive sprints in the active horizon.
+  computeSustainedHighLoad(customer, opts) {
+    opts = opts || {};
+    const threshold = opts.threshold != null ? opts.threshold : 0.9;
+    const minRun = opts.minRun != null ? opts.minRun : 3;
+    const sprints = (App.data && App.data.sprints) ? App.data.sprints : [];
+    const projects = (App.data && App.data.projects)
+      ? App.data.projects.filter(p => !customer || p.customer === customer)
+      : [];
+    const members = (App.data && App.data.team_members || []).filter(tm => {
+      if (!customer) return true;
+      const c = (tm.customer || '').toLowerCase();
+      return c === customer.toLowerCase() || c === 'both';
+    });
+    const flagged = [];
+    members.forEach(tm => {
+      let runStart = null, run = 0, longestRun = 0, longestStart = null;
+      sprints.forEach((s, idx) => {
+        const cap = (typeof Sprint !== 'undefined' && Sprint.calcMemberCapacityForSprint)
+          ? (Sprint.calcMemberCapacityForSprint(tm, s.sprint_id, customer).points || 0)
+          : (tm.available_points_per_sprint || 0);
+        let load = 0;
+        projects.forEach(p => {
+          const arr = (p.skill_splits || {});
+          Object.values(arr).forEach(slices => {
+            if (!Array.isArray(slices)) return;
+            slices.forEach(sp => {
+              if (sp.sprint !== s.sprint_id) return;
+              (sp.assigned_to || []).forEach(a => { if (a.member === tm.name) load += a.points || 0; });
+            });
+          });
+        });
+        const ratio = cap > 0 ? load / cap : 0;
+        if (ratio >= threshold) {
+          if (run === 0) runStart = idx;
+          run++;
+          if (run > longestRun) { longestRun = run; longestStart = runStart; }
+        } else {
+          run = 0;
+          runStart = null;
+        }
+      });
+      if (longestRun >= minRun) {
+        flagged.push({
+          member: tm.name,
+          consecutiveSprints: longestRun,
+          startSprintId: sprints[longestStart] ? sprints[longestStart].sprint_id : null
+        });
+      }
+    });
+    return flagged;
+  },
+
+  renderSustainedHighLoad(customer) {
+    const host = document.getElementById('sustainedPacePanel');
+    if (!host) return;
+    const cust = customer || App.activeCustomer;
+    const flagged = this.computeSustainedHighLoad(cust);
+    if (!flagged.length) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No sustained high-load members detected.</div>';
+      return;
+    }
+    const esc = Dashboard.esc;
+    host.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:4px">Sustained High Load</div>' +
+      '<ul style="margin:0;padding-left:18px;font-size:12px">' +
+        flagged.map(f => '<li><strong>' + esc(f.member) + '</strong> &mdash; ' + f.consecutiveSprints + ' consecutive sprints &ge;90% from <em>' + esc(f.startSprintId || '—') + '</em></li>').join('') +
+      '</ul>';
   },
 
   renderResourcingGap(customer) {
