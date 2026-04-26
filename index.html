@@ -20662,7 +20662,14 @@ const Forecast = {
 
     // If share is effectively zero (no commitments), treat project as using full customer velocity pessimistically
     const useValues = (perProjectVelocity.reduce((a, b) => a + b, 0) > 0) ? perProjectVelocity : stats.values;
-    const distribution = this.simulateSprintsNeeded(remaining, useValues, opts.runs);
+    // Cone of uncertainty widens by lifecycle_stage. Lower-conviction stages widen the
+    // velocity sample range so P80 / P95 tail farther.
+    const stageWideners = {
+      'Idea': 1.6, 'Discovery': 1.4, 'POC': 1.6, 'Phase-1 Build': 1.25, 'Implementation': 1.0, 'Run/BAU': 1.0
+    };
+    const widener = stageWideners[project.lifecycle_stage] || 1.0;
+    const widened = useValues.map(v => v / widener);
+    const distribution = this.simulateSprintsNeeded(remaining, widened, opts.runs);
     return { remaining, share, history, stats, distribution };
   },
 

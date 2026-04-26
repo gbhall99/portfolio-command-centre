@@ -25,3 +25,39 @@ describe('Range estimation — schema', () => {
     app.teardown();
   });
 });
+
+describe('Forecast cone widens by lifecycle_stage', () => {
+  it('returns a wider P95 for a POC than for an Implementation with identical inputs', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(6);
+    const sized = (stage) => {
+      const p = makeProject({
+        name: stage, lifecycle_stage: stage,
+        size_engineering: 30,
+        skill_splits: {
+          size_engineering: [
+            { sprint: sprints[0].sprint_id, points: 10, status: 'complete', completed: 10, assigned_to: [], reasons: [] },
+            { sprint: sprints[1].sprint_id, points: 10, status: 'complete', completed: 10, assigned_to: [], reasons: [] }
+          ]
+        }
+      });
+      p.size_total = 30;
+      return p;
+    };
+    const poc = sized('POC');
+    const impl = sized('Implementation');
+    const app = await loadApp(makeDataset({
+      projects: [poc, impl], sprints, team_members: [makeMember({ available_points_per_sprint: 10 })]
+    }));
+    // Run multiple times to reduce Monte Carlo noise; expect POC>=Impl on average.
+    let pocSum = 0, implSum = 0;
+    for (let i = 0; i < 5; i++) {
+      const pf = app.window.__pcc__.Forecast.projectForecast(poc);
+      const im = app.window.__pcc__.Forecast.projectForecast(impl);
+      pocSum += pf.distribution.p95;
+      implSum += im.distribution.p95;
+    }
+    expect(pocSum).toBeGreaterThanOrEqual(implSum);
+    app.teardown();
+  });
+});
