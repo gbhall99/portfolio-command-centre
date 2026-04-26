@@ -57,3 +57,34 @@ describe('lifecycle_stage — wizard capture', () => {
     app.teardown();
   });
 });
+
+describe('lifecycleStageChip + WSJF banding', () => {
+  it('renders a colour-coded chip for each stage', async () => {
+    const app = await loadApp(makeDataset({}));
+    expect(app.App.lifecycleStageChip({ lifecycle_stage: 'POC' })).toMatch(/POC/);
+    expect(app.App.lifecycleStageChip({ lifecycle_stage: 'Implementation' })).toMatch(/Implementation/);
+    expect(app.App.lifecycleStageChip({})).toMatch(/Implementation/);
+    app.teardown();
+  });
+
+  it('low-conviction projects sort below high-conviction projects within the same WSJF band', async () => {
+    resetIdSeq();
+    const poc = makeProject({
+      name: 'A POC', lifecycle_stage: 'POC',
+      business_value: 8, time_criticality: 6, risk_reduction_opportunity: 5,
+      size_engineering: 10
+    });
+    poc.size_total = 10;
+    const impl = makeProject({
+      name: 'An impl', lifecycle_stage: 'Implementation',
+      business_value: 8, time_criticality: 6, risk_reduction_opportunity: 5,
+      size_engineering: 10
+    });
+    impl.size_total = 10;
+    const app = await loadApp(makeDataset({ projects: [poc, impl] }));
+    const pocScore = app.App.calculateProjectPriorityScore(poc, 0);
+    const implScore = app.App.calculateProjectPriorityScore(impl, 0);
+    expect(implScore).toBeGreaterThan(pocScore);
+    app.teardown();
+  });
+});

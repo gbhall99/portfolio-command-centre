@@ -6146,6 +6146,32 @@ const App = {
     '</span>';
   },
 
+  // One-line chip rendered next to project names everywhere a conviction class matters.
+  // Returns inline-styled HTML (everything escaped) so it can be interpolated directly.
+  lifecycleStageChip(project) {
+    const stage = (project && project.lifecycle_stage) || App.LIFECYCLE_STAGE_DEFAULT;
+    const palette = {
+      'Idea':           { bg: '#f1f5f9', fg: '#475569' },
+      'Discovery':      { bg: '#ede9fe', fg: '#5b21b6' },
+      'POC':            { bg: '#fef3c7', fg: '#b45309' },
+      'Phase-1 Build':  { bg: '#dbeafe', fg: '#1d4ed8' },
+      'Implementation': { bg: '#dcfce7', fg: '#166534' },
+      'Run/BAU':        { bg: '#e0f2fe', fg: '#075985' }
+    };
+    const c = palette[stage] || palette[App.LIFECYCLE_STAGE_DEFAULT];
+    return '<span class="lifecycle-chip" style="display:inline-block;padding:1px 6px;border-radius:3px;background:' + c.bg + ';color:' + c.fg + ';font-size:10px;font-weight:700;letter-spacing:0.3px;margin-left:4px" title="Project conviction class">' + Dashboard.esc(stage) + '</span>';
+  },
+
+  // Low-conviction stages (Idea, Discovery, POC) sort BELOW high-conviction within the same priority band.
+  lifecycleConvictionPenalty(project) {
+    const stage = (project && project.lifecycle_stage) || App.LIFECYCLE_STAGE_DEFAULT;
+    if (stage === 'Idea')      return 25;
+    if (stage === 'Discovery') return 15;
+    if (stage === 'POC')       return 10;
+    return 0;
+  },
+
+
   // Coarse MoSCoW banding. Unset / unknown → "Could". Lower numeric band sorts first.
   moscowBand(project) {
     const m = project && project.moscow;
@@ -6170,7 +6196,7 @@ const App = {
       const deadlineScore = this.calculateDeadlineScore(project);
       const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
       const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
-      return Math.round(wsjfScore + deadlineScore + depScore);
+      return Math.round(wsjfScore + deadlineScore + depScore - this.lifecycleConvictionPenalty(project));
     }
     // Hybrid fallback (legacy) — status + RAG + risk + size + deadline + dep leverage.
     const statusScore = (cfg.statusWeights[project.status] || 0) * cfg.statusMultiplier;
@@ -6184,7 +6210,7 @@ const App = {
     // If caller passed a precomputed leverageCount, use it (saves repeated graph builds during autoPrioritise).
     const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
     const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
-    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore);
+    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore - this.lifecycleConvictionPenalty(project));
   },
 
   // Shared recommendation engine. Returns { perCustomerOrder, heldUpByDep } WITHOUT mutating anything.
@@ -8716,7 +8742,7 @@ const Dashboard = {
       '<td class="drag-handle" title="Drag to reorder">\u2807</td>' +
       '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon2 + '</td>' +
       priCell +
-      '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + '</td>' +
+      '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</td>' +
       '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
       '<td>' + this.esc(p.category || '') + '</td>' +
       '<td class="manager-cell" title="' + this.esc(p.manager||'') + '">' + this.esc(p.manager || '\u2014') + '</td>' +
@@ -14332,7 +14358,7 @@ const Gantt = {
       }
 
       let barLabel = '';
-      if (w > 60) barLabel = '<span class="bar-label" style="position:relative;z-index:1">' + Dashboard.esc(p.name) + '</span>';
+      if (w > 60) barLabel = '<span class="bar-label" style="position:relative;z-index:1">' + Dashboard.esc(p.name) + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</span>';
 
       let barContent = '';
       if (segmentsHtml) {
