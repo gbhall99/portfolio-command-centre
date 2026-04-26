@@ -18638,35 +18638,150 @@ const Sprint = {
     if (!customer) { App.toast('Select a customer first', 'error'); return; }
     const existing = document.getElementById('walkthroughOverlay');
     if (existing) existing.remove();
-    const projects = App.data.projects.filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
-    const queue = [];
-    projects.forEach(p => {
-      Object.entries(p.skill_splits || {}).forEach(([skKey, arr]) => {
-        if (!Array.isArray(arr)) return;
-        arr.forEach((sp, idx) => {
-          if (sp.status === 'complete') return;
-          const remaining = (sp.points || 0) - (sp.completed || 0);
-          if (remaining <= 0) return;
-          queue.push({ projectId: p.id, projectName: p.name, skillKey: skKey, sprintId: sp.sprint, idx, points: sp.points, completed: sp.completed || 0, remaining });
-        });
-      });
-    });
+    let active = App.getActiveWalkthrough(customer);
+    if (!active) {
+      const id = App.startWalkthrough(customer, []);
+      active = App._findWalkthrough(id);
+    }
+    const agenda = App.computeWalkthroughAgenda(customer);
     const esc = Dashboard.esc;
     const overlay = document.createElement('div');
     overlay.id = 'walkthroughOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
-    const items = queue.slice(0, 50).map(q => '<li style="padding:6px 0;border-bottom:1px solid var(--border-light)"><strong>' + esc(q.projectName) + '</strong> &middot; ' + esc(q.skillKey.replace(/^size_/, '')) + ' in ' + esc(q.sprintId) + ' &middot; Pending: <strong>' + q.remaining + '</strong> SP <button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="Sprint.openChipProgressEditor && Sprint.openChipProgressEditor(\'' + esc(q.projectId) + '\',\'' + esc(q.skillKey) + '\',\'' + esc(q.sprintId) + '\')">Edit</button></li>').join('');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:flex-start;justify-content:center;background:rgba(15,23,42,0.55);padding:24px 16px;overflow:auto';
+    const sectionHtml = (sec) => {
+      const status = (active.section_status || {})[sec.id] || 'pending';
+      const chip = status === 'covered' ? '<span style="font-size:9px;background:var(--status-green);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Covered</span>' :
+                   status === 'skipped' ? '<span style="font-size:9px;background:var(--text-muted);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Skipped</span>' : '';
+      let signalsHtml = '';
+      if (Array.isArray(sec.signals)) {
+        signalsHtml = sec.signals.length
+          ? '<ul style="margin:0;padding-left:18px;font-size:11px">' + sec.signals.slice(0, 10).map(s => {
+              if (s.projectName) return '<li>' + esc(s.projectName) + (s.description ? ' \u2014 ' + esc(s.description) : '') + (s.score ? ' (score ' + s.score + ')' : '') + (s.dueDate ? ' (due ' + esc(s.dueDate) + ')' : '') + (s.remaining ? ' \u2014 ' + s.remaining + ' SP remaining' : '') + (s.field ? ' \u2014 ' + esc(s.field) : '') + '</li>';
+              if (s.member) return '<li><strong>' + esc(s.member) + '</strong>' + (s.start ? ' off ' + esc(s.start) + ' \u2192 ' + esc(s.end) : '') + (s.endDate ? ' contract ends ' + esc(s.endDate) : '') + '</li>';
+              if (s.field) return '<li>' + esc(s.field) + ': ' + esc(String(s.oldValue||'')) + ' \u2192 ' + esc(String(s.newValue||'')) + '</li>';
+              if (s.forumName) return '<li>' + esc(s.forumName) + ' \u2014 ' + esc(s.description) + ' (' + esc(s.owner || '\u2014') + ', due ' + esc(s.dueDate) + ')</li>';
+              return '<li>' + esc(JSON.stringify(s).slice(0, 120)) + '</li>';
+            }).join('') + '</ul>'
+          : '<p style="margin:0;color:var(--text-muted);font-size:11px">Nothing to surface.</p>';
+      } else if (sec.signals && typeof sec.signals === 'object') {
+        signalsHtml = '<div style="font-size:11px;color:var(--text-dark-secondary)">' +
+          Object.entries(sec.signals).map(([k, v]) => {
+            if (Array.isArray(v)) return v.length ? '<div><strong>' + esc(k) + ':</strong> ' + v.length + '</div>' : '';
+            return '<div><strong>' + esc(k) + ':</strong> ' + esc(String(v)) + '</div>';
+          }).filter(Boolean).join('') +
+          '</div>';
+      }
+      const note = (active.section_notes || {})[sec.id] || '';
+      const decisionForm = sec.id === 'decisions'
+        ? '<div style="margin-top:8px;border-top:1px dashed var(--border-light);padding-top:8px">' +
+            '<div style="font-weight:600;font-size:11px;margin-bottom:4px">Add decision</div>' +
+            '<input type="text" id="wtDecText" placeholder="Decision (e.g. Defer DE Phase to S6)" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
+            '<input type="text" id="wtDecRationale" placeholder="Rationale (audit trail)" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
+            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtAddDecision(\'' + esc(active.id) + '\')">Add decision</button>' +
+            '<div style="font-weight:600;font-size:11px;margin:10px 0 4px">Add action</div>' +
+            '<input type="text" id="wtActDesc" placeholder="Action description" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
+            '<input type="text" id="wtActOwner" placeholder="Owner" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
+            '<input type="date" id="wtActDue" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
+            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtAddAction(\'' + esc(active.id) + '\')">Add action</button>' +
+            '<div id="wtCapturedList" style="margin-top:8px;font-size:11px">' + Sprint._renderCaptured(active) + '</div>' +
+          '</div>'
+        : '';
+      return '<details ' + (status === 'covered' ? '' : 'open') + ' style="border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface)">' +
+        '<summary style="padding:8px 10px;cursor:pointer;font-weight:600;font-size:12px;display:flex;align-items:center;gap:8px">' +
+          '<span>' + esc(sec.title) + chip + '</span>' +
+          '<span style="margin-left:auto;font-size:10px;color:var(--text-muted);font-weight:400">' + esc(sec.summary || '') + '</span>' +
+        '</summary>' +
+        '<div style="padding:6px 12px 10px">' +
+          signalsHtml +
+          '<textarea data-wt-section="' + esc(sec.id) + '" placeholder="Notes for this section\u2026" oninput="Sprint._wtSaveNote(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\',this.value)" style="width:100%;margin-top:6px;padding:5px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-family:inherit;resize:vertical;min-height:36px">' + esc(note) + '</textarea>' +
+          '<div style="margin-top:6px;display:flex;gap:6px">' +
+            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtMarkCovered(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\')">Mark covered</button>' +
+            '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtMarkSkipped(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\')">Skip</button>' +
+          '</div>' +
+          decisionForm +
+        '</div>' +
+      '</details>';
+    };
     overlay.innerHTML =
-      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:720px;width:100%;color:var(--text-dark);max-height:90vh;overflow:auto">' +
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">' +
-          '<h3 style="margin:0;font-size:var(--fs-lg);font-weight:700">Walkthrough — weekly progress review</h3>' +
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:780px;width:100%;color:var(--text-dark);max-height:92vh;overflow:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">' +
+          '<div>' +
+            '<h3 style="margin:0;font-size:15px;font-weight:700">Weekly Walkthrough \u2014 ' + esc(customer) + '</h3>' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' +
+              'Started ' + esc(active.started_at) + ' \u00B7 ' +
+              (agenda.lastWalkthroughAt ? 'last session ' + esc(agenda.lastWalkthroughAt) : 'first session') +
+            '</div>' +
+          '</div>' +
           '<button onclick="document.getElementById(\'walkthroughOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
         '</div>' +
-        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">' + queue.length + ' open chips. Click <strong>Edit</strong> to update completed SP per chip.</div>' +
-        '<ul style="margin:0;padding-left:18px;font-size:12px">' + (items || '<li>No open chips for this customer.</li>') + '</ul>' +
+        '<div style="margin-bottom:10px">' +
+          '<input type="text" id="wtAttendees" placeholder="Attendees (comma-separated)" value="' + esc((active.attendees || []).join(', ')) + '" oninput="Sprint._wtSaveAttendees(\'' + esc(active.id) + '\',this.value)" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
+        '</div>' +
+        agenda.sections.map(sectionHtml).join('') +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--border-light);gap:8px">' +
+          '<div style="font-size:11px;color:var(--text-muted)">Decisions: <strong id="wtDecCount">' + active.decisions.length + '</strong> \u00B7 Actions: <strong id="wtActCount">' + active.actions.length + '</strong></div>' +
+          '<div style="display:flex;gap:6px">' +
+            '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save &amp; Close</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="Report.exportWalkthroughMinutes(\'' + esc(active.id) + '\')">Export minutes</button>' +
+            '<button class="btn btn-primary btn-sm" onclick="Sprint._wtComplete(\'' + esc(active.id) + '\')">Mark Done</button>' +
+          '</div>' +
+        '</div>' +
       '</div>';
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
+  },
+
+  _renderCaptured(wt) {
+    const esc = Dashboard.esc;
+    const decs = (wt.decisions || []).map(d => '<li><strong>Decision:</strong> ' + esc(d.text) + (d.rationale ? ' \u2014 <em>' + esc(d.rationale) + '</em>' : '') + '</li>').join('');
+    const acts = (wt.actions || []).map(a => '<li><strong>Action:</strong> ' + esc(a.description) + ' (' + esc(a.owner || '\u2014') + ', due ' + esc(a.due_date || '\u2014') + ')</li>').join('');
+    return (decs || acts) ? '<ul style="margin:0;padding-left:18px">' + decs + acts + '</ul>' : '<em style="color:var(--text-muted)">Nothing captured yet.</em>';
+  },
+
+  _wtSaveAttendees(id, raw) {
+    const wt = App._findWalkthrough(id);
+    if (!wt) return;
+    wt.attendees = String(raw || '').split(',').map(s => s.trim()).filter(Boolean);
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  _wtSaveNote(id, sectionId, note) {
+    App.setWalkthroughSectionNote(id, sectionId, note);
+  },
+
+  _wtMarkCovered(id, sectionId) {
+    App.setWalkthroughSectionStatus(id, sectionId, 'covered');
+    Sprint.openWalkthrough();
+  },
+
+  _wtMarkSkipped(id, sectionId) {
+    App.setWalkthroughSectionStatus(id, sectionId, 'skipped');
+    Sprint.openWalkthrough();
+  },
+
+  _wtAddDecision(id) {
+    const text = document.getElementById('wtDecText');
+    const rationale = document.getElementById('wtDecRationale');
+    if (!text || !text.value.trim()) { App.toast('Decision text required', 'error'); return; }
+    App.recordWalkthroughDecision(id, { text: text.value, rationale: rationale ? rationale.value : '' });
+    Sprint.openWalkthrough();
+  },
+
+  _wtAddAction(id) {
+    const desc = document.getElementById('wtActDesc');
+    const owner = document.getElementById('wtActOwner');
+    const due = document.getElementById('wtActDue');
+    if (!desc || !desc.value.trim()) { App.toast('Action description required', 'error'); return; }
+    App.recordWalkthroughAction(id, { description: desc.value, owner: owner ? owner.value : '', due_date: due ? due.value : null });
+    Sprint.openWalkthrough();
+  },
+
+  _wtComplete(id) {
+    App.completeWalkthrough(id);
+    App.toast('Walkthrough completed \u2014 minutes generated', 'success');
+    document.getElementById('walkthroughOverlay').remove();
+    Report.exportWalkthroughMinutes(id);
   },
 
   openSchedulingSettings() {
