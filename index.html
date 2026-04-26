@@ -2136,6 +2136,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     <span class="storage-info" id="storageInfo"></span>
     <button class="btn btn-ghost btn-sm" id="btnTheme" aria-pressed="false" onclick="App.toggleTheme()" oncontextmenu="event.preventDefault();App.togglePresentation();" title="Toggle light/dark (right-click: Boardroom mode)" aria-label="Toggle colour theme"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Theme</title><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg></button>
     <button class="btn btn-ghost btn-sm" id="btnPresent" onclick="App.togglePresentation()" title="Boardroom / Presentation mode — larger fonts, bigger numbers" aria-label="Boardroom mode"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Boardroom mode</title><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
+    <button class="btn btn-ghost btn-sm" id="btnWhenBy" onclick="Dashboard.openWhenByModal()" title="When by? — Forecast a candidate ask against current capacity" aria-label="When by? forecast"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>When by?</title><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
     <button class="btn btn-ghost btn-sm" id="btnDataHealth" onclick="App.openIntegrityFromHeader()" title="Data integrity status — click to review" aria-label="Data integrity status" style="display:none"><span id="dataHealthLabel" style="font-size:11px;font-weight:600">Validating&hellip;</span></button>
     <button class="btn btn-ghost btn-sm" onclick="App.openShortcutsOverlay()" title="Press ? for keyboard shortcuts" aria-label="Keyboard shortcuts"><span style="font-family:var(--font-mono,monospace);font-size:12px;font-weight:700">?</span></button>
     <span class="undo-group" style="display:inline-flex">
@@ -8855,6 +8856,85 @@ const Dashboard = {
     if (ss && !se) return ss;
     if (ss === se) return ss;
     return ss + '\u2013' + se;
+  },
+
+  openWhenByModal() {
+    const existing = document.getElementById('whenByOverlay');
+    if (existing) existing.remove();
+    const customers = (App.getCustomers ? App.getCustomers() : ['GCC']);
+    const stages = App.LIFECYCLE_STAGES || ['Implementation'];
+    const overlay = document.createElement('div');
+    overlay.id = 'whenByOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:560px;width:100%;color:var(--text-dark)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">' +
+          '<h3 style="margin:0;font-size:var(--fs-lg);font-weight:700">When by? \u2014 Forecast a candidate ask</h3>' +
+          '<button onclick="Dashboard.closeWhenByModal()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+          '<label style="font-size:11px;font-weight:600">Customer<br><select id="wbCustomer" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+            customers.map(c => '<option value="' + Dashboard.esc(c) + '"' + (c === App.activeCustomer ? ' selected' : '') + '>' + Dashboard.esc(c) + '</option>').join('') +
+          '</select></label>' +
+          '<label style="font-size:11px;font-weight:600">Conviction<br><select id="wbStage" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+            stages.map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === App.LIFECYCLE_STAGE_DEFAULT ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('') +
+          '</select></label>' +
+          '<label style="font-size:11px;font-weight:600">Total size (SP)<br><input type="number" id="wbSize" min="0" step="1" value="20" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+          '<label style="font-size:11px;font-weight:600">Target date (optional)<br><input type="date" id="wbTarget" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+          '<button class="btn btn-primary btn-sm" onclick="Dashboard._runWhenBy()">Forecast</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="Dashboard._copyWhenByAnswer()">Copy answer</button>' +
+        '</div>' +
+        '<div id="whenByOutput" style="font-size:12px;background:var(--surface-2);padding:10px;border-radius:var(--radius-sm);min-height:60px;color:var(--text-dark)"></div>' +
+      '</div>';
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  },
+
+  closeWhenByModal() {
+    const ov = document.getElementById('whenByOverlay');
+    if (ov) ov.remove();
+  },
+
+  _runWhenBy() {
+    const cust = document.getElementById('wbCustomer').value;
+    const stage = document.getElementById('wbStage').value;
+    const size = Number(document.getElementById('wbSize').value) || 0;
+    const target = document.getElementById('wbTarget').value || null;
+    const result = Forecast.forecastForCandidate({
+      customer: cust,
+      sizeBySkill: { size_engineering: size },
+      lifecycle_stage: stage,
+      target_date: target
+    });
+    const out = document.getElementById('whenByOutput');
+    if (!out) return;
+    if (!result.distribution) {
+      out.innerHTML = '<strong>Insufficient history.</strong> ' + Dashboard.esc(result.narrative);
+      this._lastWhenBy = null;
+      return;
+    }
+    const verdictColor = result.verdict === 'likely' ? 'var(--status-green)'
+      : result.verdict === 'stretch' ? 'var(--status-amber)'
+      : result.verdict === 'no' ? 'var(--status-red)' : 'var(--text-muted)';
+    out.innerHTML =
+      '<div style="font-size:14px;font-weight:700;color:' + verdictColor + ';margin-bottom:6px">' + Dashboard.esc(result.verdict.toUpperCase()) + '</div>' +
+      '<div>P50: ' + result.distribution.p50 + ' sprints \u00B7 P80: ' + result.distribution.p80 + ' \u00B7 P95: ' + result.distribution.p95 + '</div>' +
+      '<div style="margin-top:6px">Earliest credible delivery: <strong>' + Dashboard.esc(result.earliestSprintId || '\u2014') + '</strong></div>' +
+      '<div style="margin-top:8px;color:var(--text-dark-secondary)">' + Dashboard.esc(result.narrative) + '</div>';
+    this._lastWhenBy = result;
+  },
+
+  _copyWhenByAnswer() {
+    const r = this._lastWhenBy;
+    if (!r) { App.toast('Run a forecast first', 'error'); return; }
+    const text = 'When-by forecast: ' + r.verdict.toUpperCase() + '. P50 ' + r.distribution.p50 + ' sprints, P80 ' + r.distribution.p80 + ', P95 ' + r.distribution.p95 + '. Earliest credible: ' + (r.earliestSprintId || '\u2014') + '. ' + r.narrative;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => App.toast('When-by answer copied', 'success'));
+    } else {
+      App.toast('Clipboard unavailable', 'error');
+    }
   },
 
   // On-Track Verdict — combines RAG mover count, blocked count, and capacity
