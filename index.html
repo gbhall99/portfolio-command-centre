@@ -2518,6 +2518,10 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <div class="capacity-section-title">Sustainable Pace</div>
           <div id="sustainedPacePanel"></div>
         </div>
+        <div class="capacity-section">
+          <div class="capacity-section-title">Leave Calendar</div>
+          <div id="leaveCalendarPanel"></div>
+        </div>
         <!-- Scrum Master Schedule section removed — per-member delivery timeline now lives
              under Sprint Planning → Team view where capacity-vs-commitment is the context. -->
       </div>
@@ -19558,6 +19562,9 @@ const Capacity = {
     if (document.getElementById('sustainedPacePanel')) {
       this.renderSustainedHighLoad(App.activeCustomer);
     }
+    if (document.getElementById('leaveCalendarPanel')) {
+      this.renderLeaveCalendar(App.activeCustomer);
+    }
     // renderTeamSchedule() removed — Scrum Master timeline was retired from the Capacity page.
     // The helper is kept for back-compat; callers should now use the Team view in Sprint Planning.
     if (typeof this.renderTeamSchedule === 'function' && document.getElementById('teamScheduleGantt')) this.renderTeamSchedule();
@@ -19913,6 +19920,36 @@ const Capacity = {
       }
     });
     return flagged;
+  },
+
+  renderLeaveCalendar(customer) {
+    const host = document.getElementById('leaveCalendarPanel');
+    if (!host) return;
+    const cust = customer || App.activeCustomer;
+    const members = (App.data && App.data.team_members || []).filter(tm => {
+      if (!cust) return true;
+      const c = (tm.customer || '').toLowerCase();
+      return c === cust.toLowerCase() || c === 'both';
+    });
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(start); end.setMonth(end.getMonth() + 3);
+    const totalMs = end - start;
+    const esc = Dashboard.esc;
+    const rows = members.map(tm => {
+      const bars = (tm.holidays || []).map(h => {
+        const s = new Date(h.start), e = new Date(h.end);
+        if (e < start || s > end) return '';
+        const left = Math.max(0, ((Math.max(s, start) - start) / totalMs) * 100);
+        const width = Math.max(0.5, ((Math.min(e, end) - Math.max(s, start)) / totalMs) * 100);
+        return '<div class="leave-bar" title="' + esc(tm.name) + ' off ' + esc(h.start) + ' → ' + esc(h.end) + '" style="position:absolute;left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;height:14px;top:4px;background:var(--accent-amber,#f59e0b);border-radius:3px;opacity:0.85"></div>';
+      }).join('');
+      return '<div class="leave-row" style="display:grid;grid-template-columns:140px 1fr;align-items:center;gap:8px;padding:4px 0">' +
+        '<span style="font-size:12px;font-weight:600">' + esc(tm.name) + '</span>' +
+        '<div style="position:relative;height:22px;background:var(--surface-2);border-radius:3px">' + bars + '</div>' +
+      '</div>';
+    }).join('');
+    host.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:6px">Leave (next 90 days)</div>' + rows;
   },
 
   renderSustainedHighLoad(customer) {
