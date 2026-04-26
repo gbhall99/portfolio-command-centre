@@ -2745,6 +2745,11 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 
 <script>
 const App = {
+  // Project conviction classes — sorts low-conviction work into a separate WSJF band so
+  // an Idea cannot displace an Implementation by virtue of arithmetic alone.
+  LIFECYCLE_STAGES: ['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU'],
+  LIFECYCLE_STAGE_DEFAULT: 'Implementation',
+
   data: null,
   currentView: 'dashboard',
   activeCustomer: null,
@@ -3081,6 +3086,15 @@ const App = {
 
   // --- Schema Migration ---
   migrateSchema(data) {
+    // Always-run: default missing lifecycle_stage to Implementation so legacy projects
+    // are treated as committed deliveries until explicitly reclassified.
+    (data.projects || []).forEach(p => {
+      if (!p) return;
+      if (!p.lifecycle_stage || App.LIFECYCLE_STAGES.indexOf(p.lifecycle_stage) < 0) {
+        p.lifecycle_stage = App.LIFECYCLE_STAGE_DEFAULT;
+      }
+    });
+
     // Always-run: scrub legacy Hypercare fields. Harmless on clean data, cheap, idempotent.
     (data.projects || []).forEach(p => {
       if (!p) return;
@@ -12716,6 +12730,7 @@ const DetailPanel = {
       customer: cust,
       ownership: 'We Own',
       category: 'General',
+      lifecycle_stage: App.LIFECYCLE_STAGE_DEFAULT,
       visibility: 'Internal',
       sponsor: '', manager: '',
       teams_involved: [],
