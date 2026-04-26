@@ -11458,7 +11458,9 @@ const DetailPanel = {
             (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
           const allocated = ph.skillKey && p.skill_splits && p.skill_splits[ph.skillKey] && p.skill_splits[ph.skillKey].length > 0;
           const pointsInput = ph.skillKey ?
-            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' : '';
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' +
+            '<span style="font-size:9px;color:var(--text-muted);margin-left:6px">max</span>' +
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '_max" value="' + (p[ph.skillKey + '_max'] != null ? p[ph.skillKey + '_max'] : (p[ph.skillKey] || 0)) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px;margin-left:2px" title="Worst-case estimate (cone of uncertainty). Clamped &ge; point estimate." onchange="DetailPanel.onFieldChange(this)">' : '';
           // Variance columns (only for phases with points and when baseline exists)
           let varianceHtml = '';
           if (ph.skillKey && p.estimate_baseline) {
@@ -12558,6 +12560,17 @@ const DetailPanel = {
     const field = el.dataset.field;
     let value = el.value;
     if (el.type === 'number') value = parseInt(value) || 0;
+    // Clamp *_max so it never sits below the matching point estimate (the cone
+    // of uncertainty must extend the estimate, never contract it).
+    if (typeof field === 'string' && /^size_.+_max$/.test(field)) {
+      const baseField = field.replace(/_max$/, '');
+      const p = App.data.projects.find(pr => pr.id === this.currentId);
+      const baseVal = p ? Number(p[baseField] || 0) : 0;
+      if (Number(value) < baseVal) {
+        value = baseVal;
+        el.value = String(baseVal);
+      }
+    }
     App.updateProject(this.currentId, field, value);
 
     // Recompute size_total if a sizing field changed
