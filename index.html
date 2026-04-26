@@ -13300,9 +13300,12 @@ const Gantt = {
   _projectBaselineSpan(projectId) {
     const b = this._activeBaseline();
     if (!b || !b.snapshot || !b.snapshot[projectId]) return null;
-    const splits = b.snapshot[projectId];
+    // Snapshot shape is now { skill_splits, start_date, target_date, hard_deadline, size_*, ... }.
+    // Tolerate the pre-D2.4 shape (skill_splits at top level) for any older baselines.
+    const node = b.snapshot[projectId];
+    const splits = (node && node.skill_splits) ? node.skill_splits : node;
     let earliest = null, latest = null;
-    Object.values(splits).forEach(arr => {
+    Object.values(splits || {}).forEach(arr => {
       if (!Array.isArray(arr)) return;
       arr.forEach(sp => {
         if (!earliest || sp.sprint < earliest) earliest = sp.sprint;
@@ -14316,6 +14319,15 @@ const Gantt = {
           if (endSp) bEnd = endSp.end_date;
         }
         // Fallback: legacy project.baseline_start/end (pre-D2.3 data).
+        // Prefer the named baseline's project-level dates (D2.4); legacy fields are a final fallback.
+        if (!bStart || !bEnd) {
+          const ab = this._activeBaseline();
+          const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
+          if (node && node.start_date && node.target_date) {
+            bStart = node.start_date;
+            bEnd = node.target_date;
+          }
+        }
         if (!bStart || !bEnd) { bStart = p.baseline_start; bEnd = p.baseline_end; }
         if (bStart && bEnd) {
           const bx1 = Math.max(0, dateToX(bStart));
