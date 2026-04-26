@@ -20792,6 +20792,58 @@ const Forecast = {
     return 'P50 ' + dist.p50 + ' · P80 ' + dist.p80 + ' · P95 ' + dist.p95;
   },
 
+  // Forecast a hypothetical or unsized project. Returns:
+  //   { distribution: {p50,p80,p95,...}, verdict: 'likely'|'stretch'|'no'|'unknown', earliestSprintId, narrative }
+  // No data is mutated; this is decision-support only.
+  forecastForCandidate(candidate) {
+    candidate = candidate || {};
+    const customer = candidate.customer;
+    const lifecycle_stage = candidate.lifecycle_stage || 'Implementation';
+    const sizeBySkill = candidate.sizeBySkill || {};
+    const target_date = candidate.target_date || null;
+    const total = Object.values(sizeBySkill).reduce((s, v) => s + (v || 0), 0);
+    const history = this.velocityHistory(customer);
+    const stats = this.velocityStats(history);
+    if (stats.count < this.MIN_HISTORY) {
+      return { distribution: null, verdict: 'unknown', earliestSprintId: null, narrative: 'Not enough velocity history to forecast (need ≥ ' + this.MIN_HISTORY + ' completed sprints with commitment).', remaining: total };
+    }
+    const stageWideners = {
+      'Idea': 1.6, 'Discovery': 1.4, 'POC': 1.6, 'Phase-1 Build': 1.25, 'Implementation': 1.0, 'Run/BAU': 1.0
+    };
+    const widener = stageWideners[lifecycle_stage] || 1.0;
+    const widened = stats.values.map(v => v / widener);
+    const distribution = this.simulateSprintsNeeded(total, widened, candidate.runs);
+    const earliestSprintId = this.sprintsFromNow(customer, distribution.p80);
+    let verdict = 'likely';
+    let narrative = '';
+    if (target_date && earliestSprintId) {
+      const targetMs = new Date(target_date).getTime();
+      const sprintObj = (App.data && App.data.sprints || []).find(s => s.sprint_id === earliestSprintId);
+      const sprintEndMs = sprintObj && sprintObj.end_date ? new Date(sprintObj.end_date).getTime() : null;
+      if (sprintEndMs == null) {
+        verdict = 'unknown';
+        narrative = 'Cannot resolve sprint end date for forecast.';
+      } else if (sprintEndMs <= targetMs) {
+        verdict = 'likely';
+        narrative = 'Earliest credible delivery is ' + earliestSprintId + ' at P80 (' + distribution.p80 + ' sprints), which lands before the target date.';
+      } else {
+        const p95SprintId = this.sprintsFromNow(customer, distribution.p95);
+        const p95Sprint = (App.data && App.data.sprints || []).find(s => s.sprint_id === p95SprintId);
+        const p95EndMs = p95Sprint && p95Sprint.end_date ? new Date(p95Sprint.end_date).getTime() : null;
+        if (p95EndMs && p95EndMs <= targetMs) {
+          verdict = 'stretch';
+          narrative = 'P50 lands by ' + earliestSprintId + ' but P80 misses the target. Stretch.';
+        } else {
+          verdict = 'no';
+          narrative = 'Even P95 (' + distribution.p95 + ' sprints) does not meet the target. Earliest credible: ' + earliestSprintId + '.';
+        }
+      }
+    } else {
+      narrative = 'Earliest credible delivery: ' + (earliestSprintId || '—') + ' (P80, ' + distribution.p80 + ' sprints). P50: ' + distribution.p50 + ', P95: ' + distribution.p95 + '.';
+    }
+    return { distribution, verdict, earliestSprintId, narrative, remaining: total, lifecycle_stage };
+  },
+
   // Earned Value metrics for a project. Points are the cost/size unit.
   // PV: planned value at "now" based on baseline schedule (or current schedule if no baseline)
   // EV: earned value = completed points
