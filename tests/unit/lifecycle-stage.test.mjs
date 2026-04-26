@@ -40,3 +40,20 @@ describe('lifecycle_stage — schema and migration', () => {
     app.teardown();
   });
 });
+
+describe('lifecycle_stage — wizard capture', () => {
+  it('reads lifecycle_stage from the wizard select on Create', async () => {
+    const app = await loadApp(makeDataset({}));
+    app.App.activeCustomer = 'GCC';
+    app.DetailPanel._openQuickAddWizard();
+    const sel = app.window.document.getElementById('qaLifecycleStage');
+    expect(sel).not.toBeNull();
+    sel.value = 'POC';
+    app.window.document.getElementById('qaName').value = 'A POC';
+    app.DetailPanel._confirmWizard();
+    const created = app.App.data.projects.find(p => p.name === 'A POC');
+    expect(created).toBeDefined();
+    expect(created.lifecycle_stage).toBe('POC');
+    app.teardown();
+  });
+});
