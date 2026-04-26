@@ -2505,6 +2505,13 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <div class="capacity-section-title">Team Members</div>
           <div class="team-grid" id="teamGrid"></div>
         </div>
+        <div class="capacity-section">
+          <div class="capacity-section-title" style="display:flex;align-items:center;gap:10px">
+            <span>Resourcing Gap</span>
+            <button class="btn btn-outline btn-sm" onclick="Capacity.renderResourcingGap()" title="Refresh demand vs supply per skill per sprint">Refresh</button>
+          </div>
+          <div id="capacityGapPanel"></div>
+        </div>
         <!-- Scrum Master Schedule section removed — per-member delivery timeline now lives
              under Sprint Planning → Team view where capacity-vs-commitment is the context. -->
       </div>
@@ -19151,6 +19158,9 @@ const Capacity = {
     if (!App.data) return;
     this.renderSprintCapacity();
     this.renderTeamGrid();
+    if (document.getElementById('capacityGapPanel')) {
+      this.renderResourcingGap(App.activeCustomer);
+    }
     // renderTeamSchedule() removed — Scrum Master timeline was retired from the Capacity page.
     // The helper is kept for back-compat; callers should now use the Team view in Sprint Planning.
     if (typeof this.renderTeamSchedule === 'function' && document.getElementById('teamScheduleGantt')) this.renderTeamSchedule();
@@ -19452,6 +19462,55 @@ const Capacity = {
     });
 
     return { customer, horizonSprints: horizonSprints.map(s => s.sprint_id), bySkill };
+  },
+
+  renderResourcingGap(customer) {
+    const host = document.getElementById('capacityGapPanel');
+    if (!host) return;
+    const cust = customer || App.activeCustomer;
+    if (!cust) {
+      host.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px">Select a customer to see gap analysis.</div>';
+      return;
+    }
+    const result = this.computeResourcingGap(cust);
+    const sprints = result.horizonSprints;
+    const esc = Dashboard.esc;
+
+    let html = '<div style="padding:6px 0 12px"><div style="font-size:13px;font-weight:700">Resourcing Gap \u2014 ' + esc(cust) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted)">Demand minus supply per skill per sprint. Negative numbers are red and indicate where you need more capacity. <strong>FTE</strong> = average extra full-time engineer needed across the deficit window.</div></div>';
+
+    html += '<div style="overflow-x:auto"><table class="alloc-plan-table" style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<thead><tr style="background:var(--surface-2);border-bottom:1px solid var(--border-light)">' +
+        '<th style="padding:8px 10px;text-align:left;width:18%">Skill</th>';
+    sprints.forEach(sid => {
+      html += '<th style="padding:8px 10px;text-align:center">' + esc(sid.replace(/^CY\d+-/, '')) + '</th>';
+    });
+    html += '<th style="padding:8px 10px;text-align:center">Total gap (SP)</th>' +
+            '<th style="padding:8px 10px;text-align:center">FTE</th>' +
+            '</tr></thead><tbody>';
+
+    result.bySkill.forEach(row => {
+      const color = (Sprint.SKILL_COLORS && Sprint.SKILL_COLORS[row.skillKey]) || '#666';
+      html += '<tr><td style="padding:8px 10px;font-weight:600;color:' + color + '">' + esc(row.skillLabel) + '</td>';
+      row.bySprint.forEach(cell => {
+        let bg, fg;
+        if (cell.demand === 0 && cell.supply === 0) { bg = 'transparent'; fg = 'var(--text-muted)'; }
+        else if (cell.gap < 0) { bg = 'var(--tint-red-weak)'; fg = 'var(--status-red)'; }
+        else if (cell.gap < cell.supply * 0.2) { bg = 'var(--tint-amber-weak)'; fg = 'var(--status-amber)'; }
+        else { bg = 'var(--tint-green-weak)'; fg = 'var(--status-green)'; }
+        const display = (cell.demand === 0 && cell.supply === 0)
+          ? '\u2014'
+          : (cell.gap < 0 ? cell.gap : '+' + cell.gap) + '<div style="font-size:9px;font-weight:400;color:var(--text-muted)">' + cell.demand + '/' + cell.supply + '</div>';
+        html += '<td style="padding:6px 10px;text-align:center;background:' + bg + ';color:' + fg + ';font-weight:700">' + display + '</td>';
+      });
+      const totalCls = row.totalGap < 0 ? 'var(--status-red)' : 'var(--status-green)';
+      html += '<td style="padding:8px 10px;text-align:center;font-weight:700;color:' + totalCls + '">' + (row.totalGap < 0 ? row.totalGap : '+' + row.totalGap) + '</td>';
+      html += '<td style="padding:8px 10px;text-align:center;font-weight:700">' + (row.gapFte > 0 ? '+' + row.gapFte.toFixed(2) : '\u2014') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+
+    host.innerHTML = html;
   },
 
   renderSprintCapacity() {
