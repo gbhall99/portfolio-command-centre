@@ -4305,6 +4305,112 @@ const App = {
     document.body.appendChild(overlay);
   },
 
+  // Weekly walkthrough agenda — pure compute. Returns 9 sections in stable order with
+  // typed signals derived from real data (audit log, risks, status, forums, capacity).
+  computeWalkthroughAgenda(customer) {
+    const projects = (this.data && this.data.projects || []).filter(p => p.customer === customer);
+    const lastWt = ((this.data && this.data.walkthroughs) || []).filter(w => w.customer === customer && w.completed_at).slice(-1)[0];
+    const sinceTs = lastWt ? lastWt.started_at : null;
+    const log = (this.data && this.data.audit_log) || [];
+    const customerIds = new Set(projects.map(p => p.id));
+    const recent = sinceTs ? log.filter(e => e.timestamp > sinceTs && customerIds.has(e.projectId)) : [];
+
+    const fieldCount = {};
+    recent.forEach(e => { fieldCount[e.field] = (fieldCount[e.field] || 0) + 1; });
+    const topFields = Object.entries(fieldCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    const ragFlips = recent.filter(e => /^rag_/.test(e.field));
+
+    const allRisks = [];
+    projects.forEach(p => (p.risks_register || []).forEach(r => {
+      allRisks.push({ projectId: p.id, projectName: p.name, description: r.description, score: (r.impact || 0) * (r.probability || 0), addedAt: r.added_at || null });
+    }));
+    allRisks.sort((a, b) => b.score - a.score);
+    const topRisks = allRisks.slice(0, 5);
+    const newRisks = sinceTs ? allRisks.filter(r => r.addedAt && r.addedAt > sinceTs) : [];
+
+    const blocked = projects.filter(p => p.status === 'Blocked');
+    const openIssues = [];
+    projects.forEach(p => (p.issues_register || []).forEach(i => openIssues.push({ projectId: p.id, projectName: p.name, description: i.description, owner: i.owner })));
+
+    const todayMs = Date.now();
+    const sevenMs = 7 * 86400000;
+    const actionsDue = [];
+    ((this.data && this.data.governance_forums) || []).forEach(f => {
+      (f.actions || []).forEach(a => {
+        if (a.status === 'Done') return;
+        if (!a.due_date) return;
+        const due = new Date(a.due_date).getTime();
+        if (due - todayMs <= sevenMs) {
+          actionsDue.push({ forumId: f.id || f.name, forumName: f.name, description: a.description, owner: a.owner, dueDate: a.due_date });
+        }
+      });
+    });
+
+    const sprints = (this.data && this.data.sprints || []).slice();
+    const now = new Date();
+    const activeSprint = sprints.find(s => !s.end_date || new Date(s.end_date) >= now);
+    const chips = [];
+    if (activeSprint) {
+      projects.forEach(p => {
+        Object.entries(p.skill_splits || {}).forEach(([sk, arr]) => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (sp.sprint !== activeSprint.sprint_id) return;
+            if (sp.status === 'complete') return;
+            const remaining = (sp.points || 0) - (sp.completed || 0);
+            if (remaining <= 0) return;
+            chips.push({ projectId: p.id, projectName: p.name, skill: sk.replace(/^size_/, ''), remaining, sprintId: activeSprint.sprint_id });
+          });
+        });
+      });
+    }
+
+    const buckets = (typeof this.computeBacklogBuckets === 'function') ? this.computeBacklogBuckets(customer) : { unrefined: [], refined: [], parked: [] };
+    const stale = projects.filter(p => {
+      if (p.status === 'Complete' || p.status === 'Closed' || p.status === 'On Hold') return false;
+      const lastTouch = p.last_updated ? new Date(p.last_updated).getTime() : 0;
+      return (todayMs - lastTouch) > 30 * 86400000;
+    });
+
+    const sustained = (typeof Capacity !== 'undefined' && Capacity.computeSustainedHighLoad)
+      ? Capacity.computeSustainedHighLoad(customer) : [];
+    const upcomingPto = [];
+    const contractEnds = [];
+    ((this.data && this.data.team_members) || []).forEach(tm => {
+      const c = (tm.customer || '').toLowerCase();
+      if (c !== customer.toLowerCase() && c !== 'both') return;
+      (tm.holidays || []).forEach(h => {
+        const start = new Date(h.start).getTime();
+        if (start - todayMs > 0 && start - todayMs <= 14 * 86400000) {
+          upcomingPto.push({ member: tm.name, start: h.start, end: h.end });
+        }
+      });
+      if (tm.contract_end_date) {
+        const end = new Date(tm.contract_end_date).getTime();
+        if (end - todayMs > 0 && end - todayMs <= 30 * 86400000) {
+          contractEnds.push({ member: tm.name, endDate: tm.contract_end_date });
+        }
+      }
+    });
+
+    return {
+      customer,
+      lastWalkthroughAt: sinceTs,
+      sections: [
+        { id: 'whats_changed', title: "What's changed", signals: recent.slice(0, 50), summary: topFields.map(([f, n]) => f + ' ×' + n).join(', ') || (sinceTs ? 'No changes since last walkthrough.' : 'First walkthrough — no prior baseline.') },
+        { id: 'rag_movers', title: 'RAG movers', signals: ragFlips, summary: ragFlips.length + ' RAG flip' + (ragFlips.length === 1 ? '' : 's') },
+        { id: 'risks', title: 'Top risks + new', signals: topRisks, summary: topRisks.length + ' top risks' + (newRisks.length ? ', ' + newRisks.length + ' new this week' : '') },
+        { id: 'issues', title: 'Issues & blocked projects', signals: blocked.map(p => ({ projectId: p.id, projectName: p.name, status: p.status })).concat(openIssues), summary: blocked.length + ' blocked, ' + openIssues.length + ' open issues' },
+        { id: 'actions_due', title: 'Governance actions due ≤ 7 days', signals: actionsDue, summary: actionsDue.length + ' due' },
+        { id: 'chip_progress', title: 'Chip progress (active sprint)', signals: chips, summary: (activeSprint ? activeSprint.sprint_id + ' — ' : '') + chips.length + ' open chips' },
+        { id: 'backlog', title: 'Backlog refinement', signals: { unrefined: buckets.unrefined.length, refined: buckets.refined.length, parked: buckets.parked.length, stale: stale.length, staleProjects: stale.slice(0, 10) }, summary: buckets.unrefined.length + ' unrefined, ' + stale.length + ' stale (>30d)' },
+        { id: 'capacity', title: 'Capacity & leave', signals: { sustained, upcomingPto, contractEnds }, summary: sustained.length + ' sustained-load, ' + upcomingPto.length + ' PTO ≤ 14d, ' + contractEnds.length + ' contract ends ≤ 30d' },
+        { id: 'decisions', title: 'Decisions & actions (capture)', signals: [], summary: 'Capture decisions + actions taken in this session.' }
+      ]
+    };
+  },
+
   // Backlog bucketing — groups customer-scoped not-started/on-hold projects into
   // Unrefined (no size or no rank), Refined (sized AND ranked), Parked (Won't or On Hold).
   computeBacklogBuckets(customer) {
