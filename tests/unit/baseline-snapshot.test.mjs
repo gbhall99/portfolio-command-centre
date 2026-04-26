@@ -47,3 +47,38 @@ describe('Named baseline — extended snapshot', () => {
     app.teardown();
   });
 });
+
+describe('Movers legend — reads snapshot.target_date', () => {
+  it('detects projects whose target_date moved since the baseline', async () => {
+    const { app, proj } = await setup();
+    await app.Gantt.openSetBaseline();
+    proj.target_date = '2026-07-28';
+    app.Gantt.renderLegend();
+    const legend = app.window.document.getElementById('ganttLegend');
+    expect(legend).not.toBeNull();
+    expect(legend.innerHTML).toMatch(/Since baseline/);
+    expect(legend.innerHTML).toMatch(/1 moved right/);
+    expect(legend.innerHTML).not.toMatch(/no target dates moved/);
+    app.teardown();
+  });
+
+  it('reports "no target dates moved" only when nothing actually moved', async () => {
+    const { app } = await setup();
+    await app.Gantt.openSetBaseline();
+    app.Gantt.renderLegend();
+    const legend = app.window.document.getElementById('ganttLegend');
+    expect(legend.innerHTML).toMatch(/no target dates moved/);
+    app.teardown();
+  });
+});
+
+describe('Gantt._projectBaselineSpan — tolerates new shape', () => {
+  it('reads sprint span from snapshot.skill_splits (new shape)', async () => {
+    const { app, proj } = await setup();
+    await app.Gantt.openSetBaseline();
+    const span = app.Gantt._projectBaselineSpan(proj.id);
+    expect(span).not.toBeNull();
+    expect(span.startSprint).toBe('CY26-S1');
+    app.teardown();
+  });
+});
