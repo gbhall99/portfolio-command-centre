@@ -61,3 +61,19 @@ describe('Forecast cone widens by lifecycle_stage', () => {
     app.teardown();
   });
 });
+
+describe('Range estimation — detail panel input', () => {
+  it('renders a *_max input next to every sized skill', async () => {
+    resetIdSeq();
+    const proj = makeProject({
+      name: 'Ranged', size_engineering: 10, size_engineering_max: 24
+    });
+    proj.size_total = 10;
+    const app = await loadApp(makeDataset({ projects: [proj] }));
+    app.DetailPanel.open(proj.id);
+    const html = app.window.document.getElementById('detailPanel').innerHTML;
+    expect(html).toMatch(/data-field="size_engineering_max"/);
+    expect(html).toMatch(/value="24"/);
+    app.teardown();
+  });
+});
