@@ -49,3 +49,49 @@ describe('Auto-Allocate Cancel — snapshot/restore helpers', () => {
     app.teardown();
   });
 });
+
+describe('Auto-Allocate Cancel — lifecycle', () => {
+  it('autoAllocate captures a snapshot, closeAllocResults restores it', async () => {
+    const { app, proj } = await setup();
+    const originalLen = proj.skill_splits.size_engineering.length;
+
+    app.Sprint.autoAllocate();
+    expect(app.Sprint._allocPreviewSnapshot).not.toBeNull();
+    expect(app.Sprint._allocPreviewSnapshot[proj.id]).toBeDefined();
+
+    proj.skill_splits = {};
+
+    app.Sprint.closeAllocResults();
+    expect(app.Sprint._allocPreviewSnapshot).toBeNull();
+    expect(proj.skill_splits.size_engineering).toHaveLength(originalLen);
+    app.teardown();
+  });
+
+  it('applyAllocation clears the snapshot (commit semantics, no rollback)', async () => {
+    const { app, proj } = await setup();
+    app.Sprint.autoAllocate();
+    app.Sprint.pendingAllocation = {
+      allocations: { [proj.id]: { size_engineering: [{ sprint: 'CY26-S1', points: 10, status: 'pending', completed: 0, assigned_to: [], reasons: [] }] } },
+      warnings: [],
+      stats: { projectsAllocated: 1, makespan: 1, totalPoints: 10, avgUtilization: 0 }
+    };
+    app.Sprint.applyAllocation();
+    expect(app.Sprint._allocPreviewSnapshot).toBeNull();
+    expect(proj.skill_splits.size_engineering[0].points).toBe(10);
+    app.teardown();
+  });
+
+  it('showAllocResults (back-compat path) also captures a snapshot', async () => {
+    const { app } = await setup();
+    const fakeResult = {
+      allocations: {}, warnings: [],
+      stats: { projectsAllocated: 0, makespan: 0, totalPoints: 0, avgUtilization: 0 },
+      utilizationGrid: {}
+    };
+    app.Sprint.showAllocResults(fakeResult);
+    expect(app.Sprint._allocPreviewSnapshot).not.toBeNull();
+    app.Sprint.closeAllocResults();
+    expect(app.Sprint._allocPreviewSnapshot).toBeNull();
+    app.teardown();
+  });
+});

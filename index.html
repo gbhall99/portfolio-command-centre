@@ -18125,6 +18125,7 @@ const Sprint = {
     const sprints = App.data.sprints || [];
     if (!sprints.length) { App.toast('No sprints defined', 'error'); return; }
     this.pendingAllocation = null;
+    this._allocPreviewSnapshot = this._snapshotSkillSplits();
     this.allocResultsTab = 'options';
     this._openAllocResultsShell();
     this.renderAllocTab(null);
@@ -18212,6 +18213,7 @@ const Sprint = {
       p.last_updated = new Date().toISOString();
     });
     this.pendingAllocation = null;
+    this._allocPreviewSnapshot = null;
     // R1-H1: record the successful solver run so we can flag staleness later.
     if (!App.data.settings) App.data.settings = {};
     if (!App.data.settings.solverRuns) App.data.settings.solverRuns = {};
@@ -18328,6 +18330,9 @@ const Sprint = {
   showAllocResults(result) {
     // Back-compat path for internal callers (e.g. scenario apply) that still call this directly.
     // For user-triggered allocation, autoAllocate() now opens the Options tab first.
+    if (this._allocPreviewSnapshot == null) {
+      this._allocPreviewSnapshot = this._snapshotSkillSplits();
+    }
     this.pendingAllocation = result;
     this.allocResultsTab = 'summary';
     this._openAllocResultsShell();
@@ -18609,8 +18614,14 @@ const Sprint = {
   },
 
   closeAllocResults() {
+    if (this._allocPreviewSnapshot) {
+      this._restoreSkillSplits(this._allocPreviewSnapshot);
+      this._allocPreviewSnapshot = null;
+      if (typeof App !== 'undefined' && App.notifyDataChange) App.notifyDataChange();
+    }
     this.pendingAllocation = null;
-    document.getElementById('allocResultsOverlay').classList.remove('open');
+    const ov = document.getElementById('allocResultsOverlay');
+    if (ov) ov.classList.remove('open');
   },
 
   // Compute diff between current skill_splits and proposed allocations (REQ-SPRINT-01)
