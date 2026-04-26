@@ -18093,6 +18093,28 @@ const Sprint = {
 
   pendingAllocation: null,
 
+  // Defensive snapshot of every project's skill_splits taken when the alloc results
+  // overlay opens. Restored byte-for-byte by closeAllocResults so Cancel is safe
+  // regardless of which preview path mutates live data.
+  _allocPreviewSnapshot: null,
+
+  _snapshotSkillSplits() {
+    const snap = {};
+    (App.data && App.data.projects ? App.data.projects : []).forEach(p => {
+      snap[p.id] = JSON.parse(JSON.stringify(p.skill_splits || {}));
+    });
+    return snap;
+  },
+
+  _restoreSkillSplits(snap) {
+    if (!snap || !App.data || !App.data.projects) return;
+    App.data.projects.forEach(p => {
+      if (Object.prototype.hasOwnProperty.call(snap, p.id)) {
+        p.skill_splits = JSON.parse(JSON.stringify(snap[p.id]));
+      }
+    });
+  },
+
   autoAllocate() {
     // Single entry point: open the modal in "options" mode so the user chooses how the solver
     // runs before seeing results. Previously this ran the solver immediately which made the
