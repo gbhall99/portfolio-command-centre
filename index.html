@@ -24588,6 +24588,51 @@ const Report = {
       : ('<html><body><h1>Business Case — ' + esc(p.name) + '</h1><h2>Cost</h2>' + costHtml + '<h2>Benefit</h2>' + benefitHtml + '<h2>NPV</h2>' + npvHtml + '</body></html>');
   },
 
+  buildWalkthroughMinutesDoc(walkthroughId) {
+    const wt = ((App.data && App.data.walkthroughs) || []).find(w => w.id === walkthroughId);
+    if (!wt) return null;
+    const esc = Dashboard.esc;
+    const attendees = (wt.attendees || []).map(esc).join(', ') || '<em>(none recorded)</em>';
+    const decisionsHtml = wt.decisions.length
+      ? '<table><tr><th>Project</th><th>Decision</th><th>Rationale</th></tr>' +
+        wt.decisions.map(d => '<tr><td>' + esc(d.project_id || '—') + '</td><td>' + esc(d.text) + '</td><td>' + esc(d.rationale) + '</td></tr>').join('') +
+        '</table>'
+      : '<p>No decisions recorded.</p>';
+    const actionsHtml = wt.actions.length
+      ? '<table><tr><th>Action</th><th>Owner</th><th>Due</th></tr>' +
+        wt.actions.map(a => '<tr><td>' + esc(a.description) + '</td><td>' + esc(a.owner) + '</td><td>' + esc(a.due_date || '—') + '</td></tr>').join('') +
+        '</table>'
+      : '<p>No actions recorded.</p>';
+    const sectionNotesHtml = Object.keys(wt.section_notes || {}).length
+      ? '<ul>' + Object.entries(wt.section_notes).filter(([, v]) => v).map(([k, v]) => '<li><strong>' + esc(k) + ':</strong> ' + esc(v) + '</li>').join('') + '</ul>'
+      : '<p>No per-section notes.</p>';
+    const headerHtml = '<p><strong>Customer:</strong> ' + esc(wt.customer) + '</p>' +
+      '<p><strong>Started:</strong> ' + esc(wt.started_at) + (wt.completed_at ? ' &middot; <strong>Completed:</strong> ' + esc(wt.completed_at) : '') + '</p>' +
+      '<p><strong>Attendees:</strong> ' + attendees + '</p>';
+    return (typeof Report !== 'undefined' && Report.buildDoc)
+      ? Report.buildDoc({
+          customer: wt.customer,
+          title: 'Weekly Walkthrough — ' + wt.customer,
+          subtitle: 'Started ' + wt.started_at,
+          reportType: 'Walkthrough',
+          sections: [
+            { id: 'wt-header', title: 'Session', html: headerHtml },
+            { id: 'wt-decisions', title: 'Decisions', html: decisionsHtml },
+            { id: 'wt-actions', title: 'Actions', html: actionsHtml },
+            { id: 'wt-notes', title: 'Section notes', html: sectionNotesHtml }
+          ],
+          includeAppendix: false
+        })
+      : ('<html><body><h1>Walkthrough — ' + esc(wt.customer) + '</h1>' + headerHtml + '<h2>Decisions</h2>' + decisionsHtml + '<h2>Actions</h2>' + actionsHtml + '<h2>Section notes</h2>' + sectionNotesHtml + '</body></html>');
+  },
+
+  exportWalkthroughMinutes(walkthroughId) {
+    const html = this.buildWalkthroughMinutesDoc(walkthroughId);
+    if (!html) { App.toast('Walkthrough not found', 'error'); return; }
+    if (this.open) this.open(html);
+    App.toast('Minutes opened — use Print > Save as PDF', 'success');
+  },
+
   buildSprintBriefDoc(customer, sprintId) {
     const sprint = (App.data && App.data.sprints || []).find(s => s.sprint_id === sprintId);
     if (!sprint) return null;
