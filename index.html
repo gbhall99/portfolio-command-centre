@@ -4405,6 +4405,112 @@ const App = {
     return true;
   },
 
+  _walkthroughLogUpdate(walkthroughId, entry) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return;
+    if (!Array.isArray(wt.data_updates)) wt.data_updates = [];
+    wt.data_updates.push(Object.assign({ recorded_at: new Date().toISOString() }, entry));
+  },
+
+  updateProjectRag(projectId, dimension, value, walkthroughId, rationale) {
+    if (['schedule', 'resourcing', 'scope'].indexOf(dimension) < 0) return false;
+    if (['Red', 'Amber', 'Green'].indexOf(value) < 0) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const field = 'rag_' + dimension;
+    const before = p[field] || null;
+    if (before === value) return true;
+    p[field] = value;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, field, before || '', value, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'rag', project_id: projectId, dimension, from: before, to: value, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateProjectStatus(projectId, newStatus, walkthroughId, rationale) {
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const before = p.status || '';
+    if (before === newStatus) return true;
+    p.status = newStatus;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'status', before, newStatus, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'status', project_id: projectId, from: before, to: newStatus, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateRiskStatus(projectId, riskIndex, newStatus, walkthroughId, rationale) {
+    if (['open', 'closed', 'accepted'].indexOf(newStatus) < 0) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p || !Array.isArray(p.risks_register)) return false;
+    const r = p.risks_register[riskIndex];
+    if (!r) return false;
+    const before = r.status || 'open';
+    if (before === newStatus) return true;
+    r.status = newStatus;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'risk_status:' + riskIndex, before, newStatus, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'risk_status', project_id: projectId, risk_index: riskIndex, description: r.description || '', from: before, to: newStatus, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateRiskScore(projectId, riskIndex, impact, probability, walkthroughId) {
+    const i = parseInt(impact, 10), pr = parseInt(probability, 10);
+    if (!(i >= 1 && i <= 5) || !(pr >= 1 && pr <= 5)) return false;
+    const proj = (this.data && this.data.projects || []).find(p => p.id === projectId);
+    if (!proj || !Array.isArray(proj.risks_register)) return false;
+    const r = proj.risks_register[riskIndex];
+    if (!r) return false;
+    const beforeI = r.impact, beforeP = r.probability;
+    r.impact = i;
+    r.probability = pr;
+    proj.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'risk_score:' + riskIndex, beforeI + 'x' + beforeP, i + 'x' + pr, 'walkthrough');
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'risk_score', project_id: projectId, risk_index: riskIndex, description: r.description || '', from: { impact: beforeI, probability: beforeP }, to: { impact: i, probability: pr } });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateChipProgress(projectId, skillKey, sprintId, completedSp, walkthroughId) {
+    const c = parseInt(completedSp, 10);
+    if (!(c >= 0)) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const splits = (p.skill_splits || {})[skillKey];
+    if (!Array.isArray(splits)) return false;
+    const sp = splits.find(s => s.sprint === sprintId);
+    if (!sp) return false;
+    const before = sp.completed || 0;
+    const clamped = Math.min(c, sp.points || 0);
+    if (before === clamped) return true;
+    sp.completed = clamped;
+    if (clamped >= (sp.points || 0)) sp.status = 'complete';
+    else if (clamped > 0) sp.status = 'in_progress';
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'progress:' + skillKey + ':' + sprintId, String(before), String(clamped), 'walkthrough');
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'progress', project_id: projectId, skill: skillKey, sprint: sprintId, from: before, to: clamped });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
   // Weekly walkthrough agenda — pure compute. Returns 9 sections in stable order with
   // typed signals derived from real data (audit log, risks, status, forums, capacity).
   computeWalkthroughAgenda(customer) {
