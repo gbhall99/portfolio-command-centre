@@ -17817,38 +17817,10 @@ const Sprint = {
       tbody += '</tr>';
     });
 
-    // Per-person capacity summary — read-only strip above the swimlane, so the PM sees
-    // "is anyone over / under?" before scanning the cells. The full editor (holidays,
-    // sprint overrides, customer splits) is one click away via "Edit capacity".
-    let capStripHtml = '';
-    try {
-      const headerCells = sprints.map(s => '<div class="tv-cap-cell" style="font-weight:700;color:var(--text-muted)">' + s.sprint_id.replace(/^CY\d+-/, '') + '</div>').join('');
-      const rowsHtml = members.map(tm => {
-        const cells = sprints.map(s => {
-          const mc = this.calcMemberCapacityForSprint(tm, s.sprint_id, customer);
-          const cap = mc ? Math.round(mc.points || 0) : 0;
-          const entries = (byPerson[tm.name] && byPerson[tm.name][s.sprint_id]) || [];
-          const used = Math.round(entries.reduce((sum, it) => sum + (it.points || 0), 0));
-          const pct = cap > 0 ? Math.round((used / cap) * 100) : 0;
-          const tone = pct > 100 ? 'var(--status-red)' : pct > 85 ? 'var(--status-amber)' : used > 0 ? 'var(--status-green)' : 'var(--text-muted)';
-          const primary = cap > 0 ? (used + '/' + cap) : (used > 0 ? used + ' pts' : '—');
-          const secondary = cap > 0 ? (pct + '%') : 'no cap';
-          return '<div class="tv-cap-cell" style="color:' + tone + ';font-weight:700">' + primary + '<div style="font-size:9px;font-weight:500;opacity:0.75">' + secondary + '</div></div>';
-        }).join('');
-        return '<div class="tv-cap-row"><div class="tv-cap-name">' + Dashboard.esc(tm.name) + '</div>' + cells + '</div>';
-      }).join('');
-      capStripHtml =
-        '<div class="tv-cap-strip">' +
-          '<div class="tv-cap-header">' +
-            '<div class="tv-cap-title">Team capacity \u00b7 used / total (% used)</div>' +
-            '<button class="btn btn-ghost btn-sm" onclick="App.navigate(\'capacity\')" title="Open the full Capacity editor (holidays, sprint overrides, per-customer splits)">Edit capacity</button>' +
-          '</div>' +
-          '<div class="tv-cap-row tv-cap-row-head"><div class="tv-cap-name">Member</div>' + headerCells + '</div>' +
-          rowsHtml +
-        '</div>';
-    } catch (_e) { capStripHtml = ''; }
-
-    board.innerHTML = capStripHtml +
+    // Issue 8: the redundant team-capacity strip used to live above the swimlane. The same
+    // over/under signal is expressed directly in each row's cells, and the full Capacity editor
+    // is one click away via the navbar.
+    board.innerHTML =
       '<div class="sprint-swimlane-wrap"><table class="sprint-swimlane">' +
       '<thead>' + thead + '</thead>' +
       '<tbody>' + tbody + '</tbody>' +
