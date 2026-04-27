@@ -4405,6 +4405,112 @@ const App = {
     return true;
   },
 
+  _walkthroughLogUpdate(walkthroughId, entry) {
+    const wt = this._findWalkthrough(walkthroughId);
+    if (!wt) return;
+    if (!Array.isArray(wt.data_updates)) wt.data_updates = [];
+    wt.data_updates.push(Object.assign({ recorded_at: new Date().toISOString() }, entry));
+  },
+
+  updateProjectRag(projectId, dimension, value, walkthroughId, rationale) {
+    if (['schedule', 'resourcing', 'scope'].indexOf(dimension) < 0) return false;
+    if (['Red', 'Amber', 'Green'].indexOf(value) < 0) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const field = 'rag_' + dimension;
+    const before = p[field] || null;
+    if (before === value) return true;
+    p[field] = value;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, field, before || '', value, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'rag', project_id: projectId, dimension, from: before, to: value, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateProjectStatus(projectId, newStatus, walkthroughId, rationale) {
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const before = p.status || '';
+    if (before === newStatus) return true;
+    p.status = newStatus;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'status', before, newStatus, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'status', project_id: projectId, from: before, to: newStatus, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateRiskStatus(projectId, riskIndex, newStatus, walkthroughId, rationale) {
+    if (['open', 'closed', 'accepted'].indexOf(newStatus) < 0) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p || !Array.isArray(p.risks_register)) return false;
+    const r = p.risks_register[riskIndex];
+    if (!r) return false;
+    const before = r.status || 'open';
+    if (before === newStatus) return true;
+    r.status = newStatus;
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'risk_status:' + riskIndex, before, newStatus, 'walkthrough', { rationale: rationale || '' });
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'risk_status', project_id: projectId, risk_index: riskIndex, description: r.description || '', from: before, to: newStatus, rationale: rationale || '' });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateRiskScore(projectId, riskIndex, impact, probability, walkthroughId) {
+    const i = parseInt(impact, 10), pr = parseInt(probability, 10);
+    if (!(i >= 1 && i <= 5) || !(pr >= 1 && pr <= 5)) return false;
+    const proj = (this.data && this.data.projects || []).find(p => p.id === projectId);
+    if (!proj || !Array.isArray(proj.risks_register)) return false;
+    const r = proj.risks_register[riskIndex];
+    if (!r) return false;
+    const beforeI = r.impact, beforeP = r.probability;
+    r.impact = i;
+    r.probability = pr;
+    proj.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'risk_score:' + riskIndex, beforeI + 'x' + beforeP, i + 'x' + pr, 'walkthrough');
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'risk_score', project_id: projectId, risk_index: riskIndex, description: r.description || '', from: { impact: beforeI, probability: beforeP }, to: { impact: i, probability: pr } });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
+  updateChipProgress(projectId, skillKey, sprintId, completedSp, walkthroughId) {
+    const c = parseInt(completedSp, 10);
+    if (!(c >= 0)) return false;
+    const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
+    if (!p) return false;
+    const splits = (p.skill_splits || {})[skillKey];
+    if (!Array.isArray(splits)) return false;
+    const sp = splits.find(s => s.sprint === sprintId);
+    if (!sp) return false;
+    const before = sp.completed || 0;
+    const clamped = Math.min(c, sp.points || 0);
+    if (before === clamped) return true;
+    sp.completed = clamped;
+    if (clamped >= (sp.points || 0)) sp.status = 'complete';
+    else if (clamped > 0) sp.status = 'in_progress';
+    p.last_updated = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'progress:' + skillKey + ':' + sprintId, String(before), String(clamped), 'walkthrough');
+    }
+    if (walkthroughId) this._walkthroughLogUpdate(walkthroughId, { kind: 'progress', project_id: projectId, skill: skillKey, sprint: sprintId, from: before, to: clamped });
+    this.markDirty();
+    this.saveToLocalStorage();
+    return true;
+  },
+
   // Weekly walkthrough agenda — pure compute. Returns 9 sections in stable order with
   // typed signals derived from real data (audit log, risks, status, forums, capacity).
   computeWalkthroughAgenda(customer) {
@@ -18652,25 +18758,7 @@ const Sprint = {
       const status = (active.section_status || {})[sec.id] || 'pending';
       const chip = status === 'covered' ? '<span style="font-size:9px;background:var(--status-green);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Covered</span>' :
                    status === 'skipped' ? '<span style="font-size:9px;background:var(--text-muted);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Skipped</span>' : '';
-      let signalsHtml = '';
-      if (Array.isArray(sec.signals)) {
-        signalsHtml = sec.signals.length
-          ? '<ul style="margin:0;padding-left:18px;font-size:11px">' + sec.signals.slice(0, 10).map(s => {
-              if (s.projectName) return '<li>' + esc(s.projectName) + (s.description ? ' \u2014 ' + esc(s.description) : '') + (s.score ? ' (score ' + s.score + ')' : '') + (s.dueDate ? ' (due ' + esc(s.dueDate) + ')' : '') + (s.remaining ? ' \u2014 ' + s.remaining + ' SP remaining' : '') + (s.field ? ' \u2014 ' + esc(s.field) : '') + '</li>';
-              if (s.member) return '<li><strong>' + esc(s.member) + '</strong>' + (s.start ? ' off ' + esc(s.start) + ' \u2192 ' + esc(s.end) : '') + (s.endDate ? ' contract ends ' + esc(s.endDate) : '') + '</li>';
-              if (s.field) return '<li>' + esc(s.field) + ': ' + esc(String(s.oldValue||'')) + ' \u2192 ' + esc(String(s.newValue||'')) + '</li>';
-              if (s.forumName) return '<li>' + esc(s.forumName) + ' \u2014 ' + esc(s.description) + ' (' + esc(s.owner || '\u2014') + ', due ' + esc(s.dueDate) + ')</li>';
-              return '<li>' + esc(JSON.stringify(s).slice(0, 120)) + '</li>';
-            }).join('') + '</ul>'
-          : '<p style="margin:0;color:var(--text-muted);font-size:11px">Nothing to surface.</p>';
-      } else if (sec.signals && typeof sec.signals === 'object') {
-        signalsHtml = '<div style="font-size:11px;color:var(--text-dark-secondary)">' +
-          Object.entries(sec.signals).map(([k, v]) => {
-            if (Array.isArray(v)) return v.length ? '<div><strong>' + esc(k) + ':</strong> ' + v.length + '</div>' : '';
-            return '<div><strong>' + esc(k) + ':</strong> ' + esc(String(v)) + '</div>';
-          }).filter(Boolean).join('') +
-          '</div>';
-      }
+      let signalsHtml = Sprint._wtRenderSignals(sec, active);
       const note = (active.section_notes || {})[sec.id] || '';
       const decisionForm = sec.id === 'decisions'
         ? '<div style="margin-top:8px;border-top:1px dashed var(--border-light);padding-top:8px">' +
@@ -18729,6 +18817,100 @@ const Sprint = {
       '</div>';
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
+  },
+
+  _wtRenderSignals(sec, active) {
+    const esc = Dashboard.esc;
+    const wid = active.id;
+    const customer = App.activeCustomer;
+    if (sec.id === 'rag_movers') {
+      const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+      if (!projects.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No active projects.</p>';
+      const sel = (pid, dim, val) => '<select data-wt-rag="' + esc(pid) + ':' + dim + '" onchange="Sprint._wtRagChange(\'' + esc(wid) + '\',\'' + esc(pid) + '\',\'' + dim + '\',this.value)" style="font-size:10px;padding:1px 3px">' +
+        ['Green', 'Amber', 'Red'].map(v => '<option value="' + v + '"' + (val === v ? ' selected' : '') + '>' + v.charAt(0) + '</option>').join('') +
+      '</select>';
+      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">S</th><th style="padding:2px 4px">R</th><th style="padding:2px 4px">Sc</th></tr>' +
+        projects.slice(0, 30).map(p => '<tr><td style="padding:2px 4px">' + esc(p.name) + '</td><td style="padding:2px 4px">' + sel(p.id, 'schedule', p.rag_schedule || 'Green') + '</td><td style="padding:2px 4px">' + sel(p.id, 'resourcing', p.rag_resourcing || 'Green') + '</td><td style="padding:2px 4px">' + sel(p.id, 'scope', p.rag_scope || 'Green') + '</td></tr>').join('') +
+      '</table>';
+    }
+    if (sec.id === 'issues') {
+      const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+      if (!projects.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No active projects.</p>';
+      const statuses = ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete'];
+      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Status</th></tr>' +
+        projects.slice(0, 30).map(p => '<tr><td style="padding:2px 4px">' + esc(p.name) + '</td><td style="padding:2px 4px"><select data-wt-status="' + esc(p.id) + '" onchange="Sprint._wtStatusChange(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',this.value)" style="font-size:10px;padding:1px 3px">' + statuses.map(s => '<option value="' + s + '"' + (p.status === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td></tr>').join('') +
+      '</table>';
+    }
+    if (sec.id === 'chip_progress') {
+      if (!Array.isArray(sec.signals) || !sec.signals.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No open chips this sprint.</p>';
+      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Skill</th><th style="padding:2px 4px">Done / Total</th></tr>' +
+        sec.signals.slice(0, 30).map(c => {
+          const p = (App.data.projects || []).find(pr => pr.id === c.projectId);
+          const splitArr = p && (p.skill_splits || {})[('size_' + c.skill)];
+          const split = Array.isArray(splitArr) ? splitArr.find(sp => sp.sprint === c.sprintId) : null;
+          const done = split ? (split.completed || 0) : 0;
+          const total = split ? (split.points || 0) : 0;
+          return '<tr><td style="padding:2px 4px">' + esc(c.projectName) + '</td><td style="padding:2px 4px">' + esc(c.skill) + '</td><td style="padding:2px 4px"><input type="number" min="0" max="' + total + '" value="' + done + '" data-wt-chip-completed="' + esc(c.projectId) + ':size_' + esc(c.skill) + ':' + esc(c.sprintId) + '" onchange="Sprint._wtChipChange(\'' + esc(wid) + '\',\'' + esc(c.projectId) + '\',\'size_' + esc(c.skill) + '\',\'' + esc(c.sprintId) + '\',this.value)" style="width:50px;font-size:10px;padding:1px 3px"> / ' + total + '</td></tr>';
+        }).join('') +
+      '</table>';
+    }
+    if (sec.id === 'risks') {
+      if (!Array.isArray(sec.signals) || !sec.signals.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No risks.</p>';
+      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
+        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Risk</th><th style="padding:2px 4px">Score</th><th style="padding:2px 4px">Action</th></tr>' +
+        sec.signals.slice(0, 10).map(r => {
+          const p = (App.data.projects || []).find(pr => pr.id === r.projectId);
+          if (!p) return '';
+          const ri = (p.risks_register || []).findIndex(x => x.description === r.description);
+          if (ri < 0) return '';
+          return '<tr><td style="padding:2px 4px">' + esc(r.projectName) + '</td><td style="padding:2px 4px">' + esc(r.description) + '</td><td style="padding:2px 4px">' + r.score + '</td><td style="padding:2px 4px"><button data-wt-risk-action="close" class="btn btn-outline btn-sm" style="font-size:9px;padding:1px 6px;margin-right:2px" onclick="Sprint._wtRiskAction(\'' + esc(wid) + '\',\'' + esc(r.projectId) + '\',' + ri + ',\'closed\')">Close</button><button data-wt-risk-action="accept" class="btn btn-outline btn-sm" style="font-size:9px;padding:1px 6px" onclick="Sprint._wtRiskAction(\'' + esc(wid) + '\',\'' + esc(r.projectId) + '\',' + ri + ',\'accepted\')">Accept</button></td></tr>';
+        }).join('') +
+      '</table>';
+    }
+    if (Array.isArray(sec.signals)) {
+      return sec.signals.length
+        ? '<ul style="margin:0;padding-left:18px;font-size:11px">' + sec.signals.slice(0, 10).map(s => {
+            if (s.projectName) return '<li>' + esc(s.projectName) + (s.description ? ' — ' + esc(s.description) : '') + (s.score ? ' (score ' + s.score + ')' : '') + (s.dueDate ? ' (due ' + esc(s.dueDate) + ')' : '') + (s.remaining ? ' — ' + s.remaining + ' SP remaining' : '') + (s.field ? ' — ' + esc(s.field) : '') + '</li>';
+            if (s.member) return '<li><strong>' + esc(s.member) + '</strong>' + (s.start ? ' off ' + esc(s.start) + ' → ' + esc(s.end) : '') + (s.endDate ? ' contract ends ' + esc(s.endDate) : '') + '</li>';
+            if (s.field) return '<li>' + esc(s.field) + ': ' + esc(String(s.oldValue||'')) + ' → ' + esc(String(s.newValue||'')) + '</li>';
+            if (s.forumName) return '<li>' + esc(s.forumName) + ' — ' + esc(s.description) + ' (' + esc(s.owner || '—') + ', due ' + esc(s.dueDate) + ')</li>';
+            return '<li>' + esc(JSON.stringify(s).slice(0, 120)) + '</li>';
+          }).join('') + '</ul>'
+        : '<p style="margin:0;color:var(--text-muted);font-size:11px">Nothing to surface.</p>';
+    }
+    if (sec.signals && typeof sec.signals === 'object') {
+      return '<div style="font-size:11px;color:var(--text-dark-secondary)">' +
+        Object.entries(sec.signals).map(([k, v]) => {
+          if (Array.isArray(v)) return v.length ? '<div><strong>' + esc(k) + ':</strong> ' + v.length + '</div>' : '';
+          return '<div><strong>' + esc(k) + ':</strong> ' + esc(String(v)) + '</div>';
+        }).filter(Boolean).join('') +
+      '</div>';
+    }
+    return '';
+  },
+
+  _wtRagChange(wid, pid, dim, val) {
+    App.updateProjectRag(pid, dim, val, wid, '');
+    if (App.toast) App.toast('RAG updated', 'success');
+  },
+
+  _wtStatusChange(wid, pid, val) {
+    App.updateProjectStatus(pid, val, wid, '');
+    if (App.toast) App.toast('Status updated', 'success');
+  },
+
+  _wtChipChange(wid, pid, skillKey, sprintId, val) {
+    App.updateChipProgress(pid, skillKey, sprintId, val, wid);
+    if (App.toast) App.toast('Progress updated', 'success');
+  },
+
+  _wtRiskAction(wid, pid, ri, status) {
+    App.updateRiskStatus(pid, ri, status, wid, '');
+    if (App.toast) App.toast('Risk ' + status, 'success');
+    Sprint.openWalkthrough();
   },
 
   _renderCaptured(wt) {
@@ -24724,6 +24906,21 @@ const Report = {
     const headerHtml = '<p><strong>Customer:</strong> ' + esc(wt.customer) + '</p>' +
       '<p><strong>Started:</strong> ' + esc(wt.started_at) + (wt.completed_at ? ' &middot; <strong>Completed:</strong> ' + esc(wt.completed_at) : '') + '</p>' +
       '<p><strong>Attendees:</strong> ' + attendees + '</p>';
+    const updates = wt.data_updates || [];
+    const updatesHtml = updates.length
+      ? '<table><tr><th>Type</th><th>Project</th><th>Detail</th></tr>' +
+        updates.map(u => {
+          let detail = '';
+          if (u.kind === 'rag') detail = esc(u.dimension || '') + ': ' + esc(String(u.from || '')) + ' → ' + esc(String(u.to || '')) + (u.rationale ? ' (' + esc(u.rationale) + ')' : '');
+          else if (u.kind === 'status') detail = esc(String(u.from || '')) + ' → ' + esc(String(u.to || '')) + (u.rationale ? ' (' + esc(u.rationale) + ')' : '');
+          else if (u.kind === 'risk_status') detail = 'Risk "' + esc(u.description || '') + '": ' + esc(String(u.from || '')) + ' → ' + esc(String(u.to || ''));
+          else if (u.kind === 'risk_score') detail = 'Risk "' + esc(u.description || '') + '": ' + ((u.from && u.from.impact) || '') + 'x' + ((u.from && u.from.probability) || '') + ' → ' + ((u.to && u.to.impact) || '') + 'x' + ((u.to && u.to.probability) || '');
+          else if (u.kind === 'progress') detail = esc(u.skill || '') + ' / ' + esc(u.sprint || '') + ': ' + (u.from || 0) + ' → ' + (u.to || 0) + ' SP';
+          else detail = esc(JSON.stringify(u));
+          return '<tr><td>' + esc(u.kind) + '</td><td>' + esc(u.project_id || '') + '</td><td>' + detail + '</td></tr>';
+        }).join('') +
+        '</table>'
+      : '<p>No data updates this session.</p>';
     return (typeof Report !== 'undefined' && Report.buildDoc)
       ? Report.buildDoc({
           customer: wt.customer,
@@ -24732,13 +24929,14 @@ const Report = {
           reportType: 'Walkthrough',
           sections: [
             { id: 'wt-header', title: 'Session', html: headerHtml },
+            { id: 'wt-data-updates', title: 'Data updates', html: updatesHtml },
             { id: 'wt-decisions', title: 'Decisions', html: decisionsHtml },
             { id: 'wt-actions', title: 'Actions', html: actionsHtml },
             { id: 'wt-notes', title: 'Section notes', html: sectionNotesHtml }
           ],
           includeAppendix: false
         })
-      : ('<html><body><h1>Walkthrough — ' + esc(wt.customer) + '</h1>' + headerHtml + '<h2>Decisions</h2>' + decisionsHtml + '<h2>Actions</h2>' + actionsHtml + '<h2>Section notes</h2>' + sectionNotesHtml + '</body></html>');
+      : ('<html><body><h1>Walkthrough — ' + esc(wt.customer) + '</h1>' + headerHtml + '<h2>Data updates</h2>' + updatesHtml + '<h2>Decisions</h2>' + decisionsHtml + '<h2>Actions</h2>' + actionsHtml + '<h2>Section notes</h2>' + sectionNotesHtml + '</body></html>');
   },
 
   exportWalkthroughMinutes(walkthroughId) {

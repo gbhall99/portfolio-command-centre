@@ -23,3 +23,32 @@ test.describe('Walkthrough — full ritual', () => {
     await expect(page.locator('#walkthroughOverlay')).toContainText(/Decisions/);
   });
 });
+
+test.describe('Walkthrough — data updates roundtrip', () => {
+  test('flip a RAG, close a risk, update a chip — all persist + minutes show them', async ({ page }) => {
+    await openAppWithData(page);
+    const ok = await page.evaluate(() => {
+      const A: any = (window as any).App;
+      const p = A.data.projects[0];
+      const wid = A.startWalkthrough(p.customer, ['SM']);
+      const ragOk = A.updateProjectRag(p.id, 'schedule', 'Red', wid, 'E2E flip');
+      const newStatus = p.status === 'Blocked' ? 'In Progress' : 'Blocked';
+      const statusOk = A.updateProjectStatus(p.id, newStatus, wid, 'E2E status');
+      let riskOk = true;
+      if ((p.risks_register || []).length) {
+        riskOk = A.updateRiskStatus(p.id, 0, 'closed', wid, 'E2E close');
+      }
+      let progOk = true;
+      const splitsObj = p.skill_splits || {};
+      const firstKey = Object.keys(splitsObj).find(k => Array.isArray(splitsObj[k]) && splitsObj[k].length);
+      if (firstKey) {
+        const arr = splitsObj[firstKey];
+        progOk = A.updateChipProgress(p.id, firstKey, arr[0].sprint, (arr[0].completed || 0) + 1, wid);
+      }
+      A.completeWalkthrough(wid);
+      const wt = A.data.walkthroughs.find((w: any) => w.id === wid);
+      return ragOk && statusOk && riskOk && progOk && Array.isArray(wt.data_updates) && wt.data_updates.length >= 1 && (wt.minutes_html || '').indexOf('Data updates') >= 0;
+    });
+    expect(ok).toBe(true);
+  });
+});
