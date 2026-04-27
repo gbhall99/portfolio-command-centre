@@ -21,3 +21,21 @@ describe('Walkthrough minutes', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough minutes — data updates', () => {
+  it('lists data_updates with their type, project, before/after', async () => {
+    resetIdSeq();
+    const proj = makeProject({ name: 'P', rag_schedule: 'Green' });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({ projects: [proj] }));
+    const wid = app.App.startWalkthrough('Acme Industries', []);
+    app.App.updateProjectRag(proj.id, 'schedule', 'Red', wid, 'urgent');
+    const Report = app.window.__pcc__.Report;
+    const html = Report.buildWalkthroughMinutesDoc(wid);
+    expect(html).toMatch(/Data updates/);
+    expect(html).toMatch(/rag/);
+    expect(html).toMatch(/Green/);
+    expect(html).toMatch(/Red/);
+    app.teardown();
+  });
+});
