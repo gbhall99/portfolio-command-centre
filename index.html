@@ -4511,6 +4511,68 @@ const App = {
     return true;
   },
 
+  // Walkthrough attention score — drives card ordering. Higher = more attention needed.
+  computeProjectAttentionScore(project) {
+    if (!project) return 0;
+    let score = 0;
+    const reds = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => project[f] === 'Red').length;
+    const ambers = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => project[f] === 'Amber').length;
+    score += 1000 * reds;
+    if (project.status === 'Blocked') score += 500;
+    if (project.status === 'At Risk') score += 200;
+    score += 100 * ambers;
+    const openRisks = (project.risks_register || []).filter(r => (r.status || 'open') === 'open').length;
+    score += 50 * Math.min(openRisks, 5);
+    const lastTouchMs = project.last_updated ? new Date(project.last_updated).getTime() : 0;
+    const daysSince = lastTouchMs ? Math.min(30, Math.round((Date.now() - lastTouchMs) / 86400000)) : 30;
+    score += 10 * daysSince;
+    score += (project.size_total || 0) * 0.5;
+    if (project.lifecycle_stage === 'Run/BAU') score -= 1000;
+    return Math.round(score);
+  },
+
+  computeWalkthroughCards(customer) {
+    const projects = (this.data && this.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+    const sprints = (this.data && this.data.sprints || []).slice();
+    const now = new Date();
+    const activeSprint = sprints.find(s => !s.end_date || new Date(s.end_date) >= now);
+    const cards = projects.map(p => {
+      const reds = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => p[f] === 'Red').length;
+      const ambers = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => p[f] === 'Amber').length;
+      let state;
+      if (reds > 0 || p.status === 'Blocked') state = 'critical';
+      else if (ambers > 0 || p.status === 'At Risk') state = 'watch';
+      else state = 'steady';
+      const openRisks = (p.risks_register || []).filter(r => (r.status || 'open') === 'open').slice(0, 5);
+      const chips = [];
+      if (activeSprint) {
+        Object.entries(p.skill_splits || {}).forEach(([sk, arr]) => {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(sp => {
+            if (sp.sprint !== activeSprint.sprint_id) return;
+            if (sp.status === 'complete') return;
+            chips.push({ skillKey: sk, skill: sk.replace(/^size_/, ''), points: sp.points || 0, completed: sp.completed || 0, sprintId: sp.sprint });
+          });
+        });
+      }
+      const lastTouchMs = p.last_updated ? new Date(p.last_updated).getTime() : 0;
+      const lastUpdatedDays = lastTouchMs ? Math.round((Date.now() - lastTouchMs) / 86400000) : null;
+      return {
+        project: p,
+        attentionScore: this.computeProjectAttentionScore(p),
+        state,
+        ragSummary: { schedule: p.rag_schedule || 'Green', resourcing: p.rag_resourcing || 'Green', scope: p.rag_scope || 'Green' },
+        status: p.status,
+        openRisks,
+        chips,
+        lastUpdatedDays,
+        activeSprintId: activeSprint ? activeSprint.sprint_id : null
+      };
+    });
+    cards.sort((a, b) => b.attentionScore - a.attentionScore);
+    return cards;
+  },
+
   // Weekly walkthrough agenda — pure compute. Returns 9 sections in stable order with
   // typed signals derived from real data (audit log, risks, status, forums, capacity).
   computeWalkthroughAgenda(customer) {
