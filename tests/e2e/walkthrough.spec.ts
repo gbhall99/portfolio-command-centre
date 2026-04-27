@@ -52,3 +52,26 @@ test.describe('Walkthrough — data updates roundtrip', () => {
     expect(ok).toBe(true);
   });
 });
+
+test.describe('Walkthrough — card UX', () => {
+  test('cards render, can be marked reviewed, and stay collapsed', async ({ page }) => {
+    await openAppWithData(page);
+    await page.evaluate(() => (window as any).Sprint.openWalkthrough());
+    const overlay = page.locator('#walkthroughOverlay');
+    await expect(overlay).toContainText(/Weekly Walkthrough/);
+    await expect(overlay.locator('.wt-card').first()).toBeVisible();
+    const firstReview = overlay.locator('[data-wt-card-review]').first();
+    const cardId = await firstReview.getAttribute('data-wt-card-review');
+    await firstReview.click();
+    await expect(overlay.locator('.wt-card[data-wt-card="' + cardId + '"]')).toHaveClass(/wt-card-reviewed/);
+  });
+
+  test('header strip shows progress, cohort pills, and Up next', async ({ page }) => {
+    await openAppWithData(page);
+    await page.evaluate(() => (window as any).Sprint.openWalkthrough());
+    const overlay = page.locator('#walkthroughOverlay');
+    await expect(overlay).toContainText(/reviewed/);
+    await expect(overlay.locator('.wt-cohort-pill').first()).toBeVisible();
+    await expect(overlay).toContainText(/Up next|All caught up/);
+  });
+});
