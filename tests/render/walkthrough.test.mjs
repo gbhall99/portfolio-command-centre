@@ -51,3 +51,25 @@ describe('Walkthrough — sectioned overlay', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough — inline data-update editors', () => {
+  it('renders RAG selectors + status dropdowns + chip-progress inputs + risk action buttons', async () => {
+    resetIdSeq();
+    const sprints = [{ sprint_id: 'CY26-S1', start_date: '2026-04-01', end_date: '2026-05-05', hardening_start: '2026-05-01' }];
+    const proj = makeProject({ name: 'P', status: 'Blocked', rag_schedule: 'Amber', size_engineering: 10,
+      skill_splits: { size_engineering: [{ sprint: 'CY26-S1', points: 10, status: 'pending', completed: 2, assigned_to: [], reasons: [] }] }
+    });
+    proj.risks_register = [{ description: 'R1', impact: 5, probability: 5, status: 'open' }];
+    proj.size_total = 10;
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Sprint.openWalkthrough();
+    const overlay = app.window.document.getElementById('walkthroughOverlay');
+    const html = overlay.innerHTML;
+    expect(html).toMatch(/data-wt-rag/);
+    expect(html).toMatch(/data-wt-status/);
+    expect(html).toMatch(/data-wt-chip-completed/);
+    expect(html).toMatch(/data-wt-risk-action/);
+    app.teardown();
+  });
+});
