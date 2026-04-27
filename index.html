@@ -516,6 +516,17 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 .dash-card-value { font-size: 26px; font-weight: 700; color: var(--text-dark); line-height: 1.15; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .dash-card-footnote { font-size: 11px; color: var(--text-muted); margin-top: auto; }
 .dash-rag-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 22px; padding: 0 7px; border-radius: 999px; color: white; font-size: 13px; font-weight: 700; margin-right: 3px; }
+.dash-card-verdict-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; box-shadow: 0 0 0 3px rgba(0,0,0,0.04); flex: 0 0 12px; }
+.dash-card-verdict-dot.dash-card-verdict-green { background: var(--status-green); }
+.dash-card-verdict-dot.dash-card-verdict-amber { background: var(--status-amber); }
+.dash-card-verdict-dot.dash-card-verdict-red { background: var(--status-red); }
+.dash-card-verdict-word { font-weight: 800; }
+.dash-card-verdict-word.dash-card-verdict-green { color: var(--status-green); }
+.dash-card-verdict-word.dash-card-verdict-amber { color: var(--status-amber); }
+.dash-card-verdict-word.dash-card-verdict-red { color: var(--status-red); }
+html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-green { color: #34d399; }
+html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-amber { color: #fbbf24; }
+html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-red { color: #f87171; }
 .dash-tip { position: absolute; z-index: 10; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px); min-width: 240px; max-width: 320px; background: var(--text-dark); color: white; padding: 10px 12px; border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(15,23,42,0.25); font-size: 11px; line-height: 1.45; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; }
 .dash-tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text-dark); }
 .dash-card:hover .dash-tip, .dash-card:focus-visible .dash-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -10230,14 +10241,24 @@ const Dashboard = {
     // Prepend the On-Track Verdict tile so the synthesised verdict is the first thing read.
     const verdict = (typeof this.computeOnTrackVerdict === 'function') ? this.computeOnTrackVerdict(customer) : null;
     if (verdict) {
-      const verdictColor = verdict.verdict === 'On Track' ? 'var(--status-green)'
-        : verdict.verdict === 'Watch' ? 'var(--status-amber)'
-        : 'var(--status-red)';
-      const verdictTile = '<div class="kpi-card" style="border-top:3px solid ' + verdictColor + '">' +
-        '<div class="kpi-card-label">Verdict</div>' +
-        '<div class="kpi-card-value" style="color:' + verdictColor + '">' + Dashboard.esc(verdict.verdict) + '</div>' +
-        '<div class="kpi-card-sub" style="font-size:11px;color:var(--text-muted);margin-top:4px">' + Dashboard.esc(verdict.justification) + '</div>' +
-      '</div>';
+      const verdictTone = verdict.verdict === 'On Track' ? 'green'
+        : verdict.verdict === 'Watch' ? 'amber'
+        : 'red';
+      const verdictDot = '<span class="dash-card-verdict-dot dash-card-verdict-' + verdictTone + '" aria-hidden="true"></span>';
+      const verdictWord = '<span class="dash-card-verdict-word dash-card-verdict-' + verdictTone + '">' + Dashboard.esc(verdict.verdict) + '</span>';
+      const verdictTile = renderHero({
+        title: 'Verdict',
+        subtitle: 'Synthesised — RAG · capacity · velocity',
+        value: verdictDot + verdictWord,
+        color: 'var(--text-dark)',
+        footnote: verdict.justification,
+        tip: [
+          '<strong>Verdict logic:</strong> RAG mix, capacity vs demand, and rolling throughput rolled into a single read.',
+          '<strong>On Track:</strong> all-green portfolio with capacity ≤ demand.',
+          '<strong>Watch:</strong> amber RAGs OR over-committed capacity OR throughput sliding.',
+          '<strong>Off Track:</strong> any red RAG OR severely over-committed.'
+        ]
+      });
       cards.unshift(verdictTile);
     }
     el.innerHTML = cards.join('');
