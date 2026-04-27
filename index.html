@@ -1237,7 +1237,7 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 /* Labels column: horizontally sticky (left:0). Width is driven by --gantt-labels-width so the
    user can drag the border between labels and chart to reveal long project names.
    Min 140px / max 560px to keep the chart usable at any size. */
-.gantt-labels { flex-shrink: 0; width: var(--gantt-labels-width, 220px); min-width: 140px; max-width: 560px; border-right: 1px solid var(--border-light); background: white; z-index: 12; position: sticky; left: 0; }
+.gantt-labels { flex-shrink: 0; width: var(--gantt-labels-width, 440px); min-width: 140px; max-width: 560px; border-right: 1px solid var(--border-light); background: white; z-index: 12; position: sticky; left: 0; }
 /* Label-header sticks to the TOP as well so the "PROJECT" title stays visible when the list
    scrolls — previously the title scrolled away and project names bled into the header area. */
 .gantt-label-header { position: sticky; top: 0; z-index: 14; height: 48px; display: flex; align-items: center; padding: 0 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); background: var(--bg-content); }
@@ -1255,7 +1255,7 @@ body.gantt-labels-dragging { cursor: col-resize; user-select: none; }
 /* Priority column — fixed-width cell on the far left of each label row + matching header cell.
    Width is tokenised so the small-screen and print breakpoints below can shrink it without
    touching the rendering code. */
-:root { --gantt-pri-col-w: 68px; }
+:root { --gantt-pri-col-w: 68px; --gantt-labels-width: 440px; }
 .gantt-label-pri-head { width: var(--gantt-pri-col-w); min-width: var(--gantt-pri-col-w); display: flex; align-items: center; justify-content: center; height: 100%; border-right: 1px solid var(--border-light); background: var(--bg-content); font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .gantt-label-pri { width: var(--gantt-pri-col-w); min-width: var(--gantt-pri-col-w); display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0 6px; border-right: 1px solid #f1f5f9; font-variant-numeric: tabular-nums; }
 html[data-theme="dark"] .gantt-label-pri-head { border-right-color: #1f2937; }
@@ -2517,9 +2517,6 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
             <span class="toolbar-group-label">Show</span>
             <label class="toolbar-chk"><input type="checkbox" id="ganttBaseline" onchange="Gantt.render()"> Baseline</label>
             <label class="toolbar-chk"><input type="checkbox" id="ganttDetailed" onchange="Gantt.render()"> Detailed</label>
-            <label class="toolbar-chk"><input type="checkbox" id="ganttCriticalPath" onchange="Gantt.toggleCriticalPath(this.checked)"> Critical path</label>
-            <label class="toolbar-chk" title="One row per project with milestones only — ideal for executive briefings"><input type="checkbox" id="ganttExecutive" onchange="Gantt.toggleExecutive(this.checked)"> Executive</label>
-            <label class="toolbar-chk" title="Extend each bar with a P50→P95 forecast zone based on velocity history"><input type="checkbox" id="ganttConfidence" onchange="Gantt.toggleConfidence(this.checked)"> Confidence</label>
           <label style="font-size:10px;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;margin-left:8px">Group by
             <select id="ganttGroupBy" onchange="Gantt.setGroupBy(this.value)" style="font-size:11px;padding:2px 6px;border:1px solid var(--border-dim);border-radius:var(--radius-sm)" aria-label="Group Gantt rows">
               <option value="">None</option>
@@ -15366,9 +15363,7 @@ const Gantt = {
           // Number only — the column header already reads "#", so repeating it on every row was
           // double-hash noise ("##3") at narrow widths.
           '<span class="gantt-label-pri-num">' + (p.priority || '—') + '</span>' +
-          (recPri && recPri !== p.priority
-            ? '<span title="Recommended #' + recPri + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" class="gantt-label-pri-rec">\u2192#' + recPri + '</span>'
-            : '') +
+          // Recommendation chip lives on the Projects table now — Gantt was over-saturated with overlays (Issue 5).
           '<button class="why-rank-btn why-rank-info" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>' +
         '</div>';
       // L7: right-click a label to add a dependency via the existing Detail Panel dep-add flow.
@@ -15470,7 +15465,10 @@ const Gantt = {
       }
 
       let barLabel = '';
-      if (w > 60) barLabel = '<span class="bar-label" style="position:relative;z-index:1">' + Dashboard.esc(p.name) + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</span>';
+      // Lifecycle stage chip is intentionally omitted from Gantt bars — bar labels are tight,
+      // most projects sit at the default Implementation stage, and the chip duplicates info
+      // that's already on the Projects table and Detail Panel (Issue 7).
+      if (w > 60) barLabel = '<span class="bar-label" style="position:relative;z-index:1">' + Dashboard.esc(p.name) + '</span>';
 
       let barContent = '';
       if (segmentsHtml) {
