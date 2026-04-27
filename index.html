@@ -527,6 +527,14 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-green { color: #34d399; }
 html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-amber { color: #fbbf24; }
 html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-red { color: #f87171; }
+
+/* Quick-edit cells in the Projects table — Issue 3 */
+td[data-quick-edit] { cursor: text; }
+td[data-quick-edit]:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+td[data-quick-edit][data-editing="1"] { padding: 2px 4px; }
+.quick-edit-input { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--accent-blue); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-dark); font-size: 12px; font-family: inherit; outline: none; }
+.quick-edit-input:focus { box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
+.quick-edit-rag .rag-dot { border: 0; cursor: pointer; padding: 0; }
 .dash-tip { position: absolute; z-index: 10; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px); min-width: 240px; max-width: 320px; background: var(--text-dark); color: white; padding: 10px 12px; border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(15,23,42,0.25); font-size: 11px; line-height: 1.45; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; }
 .dash-tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text-dark); }
 .dash-card:hover .dash-tip, .dash-card:focus-visible .dash-tip { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -9451,24 +9459,23 @@ const Dashboard = {
     const rec2 = p.recommended_priority;
     const warnChip2 = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
     const whyBtn = '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
-    const priCell = '<td class="priority-cell"><span>' + (p.priority || '') + '</span>' +
-      (rec2 && rec2 !== p.priority
-        ? ' <span title="Recommended priority #' + rec2 + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + rec2 + '</span>'
-        : '') + warnChip2 + whyBtn +
-      '</td>';
     return '<tr' + rowClass + ' data-id="' + p.id + '" draggable="true">' +
       '<td class="drag-handle" title="Drag to reorder">\u2807</td>' +
       '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon2 + '</td>' +
-      priCell +
-      '<td class="project-name-cell" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</td>' +
+      '<td class="priority-cell" data-quick-edit="priority" title="Click to edit priority"><span>' + (p.priority || '') + '</span>' +
+        (rec2 && rec2 !== p.priority
+          ? ' <span title="Recommended priority #' + rec2 + ' \u2014 click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + rec2 + '</span>'
+          : '') + warnChip2 + whyBtn +
+      '</td>' +
+      '<td class="project-name-cell" data-quick-edit="name" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</td>' +
       '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
-      '<td>' + this.esc(p.category || '') + '</td>' +
-      '<td class="manager-cell" title="' + this.esc(p.manager||'') + '">' + this.esc(p.manager || '\u2014') + '</td>' +
-      '<td><span class="badge badge-status" style="color:' + statusBg + ';background:' + statusBg + '20">' + this.esc(p.status) + '</span></td>' +
-      '<td>' + ragDots + '</td>' +
+      '<td data-quick-edit="category">' + this.esc(p.category || '') + '</td>' +
+      '<td class="manager-cell" data-quick-edit="manager" title="' + this.esc(p.manager||'') + '">' + this.esc(p.manager || '\u2014') + '</td>' +
+      '<td data-quick-edit="status"><span class="badge badge-status" style="color:' + statusBg + ';background:' + statusBg + '20">' + this.esc(p.status) + '</span></td>' +
+      '<td data-quick-edit="rag">' + ragDots + '</td>' +
       '<td class="progress-bar-cell">' + progressHtml + '</td>' +
       '<td class="sprint-cell">' + this.sprintRange(p) + '</td>' +
-      '<td class="size-cell">' + (p.size_total || '\u2014') + '</td>' +
+      '<td class="size-cell" data-quick-edit="size_total">' + (p.size_total || '\u2014') + '</td>' +
     '</tr>';
   },
 
@@ -9477,9 +9484,108 @@ const Dashboard = {
     tbody.querySelectorAll('tr[data-id]').forEach(row => {
       row.addEventListener('click', (e) => {
         if (e.target.classList.contains('drag-handle')) return;
+        // Quick-edit takes precedence over opening the detail panel — single click on
+        // a flagged cell swaps it for an inline editor in place.
+        const editCell = e.target.closest('td[data-quick-edit]');
+        if (editCell && row.contains(editCell) && !editCell.dataset.editing) {
+          // Skip helpers that have their own click handlers (RAG cycle, why-rank, recommended chip).
+          if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
+          e.stopPropagation();
+          Dashboard.openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id);
+          return;
+        }
         DetailPanel.open(row.dataset.id);
       });
     });
+  },
+
+  // Quick-edit: swap a Projects-table cell for an inline editor. Save on blur or Enter,
+  // revert on Escape. Reuses App.updateProject so audit + dirty + save are consistent.
+  openQuickEdit(cell, field, projectId) {
+    if (!cell || !field || !projectId) return;
+    const project = App.data && App.data.projects.find(p => p.id === projectId);
+    if (!project) return;
+    if (cell.dataset.editing === '1') return;
+    const originalHtml = cell.innerHTML;
+    const originalValue = project[field];
+    cell.dataset.editing = '1';
+
+    const cancel = () => {
+      cell.innerHTML = originalHtml;
+      delete cell.dataset.editing;
+    };
+    const commit = (raw) => {
+      let next = raw;
+      if (field === 'priority' || field === 'size_total') {
+        const n = parseInt(raw, 10);
+        if (isNaN(n)) { cancel(); return; }
+        next = n;
+      } else {
+        next = String(raw == null ? '' : raw).trim();
+      }
+      if (next === originalValue) { cancel(); return; }
+      App.updateProject(projectId, field, next);
+      // Re-render the table slice so the row reflects the new value (tone, sort, etc.).
+      try {
+        if (typeof Dashboard.applyAndRender === 'function') Dashboard.applyAndRender();
+        else if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
+      } catch (_) { /* fall back to next render cycle */ }
+      delete cell.dataset.editing;
+    };
+
+    let editor;
+    if (field === 'status') {
+      const opts = (DetailPanel.STATUSES || ['Not Started','In Progress','On Hold','At Risk','Blocked','Complete','Closed'])
+        .map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === originalValue ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('');
+      cell.innerHTML = '<select class="quick-edit-input" aria-label="Edit status">' + opts + '</select>';
+      editor = cell.querySelector('select');
+    } else if (field === 'priority' || field === 'size_total') {
+      cell.innerHTML = '<input type="number" min="0" class="quick-edit-input" aria-label="Edit ' + Dashboard.esc(field) + '" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      editor = cell.querySelector('input');
+    } else if (field === 'rag') {
+      // RAG cycle — three buttons, each cycles its dim Green→Amber→Red→Green.
+      const next = (cur) => cur === 'Green' ? 'Amber' : cur === 'Amber' ? 'Red' : 'Green';
+      const cycle = (dim) => {
+        App.updateProject(projectId, dim, next(project[dim] || 'Green'));
+        try {
+          if (typeof Dashboard.applyAndRender === 'function') Dashboard.applyAndRender();
+          else if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
+        } catch (_) {}
+        delete cell.dataset.editing;
+      };
+      cell.innerHTML =
+        '<div class="rag-dots quick-edit-rag" role="group" aria-label="Cycle RAG">' +
+          '<button type="button" data-rag="rag_schedule" class="rag-dot" title="Schedule (click to cycle)" style="background:' + App.ragColor(project.rag_schedule) + '"></button>' +
+          '<button type="button" data-rag="rag_resourcing" class="rag-dot" title="Resourcing (click to cycle)" style="background:' + App.ragColor(project.rag_resourcing) + '"></button>' +
+          '<button type="button" data-rag="rag_scope" class="rag-dot" title="Scope (click to cycle)" style="background:' + App.ragColor(project.rag_scope) + '"></button>' +
+        '</div>';
+      cell.querySelectorAll('button[data-rag]').forEach(btn => {
+        btn.addEventListener('click', e => { e.stopPropagation(); cycle(btn.dataset.rag); });
+      });
+      // No focus target for this mode — users click a dot or click outside.
+      const onAway = (e) => {
+        if (!cell.contains(e.target)) {
+          document.removeEventListener('click', onAway, true);
+          if (cell.dataset.editing === '1') cancel();
+        }
+      };
+      // Defer to next tick so the originating click doesn't immediately fire onAway.
+      setTimeout(() => document.addEventListener('click', onAway, true), 0);
+      return;
+    } else {
+      cell.innerHTML = '<input type="text" class="quick-edit-input" aria-label="Edit ' + Dashboard.esc(field) + '" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      editor = cell.querySelector('input');
+    }
+
+    if (editor) {
+      editor.addEventListener('blur', () => commit(editor.value));
+      editor.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      });
+      // Use rAF instead of immediate focus to play nicely with click event ordering.
+      try { editor.focus(); if (editor.select) editor.select(); } catch (_) {}
+    }
   },
 
   reorderPriority(draggedId, targetId, insertAbove) {
