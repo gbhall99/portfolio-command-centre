@@ -18853,167 +18853,142 @@ const Sprint = {
       const id = App.startWalkthrough(customer, []);
       active = App._findWalkthrough(id);
     }
-    const agenda = App.computeWalkthroughAgenda(customer);
+    const cards = App.computeWalkthroughCards(customer);
+    const reviewed = (active.section_status || {});
+    const reviewedCount = cards.filter(c => reviewed['proj:' + c.project.id] === 'reviewed').length;
+    const totalCount = cards.length;
+    const pct = totalCount > 0 ? Math.round((reviewedCount / totalCount) * 100) : 0;
+    const cohort = { critical: 0, watch: 0, steady: 0 };
+    cards.forEach(c => { cohort[c.state] = (cohort[c.state] || 0) + 1; });
+    const upNext = cards.find(c => reviewed['proj:' + c.project.id] !== 'reviewed');
     const esc = Dashboard.esc;
     const overlay = document.createElement('div');
     overlay.id = 'walkthroughOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:flex-start;justify-content:center;background:rgba(15,23,42,0.55);padding:24px 16px;overflow:auto';
-    const sectionHtml = (sec) => {
-      const status = (active.section_status || {})[sec.id] || 'pending';
-      const chip = status === 'covered' ? '<span style="font-size:9px;background:var(--status-green);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Covered</span>' :
-                   status === 'skipped' ? '<span style="font-size:9px;background:var(--text-muted);color:white;padding:1px 6px;border-radius:999px;margin-left:6px">Skipped</span>' : '';
-      let signalsHtml = Sprint._wtRenderSignals(sec, active);
-      const note = (active.section_notes || {})[sec.id] || '';
-      const decisionForm = sec.id === 'decisions'
-        ? '<div style="margin-top:8px;border-top:1px dashed var(--border-light);padding-top:8px">' +
-            '<div style="font-weight:600;font-size:11px;margin-bottom:4px">Add decision</div>' +
-            '<input type="text" id="wtDecText" placeholder="Decision (e.g. Defer DE Phase to S6)" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
-            '<input type="text" id="wtDecRationale" placeholder="Rationale (audit trail)" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtAddDecision(\'' + esc(active.id) + '\')">Add decision</button>' +
-            '<div style="font-weight:600;font-size:11px;margin:10px 0 4px">Add action</div>' +
-            '<input type="text" id="wtActDesc" placeholder="Action description" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
-            '<input type="text" id="wtActOwner" placeholder="Owner" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
-            '<input type="date" id="wtActDue" style="width:100%;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;margin-bottom:4px">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtAddAction(\'' + esc(active.id) + '\')">Add action</button>' +
-            '<div id="wtCapturedList" style="margin-top:8px;font-size:11px">' + Sprint._renderCaptured(active) + '</div>' +
-          '</div>'
-        : '';
-      return '<details ' + (status === 'covered' ? '' : 'open') + ' style="border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface)">' +
-        '<summary style="padding:8px 10px;cursor:pointer;font-weight:600;font-size:12px;display:flex;align-items:center;gap:8px">' +
-          '<span>' + esc(sec.title) + chip + '</span>' +
-          '<span style="margin-left:auto;font-size:10px;color:var(--text-muted);font-weight:400">' + esc(sec.summary || '') + '</span>' +
-        '</summary>' +
-        '<div style="padding:6px 12px 10px">' +
-          signalsHtml +
-          '<textarea data-wt-section="' + esc(sec.id) + '" placeholder="Notes for this section\u2026" oninput="Sprint._wtSaveNote(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\',this.value)" style="width:100%;margin-top:6px;padding:5px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-family:inherit;resize:vertical;min-height:36px">' + esc(note) + '</textarea>' +
-          '<div style="margin-top:6px;display:flex;gap:6px">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtMarkCovered(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\')">Mark covered</button>' +
-            '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="Sprint._wtMarkSkipped(\'' + esc(active.id) + '\',\'' + esc(sec.id) + '\')">Skip</button>' +
-          '</div>' +
-          decisionForm +
-        '</div>' +
-      '</details>';
-    };
-    overlay.innerHTML =
-      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:780px;width:100%;color:var(--text-dark);max-height:92vh;overflow:auto">' +
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px">' +
-          '<div>' +
-            '<h3 style="margin:0;font-size:15px;font-weight:700">Weekly Walkthrough \u2014 ' + esc(customer) + '</h3>' +
-            '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' +
-              'Started ' + esc(active.started_at) + ' \u00B7 ' +
-              (agenda.lastWalkthroughAt ? 'last session ' + esc(agenda.lastWalkthroughAt) : 'first session') +
-            '</div>' +
-          '</div>' +
-          '<button onclick="document.getElementById(\'walkthroughOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
-        '</div>' +
-        '<div style="margin-bottom:10px">' +
-          '<input type="text" id="wtAttendees" placeholder="Attendees (comma-separated)" value="' + esc((active.attendees || []).join(', ')) + '" oninput="Sprint._wtSaveAttendees(\'' + esc(active.id) + '\',this.value)" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
-        '</div>' +
-        agenda.sections.map(sectionHtml).join('') +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--border-light);gap:8px">' +
-          '<div style="font-size:11px;color:var(--text-muted)">Decisions: <strong id="wtDecCount">' + active.decisions.length + '</strong> \u00B7 Actions: <strong id="wtActCount">' + active.actions.length + '</strong></div>' +
-          '<div style="display:flex;gap:6px">' +
-            '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save &amp; Close</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="Report.exportWalkthroughMinutes(\'' + esc(active.id) + '\')">Export minutes</button>' +
-            '<button class="btn btn-primary btn-sm" onclick="Sprint._wtComplete(\'' + esc(active.id) + '\')">Mark Done</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+    const headerStrip = '<div class="wt-header-strip">' +
+      '<h3 style="margin:0;font-size:15px;font-weight:700">Weekly Walkthrough — ' + esc(customer) + '</h3>' +
+      '<div class="wt-progress-bar" title="' + reviewedCount + ' of ' + totalCount + ' reviewed"><div class="wt-progress-fill" style="width:' + pct + '%"></div></div>' +
+      '<div style="font-size:11px;color:var(--text-dark-secondary);font-weight:600">' + reviewedCount + ' / ' + totalCount + ' reviewed</div>' +
+      '<span class="wt-cohort-pill wt-cohort-critical">' + cohort.critical + ' critical</span>' +
+      '<span class="wt-cohort-pill wt-cohort-watch">' + cohort.watch + ' watch</span>' +
+      '<span class="wt-cohort-pill wt-cohort-steady">' + cohort.steady + ' steady</span>' +
+      (upNext ? '<span class="wt-up-next">Up next: ' + esc(upNext.project.name) + '</span>' : '<span class="wt-up-next" style="color:var(--status-green);font-weight:700">All caught up ✓</span>') +
+      '<button onclick="document.getElementById(\'walkthroughOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted);margin-left:auto" aria-label="Close">&times;</button>' +
+    '</div>';
+    const body = '<div class="wt-card-list">' + cards.map(card => Sprint._wtRenderCard(card, active)).join('') + '</div>';
+    const footer = '<div class="wt-card-footer-strip">' +
+      '<div style="font-size:11px;color:var(--text-muted)">Decisions: <strong>' + active.decisions.length + '</strong> · Actions: <strong>' + active.actions.length + '</strong></div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save &amp; Close</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="Report.exportWalkthroughMinutes(\'' + esc(active.id) + '\')">Export minutes</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="Sprint._wtComplete(\'' + esc(active.id) + '\')">Mark Done</button>' +
+      '</div>' +
+    '</div>';
+    overlay.innerHTML = '<div class="wt-overlay-shell">' + headerStrip + body + footer + '</div>';
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
   },
 
-  _wtRenderSignals(sec, active) {
+  _wtRenderCard(card, active) {
     const esc = Dashboard.esc;
+    const p = card.project;
     const wid = active.id;
-    const customer = App.activeCustomer;
-    if (sec.id === 'rag_movers') {
-      const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
-      if (!projects.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No active projects.</p>';
-      const sel = (pid, dim, val) => '<select data-wt-rag="' + esc(pid) + ':' + dim + '" onchange="Sprint._wtRagChange(\'' + esc(wid) + '\',\'' + esc(pid) + '\',\'' + dim + '\',this.value)" style="font-size:10px;padding:1px 3px">' +
-        ['Green', 'Amber', 'Red'].map(v => '<option value="' + v + '"' + (val === v ? ' selected' : '') + '>' + v.charAt(0) + '</option>').join('') +
-      '</select>';
-      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
-        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">S</th><th style="padding:2px 4px">R</th><th style="padding:2px 4px">Sc</th></tr>' +
-        projects.slice(0, 30).map(p => '<tr><td style="padding:2px 4px">' + esc(p.name) + '</td><td style="padding:2px 4px">' + sel(p.id, 'schedule', p.rag_schedule || 'Green') + '</td><td style="padding:2px 4px">' + sel(p.id, 'resourcing', p.rag_resourcing || 'Green') + '</td><td style="padding:2px 4px">' + sel(p.id, 'scope', p.rag_scope || 'Green') + '</td></tr>').join('') +
-      '</table>';
-    }
-    if (sec.id === 'issues') {
-      const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
-      if (!projects.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No active projects.</p>';
-      const statuses = ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete'];
-      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
-        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Status</th></tr>' +
-        projects.slice(0, 30).map(p => '<tr><td style="padding:2px 4px">' + esc(p.name) + '</td><td style="padding:2px 4px"><select data-wt-status="' + esc(p.id) + '" onchange="Sprint._wtStatusChange(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',this.value)" style="font-size:10px;padding:1px 3px">' + statuses.map(s => '<option value="' + s + '"' + (p.status === s ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td></tr>').join('') +
-      '</table>';
-    }
-    if (sec.id === 'chip_progress') {
-      if (!Array.isArray(sec.signals) || !sec.signals.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No open chips this sprint.</p>';
-      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
-        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Skill</th><th style="padding:2px 4px">Done / Total</th></tr>' +
-        sec.signals.slice(0, 30).map(c => {
-          const p = (App.data.projects || []).find(pr => pr.id === c.projectId);
-          const splitArr = p && (p.skill_splits || {})[('size_' + c.skill)];
-          const split = Array.isArray(splitArr) ? splitArr.find(sp => sp.sprint === c.sprintId) : null;
-          const done = split ? (split.completed || 0) : 0;
-          const total = split ? (split.points || 0) : 0;
-          return '<tr><td style="padding:2px 4px">' + esc(c.projectName) + '</td><td style="padding:2px 4px">' + esc(c.skill) + '</td><td style="padding:2px 4px"><input type="number" min="0" max="' + total + '" value="' + done + '" data-wt-chip-completed="' + esc(c.projectId) + ':size_' + esc(c.skill) + ':' + esc(c.sprintId) + '" onchange="Sprint._wtChipChange(\'' + esc(wid) + '\',\'' + esc(c.projectId) + '\',\'size_' + esc(c.skill) + '\',\'' + esc(c.sprintId) + '\',this.value)" style="width:50px;font-size:10px;padding:1px 3px"> / ' + total + '</td></tr>';
-        }).join('') +
-      '</table>';
-    }
-    if (sec.id === 'risks') {
-      if (!Array.isArray(sec.signals) || !sec.signals.length) return '<p style="margin:0;color:var(--text-muted);font-size:11px">No risks.</p>';
-      return '<table style="width:100%;font-size:11px;border-collapse:collapse">' +
-        '<tr style="color:var(--text-muted);font-size:10px"><th style="text-align:left;padding:2px 4px">Project</th><th style="padding:2px 4px">Risk</th><th style="padding:2px 4px">Score</th><th style="padding:2px 4px">Action</th></tr>' +
-        sec.signals.slice(0, 10).map(r => {
-          const p = (App.data.projects || []).find(pr => pr.id === r.projectId);
-          if (!p) return '';
-          const ri = (p.risks_register || []).findIndex(x => x.description === r.description);
-          if (ri < 0) return '';
-          return '<tr><td style="padding:2px 4px">' + esc(r.projectName) + '</td><td style="padding:2px 4px">' + esc(r.description) + '</td><td style="padding:2px 4px">' + r.score + '</td><td style="padding:2px 4px"><button data-wt-risk-action="close" class="btn btn-outline btn-sm" style="font-size:9px;padding:1px 6px;margin-right:2px" onclick="Sprint._wtRiskAction(\'' + esc(wid) + '\',\'' + esc(r.projectId) + '\',' + ri + ',\'closed\')">Close</button><button data-wt-risk-action="accept" class="btn btn-outline btn-sm" style="font-size:9px;padding:1px 6px" onclick="Sprint._wtRiskAction(\'' + esc(wid) + '\',\'' + esc(r.projectId) + '\',' + ri + ',\'accepted\')">Accept</button></td></tr>';
-        }).join('') +
-      '</table>';
-    }
-    if (Array.isArray(sec.signals)) {
-      return sec.signals.length
-        ? '<ul style="margin:0;padding-left:18px;font-size:11px">' + sec.signals.slice(0, 10).map(s => {
-            if (s.projectName) return '<li>' + esc(s.projectName) + (s.description ? ' — ' + esc(s.description) : '') + (s.score ? ' (score ' + s.score + ')' : '') + (s.dueDate ? ' (due ' + esc(s.dueDate) + ')' : '') + (s.remaining ? ' — ' + s.remaining + ' SP remaining' : '') + (s.field ? ' — ' + esc(s.field) : '') + '</li>';
-            if (s.member) return '<li><strong>' + esc(s.member) + '</strong>' + (s.start ? ' off ' + esc(s.start) + ' → ' + esc(s.end) : '') + (s.endDate ? ' contract ends ' + esc(s.endDate) : '') + '</li>';
-            if (s.field) return '<li>' + esc(s.field) + ': ' + esc(String(s.oldValue||'')) + ' → ' + esc(String(s.newValue||'')) + '</li>';
-            if (s.forumName) return '<li>' + esc(s.forumName) + ' — ' + esc(s.description) + ' (' + esc(s.owner || '—') + ', due ' + esc(s.dueDate) + ')</li>';
-            return '<li>' + esc(JSON.stringify(s).slice(0, 120)) + '</li>';
-          }).join('') + '</ul>'
-        : '<p style="margin:0;color:var(--text-muted);font-size:11px">Nothing to surface.</p>';
-    }
-    if (sec.signals && typeof sec.signals === 'object') {
-      return '<div style="font-size:11px;color:var(--text-dark-secondary)">' +
-        Object.entries(sec.signals).map(([k, v]) => {
-          if (Array.isArray(v)) return v.length ? '<div><strong>' + esc(k) + ':</strong> ' + v.length + '</div>' : '';
-          return '<div><strong>' + esc(k) + ':</strong> ' + esc(String(v)) + '</div>';
-        }).filter(Boolean).join('') +
+    const reviewedKey = 'proj:' + p.id;
+    const isReviewed = (active.section_status || {})[reviewedKey] === 'reviewed';
+    const isPinned = !!Sprint._wtPinned[p.id];
+    if (isReviewed && !isPinned) {
+      return '<div class="wt-card wt-card-reviewed" data-wt-card="' + esc(p.id) + '">' +
+        '<div class="wt-card-header" onclick="Sprint._wtUnreview(\'' + esc(wid) + '\',\'' + esc(p.id) + '\')">' +
+          '<div class="wt-card-name">✓ ' + esc(p.name) + ' reviewed</div>' +
+          '<span class="wt-card-attention">Score ' + card.attentionScore + '</span>' +
+          '<div class="wt-card-actions"><button class="wt-card-action-btn" data-wt-card-pin="' + esc(p.id) + '" data-wt-card-review="' + esc(p.id) + '" onclick="event.stopPropagation();Sprint._wtUnreview(\'' + esc(wid) + '\',\'' + esc(p.id) + '\')">Reopen</button></div>' +
+        '</div>' +
       '</div>';
     }
-    return '';
+    const lifeChip = (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '');
+    const ragDot = (dim, val) => '<div class="wt-rag-dot wt-rag-' + val + '" data-wt-card-rag="' + dim + '" title="' + dim + ' (click to cycle)" onclick="event.stopPropagation();Sprint._wtCycleRag(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',\'' + dim + '\')">' + dim.charAt(0).toUpperCase() + '</div>';
+    const statusOpts = ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete'].map(s => '<option value="' + s + '"' + (p.status === s ? ' selected' : '') + '>' + s + '</option>').join('');
+    const chipsHtml = card.chips.length
+      ? card.chips.map(ch => {
+          const total = ch.points || 0;
+          const done = ch.completed || 0;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          return '<div class="wt-chip-row">' +
+            '<div><strong>' + esc(ch.skill) + '</strong> <span style="color:var(--text-muted)">(' + esc(ch.sprintId) + ')</span></div>' +
+            '<div class="wt-chip-bar" style="width:120px"><div class="wt-chip-bar-fill" style="width:' + pct + '%"></div></div>' +
+            '<input type="number" min="0" max="' + total + '" value="' + done + '" onchange="Sprint._wtCardChipChange(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',\'' + esc(ch.skillKey) + '\',\'' + esc(ch.sprintId) + '\',this.value)" style="width:54px;font-size:11px;padding:2px 4px"> / ' + total +
+          '</div>';
+        }).join('')
+      : '<div style="font-size:11px;color:var(--text-muted)">No open chips this sprint.</div>';
+    const risksHtml = card.openRisks.length
+      ? card.openRisks.map(r => {
+          const score = (r.impact || 0) * (r.probability || 0);
+          const ri = (p.risks_register || []).findIndex(x => x === r);
+          return '<div class="wt-risk-row"><span style="flex:1">' + esc(r.description || '') + ' <span style="color:var(--text-muted)">(score ' + score + ')</span></span>' +
+            '<button class="wt-card-action-btn" onclick="Sprint._wtCardRisk(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',' + ri + ',\'closed\')">Close</button>' +
+            '<button class="wt-card-action-btn" onclick="Sprint._wtCardRisk(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',' + ri + ',\'accepted\')">Accept</button>' +
+          '</div>';
+        }).join('')
+      : '<div style="font-size:11px;color:var(--text-muted)">No open risks.</div>';
+    const note = (active.section_notes || {})['proj:' + p.id] || '';
+    return '<div class="wt-card wt-card-' + esc(card.state) + '" data-wt-card="' + esc(p.id) + '">' +
+      '<div class="wt-card-header">' +
+        '<div class="wt-card-name">' + esc(p.name) + lifeChip + '</div>' +
+        '<span class="wt-card-attention">Attention ' + card.attentionScore + '</span>' +
+        '<div class="wt-card-actions">' +
+          '<button class="wt-card-action-btn' + (isPinned ? ' pinned' : '') + '" data-wt-card-pin="' + esc(p.id) + '" title="Pin to keep open" onclick="event.stopPropagation();Sprint._wtTogglePin(\'' + esc(p.id) + '\')">📌</button>' +
+          '<button class="wt-card-action-btn review" data-wt-card-review="' + esc(p.id) + '" title="Mark reviewed" onclick="event.stopPropagation();Sprint._wtMarkProjectReviewed(\'' + esc(wid) + '\',\'' + esc(p.id) + '\')">✓ Reviewed</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="wt-card-body">' +
+        '<div class="wt-card-row">' +
+          '<strong>Status</strong><select onchange="Sprint._wtStatusChange(\'' + esc(wid) + '\',\'' + esc(p.id) + '\',this.value)" style="font-size:11px;padding:2px 4px">' + statusOpts + '</select>' +
+          '<strong style="margin-left:14px">RAG</strong><div class="wt-rag-dots">' + ragDot('schedule', card.ragSummary.schedule) + ragDot('resourcing', card.ragSummary.resourcing) + ragDot('scope', card.ragSummary.scope) + '</div>' +
+          '<span style="margin-left:auto;font-size:10px;color:var(--text-muted)">Last updated ' + (card.lastUpdatedDays != null ? card.lastUpdatedDays + 'd ago' : 'never') + '</span>' +
+        '</div>' +
+        '<div><strong style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">This sprint</strong>' + chipsHtml + '</div>' +
+        '<div><strong style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Risks</strong>' + risksHtml + '</div>' +
+        '<textarea placeholder="Notes for this project…" oninput="App.setWalkthroughSectionNote(\'' + esc(wid) + '\',\'proj:' + esc(p.id) + '\',this.value)" style="width:100%;padding:5px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-family:inherit;resize:vertical;min-height:36px">' + esc(note) + '</textarea>' +
+      '</div>' +
+    '</div>';
   },
 
-  _wtRagChange(wid, pid, dim, val) {
-    App.updateProjectRag(pid, dim, val, wid, '');
-    if (App.toast) App.toast('RAG updated', 'success');
+  _wtPinned: {},
+
+  _wtTogglePin(pid) {
+    Sprint._wtPinned[pid] = !Sprint._wtPinned[pid];
+    Sprint.openWalkthrough();
   },
 
-  _wtStatusChange(wid, pid, val) {
-    App.updateProjectStatus(pid, val, wid, '');
-    if (App.toast) App.toast('Status updated', 'success');
+  _wtCycleRag(wid, pid, dim) {
+    const p = (App.data.projects || []).find(pr => pr.id === pid);
+    if (!p) return;
+    const field = 'rag_' + dim;
+    const order = ['Green', 'Amber', 'Red'];
+    const cur = p[field] || 'Green';
+    const next = order[(order.indexOf(cur) + 1) % 3];
+    App.updateProjectRag(pid, dim, next, wid, '');
+    Sprint.openWalkthrough();
   },
 
-  _wtChipChange(wid, pid, skillKey, sprintId, val) {
+  _wtCardChipChange(wid, pid, skillKey, sprintId, val) {
     App.updateChipProgress(pid, skillKey, sprintId, val, wid);
     if (App.toast) App.toast('Progress updated', 'success');
   },
 
-  _wtRiskAction(wid, pid, ri, status) {
+  _wtCardRisk(wid, pid, ri, status) {
     App.updateRiskStatus(pid, ri, status, wid, '');
     if (App.toast) App.toast('Risk ' + status, 'success');
+    Sprint.openWalkthrough();
+  },
+
+  _wtMarkProjectReviewed(wid, pid) {
+    App.setWalkthroughSectionStatus(wid, 'proj:' + pid, 'reviewed');
+    Sprint.openWalkthrough();
+  },
+
+  _wtUnreview(wid, pid) {
+    App.setWalkthroughSectionStatus(wid, 'proj:' + pid, 'pending');
     Sprint.openWalkthrough();
   },
 
