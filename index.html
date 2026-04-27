@@ -24906,6 +24906,21 @@ const Report = {
     const headerHtml = '<p><strong>Customer:</strong> ' + esc(wt.customer) + '</p>' +
       '<p><strong>Started:</strong> ' + esc(wt.started_at) + (wt.completed_at ? ' &middot; <strong>Completed:</strong> ' + esc(wt.completed_at) : '') + '</p>' +
       '<p><strong>Attendees:</strong> ' + attendees + '</p>';
+    const updates = wt.data_updates || [];
+    const updatesHtml = updates.length
+      ? '<table><tr><th>Type</th><th>Project</th><th>Detail</th></tr>' +
+        updates.map(u => {
+          let detail = '';
+          if (u.kind === 'rag') detail = esc(u.dimension || '') + ': ' + esc(String(u.from || '')) + ' → ' + esc(String(u.to || '')) + (u.rationale ? ' (' + esc(u.rationale) + ')' : '');
+          else if (u.kind === 'status') detail = esc(String(u.from || '')) + ' → ' + esc(String(u.to || '')) + (u.rationale ? ' (' + esc(u.rationale) + ')' : '');
+          else if (u.kind === 'risk_status') detail = 'Risk "' + esc(u.description || '') + '": ' + esc(String(u.from || '')) + ' → ' + esc(String(u.to || ''));
+          else if (u.kind === 'risk_score') detail = 'Risk "' + esc(u.description || '') + '": ' + ((u.from && u.from.impact) || '') + 'x' + ((u.from && u.from.probability) || '') + ' → ' + ((u.to && u.to.impact) || '') + 'x' + ((u.to && u.to.probability) || '');
+          else if (u.kind === 'progress') detail = esc(u.skill || '') + ' / ' + esc(u.sprint || '') + ': ' + (u.from || 0) + ' → ' + (u.to || 0) + ' SP';
+          else detail = esc(JSON.stringify(u));
+          return '<tr><td>' + esc(u.kind) + '</td><td>' + esc(u.project_id || '') + '</td><td>' + detail + '</td></tr>';
+        }).join('') +
+        '</table>'
+      : '<p>No data updates this session.</p>';
     return (typeof Report !== 'undefined' && Report.buildDoc)
       ? Report.buildDoc({
           customer: wt.customer,
@@ -24914,13 +24929,14 @@ const Report = {
           reportType: 'Walkthrough',
           sections: [
             { id: 'wt-header', title: 'Session', html: headerHtml },
+            { id: 'wt-data-updates', title: 'Data updates', html: updatesHtml },
             { id: 'wt-decisions', title: 'Decisions', html: decisionsHtml },
             { id: 'wt-actions', title: 'Actions', html: actionsHtml },
             { id: 'wt-notes', title: 'Section notes', html: sectionNotesHtml }
           ],
           includeAppendix: false
         })
-      : ('<html><body><h1>Walkthrough — ' + esc(wt.customer) + '</h1>' + headerHtml + '<h2>Decisions</h2>' + decisionsHtml + '<h2>Actions</h2>' + actionsHtml + '<h2>Section notes</h2>' + sectionNotesHtml + '</body></html>');
+      : ('<html><body><h1>Walkthrough — ' + esc(wt.customer) + '</h1>' + headerHtml + '<h2>Data updates</h2>' + updatesHtml + '<h2>Decisions</h2>' + decisionsHtml + '<h2>Actions</h2>' + actionsHtml + '<h2>Section notes</h2>' + sectionNotesHtml + '</body></html>');
   },
 
   exportWalkthroughMinutes(walkthroughId) {
