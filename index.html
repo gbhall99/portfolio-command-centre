@@ -15899,40 +15899,33 @@ const Gantt = {
       projectTopY[p.id] = runningY;
       runningY += rowH + subRowCountFor(p) * subRowH;
     });
-    // Pre-compute bar right edges for routing
-    const barRightEdges = projects.map(p => {
-      return Math.max(0, dateToX(p.target_date));
-    });
-    let routeOffset = 0; // stagger parallel routes
-
     // 2F: Dependency edges are drawn once per directed pair, with style driven by type.
     //   blocked_by / blocks: SOLID navy arrow, 2px stroke, 2.5px on hover. Tooltip notes direction.
     //   related:            DASHED slate line, 1.5px stroke, open-circle endpoints, no arrowhead.
-    // A "blocks" edge on project P pointing at target T is rendered exactly the same way as a
-    // blocked_by on T pointing at P (T end → P start). Duplicate pairs are de-deduped.
     // 2G: each visible path is paired with an invisible 8-px hit-target path so arrows are easy to click.
+    //
+    // Routing — kept deliberately simple so the eye can track each arrow at a glance:
+    //   - Same row: straight horizontal line.
+    //   - Different row: 3-segment L-step (H → V → H) with rounded corners.
+    //   - The corner column sits one stub-width before the target's left edge so the FINAL
+    //     horizontal segment is always a short left-to-right approach. The arrowhead therefore
+    //     always points forward — even when the dependency overlaps another project's bar.
+    // The earlier routing tried to dodge every bar in the row range and frequently backtracked
+    // past its own target; that "longest-path" pattern is what made arrows hard to read.
     const edgeSeen = new Set(); // "from|to|kind"
-    const edgePath = (fromX, fromY, toX, toY, srcIdx, tgtIdx) => {
-      const span = Math.abs(srcIdx - tgtIdx);
-      const r = 8;
-      if (span <= 2) {
-        const midX = (fromX + toX) / 2;
-        return 'M' + fromX + ' ' + fromY + ' C' + midX + ' ' + fromY + ' ' + midX + ' ' + toY + ' ' + toX + ' ' + toY;
+    const edgePath = (fromX, fromY, toX, toY) => {
+      const r = 6;     // corner radius
+      const stub = 14; // gap between target and the corner column (final approach length)
+      if (Math.abs(toY - fromY) < 1) {
+        return 'M' + fromX + ' ' + fromY + ' H' + toX;
       }
-      const minRow = Math.min(srcIdx, tgtIdx);
-      const maxRow = Math.max(srcIdx, tgtIdx);
-      let rightEdge = 0;
-      for (let ri = minRow; ri <= maxRow; ri++) {
-        if (barRightEdges[ri] > rightEdge) rightEdge = barRightEdges[ri];
-      }
-      const routeX = rightEdge + 25 + (routeOffset % 3) * 12;
-      routeOffset++;
-      const dy = fromY < toY ? r : -r;
+      const midX = toX - stub;
+      const dy = toY > fromY ? r : -r;
       return 'M' + fromX + ' ' + fromY +
-        ' H' + (routeX - r) +
-        ' Q' + routeX + ' ' + fromY + ' ' + routeX + ' ' + (fromY + dy) +
+        ' H' + (midX - r) +
+        ' Q' + midX + ' ' + fromY + ' ' + midX + ' ' + (fromY + dy) +
         ' V' + (toY - dy) +
-        ' Q' + routeX + ' ' + toY + ' ' + (routeX - r) + ' ' + toY +
+        ' Q' + midX + ' ' + toY + ' ' + (midX + r) + ' ' + toY +
         ' H' + toX;
     };
     const mainBarMidOffset = 6 + 24 / 2;
@@ -15949,7 +15942,7 @@ const Gantt = {
       const fromY = projectTopY[fromId] + mainBarMidOffset;
       const toX = Math.max(0, dateToX(tgtP.start_date));
       const toY = projectTopY[toId] + mainBarMidOffset;
-      const path = edgePath(fromX, fromY, toX, toY, srcIdx, tgtIdx);
+      const path = edgePath(fromX, fromY, toX, toY);
       const span = Math.abs(srcIdx - tgtIdx);
       const baseOpacity = span <= 2 ? 0.85 : 0.55;
 
