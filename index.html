@@ -4921,6 +4921,50 @@ const App = {
     };
   },
 
+  computeCustomerPackData(customer) {
+    const projects = ((this.data && this.data.projects) || []).filter(p => p.customer === customer && p.status !== 'Closed');
+    const sprints = (this.data && this.data.sprints) || [];
+    const out = { generated_at: new Date().toISOString(), customer, projects: [] };
+    projects.forEach(p => {
+      const n = p.narrative || { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+      const allRisks = (p.risks_register || []).map((r, i) => ({ idx: i, ...r }));
+      const visibleIds = new Set(n.customer_visible_risk_ids || []);
+      const visible_risks = allRisks
+        .filter(r => (r.status || 'open') !== 'closed' && (visibleIds.has(r.id) || visibleIds.has(String(r.idx))))
+        .map(r => ({ desc: r.description, score: (r.impact || 0) * (r.probability || 0), mitigation: r.mitigation || '' }));
+      out.projects.push({
+        id: p.id, name: p.name, lifecycle_stage: p.lifecycle_stage || 'Implementation',
+        headline: n.headline || '', wins: n.wins || [], asks: n.asks || [],
+        visible_risks,
+        next_sprint_id: (function() {
+          const cur = sprints.findIndex(s => !s.end_date || new Date(s.end_date) >= new Date());
+          return cur >= 0 && sprints[cur + 1] ? sprints[cur + 1].sprint_id : null;
+        })()
+      });
+    });
+    // Portfolio health
+    const ragMix = { Green: 0, Amber: 0, Red: 0 };
+    projects.forEach(p => {
+      const reds = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => p[f] === 'Red').length;
+      const ambers = ['rag_schedule', 'rag_resourcing', 'rag_scope'].filter(f => p[f] === 'Amber').length;
+      if (reds > 0) ragMix.Red++; else if (ambers > 0) ragMix.Amber++; else ragMix.Green++;
+    });
+    out.portfolio_health = {
+      ragMix,
+      blockedCount: projects.filter(p => p.status === 'Blocked').length,
+      atRiskCount: projects.filter(p => p.status === 'At Risk').length
+    };
+    // Latest walkthrough decisions for this customer
+    const lastWt = ((this.data && this.data.walkthroughs) || [])
+      .filter(w => w.customer === customer && w.completed_at)
+      .slice(-1)[0];
+    out.key_decisions_this_period = lastWt && Array.isArray(lastWt.decisions) ? lastWt.decisions.slice() : [];
+    // Aggregated asks
+    out.key_asks = [];
+    out.projects.forEach(p => p.asks.forEach(a => out.key_asks.push({ project: p.name, ask: a })));
+    return out;
+  },
+
   // Walkthrough attention score — drives card ordering. Higher = more attention needed.
   computeProjectAttentionScore(project) {
     if (!project) return 0;
@@ -25539,6 +25583,53 @@ const Report = {
     if (!doc) { App.toast('Sprint not found', 'error'); return; }
     if (this.open) this.open(doc);
     App.toast('Sprint brief opened — use Print > Save as PDF', 'success');
+  },
+
+  buildCustomerPackDoc(customer, opts) {
+    opts = opts || {};
+    const data = App.computeCustomerPackData(customer);
+    const esc = Dashboard.esc;
+    const dateStr = new Date(data.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const ragMix = data.portfolio_health.ragMix;
+    const sectionStyle = 'margin:18px 0;padding-bottom:12px;border-bottom:1px solid #e2e8f0';
+    const projectsByStage = {};
+    data.projects.forEach(p => {
+      (projectsByStage[p.lifecycle_stage] = projectsByStage[p.lifecycle_stage] || []).push(p);
+    });
+    const stageOrder = ['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU'];
+    let headlinesHtml = '';
+    stageOrder.forEach(stage => {
+      if (!projectsByStage[stage]) return;
+      headlinesHtml += '<h3 style="margin:14px 0 6px 0;color:#0f172a">' + esc(stage) + '</h3>';
+      projectsByStage[stage].forEach(p => {
+        headlinesHtml += '<div style="margin-bottom:8px"><strong>' + esc(p.name) + '</strong> — ' + esc(p.headline || '(no headline yet)') + '</div>';
+      });
+    });
+    const winsHtml = data.projects
+      .filter(p => p.wins.length)
+      .map(p => '<li><strong>' + esc(p.name) + ':</strong> ' + p.wins.map(esc).join('; ') + '</li>').join('');
+    const asksHtml = data.key_asks.map(a => '<li><strong>' + esc(a.project) + ':</strong> ' + esc(a.ask) + '</li>').join('');
+    const risksHtml = data.projects
+      .filter(p => p.visible_risks.length)
+      .map(p => '<div style="margin-bottom:6px"><strong>' + esc(p.name) + '</strong>: ' + p.visible_risks.map(r => esc(r.desc) + ' (score ' + r.score + ')').join('; ') + '</div>').join('');
+    const nextHtml = data.projects.map(p => '<div><strong>' + esc(p.name) + '</strong> — next sprint: ' + esc(p.next_sprint_id || 'TBD') + '</div>').join('');
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Customer Pack — ' + esc(customer) + ' — ' + dateStr + '</title>' +
+      '<style>body{font-family:-apple-system,Segoe UI,system-ui,sans-serif;color:#0f172a;max-width:780px;margin:32px auto;padding:0 28px;font-size:13px;line-height:1.55}h1{font-size:22px;border-bottom:2px solid #3b82f6;padding-bottom:8px}h2{font-size:15px;color:#3b82f6;letter-spacing:.4px;text-transform:uppercase;margin-top:18px}@media print{body{margin:18mm 14mm}}</style>' +
+      '</head><body>' +
+      '<h1>Customer Update — ' + esc(customer) + '</h1>' +
+      '<p style="color:#64748b">Period to ' + dateStr + ' · ' + data.projects.length + ' projects</p>' +
+      '<div style="' + sectionStyle + '"><h2>Portfolio health</h2><p>Green: ' + ragMix.Green + ' · Amber: ' + ragMix.Amber + ' · Red: ' + ragMix.Red + ' · Blocked: ' + data.portfolio_health.blockedCount + ' · At risk: ' + data.portfolio_health.atRiskCount + '</p></div>' +
+      '<div style="' + sectionStyle + '"><h2>Headlines</h2>' + (headlinesHtml || '<p>No headlines captured yet.</p>') + '</div>' +
+      '<div style="' + sectionStyle + '"><h2>Wins</h2>' + (winsHtml ? '<ul>' + winsHtml + '</ul>' : '<p>None recorded.</p>') + '</div>' +
+      '<div style="' + sectionStyle + '"><h2>We need from you</h2>' + (asksHtml ? '<ul>' + asksHtml + '</ul>' : '<p>No asks this period.</p>') + '</div>' +
+      "<div style=\"" + sectionStyle + "\"><h2>Risks we're managing</h2>" + (risksHtml || '<p>None visible to share.</p>') + '</div>' +
+      "<div style=\"" + sectionStyle + "\"><h2>What's next</h2>" + nextHtml + '</div>' +
+      '</body></html>';
+  },
+
+  exportCustomerPack(customer) {
+    const html = this.buildCustomerPackDoc(customer);
+    this.open(html);
   },
 
   exportBusinessCase(projectId) {
