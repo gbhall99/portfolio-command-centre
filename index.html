@@ -3226,6 +3226,23 @@ const App = {
       p.rag_scope      = _canon(p.rag_scope,      _RAG_OPTS, 'Green');
     });
 
+    // Always-run: seed project.narrative shape so every pack consumer (customer/forum/sponsor)
+    // can read it without null-checks. Idempotent — preserves existing values when present.
+    (data.projects || []).forEach(p => {
+      if (!p) return;
+      const n = p.narrative && typeof p.narrative === 'object' ? p.narrative : {};
+      p.narrative = {
+        headline: typeof n.headline === 'string' ? n.headline : '',
+        wins: Array.isArray(n.wins) ? n.wins : [],
+        asks: Array.isArray(n.asks) ? n.asks : [],
+        customer_visible_risk_ids: Array.isArray(n.customer_visible_risk_ids) ? n.customer_visible_risk_ids : [],
+        updated_at: n.updated_at || null,
+        updated_by_walkthrough_id: n.updated_by_walkthrough_id || null
+      };
+      if (!('last_reviewed_at' in p)) p.last_reviewed_at = null;
+      if (!('last_reviewed_by_walkthrough_id' in p)) p.last_reviewed_by_walkthrough_id = null;
+    });
+
     // Always-run: seed per-skill *_max range fields equal to the point estimate
     // when missing. *_max < point estimate is also normalised up to the point estimate.
     (data.projects || []).forEach(p => {

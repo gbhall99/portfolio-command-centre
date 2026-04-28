@@ -56,6 +56,32 @@ describe('migrateSchema', () => {
     expect(p.ownership).toBe('Delivery');
     app.teardown();
   });
+
+  it('seeds project.narrative and last_reviewed_at on legacy projects', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'GCC-NAR' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const proj = app.App.data.projects.find(x => x.id === 'GCC-NAR');
+    expect(proj.narrative).toBeDefined();
+    expect(proj.narrative.headline).toBe('');
+    expect(Array.isArray(proj.narrative.wins)).toBe(true);
+    expect(Array.isArray(proj.narrative.asks)).toBe(true);
+    expect(Array.isArray(proj.narrative.customer_visible_risk_ids)).toBe(true);
+    expect(proj).toHaveProperty('last_reviewed_at');
+    expect(proj.last_reviewed_at).toBeNull();
+    app.teardown();
+  });
+
+  it('migrateSchema is idempotent for narrative seeding', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'GCC-NAR2' });
+    p.narrative = { headline: 'Existing headline', wins: ['win1'], asks: [], customer_visible_risk_ids: [], updated_at: '2026-04-01T00:00:00Z', updated_by_walkthrough_id: null };
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const proj = app.App.data.projects.find(x => x.id === 'GCC-NAR2');
+    expect(proj.narrative.headline).toBe('Existing headline');
+    expect(proj.narrative.wins).toEqual(['win1']);
+    app.teardown();
+  });
 });
 
 describe('_ensureSettingsDefaults', () => {
