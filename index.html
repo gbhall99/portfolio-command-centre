@@ -4717,6 +4717,96 @@ const App = {
     return prompts;
   },
 
+  computeProjectDeliveryTrajectory(projectId) {
+    const project = (this.data && this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return { sprints: [], trend: 'unknown', total_committed: 0, total_completed: 0 };
+    const sprints = (this.data && this.data.sprints) || [];
+    const now = new Date();
+    const activeIdx = sprints.findIndex(s => !s.end_date || new Date(s.end_date) >= now);
+    // Aggregate per-sprint committed + completed across all skills.
+    const bySprint = {};
+    Object.values(project.skill_splits || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => {
+        if (!sp || !sp.sprint || sp.sprint === '_backlog') return;
+        const slot = bySprint[sp.sprint] || (bySprint[sp.sprint] = { committed: 0, completed: 0 });
+        slot.committed += (sp.points || 0);
+        slot.completed += (sp.completed || 0);
+      });
+    });
+    const usedIds = Object.keys(bySprint);
+    if (!usedIds.length) return { sprints: [], trend: 'unknown', total_committed: 0, total_completed: 0 };
+    const center = activeIdx >= 0 ? activeIdx : 0;
+    const lo = Math.max(0, center - 2);
+    const hi = Math.min(sprints.length, center + 3);
+    const frames = sprints.slice(lo, hi).map((s, i) => {
+      const idxInAll = lo + i;
+      const ent = bySprint[s.sprint_id] || { committed: 0, completed: 0 };
+      let state = 'future';
+      if (idxInAll < center) state = 'past';
+      else if (idxInAll === center) state = 'current';
+      return {
+        sprint_id: s.sprint_id,
+        label: (s.sprint_id || '').replace(/^CY\d+-/, ''),
+        state, committed: ent.committed, completed: ent.completed
+      };
+    });
+    // Keep frames that have allocation OR are the current sprint.
+    const withWork = frames.filter(f => bySprint[f.sprint_id] || f.state === 'current');
+    // Trend from last two past frames' completion ratio.
+    const past = withWork.filter(f => f.state === 'past');
+    let trend = 'unknown';
+    if (past.length >= 2) {
+      const recent = past[past.length - 1];
+      const prev = past[past.length - 2];
+      const recentRatio = recent.committed > 0 ? recent.completed / recent.committed : 1;
+      const prevRatio = prev.committed > 0 ? prev.completed / prev.committed : 1;
+      if (recentRatio < prevRatio - 0.1) trend = 'slipping';
+      else if (recentRatio > prevRatio + 0.1) trend = 'ahead';
+      else trend = 'on-track';
+    }
+    let total_committed = 0, total_completed = 0;
+    Object.values(bySprint).forEach(s => { total_committed += s.committed; total_completed += s.completed; });
+    return { sprints: withWork, trend, total_committed, total_completed };
+  },
+
+  computeProjectUpcoming(projectId) {
+    const project = (this.data && this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return null;
+    const now = Date.now();
+    const dayOf = (iso) => {
+      if (!iso) return null;
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return null;
+      const days_to = Math.ceil((t - now) / 86400000);
+      let state = 'green';
+      if (days_to <= 7) state = 'red';
+      else if (days_to <= 14) state = 'amber';
+      return { iso, days_to, state };
+    };
+    const sprints = (this.data && this.data.sprints) || [];
+    const nextSprint = sprints.find(s => !s.end_date || new Date(s.end_date) >= new Date());
+    const dependencies = (project.dependencies || []).map(d => {
+      const target = d.target_id ? (this.data.projects || []).find(p => p.id === d.target_id) : null;
+      return {
+        kind: d.kind || d.type || 'related',
+        target_id: d.target_id || null,
+        target_name: target ? target.name : (d.label || d.target_id || ''),
+        target_status: target ? target.status : null,
+        target_rag_schedule: target ? target.rag_schedule : null,
+        state: target && (target.status === 'Complete' || target.status === 'Closed') ? 'done' : (target ? 'in_progress' : 'external'),
+        target_date_iso: target ? target.target_date : null
+      };
+    });
+    return {
+      target_date: dayOf(project.target_date),
+      hard_deadline: dayOf(project.hard_deadline),
+      next_sprint_end: nextSprint ? dayOf(nextSprint.end_date) : null,
+      product_release_date: dayOf(project.product_release_date),
+      dependencies
+    };
+  },
+
   // Walkthrough attention score — drives card ordering. Higher = more attention needed.
   computeProjectAttentionScore(project) {
     if (!project) return 0;
