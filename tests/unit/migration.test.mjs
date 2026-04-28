@@ -27,23 +27,33 @@ describe('migrateSchema', () => {
     app.teardown();
   });
 
-  it('defaults missing project.ownership to "We Own" so legacy data does not trigger phantom unsaved-changes', async () => {
+  it('defaults missing project.ownership to "Lead & Delivery" so legacy data does not trigger phantom unsaved-changes', async () => {
     resetIdSeq();
     const legacy = makeProject({ id: 'GCC-OWN' });
     delete legacy.ownership;
     const app = await loadApp(makeDataset({ projects: [legacy] }));
     const p = app.App.data.projects.find(x => x.id === 'GCC-OWN');
-    expect(p.ownership).toBe('We Own');
+    expect(p.ownership).toBe('Lead & Delivery');
     app.teardown();
   });
 
-  it('preserves a non-default ownership when present', async () => {
+  it('canonicalises legacy "We Own" / "Requirements Received" values into the dropdown options', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'GCC-OWN-A' }); a.ownership = 'We Own';
+    const b = makeProject({ id: 'GCC-OWN-B' }); b.ownership = 'Requirements Received';
+    const app = await loadApp(makeDataset({ projects: [a, b] }));
+    expect(app.App.data.projects.find(x => x.id === 'GCC-OWN-A').ownership).toBe('Lead & Delivery');
+    expect(app.App.data.projects.find(x => x.id === 'GCC-OWN-B').ownership).toBe('Delivery');
+    app.teardown();
+  });
+
+  it('preserves an already-canonical ownership when present', async () => {
     resetIdSeq();
     const proj = makeProject({ id: 'GCC-OWN2' });
-    proj.ownership = 'They Own';
+    proj.ownership = 'Delivery';
     const app = await loadApp(makeDataset({ projects: [proj] }));
     const p = app.App.data.projects.find(x => x.id === 'GCC-OWN2');
-    expect(p.ownership).toBe('They Own');
+    expect(p.ownership).toBe('Delivery');
     app.teardown();
   });
 });
