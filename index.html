@@ -3198,12 +3198,32 @@ const App = {
       }
     });
 
-    // Always-run: default missing ownership to 'We Own'. The Quick-Add wizard already writes
-    // this, so legacy data without it (older exports) used to make the detail panel detect
-    // a phantom dirty change between undefined and 'We Own' on first open.
+    // Always-run: canonicalise dropdown-backed fields so the rendered <select> always matches
+    // the data. Historic data + render-time fallbacks (e.g., `p.visibility || 'Internal'`) made
+    // the close-time dirty detector see a phantom mismatch on every project — opening and
+    // closing a project without any edits used to fire "unsaved changes" warnings on
+    // ownership / visibility / status / category. Canonicalising here is the single source of
+    // truth.
+    const _canon = (val, allowed, fallback) => {
+      if (typeof val !== 'string' || !val) return fallback;
+      return allowed.indexOf(val) >= 0 ? val : fallback;
+    };
+    const _ownershipMap = { 'We Own': 'Lead & Delivery', 'Requirements Received': 'Delivery' };
+    const _OWNERSHIP_OPTS = ['Lead & Delivery', 'Delivery'];
+    const _VISIBILITY_OPTS = ['Internal', 'Internal & External'];
+    const _STATUS_OPTS = ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'];
+    const _CATEGORY_OPTS = ['General', 'Internal', 'Mandatory', 'BAU', 'Innovation', 'Product Release'];
+    const _RAG_OPTS = ['Green', 'Amber', 'Red'];
     (data.projects || []).forEach(p => {
       if (!p) return;
-      if (typeof p.ownership !== 'string' || !p.ownership) p.ownership = 'We Own';
+      if (_ownershipMap[p.ownership]) p.ownership = _ownershipMap[p.ownership];
+      p.ownership  = _canon(p.ownership,  _OWNERSHIP_OPTS,  'Lead & Delivery');
+      p.visibility = _canon(p.visibility, _VISIBILITY_OPTS, 'Internal');
+      p.status     = _canon(p.status,     _STATUS_OPTS,     'Not Started');
+      p.category   = _canon(p.category,   _CATEGORY_OPTS,   'General');
+      p.rag_schedule   = _canon(p.rag_schedule,   _RAG_OPTS, 'Green');
+      p.rag_resourcing = _canon(p.rag_resourcing, _RAG_OPTS, 'Green');
+      p.rag_scope      = _canon(p.rag_scope,      _RAG_OPTS, 'Green');
     });
 
     // Always-run: seed per-skill *_max range fields equal to the point estimate
@@ -8434,7 +8454,7 @@ const ProjectImport = {
         id,
         name: r.name,
         customer: r.customer,
-        ownership: 'We Own',
+        ownership: 'Lead & Delivery',
         category: r.category,
         visibility: 'Internal',
         sponsor: '',
@@ -13898,7 +13918,7 @@ const DetailPanel = {
       id: id,
       name: 'New Project',
       customer: cust,
-      ownership: 'We Own',
+      ownership: 'Lead & Delivery',
       category: 'General',
       lifecycle_stage: App.LIFECYCLE_STAGE_DEFAULT,
       visibility: 'Internal',
@@ -14280,7 +14300,7 @@ const DetailPanel = {
 
     const newProject = {
       id, name, customer: cust,
-      ownership: 'We Own', category: (tpl && tpl.category) || 'General',
+      ownership: 'Lead & Delivery', category: (tpl && tpl.category) || 'General',
       lifecycle_stage: lifecycleVal,
       visibility: 'Internal',
       sponsor: '', manager: '',
