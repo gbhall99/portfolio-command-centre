@@ -4450,6 +4450,20 @@ const App = {
     opts = opts || {};
     const entry = { project_id: opts.projectId || null, text: String(opts.text || '').slice(0, 400), rationale: String(opts.rationale || '').slice(0, 400), recorded_at: new Date().toISOString() };
     wt.decisions.push(entry);
+    if (opts.projectId) {
+      const project = (this.data.projects || []).find(p => p.id === opts.projectId);
+      if (project) {
+        if (!Array.isArray(project.comms_log)) project.comms_log = [];
+        const note = entry.text + (entry.rationale ? ' (' + entry.rationale + ')' : '');
+        project.comms_log.push({
+          type: 'Status Update',
+          date: new Date().toISOString().slice(0, 10),
+          note: note,
+          source: 'walkthrough',
+          walkthrough_id: walkthroughId
+        });
+      }
+    }
     if (typeof this.logChange === 'function') {
       this.logChange(opts.projectId || null, 'walkthrough_decision', '', entry.text, 'walkthrough', { rationale: entry.rationale });
     }
@@ -4470,6 +4484,11 @@ const App = {
       created_at: new Date().toISOString(),
       walkthrough_id: walkthroughId
     };
+    if (opts.owner) {
+      const ownerStr = String(opts.owner).toLowerCase();
+      const matched = ((this.data && this.data.team_members) || []).find(m => String(m.name || '').toLowerCase() === ownerStr);
+      if (matched) action.personal_owner_id = matched.name;
+    }
     wt.actions.push(action);
     if (opts.forumId) {
       const forum = ((this.data && this.data.governance_forums) || []).find(f => f.id === opts.forumId || f.name === opts.forumId);
@@ -4480,6 +4499,101 @@ const App = {
     }
     this.markDirty();
     this.saveToLocalStorage();
+    return true;
+  },
+
+  addRiskFromWalkthrough(projectId, riskData, walkthroughId) {
+    const project = (this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return false;
+    if (!Array.isArray(project.risks_register)) project.risks_register = [];
+    const entry = {
+      description: String(riskData.description || '').slice(0, 200),
+      impact: Math.max(0, Math.min(5, parseInt(riskData.impact, 10) || 0)),
+      probability: Math.max(0, Math.min(5, parseInt(riskData.probability, 10) || 0)),
+      status: 'open',
+      added_at: new Date().toISOString(),
+      added_by_walkthrough_id: walkthroughId || null
+    };
+    project.risks_register.push(entry);
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'risk_added', '', entry.description, 'walkthrough', { score: entry.impact * entry.probability });
+    }
+    this.markDirty(); this.saveToLocalStorage();
+    return true;
+  },
+
+  addCommFromWalkthrough(projectId, note, walkthroughId) {
+    const project = (this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return false;
+    if (!Array.isArray(project.comms_log)) project.comms_log = [];
+    project.comms_log.push({
+      type: 'Status Update',
+      date: new Date().toISOString().split('T')[0],
+      note: String(note || '').slice(0, 400),
+      source: 'walkthrough',
+      walkthrough_id: walkthroughId || null
+    });
+    this.markDirty(); this.saveToLocalStorage();
+    return true;
+  },
+
+  updateProjectNarrative(projectId, patch, walkthroughId) {
+    const project = (this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return false;
+    if (!project.narrative || typeof project.narrative !== 'object') {
+      project.narrative = { headline: '', wins: [], asks: [], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
+    }
+    if (patch && typeof patch.headline === 'string') project.narrative.headline = patch.headline.slice(0, 240);
+    if (patch && Array.isArray(patch.wins)) project.narrative.wins = patch.wins.slice(0, 20).map(s => String(s).slice(0, 200));
+    if (patch && Array.isArray(patch.asks)) project.narrative.asks = patch.asks.slice(0, 20).map(s => String(s).slice(0, 200));
+    if (patch && Array.isArray(patch.customer_visible_risk_ids)) project.narrative.customer_visible_risk_ids = patch.customer_visible_risk_ids.slice(0, 50);
+    project.narrative.updated_at = new Date().toISOString();
+    project.narrative.updated_by_walkthrough_id = walkthroughId || null;
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'narrative', '', JSON.stringify(Object.keys(patch || {})), 'walkthrough', {});
+    }
+    this.markDirty(); this.saveToLocalStorage();
+    return true;
+  },
+
+  bumpProjectReviewed(projectId, walkthroughId) {
+    const project = (this.data.projects || []).find(p => p.id === projectId);
+    if (!project) return false;
+    project.last_reviewed_at = new Date().toISOString();
+    project.last_reviewed_by_walkthrough_id = walkthroughId || null;
+    if (walkthroughId) this.setWalkthroughSectionStatus(walkthroughId, 'proj:' + projectId, 'reviewed');
+    if (typeof this.logChange === 'function') {
+      this.logChange(projectId, 'reviewed', '', project.last_reviewed_at, 'walkthrough', {});
+    }
+    this.markDirty(); this.saveToLocalStorage();
+    return true;
+  },
+
+  completeForumAction(forumId, actionId, walkthroughId) {
+    const forum = (this.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
+    if (!forum || !Array.isArray(forum.actions)) return false;
+    const action = forum.actions.find(a => a.id === actionId || a.description === actionId);
+    if (!action) return false;
+    action.status = 'Done';
+    action.completed_at = new Date().toISOString();
+    if (typeof this.logChange === 'function') {
+      this.logChange(action.project_id || null, 'forum_action_completed', action.description, 'Done', 'walkthrough', { forumId, walkthroughId });
+    }
+    this.markDirty(); this.saveToLocalStorage();
+    return true;
+  },
+
+  deferForumAction(forumId, actionId, newDate, walkthroughId) {
+    const forum = (this.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
+    if (!forum || !Array.isArray(forum.actions)) return false;
+    const action = forum.actions.find(a => a.id === actionId || a.description === actionId);
+    if (!action) return false;
+    const oldDate = action.due_date;
+    action.due_date = newDate;
+    if (typeof this.logChange === 'function') {
+      this.logChange(action.project_id || null, 'forum_action_deferred', oldDate || '', newDate, 'walkthrough', { forumId, walkthroughId });
+    }
+    this.markDirty(); this.saveToLocalStorage();
     return true;
   },
 
