@@ -4627,6 +4627,96 @@ const App = {
     return true;
   },
 
+  _hasDecisionInCurrentWalkthrough(projectId) {
+    const wts = (this.data && this.data.walkthroughs) || [];
+    const cur = wts.length ? wts[wts.length - 1] : null;
+    return !!(cur && Array.isArray(cur.decisions) && cur.decisions.some(d => d.project_id === projectId));
+  },
+
+  // Pure function deriving walkthrough prompts from project signals.
+  computeWalkthroughPrompts(project) {
+    if (!project) return [];
+    const prompts = [];
+    const now = Date.now();
+    const lastUpdatedMs = project.last_updated ? new Date(project.last_updated).getTime() : 0;
+    const daysSinceUpdate = lastUpdatedMs ? Math.floor((now - lastUpdatedMs) / 86400000) : 999;
+
+    // 1. Schedule amber for >=7d
+    if (project.rag_schedule === 'Amber' && daysSinceUpdate >= 7) {
+      prompts.push({
+        severity: 'amber', kind: 'schedule_amber_mitigation',
+        message: 'Schedule has been amber for ' + daysSinceUpdate + ' days — log a mitigation?',
+        hint: "What's blocking this from going green again?",
+        action: 'focus_risk_capture_template:schedule'
+      });
+    }
+
+    // 2. Schedule red with no decision recorded for this project in latest walkthrough
+    if (project.rag_schedule === 'Red' && !this._hasDecisionInCurrentWalkthrough(project.id)) {
+      prompts.push({
+        severity: 'red', kind: 'red_no_decision',
+        message: 'Schedule is red — confirm the recovery plan in writing.',
+        hint: 'A decision recorded here also lands in the comms log.',
+        action: 'focus_decision_capture'
+      });
+    }
+
+    // 3. Open chips + stale
+    const openChips = [];
+    Object.values(project.skill_splits || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => {
+        if (sp && sp.status !== 'complete' && (sp.points || 0) > 0) openChips.push(sp);
+      });
+    });
+    if (openChips.length && daysSinceUpdate >= 14) {
+      prompts.push({
+        severity: 'amber', kind: 'stale_chip_progress',
+        message: 'Stale ' + daysSinceUpdate + ' days — confirm chip progress?',
+        hint: 'Has the team made progress this sprint?',
+        action: 'focus_chip_inputs'
+      });
+    }
+
+    // 4. Risks of score >=9 open >=7 days
+    (project.risks_register || []).forEach((r, idx) => {
+      const score = (r.impact || 0) * (r.probability || 0);
+      const addedMs = r.added_at ? new Date(r.added_at).getTime() : 0;
+      const ageDays = addedMs ? Math.floor((now - addedMs) / 86400000) : 0;
+      if (score >= 9 && (r.status || 'open') === 'open' && ageDays >= 7) {
+        prompts.push({
+          severity: 'amber', kind: 'risk_recheck',
+          message: 'Risk "' + (r.description || '').slice(0, 40) + '" score ' + score + ' open ' + ageDays + ' days — still real?',
+          hint: 'Update score, mitigate, or close.',
+          action: 'focus_risk_idx:' + idx
+        });
+      }
+    });
+
+    // 5. Blocked + no decision in current walkthrough for this project
+    if (project.status === 'Blocked' && !this._hasDecisionInCurrentWalkthrough(project.id)) {
+      prompts.push({
+        severity: 'red', kind: 'blocked_no_decision',
+        message: "Blocked — what's the unblock and by when?",
+        hint: 'Log the unblock as an action with an owner.',
+        action: 'focus_action_capture'
+      });
+    }
+
+    // 6. Missing headline + Implementation
+    const headline = project.narrative && project.narrative.headline;
+    if ((!headline || !headline.trim()) && project.lifecycle_stage === 'Implementation') {
+      prompts.push({
+        severity: 'info', kind: 'missing_headline',
+        message: 'No headline yet — capture one for next pack?',
+        hint: 'One sentence that describes the current state in plain English.',
+        action: 'focus_narrative_headline'
+      });
+    }
+
+    return prompts;
+  },
+
   // Walkthrough attention score — drives card ordering. Higher = more attention needed.
   computeProjectAttentionScore(project) {
     if (!project) return 0;
