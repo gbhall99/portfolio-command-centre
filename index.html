@@ -528,6 +528,15 @@ html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-green { color:
 html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-amber { color: #fbbf24; }
 html[data-theme="dark"] .dash-card-verdict-word.dash-card-verdict-red { color: #f87171; }
 
+/* Detail Panel three-tab redesign — Issue 9 */
+.dp-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border-light); padding-bottom: 0; }
+.dp-tab-trigger { background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-sm) var(--radius-sm) 0 0; padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; position: relative; bottom: -1px; transition: color 0.15s, background 0.15s; }
+.dp-tab-trigger:hover { color: var(--text-dark); background: var(--bg-content); }
+.dp-tab-trigger-active { color: var(--accent-blue); background: var(--surface); border-color: var(--border-light); border-bottom-color: var(--surface); }
+html[data-theme="dark"] .dp-tab-trigger-active { background: var(--bg-card); border-color: #1f2937; border-bottom-color: var(--bg-card); }
+.dp-tab-panel { display: none; }
+.dp-tab-panel.dp-tab-active { display: block; }
+
 /* Quick-edit cells in the Projects table — Issue 3 */
 td[data-quick-edit] { cursor: text; }
 td[data-quick-edit]:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
@@ -11557,6 +11566,23 @@ const BacklogHealth = {
    ============================================================ */
 const DetailPanel = {
   currentId: null,
+  // Issue 9: three-tab redesign — Setup (once-off), Health (weekly review),
+  // Delivery (daily ops). Default tab = Health, the most common reason to open.
+  activeTab: 'health',
+  switchTab(tab) {
+    if (tab !== 'setup' && tab !== 'health' && tab !== 'delivery') return;
+    this.activeTab = tab;
+    const body = document.getElementById('panelBody');
+    if (!body) return;
+    body.querySelectorAll('[data-dp-tab]').forEach(panel => {
+      const isActive = panel.dataset.dpTab === tab;
+      panel.classList.toggle('dp-tab-active', isActive);
+      panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    });
+    body.querySelectorAll('[data-dp-tab-trigger]').forEach(btn => {
+      btn.classList.toggle('dp-tab-trigger-active', btn.dataset.dpTabTrigger === tab);
+    });
+  },
   get CUSTOMERS() { return App.getCustomers(); },
   OWNERSHIPS: ['Lead & Delivery', 'Delivery'],
   CATEGORIES: ['General', 'Internal', 'Mandatory', 'BAU', 'Innovation', 'Product Release'],
@@ -12063,16 +12089,17 @@ const DetailPanel = {
     const productReleaseHtml = p.category === 'Product Release' ?
       '<div class="field-group"><div class="field-label">Release Date</div>' + inp('product_release_date', p.product_release_date, 'date') + '</div>' : '';
 
-    const html = '' +
-      // Action buttons
+    // Action buttons (always visible above the tab strip)
+    const headerHtml =
       '<div style="display:flex;gap:6px;margin-bottom:12px">' +
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.cloneProject()" title="Clone this project"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Clone Project</button>' +
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.saveAsTemplate()" title="Save delivery config as template"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save as Template</button>' +
-      '</div>' +
-      // EVM metrics strip
-      this.renderEvmStrip(p) +
-      // Status & Health — promoted to the top so RAG health is the first thing the user sees
-      // after the project header. Status sits alongside the three RAG dimensions.
+      '</div>';
+
+    // ===== HEALTH tab — weekly review surface =====
+    const healthSections = [];
+    healthSections.push(this.renderEvmStrip(p));
+    healthSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Status & Health</div>' +
         '<div class="field-grid">' +
@@ -12081,8 +12108,144 @@ const DetailPanel = {
           ragSel('Resource Health', 'rag_resourcing', p.rag_resourcing) +
           ragSel('Scope Health', 'rag_scope', p.rag_scope) +
         '</div>' +
-      '</div>' +
-      // Identity
+      '</div>'
+    );
+    if (p.status === 'Complete' || p.status === 'Closed') {
+      healthSections.push(
+        '<div class="panel-section"><div class="panel-section-title">Completion</div>' +
+          '<div class="field-group"><div class="field-label">Actual Completion Date</div>' +
+            '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
+        '</div>'
+      );
+    }
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Notes</div>' +
+        textarea('notes', p.notes) +
+        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
+        textarea('assumptions', p.assumptions) + '</div>' +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
+        '<div class="risk-list" id="riskList">' +
+        this.renderRisks(p) +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+          '<button class="risk-add-btn" onclick="DetailPanel.addRisk()">+ Add Risk</button>' +
+          '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">or from template:</span>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'sme-unavailable\')">SME unavailable</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'data-quality\')">Data quality</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'scope-creep\')">Scope creep</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'dependency-slip\')">Dependency slip</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'resource-constraint\')">Resource constraint</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'third-party-delay\')">Third-party delay</button>' +
+        '</div>' +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Decisions <span class="risk-count" id="decisionCount">' + ((p.decisions_register || []).length || 0) + '</span></div>' +
+        '<div id="decisionListInner">' + this.renderDecisions(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addDecisionLog()">+ Log Decision</button>' +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
+        '<div id="commsLog">' +
+          (p.comms_log || []).slice().reverse().map((c, i) => {
+            const idx = (p.comms_log || []).length - 1 - i;
+            const typeColors = { 'Status Update': '#3b82f6', 'Project Start': '#22c55e', 'Phase Gate': '#8b5cf6', 'Escalation': '#ef4444', 'Closure': '#64748b', 'Ad Hoc': '#f59e0b' };
+            const color = typeColors[c.type] || '#94a3b8';
+            return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
+              '<span style="padding:1px 6px;border-radius:3px;background:' + color + '15;color:' + color + ';font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(c.type) + '</span>' +
+              '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (c.date || '') + '</span>' +
+              '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(c.note || '') + '</span>' +
+              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px" onclick="DetailPanel.removeComm(' + idx + ')" title="Remove">&times;</button>' +
+            '</div>';
+          }).join('') +
+          (!(p.comms_log || []).length ? '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No communications recorded</div>' : '') +
+        '</div>' +
+        '<div id="commsAddForm" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
+          '<div style="display:flex;gap:6px">' +
+            '<select id="commsType" class="field-input" style="width:140px;font-size:11px">' +
+              ['Status Update', 'Project Start', 'Phase Gate', 'Escalation', 'Closure', 'Ad Hoc'].map(t => '<option>' + t + '</option>').join('') +
+            '</select>' +
+            '<input type="date" id="commsDate" class="field-input" style="font-size:11px" value="' + new Date().toISOString().split('T')[0] + '">' +
+          '</div>' +
+          '<textarea id="commsNote" class="field-input" placeholder="Note..." style="font-size:11px;min-height:40px;resize:vertical"></textarea>' +
+          '<div style="display:flex;gap:6px;justify-content:flex-end">' +
+            '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="document.getElementById(\'commsAddForm\').style.display=\'none\'">Cancel</button>' +
+            '<button class="btn btn-sm" style="font-size:10px;background:var(--accent-blue);color:white" onclick="DetailPanel.addComm()">Save</button>' +
+          '</div>' +
+        '</div>' +
+        '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
+      '</div>'
+    );
+    (function() {
+      const allForums = App.data.governance_forums || [];
+      const linkedDecisions = [];
+      allForums.forEach(f => {
+        (f.decisions || []).forEach(d => {
+          if ((d.linkedProjects || []).includes(p.id)) {
+            linkedDecisions.push({ forumName: f.name, date: d.date, text: d.text, recordedBy: d.recordedBy });
+          }
+        });
+      });
+      if (linkedDecisions.length) {
+        healthSections.push(
+          '<div class="panel-section">' +
+            '<div class="panel-section-title">Governance Decisions <span class="risk-count">' + linkedDecisions.length + '</span></div>' +
+            linkedDecisions.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(d =>
+              '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
+                '<span style="padding:1px 6px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--accent-violet);font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(d.forumName) + '</span>' +
+                '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (d.date || '') + '</span>' +
+                '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(d.text || '') + '</span>' +
+                (d.recordedBy ? '<span style="font-size:10px;color:var(--text-muted);font-style:italic">' + Dashboard.esc(d.recordedBy) + '</span>' : '') +
+              '</div>'
+            ).join('') +
+          '</div>'
+        );
+      }
+    })();
+    (function() {
+      const allForums = App.data.governance_forums || [];
+      const linkedActions = [];
+      allForums.forEach(f => {
+        (f.actions || []).forEach(a => {
+          if (a.projectId === p.id) {
+            linkedActions.push({ forumName: f.name, description: a.description, owner: a.owner, due_date: a.due_date, status: a.status });
+          }
+        });
+      });
+      if (linkedActions.length) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        healthSections.push(
+          '<div class="panel-section">' +
+            '<div class="panel-section-title">Forum Actions <span class="risk-count">' + linkedActions.length + '</span></div>' +
+            linkedActions.map(a => {
+              const isDone = a.status === 'Done';
+              const isOverdue = !isDone && a.due_date && a.due_date < todayStr;
+              const statusColor = isDone ? 'var(--status-green)' : isOverdue ? 'var(--status-red)' : 'var(--accent-blue)';
+              const statusLabel = isDone ? 'Done' : isOverdue ? 'Overdue' : 'Open';
+              return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:center">' +
+                '<span style="padding:1px 6px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--accent-violet);font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(a.forumName) + '</span>' +
+                '<span style="flex:1;color:' + (isDone ? 'var(--text-muted)' : 'var(--text-dark-secondary)') + ';' + (isDone ? 'text-decoration:line-through' : '') + '">' + Dashboard.esc(a.description || '') + '</span>' +
+                '<span style="font-size:10px;color:var(--text-muted)">' + Dashboard.esc(a.owner || '') + '</span>' +
+                '<span style="font-size:10px;color:var(--text-muted)">' + (a.due_date || '') + '</span>' +
+                '<span style="padding:1px 6px;border-radius:999px;font-size:9px;font-weight:600;color:white;background:' + statusColor + '">' + statusLabel + '</span>' +
+              '</div>';
+            }).join('') +
+          '</div>'
+        );
+      }
+    })();
+
+    // ===== SETUP tab — once-off configuration =====
+    const setupSections = [];
+    setupSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Identity</div>' +
         '<div class="field-grid">' +
@@ -12103,10 +12266,9 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">DevOps Link</div>' + inp('devops_link', p.devops_link || '') + '</div>' +
           '<div class="field-group"><div class="field-label">WFA Link</div>' + inp('wfa_link', p.wfa_link || '') + '</div>' +
         '</div>' +
-      '</div>' +
-
-      // Prioritisation — now a dedicated section above Status & Health. Priority, WSJF inputs
-      // and MoSCoW band all live together so the PM decides the ranking before reading status.
+      '</div>'
+    );
+    setupSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Prioritisation</div>' +
         '<div class="field-grid">' +
@@ -12128,7 +12290,7 @@ const DetailPanel = {
               '</div>';
             })() +
           '</div>' +
-          '<div class="field-group"><div class="field-label" title="MoSCoW classification partitions priority bands. Must > Should > Could > Won\u2019t.">MoSCoW</div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won\u2019t'], p.moscow || '') + '</div>' +
+          '<div class="field-group"><div class="field-label" title="MoSCoW classification partitions priority bands. Must > Should > Could > Won’t.">MoSCoW</div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won’t'], p.moscow || '') + '</div>' +
           '<div class="field-group"><div class="field-label" title="Business value: how much does this deliver to customers/users/revenue? 1 = negligible, 10 = transformational.">Business value (1–10)</div>' + scaleSel('business_value', p.business_value, BUSINESS_VALUE_LABELS) + '</div>' +
           '<div class="field-group"><div class="field-label" title="Time-criticality: how much value decays as we delay? 1 = no decay, 10 = value lost if not done imminently.">Time-criticality (1–10)</div>' + scaleSel('time_criticality', p.time_criticality, TIME_CRITICALITY_LABELS) + '</div>' +
           '<div class="field-group"><div class="field-label" title="Risk reduction / opportunity enablement: how much does this de-risk the portfolio or open new opportunities? 1 = none, 10 = unlocks major downstream value.">Risk / opportunity (1–10)</div>' + scaleSel('risk_reduction_opportunity', p.risk_reduction_opportunity, RISK_OPPORTUNITY_LABELS) + '</div>' +
@@ -12139,7 +12301,7 @@ const DetailPanel = {
             return '<div style="font-size:10px;color:var(--text-muted);margin-top:8px">Fill at least one WSJF input to switch this project from the legacy hybrid score to the agile WSJF score. When blank, the current score is used.</div>';
           }
           const band = App.moscowBand(p);
-          const bandLabel = ['Must', 'Should', 'Could', 'Won\u2019t'][band] || 'Could';
+          const bandLabel = ['Must', 'Should', 'Could', 'Won’t'][band] || 'Could';
           const confColor = w.confidence === 'high' ? 'var(--status-green)' : w.confidence === 'medium' ? 'var(--status-amber)' : 'var(--text-muted)';
           return '<div style="font-size:11px;margin-top:8px;color:var(--text-dark-secondary)">' +
             'WSJF <strong style="color:var(--text-dark)">' + w.wsjf.toFixed(2) + '</strong> ' +
@@ -12148,13 +12310,9 @@ const DetailPanel = {
             'Confidence <span style="color:' + confColor + ';font-weight:700">' + w.confidence + '</span>' +
           '</div>';
         })() +
-      '</div>' +
-
-      // (Status & Health lives at the top now — see above, before Identity.)
-
-      // Timeline — switched to the shared .field-grid two-column layout so Sprint + Date rows
-      // align with every other paired-field section. Labels now name the date explicitly
-      // ("Start Date" / "Target Date") instead of repeating a bare "Date" under each sprint.
+      '</div>'
+    );
+    setupSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Timeline</div>' +
         '<div class="field-grid">' +
@@ -12165,66 +12323,88 @@ const DetailPanel = {
           (p.category === 'Product Release' ? '<div class="field-group"><div class="field-label">Product Release Date</div>' + inp('product_release_date', p.product_release_date, 'date') + '</div>' : '') +
           '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
         '</div>' +
-      '</div>' +
+      '</div>'
+    );
+    setupSections.push((function() {
+      const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: [] };
+      if (dc.include_req === undefined) dc.include_req = true;
+      if (dc.include_uat === undefined) dc.include_uat = true;
+      const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
+        ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+      const isExternal = dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal';
+      const extFields = isExternal ? '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+        '<div class="field-group" style="flex:1;min-width:100px"><div class="field-label" style="font-size:10px">Team</div><input type="text" class="field-input" data-ds-field="team" value="' + Dashboard.esc(ds.team || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"' + (dc.data_sourcing_type === 'External (GDAS)' ? ' readonly style="background:#f5f7fa;font-size:11px"' : '') + '></div>' +
+        '<div class="field-group"><div class="field-label" style="font-size:10px">DT UAT Date</div><input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
+        '<div class="field-group"><div class="field-label" style="font-size:10px">DT Go-Live Date</div><input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
+      '</div>' : '';
+      const allPhaseNames = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'];
+      const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899' };
+      const order = dc.phase_order || [];
+      const phaseToggleMap = { 'Requirements': 'include_req', 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'UAT': 'include_uat' };
+      const flowItems = allPhaseNames.map((ph) => {
+        const c = colors[ph] || '#94a3b8';
+        const isInOrder = order.includes(ph);
+        const isDataSourcing = ph === 'Data Sourcing';
+        const toggleField = phaseToggleMap[ph];
+        const orderIdx = order.indexOf(ph);
+        const canUp = isInOrder && orderIdx > 0;
+        const canDown = isInOrder && orderIdx >= 0 && orderIdx < order.length - 1;
+        const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move earlier">◀</span>' : '';
+        const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move later">▶</span>' : '';
+        if (isDataSourcing && !isExternal) return '';
+        if (isDataSourcing) {
+          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + upBtn + ph + dnBtn + '</span>';
+        }
+        const opacity = isInOrder ? '' : ';opacity:0.35';
+        return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600' + opacity + '">' +
+          '<input type="checkbox" ' + (isInOrder ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + toggleField + '\',this.checked)" style="margin:0;cursor:pointer;accent-color:' + c + '">' +
+          upBtn + ph + dnBtn + '</span>';
+      }).filter(Boolean).join('<span style="color:var(--text-muted);font-size:10px">→</span>');
 
-      // Delivery Setup (before phases — drives which phases are active)
-      (function() {
-        const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: [] };
-        if (dc.include_req === undefined) dc.include_req = true;
-        if (dc.include_uat === undefined) dc.include_uat = true;
-        const toggle = (field, label, checked) => '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0"><input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + field + '\',this.checked)"> ' + label + '</label>';
-        const dsSelect = '<select class="field-input" style="font-size:11px;width:160px" onchange="DetailPanel.onDeliveryConfigChange(\'data_sourcing_type\',this.value)">' +
-          ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '"' + (dc.data_sourcing_type === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
-        const isExternal = dc.data_sourcing_type && dc.data_sourcing_type !== 'Internal';
-        const extFields = isExternal ? '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
-          '<div class="field-group" style="flex:1;min-width:100px"><div class="field-label" style="font-size:10px">Team</div><input type="text" class="field-input" data-ds-field="team" value="' + Dashboard.esc(ds.team || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"' + (dc.data_sourcing_type === 'External (GDAS)' ? ' readonly style="background:#f5f7fa;font-size:11px"' : '') + '></div>' +
-          '<div class="field-group"><div class="field-label" style="font-size:10px">DT UAT Date</div><input type="date" class="field-input" data-ds-field="uat_release_date" value="' + (ds.uat_release_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
-          '<div class="field-group"><div class="field-label" style="font-size:10px">DT Go-Live Date</div><input type="date" class="field-input" data-ds-field="go_live_date" value="' + (ds.go_live_date || '') + '" onchange="DetailPanel.onDataSourcingChange(this)" style="font-size:11px"></div>' +
-        '</div>' : '';
-        // All possible phases as checkboxes in flow order
-        const allPhaseNames = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'];
-        const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899' };
-        const order = dc.phase_order || [];
-        // Map ALL phase names to toggle fields
-        const phaseToggleMap = { 'Requirements': 'include_req', 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'UAT': 'include_uat' };
-        // Build flow with checkboxes + reorder arrows for ALL phases
-        const flowItems = allPhaseNames.map((ph) => {
-          const c = colors[ph] || '#94a3b8';
-          const isInOrder = order.includes(ph);
-          const isDataSourcing = ph === 'Data Sourcing';
-          const toggleField = phaseToggleMap[ph];
-          const orderIdx = order.indexOf(ph);
-          // Arrows only for phases that are in the order
-          const canUp = isInOrder && orderIdx > 0;
-          const canDown = isInOrder && orderIdx >= 0 && orderIdx < order.length - 1;
-          const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move earlier">\u25C0</span>' : '';
-          const dnBtn = canDown ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move later">\u25B6</span>' : '';
-          // Data Sourcing: hidden when internal, no checkbox (driven by data source type)
-          if (isDataSourcing && !isExternal) return '';
-          if (isDataSourcing) {
-            return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600">' + upBtn + ph + dnBtn + '</span>';
-          }
-          // All other phases get a checkbox
-          const opacity = isInOrder ? '' : ';opacity:0.35';
-          return '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:' + c + '15;color:' + c + ';font-size:10px;font-weight:600' + opacity + '">' +
-            '<input type="checkbox" ' + (isInOrder ? 'checked' : '') + ' onchange="DetailPanel.onDeliveryConfigToggle(\'' + toggleField + '\',this.checked)" style="margin:0;cursor:pointer;accent-color:' + c + '">' +
-            upBtn + ph + dnBtn + '</span>';
-        }).filter(Boolean).join('<span style="color:var(--text-muted);font-size:10px">\u2192</span>');
-
-        return '<div class="panel-section">' +
-          '<div class="panel-section-title">Delivery Setup</div>' +
-          '<div style="display:flex;flex-direction:column;gap:6px">' +
-            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data sourcing</span>' + dsSelect + '</div>' +
-            extFields +
-            '<div style="padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
-              '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Flow <span style="font-weight:400">(check to include, arrows to reorder)</span></div>' +
-              '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' + flowItems + '</div>' +
-            '</div>' +
+      return '<div class="panel-section">' +
+        '<div class="panel-section-title">Delivery Setup</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px">' +
+          '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:600;min-width:100px">Data sourcing</span>' + dsSelect + '</div>' +
+          extFields +
+          '<div style="padding:6px 0;border-top:1px solid var(--border-light);margin-top:4px">' +
+            '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Flow <span style="font-weight:400">(check to include, arrows to reorder)</span></div>' +
+            '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">' + flowItems + '</div>' +
           '</div>' +
-        '</div>';
-      })() +
+        '</div>' +
+      '</div>';
+    })());
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Dependencies</div>' +
+        '<div id="depList">' + this.renderDependencies(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
+      '</div>'
+    );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
+        '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
+      '</div>'
+    );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits_register || []).length || 0) + '</span></div>' +
+        '<div id="benefitList">' + this.renderBenefits(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
+      '</div>'
+    );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Assumptions & Constraints <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
+        '<div id="assumptionList">' + this.renderAssumptions(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Add Entry</button>' +
+      '</div>'
+    );
 
-      // Delivery Phases (only checked phases from the flow above)
+    // ===== DELIVERY tab — daily ops =====
+    const deliverySections = [];
+    deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Delivery Phases</div>' +
         '<div class="stage-tracker">' +
@@ -12236,8 +12416,7 @@ const DetailPanel = {
           const pointsInput = ph.skillKey ?
             '<input type="number" class="field-input" data-field="' + ph.skillKey + '" value="' + (p[ph.skillKey] || 0) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px" onchange="DetailPanel.onFieldChange(this)">' +
             '<span style="font-size:9px;color:var(--text-muted);margin-left:6px">max</span>' +
-            '<input type="number" class="field-input" data-field="' + ph.skillKey + '_max" value="' + (p[ph.skillKey + '_max'] != null ? p[ph.skillKey + '_max'] : (p[ph.skillKey] || 0)) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px;margin-left:2px" title="Worst-case estimate (cone of uncertainty). Clamped &ge; point estimate." onchange="DetailPanel.onFieldChange(this)">' : '';
-          // Variance columns (only for phases with points and when baseline exists)
+            '<input type="number" class="field-input" data-field="' + ph.skillKey + '_max" value="' + (p[ph.skillKey + '_max'] != null ? p[ph.skillKey + '_max'] : (p[ph.skillKey] || 0)) + '" min="0" step="1" style="width:55px;text-align:center;font-size:11px;margin-left:2px" title="Worst-case estimate (cone of uncertainty). Clamped ≥ point estimate." onchange="DetailPanel.onFieldChange(this)">' : '';
           let varianceHtml = '';
           if (ph.skillKey && p.estimate_baseline) {
             const original = p.estimate_baseline[ph.skillKey] || 0;
@@ -12267,7 +12446,6 @@ const DetailPanel = {
         }).join('') +
         '</div>' +
         (function() {
-          // Summary row
           const total = p.size_total || 0;
           const totalConsumed = Object.values(p.skill_splits || {}).reduce((s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0);
           const ptsPct = total > 0 ? Math.round((totalConsumed / total) * 100) : 0;
@@ -12282,179 +12460,36 @@ const DetailPanel = {
           '</div>' +
           '<div id="baselineHistoryContainer" style="display:none"></div>';
         })() +
-      '</div>' +
-
-      (p.status === 'Complete' || p.status === 'Closed' ?
-        '<div class="panel-section"><div class="panel-section-title">Completion</div>' +
-          '<div class="field-group"><div class="field-label">Actual Completion Date</div>' +
-            '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
-        '</div>' : '') +
-
-      // Dependencies
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Dependencies</div>' +
-        '<div id="depList">' + this.renderDependencies(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
-      '</div>' +
-
-
-      // Notes & Risks
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Notes</div>' +
-        textarea('notes', p.notes) +
-        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
-        textarea('assumptions', p.assumptions) + '</div>' +
-      '</div>' +
-
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
-        '<div class="risk-list" id="riskList">' +
-        this.renderRisks(p) +
-        '</div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-          '<button class="risk-add-btn" onclick="DetailPanel.addRisk()">+ Add Risk</button>' +
-          // L5: quick-add templates for the most common risk patterns.
-          '<span style="font-size:10px;color:var(--text-muted);margin-left:4px">or from template:</span>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'sme-unavailable\')">SME unavailable</button>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'data-quality\')">Data quality</button>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'scope-creep\')">Scope creep</button>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'dependency-slip\')">Dependency slip</button>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'resource-constraint\')">Resource constraint</button>' +
-          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'third-party-delay\')">Third-party delay</button>' +
-        '</div>' +
-      '</div>' +
-
-      // Issues (same structure as Risks)
+      '</div>'
+    );
+    deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Issues <span class="risk-count" id="issueCount">' + ((p.issues_register || []).length || 0) + '</span></div>' +
         '<div class="risk-list" id="issueList">' +
         this.renderIssues(p) +
         '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addIssue()">+ Add Issue</button>' +
-      '</div>' +
+      '</div>'
+    );
 
-      // Stakeholders
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
-        '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
-      '</div>' +
+    // Tab strip + three panels.
+    const tab = (id, label, hint) => {
+      const active = this.activeTab === id;
+      return '<button type="button" class="dp-tab-trigger' + (active ? ' dp-tab-trigger-active' : '') + '" data-dp-tab-trigger="' + id + '" onclick="DetailPanel.switchTab(\'' + id + '\')" title="' + Dashboard.esc(hint) + '">' + Dashboard.esc(label) + '</button>';
+    };
+    const tabsStrip =
+      '<div class="dp-tabs" role="tablist" aria-label="Project detail sections">' +
+        tab('setup', 'Setup', 'Once-off configuration: identity, classification, plan, structure') +
+        tab('health', 'Health', 'Weekly review surface: RAG, status, EVM, top risks, recent activity') +
+        tab('delivery', 'Delivery', 'Daily ops: phase points, sprint allocation, issues') +
+      '</div>';
+    const panelDiv = (id, sectionsHtml) =>
+      '<div class="dp-tab-panel' + (this.activeTab === id ? ' dp-tab-active' : '') + '" data-dp-tab="' + id + '" role="tabpanel" aria-hidden="' + (this.activeTab === id ? 'false' : 'true') + '">' + sectionsHtml + '</div>';
 
-      // Decisions (project-level)
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Decisions <span class="risk-count" id="decisionCount">' + ((p.decisions_register || []).length || 0) + '</span></div>' +
-        '<div id="decisionListInner">' + this.renderDecisions(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addDecisionLog()">+ Log Decision</button>' +
-      '</div>' +
-
-      // Benefits
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits_register || []).length || 0) + '</span></div>' +
-        '<div id="benefitList">' + this.renderBenefits(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
-      '</div>' +
-
-      // Assumptions & Constraints
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Assumptions & Constraints <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
-        '<div id="assumptionList">' + this.renderAssumptions(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Add Entry</button>' +
-      '</div>' +
-
-      // Communications (moved to end)
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
-        '<div id="commsLog">' +
-          (p.comms_log || []).slice().reverse().map((c, i) => {
-            const idx = (p.comms_log || []).length - 1 - i;
-            const typeColors = { 'Status Update': '#3b82f6', 'Project Start': '#22c55e', 'Phase Gate': '#8b5cf6', 'Escalation': '#ef4444', 'Closure': '#64748b', 'Ad Hoc': '#f59e0b' };
-            const color = typeColors[c.type] || '#94a3b8';
-            return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
-              '<span style="padding:1px 6px;border-radius:3px;background:' + color + '15;color:' + color + ';font-weight:600;font-size:10px;white-space:nowrap">' + esc(c.type) + '</span>' +
-              '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (c.date || '') + '</span>' +
-              '<span style="flex:1;color:var(--text-dark-secondary)">' + esc(c.note || '') + '</span>' +
-              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px" onclick="DetailPanel.removeComm(' + idx + ')" title="Remove">&times;</button>' +
-            '</div>';
-          }).join('') +
-          (!(p.comms_log || []).length ? '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No communications recorded</div>' : '') +
-        '</div>' +
-        '<div id="commsAddForm" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
-          '<div style="display:flex;gap:6px">' +
-            '<select id="commsType" class="field-input" style="width:140px;font-size:11px">' +
-              ['Status Update', 'Project Start', 'Phase Gate', 'Escalation', 'Closure', 'Ad Hoc'].map(t => '<option>' + t + '</option>').join('') +
-            '</select>' +
-            '<input type="date" id="commsDate" class="field-input" style="font-size:11px" value="' + new Date().toISOString().split('T')[0] + '">' +
-          '</div>' +
-          '<textarea id="commsNote" class="field-input" placeholder="Note..." style="font-size:11px;min-height:40px;resize:vertical"></textarea>' +
-          '<div style="display:flex;gap:6px;justify-content:flex-end">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="document.getElementById(\'commsAddForm\').style.display=\'none\'">Cancel</button>' +
-            '<button class="btn btn-sm" style="font-size:10px;background:var(--accent-blue);color:white" onclick="DetailPanel.addComm()">Save</button>' +
-          '</div>' +
-        '</div>' +
-        '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
-      '</div>' +
-
-      // Governance Decisions linked to this project
-      (function() {
-        const allForums = App.data.governance_forums || [];
-        const linkedDecisions = [];
-        allForums.forEach(f => {
-          (f.decisions || []).forEach(d => {
-            if ((d.linkedProjects || []).includes(p.id)) {
-              linkedDecisions.push({ forumName: f.name, date: d.date, text: d.text, recordedBy: d.recordedBy });
-            }
-          });
-        });
-        if (linkedDecisions.length) {
-          return '<div class="panel-section">' +
-            '<div class="panel-section-title">Governance Decisions <span class="risk-count">' + linkedDecisions.length + '</span></div>' +
-            linkedDecisions.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(d =>
-              '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
-                '<span style="padding:1px 6px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--accent-violet);font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(d.forumName) + '</span>' +
-                '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (d.date || '') + '</span>' +
-                '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(d.text || '') + '</span>' +
-                (d.recordedBy ? '<span style="font-size:10px;color:var(--text-muted);font-style:italic">' + Dashboard.esc(d.recordedBy) + '</span>' : '') +
-              '</div>'
-            ).join('') +
-          '</div>';
-        }
-        return '';
-      })() +
-
-      // Forum Actions linked to this project
-      (function() {
-        const allForums = App.data.governance_forums || [];
-        const linkedActions = [];
-        allForums.forEach(f => {
-          (f.actions || []).forEach(a => {
-            if (a.projectId === p.id) {
-              linkedActions.push({ forumName: f.name, description: a.description, owner: a.owner, due_date: a.due_date, status: a.status });
-            }
-          });
-        });
-        if (linkedActions.length) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          return '<div class="panel-section">' +
-            '<div class="panel-section-title">Forum Actions <span class="risk-count">' + linkedActions.length + '</span></div>' +
-            linkedActions.map(a => {
-              const isDone = a.status === 'Done';
-              const isOverdue = !isDone && a.due_date && a.due_date < todayStr;
-              const statusColor = isDone ? 'var(--status-green)' : isOverdue ? 'var(--status-red)' : 'var(--accent-blue)';
-              const statusLabel = isDone ? 'Done' : isOverdue ? 'Overdue' : 'Open';
-              return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:center">' +
-                '<span style="padding:1px 6px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--accent-violet);font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(a.forumName) + '</span>' +
-                '<span style="flex:1;color:' + (isDone ? 'var(--text-muted)' : 'var(--text-dark-secondary)') + ';' + (isDone ? 'text-decoration:line-through' : '') + '">' + Dashboard.esc(a.description || '') + '</span>' +
-                '<span style="font-size:10px;color:var(--text-muted)">' + Dashboard.esc(a.owner || '') + '</span>' +
-                '<span style="font-size:10px;color:var(--text-muted)">' + (a.due_date || '') + '</span>' +
-                '<span style="padding:1px 6px;border-radius:999px;font-size:9px;font-weight:600;color:white;background:' + statusColor + '">' + statusLabel + '</span>' +
-              '</div>';
-            }).join('') +
-          '</div>';
-        }
-        return '';
-      })() +
-
-      // Audit Log
+    const html = headerHtml + tabsStrip +
+      panelDiv('setup', setupSections.join('')) +
+      panelDiv('health', healthSections.join('')) +
+      panelDiv('delivery', deliverySections.join('')) +
       this.renderAuditLog(p.id);
 
     document.getElementById('panelBody').innerHTML = html;
