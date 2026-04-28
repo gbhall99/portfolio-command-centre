@@ -24017,9 +24017,17 @@ const Governance = {
       p.governance_forum === forum.id || p.governance_forum === forum.name
     );
     const projectsHtml = linkedProjects.length
-      ? '<ul>' + linkedProjects.map(p => '<li><strong>' + esc(p.name) + '</strong> &mdash; ' + esc(p.status) + ' &middot; ' +
-          'RAG ' + esc(p.rag_schedule || '') + '/' + esc(p.rag_resourcing || '') + '/' + esc(p.rag_scope || '') +
-        '</li>').join('') + '</ul>'
+      ? '<ul>' + linkedProjects.map(p => {
+          const _np = p.narrative || {};
+          let _narrativeBlock = '';
+          if (_np.headline) _narrativeBlock += '<p style="font-style:italic;color:#0f172a;margin:4px 0 6px 0">' + esc(_np.headline) + '</p>';
+          if ((_np.wins || []).length) _narrativeBlock += '<div style="font-size:11px;color:#475569"><strong>Wins:</strong> ' + (_np.wins || []).map(esc).join('; ') + '</div>';
+          if ((_np.asks || []).length) _narrativeBlock += '<div style="font-size:11px;color:#475569"><strong>Asks:</strong> ' + (_np.asks || []).map(esc).join('; ') + '</div>';
+          return '<li><strong>' + esc(p.name) + '</strong> &mdash; ' + esc(p.status) + ' &middot; ' +
+            'RAG ' + esc(p.rag_schedule || '') + '/' + esc(p.rag_resourcing || '') + '/' + esc(p.rag_scope || '') +
+            (_narrativeBlock ? '<div style="margin-top:4px">' + _narrativeBlock + '</div>' : '') +
+            '</li>';
+        }).join('') + '</ul>'
       : '<p>No projects linked to this forum.</p>';
     const actions = forum.actions || [];
     const openActions = actions.filter(a => a.status !== 'Done');
@@ -25398,7 +25406,8 @@ const Report = {
       ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0))
     ).slice(0, 5);
     const lifecycle = (typeof App.lifecycleStageChip === 'function') ? App.lifecycleStageChip(p) : '';
-    const narrative = '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; ' + lifecycle + '</p>' +
+    const narrative = (p.narrative && p.narrative.headline ? '<p style="font-style:italic;font-size:14px;color:#0f172a;margin:6px 0">' + esc(p.narrative.headline) + '</p>' : '') +
+      '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; ' + lifecycle + '</p>' +
       '<p><strong>Status:</strong> ' + esc(p.status) + ' &middot; <strong>RAG:</strong> S=' + esc(p.rag_schedule || '') + ' R=' + esc(p.rag_resourcing || '') + ' P=' + esc(p.rag_scope || '') + '</p>' +
       '<p><strong>Dates:</strong> ' + esc(p.start_date || '—') + ' → ' + esc(p.target_date || '—') + (p.hard_deadline ? ' (hard ' + esc(p.hard_deadline) + ')' : '') + '</p>' +
       (p.notes ? '<p>' + esc(p.notes) + '</p>' : '');
@@ -25443,6 +25452,10 @@ const Report = {
     if (this.open) this.open(doc);
     App.toast('Sponsor pack opened — use Print > Save as PDF', 'success');
   },
+
+  // Alias: delegates to Governance.buildAgendaDoc so tests can call via Report
+  buildForumPackDoc(forumId, opts) { return (typeof Governance !== 'undefined') ? Governance.buildAgendaDoc(forumId, opts) : null; },
+  buildAgendaDoc(forumId, opts) { return (typeof Governance !== 'undefined') ? Governance.buildAgendaDoc(forumId, opts) : null; },
 
   buildBusinessCaseDoc(projectId) {
     const p = (App.data && App.data.projects || []).find(pr => pr.id === projectId);

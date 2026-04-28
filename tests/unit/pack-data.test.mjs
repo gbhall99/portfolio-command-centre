@@ -64,3 +64,30 @@ describe('Report.buildCustomerPackDoc', () => {
     app.teardown();
   });
 });
+
+describe('Pack enrichment from project.narrative', () => {
+  it('Sponsor pack surfaces narrative.headline as the project current-state line', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'Acme Industries-SP1', name: 'Project Alpha' });
+    a.narrative = { headline: 'Phase 1 on track for end-Q2', wins: ['win'], asks: [], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
+    const app = await loadApp(makeDataset({ projects: [a], sprints: makeSprintSequence(2) }));
+    const html = app.Report.buildProjectPackDoc('Acme Industries-SP1');
+    expect(html).toMatch(/Phase 1 on track for end-Q2/);
+    app.teardown();
+  });
+
+  it('Forum pack surfaces narrative.headline + wins + asks for each linked project', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'Acme Industries-FP1', name: 'Linked Project' });
+    a.narrative = { headline: 'Steady delivery', wins: ['UAT prep done'], asks: ['Approval for phase 2'], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
+    a.governance_forum = 'Reporting & Delivery Strategy';
+    const forums = [{ id: 'F1', name: 'Reporting & Delivery Strategy', customer: 'Acme Industries', actions: [], decisions: [] }];
+    const app = await loadApp(makeDataset({ projects: [a], governance_forums: forums, sprints: makeSprintSequence(2) }));
+    const builder = app.Report.buildForumPackDoc || app.Report.buildAgendaDoc;
+    const html = builder.call(app.Report, 'F1');
+    expect(html).toMatch(/Steady delivery/);
+    expect(html).toMatch(/UAT prep done/);
+    expect(html).toMatch(/Approval for phase 2/);
+    app.teardown();
+  });
+});
