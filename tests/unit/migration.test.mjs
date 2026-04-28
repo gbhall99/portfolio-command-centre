@@ -26,6 +26,26 @@ describe('migrateSchema', () => {
     expect(after).toBe(before);
     app.teardown();
   });
+
+  it('defaults missing project.ownership to "We Own" so legacy data does not trigger phantom unsaved-changes', async () => {
+    resetIdSeq();
+    const legacy = makeProject({ id: 'Acme Industries-OWN' });
+    delete legacy.ownership;
+    const app = await loadApp(makeDataset({ projects: [legacy] }));
+    const p = app.App.data.projects.find(x => x.id === 'Acme Industries-OWN');
+    expect(p.ownership).toBe('We Own');
+    app.teardown();
+  });
+
+  it('preserves a non-default ownership when present', async () => {
+    resetIdSeq();
+    const proj = makeProject({ id: 'Acme Industries-OWN2' });
+    proj.ownership = 'They Own';
+    const app = await loadApp(makeDataset({ projects: [proj] }));
+    const p = app.App.data.projects.find(x => x.id === 'Acme Industries-OWN2');
+    expect(p.ownership).toBe('They Own');
+    app.teardown();
+  });
 });
 
 describe('_ensureSettingsDefaults', () => {
