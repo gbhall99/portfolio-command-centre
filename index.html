@@ -2286,6 +2286,21 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-cap-tab.on { background: #3b82f6; color: white; border-color: #3b82f6; }
 .wt-cap-input { width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11.5px; font-family: inherit; }
 .wt-cap-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+.wt-cust-h { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.wt-cust-h .ttl { font-size: 13px; font-weight: 700; color: #5b21b6; }
+.wt-cust-sub { font-size: 10.5px; color: #6b21a8; opacity: .8; margin: 0 0 14px 0; }
+.wt-cust-section { margin-bottom: 14px; }
+.wt-cust-section .lbl { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #6b21a8; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+.wt-cust-section .lbl .for { color: #94a3b8; font-size: 9px; font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: auto; }
+.wt-cust textarea.wt-cust-input { min-height: 56px; font-style: italic; color: #1e1b4b; }
+.wt-cust-list { display: flex; flex-direction: column; gap: 3px; }
+.wt-cust-list-row { padding: 5px 8px; background: white; border: 1px solid #ddd6fe; border-radius: 4px; font-size: 10.5px; color: #1e1b4b; display: flex; align-items: center; gap: 5px; }
+.wt-cust-list-row .x { margin-left: auto; color: #c4b5fd; cursor: pointer; }
+.wt-cust-tag { display: flex; align-items: center; gap: 7px; padding: 5px 8px; background: white; border: 1px solid #ddd6fe; border-radius: 4px; font-size: 10.5px; margin-bottom: 3px; cursor: pointer; }
+.wt-cust-tag.on { background: #ede9fe; border-color: #7c3aed; }
+.wt-cust-tag input { accent-color: #7c3aed; }
+.wt-cust-gen { background: white; border: 2px dashed #7c3aed; border-radius: 6px; padding: 9px; font-size: 10.5px; color: #5b21b6; text-align: center; cursor: pointer; }
+.wt-cust-gen:hover { background: #ede9fe; }
 </style>
 </head>
 <body>
@@ -17575,11 +17590,97 @@ const Walkthrough = {
     if (!project) { host.innerHTML = ''; return; }
     const n = project.narrative || { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
     const esc = Dashboard.esc;
-    // Minimal placeholder; task 10 fills out the full panel. Headline textarea is here so the
-    // layout test that round-trips a typed headline can find it.
+    const winRow = (text, idx) => '<div class="wt-cust-list-row">' + esc(text) + '<span class="x" onclick="Walkthrough._removeNarrativeListItem(\'wins\',' + idx + ')">×</span></div>';
+    const askRow = (text, idx) => '<div class="wt-cust-list-row">' + esc(text) + '<span class="x" onclick="Walkthrough._removeNarrativeListItem(\'asks\',' + idx + ')">×</span></div>';
+    const riskTag = (r, idx) => {
+      const id = r.id || String(idx);
+      const on = (n.customer_visible_risk_ids || []).indexOf(id) >= 0;
+      return '<div class="wt-cust-tag' + (on ? ' on' : '') + '" onclick="Walkthrough._toggleVisibleRisk(\'' + esc(id) + '\')"><input type="checkbox"' + (on ? ' checked' : '') + '><div><strong>' + esc(r.description || '') + '</strong></div></div>';
+    };
+    const openRisks = (project.risks_register || []).filter(r => (r.status || 'open') === 'open');
     host.innerHTML =
       '<div class="wt-cust-h"><span class="ttl">Project narrative</span></div>' +
-      '<textarea data-narrative-field="headline" class="wt-cust-input">' + esc(n.headline || '') + '</textarea>';
+      '<p class="wt-cust-sub">Feeds: customer · forum · sponsor packs</p>' +
+      '<div class="wt-cust-section"><div class="lbl">Headline <span class="for">→ pack</span></div>' +
+        '<textarea class="wt-cust-input" data-narrative-field="headline" onchange="Walkthrough._narrativeHeadlineChange(this.value)" placeholder="One line for the pack">' + esc(n.headline || '') + '</textarea>' +
+      '</div>' +
+      '<div class="wt-cust-section"><div class="lbl">Wins <span class="for">→ "good news" slide</span></div>' +
+        '<div class="wt-cust-list">' + (n.wins || []).map(winRow).join('') +
+          '<input class="wt-cust-input" placeholder="+ add a win" onchange="Walkthrough._narrativeAddListItem(\'wins\', this.value); this.value=\'\';">' +
+        '</div>' +
+      '</div>' +
+      '<div class="wt-cust-section"><div class="lbl">Asks of the customer <span class="for">→ "we need" slide</span></div>' +
+        '<div class="wt-cust-list">' + (n.asks || []).map(askRow).join('') +
+          '<input class="wt-cust-input" placeholder="+ add an ask" onchange="Walkthrough._narrativeAddListItem(\'asks\', this.value); this.value=\'\';">' +
+        '</div>' +
+      '</div>' +
+      '<div class="wt-cust-section"><div class="lbl">Customer-visible risks</div>' +
+        (openRisks.length ? openRisks.map((r, i) => riskTag(r, (project.risks_register || []).indexOf(r))).join('') : '<div style="font-size:11px;color:#a78bfa">No open risks.</div>') +
+      '</div>' +
+      '<div class="wt-cust-gen" onclick="Walkthrough._openPackPicker()"><strong>Open pack</strong><br><span style="font-size:9.5px">Customer · Forum · Sponsor</span></div>';
+  },
+
+  _narrativeHeadlineChange(val) {
+    if (!this.activeProjectId) return;
+    App.updateProjectNarrative(this.activeProjectId, { headline: val }, this._activeWalkthroughId);
+  },
+
+  _narrativeAddListItem(field, val) {
+    if (!val || !this.activeProjectId) return;
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) return;
+    const n = project.narrative || { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+    const arr = (n[field] || []).slice();
+    arr.push(val);
+    const patch = {}; patch[field] = arr;
+    App.updateProjectNarrative(this.activeProjectId, patch, this._activeWalkthroughId);
+    this._renderCustomerPanel();
+  },
+
+  _removeNarrativeListItem(field, idx) {
+    if (!this.activeProjectId) return;
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) return;
+    const arr = ((project.narrative && project.narrative[field]) || []).slice();
+    arr.splice(idx, 1);
+    const patch = {}; patch[field] = arr;
+    App.updateProjectNarrative(this.activeProjectId, patch, this._activeWalkthroughId);
+    this._renderCustomerPanel();
+  },
+
+  _toggleVisibleRisk(riskId) {
+    if (!this.activeProjectId) return;
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) return;
+    const cur = ((project.narrative && project.narrative.customer_visible_risk_ids) || []).slice();
+    const i = cur.indexOf(riskId);
+    if (i >= 0) cur.splice(i, 1); else cur.push(riskId);
+    App.updateProjectNarrative(this.activeProjectId, { customer_visible_risk_ids: cur }, this._activeWalkthroughId);
+    this._renderCustomerPanel();
+  },
+
+  _openPackPicker() {
+    const choice = (typeof prompt === 'function') ? prompt('Open pack — type one of:\n  customer\n  forum\n  sponsor', 'customer') : null;
+    if (!choice) return;
+    const c = String(choice).trim().toLowerCase();
+    if (c === 'customer') {
+      if (Report && typeof Report.exportCustomerPack === 'function') Report.exportCustomerPack(App.activeCustomer);
+    } else if (c === 'sponsor' && this.activeProjectId) {
+      if (Report && typeof Report.exportProjectPack === 'function') Report.exportProjectPack(this.activeProjectId);
+      else if (Report && typeof Report.buildProjectPackDoc === 'function' && typeof Report._openPrintWindow === 'function') {
+        Report._openPrintWindow(Report.buildProjectPackDoc(this.activeProjectId));
+      }
+    } else if (c === 'forum') {
+      const project = App.data.projects.find(p => p.id === this.activeProjectId);
+      const fname = project && project.governance_forum;
+      const forum = (App.data.governance_forums || []).find(f => f.name === fname);
+      if (forum) {
+        const builder = (Report && typeof Report.buildForumPackDoc === 'function') ? Report.buildForumPackDoc.bind(Report) : (typeof Governance !== 'undefined' ? Governance.buildAgendaDoc.bind(Governance) : null);
+        if (builder && typeof Report._openPrintWindow === 'function') Report._openPrintWindow(builder(forum.id || forum.name));
+      } else {
+        App.toast('No governance forum linked to this project', 'warn');
+      }
+    }
   },
 
   _renderBottomBar() {

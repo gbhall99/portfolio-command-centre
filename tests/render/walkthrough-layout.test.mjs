@@ -54,3 +54,33 @@ describe('Walkthrough — three-column layout', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough — Project narrative panel', () => {
+  it('renders Project narrative header with pack annotations', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'GCC-NP1' });
+    const app = await loadApp(makeDataset({ projects: [p], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Walkthrough.open('GCC');
+    app.Walkthrough.selectProject('GCC-NP1');
+    const cust = app.window.document.querySelector('.wt-cust');
+    expect(cust.innerHTML).toMatch(/Project narrative/);
+    expect(cust.innerHTML).toMatch(/customer · forum · sponsor/i);
+    expect(cust.innerHTML).toMatch(/data-narrative-field="headline"/);
+    app.teardown();
+  });
+
+  it('typing a headline writes through to project.narrative.headline', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'GCC-NP2' });
+    const app = await loadApp(makeDataset({ projects: [p], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Walkthrough.open('GCC');
+    app.Walkthrough.selectProject('GCC-NP2');
+    const head = app.window.document.querySelector('[data-narrative-field="headline"]');
+    head.value = 'Phase 1 on track';
+    head.dispatchEvent(new app.window.Event('change', { bubbles: true }));
+    expect(app.App.data.projects[0].narrative.headline).toBe('Phase 1 on track');
+    app.teardown();
+  });
+});
