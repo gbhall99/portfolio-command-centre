@@ -2247,7 +2247,10 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-rag-w .dot { width: 11px; height: 11px; border-radius: 50%; }
 .wt-status-sel { padding: 3px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; background: white; }
 .wt-traj-wrap { display: flex; gap: 6px; align-items: flex-end; height: 72px; padding-top: 4px; }
-.wt-traj-bar { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; border-radius: 4px 4px 0 0; min-width: 28px; cursor: help; overflow: hidden; }
+.wt-traj-bar { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; border-radius: 4px 4px 0 0; min-width: 28px; cursor: help; }
+.wt-traj-bar .dash-tip { display: none; }
+.wt-traj-bar:hover .dash-tip, .wt-traj-bar:focus-visible .dash-tip { display: block; }
+.wt-traj-tip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 6px; min-width: 180px; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; font-size: 10px; box-shadow: 0 6px 16px rgba(15,23,42,0.16); z-index: 20; color: #1e293b; }
 .wt-traj-fill { width: 100%; border-radius: 4px 4px 0 0; transition: height .25s; }
 .wt-traj-lbl { font-size: 9px; font-weight: 700; color: white; padding: 2px 0; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .wt-date-row { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 11.5px; }
@@ -2257,10 +2260,13 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-green { background: #dcfce7; color: #166534; }
 .wt-amber { background: #fef3c7; color: #92400e; }
 .wt-red { background: #fee2e2; color: #b91c1c; }
-.wt-dep-row { display: flex; gap: 6px; padding: 3px 0; font-size: 11px; }
+.wt-dep-row { position: relative; display: flex; gap: 6px; padding: 3px 0; font-size: 11px; cursor: help; }
 .wt-dep-kind { color: #64748b; font-weight: 600; min-width: 80px; }
 .wt-dep-name { flex: 1; color: #1e293b; }
 .wt-dep-state { color: #64748b; }
+.wt-dep-row .dash-tip { display: none; }
+.wt-dep-row:hover .dash-tip, .wt-dep-row:focus-visible .dash-tip { display: block; }
+.wt-dep-tip { position: absolute; left: 0; top: 100%; margin-top: 4px; min-width: 240px; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 8px; font-size: 10.5px; box-shadow: 0 6px 16px rgba(15,23,42,0.16); z-index: 20; color: #1e293b; }
 @media (max-width: 1100px) {
   .wt-body { grid-template-columns: 220px 1fr; }
   .wt-cust { display: none; }
@@ -17399,19 +17405,52 @@ const Walkthrough = {
 
     // Trajectory tile bars
     const traj = App.computeProjectDeliveryTrajectory(project.id);
+    const assigneesFor = (sprintId) => {
+      const out = [];
+      Object.entries(project.skill_splits || {}).forEach(function(entry) {
+        const sk = entry[0]; const arr = entry[1];
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (sp.sprint !== sprintId) return;
+          (sp.assigned_to || []).forEach(a => out.push({ skill: sk.replace(/^size_/, ''), name: a.name, points: a.points || 0 }));
+        });
+      });
+      return out;
+    };
     const trajBars = traj.sprints.map(s => {
       const pct = s.committed > 0 ? Math.min(100, Math.round((s.completed / s.committed) * 100)) : 0;
       const tone = s.state === 'past' ? '#3b82f6' : s.state === 'current' ? '#7c3aed' : '#cbd5e1';
+      const assignees = assigneesFor(s.sprint_id);
+      const popover = assignees.length
+        ? '<div class="dash-tip wt-traj-tip">' + assignees.map(a => '<div>' + esc(a.name) + ' — ' + esc(a.skill) + ' ' + a.points + ' SP</div>').join('') + '</div>'
+        : '';
       return '<div class="wt-traj-bar" data-wt-trajectory-bar data-sprint-id="' + esc(s.sprint_id) + '" tabindex="0" style="background:' + tone + ';opacity:' + (s.state === 'future' ? 0.55 : 1) + '" title="' + esc(s.label) + ': ' + s.completed + '/' + s.committed + '">' +
         '<div class="wt-traj-fill" style="height:' + pct + '%;background:' + tone + '"></div>' +
         '<span class="wt-traj-lbl">' + esc(s.label) + '</span>' +
+        popover +
       '</div>';
     }).join('');
 
     // Dates + Dependencies tile
     const upcoming = App.computeProjectUpcoming(project.id);
     const dateRow = (label, item) => item ? '<div class="wt-date-row"><span class="wt-date-lbl">' + label + '</span><span class="wt-date-iso">' + esc(item.iso) + '</span><span class="wt-date-chip wt-' + item.state + '">' + item.days_to + 'd</span></div>' : '';
-    const depRow = (d) => '<div class="wt-dep-row"><span class="wt-dep-kind">' + esc(d.kind) + '</span><span class="wt-dep-name">' + esc(d.target_name) + '</span><span class="wt-dep-state">' + esc(d.state) + '</span></div>';
+    const depRow = (d) => {
+      const target = d.target_id ? App.data.projects.find(p => p.id === d.target_id) : null;
+      const tip = target
+        ? '<div class="dash-tip wt-dep-tip">' +
+            '<div><strong>' + esc(target.name) + '</strong></div>' +
+            (target.narrative && target.narrative.headline ? '<div style="margin-top:3px;font-style:italic">' + esc(target.narrative.headline) + '</div>' : '') +
+            '<div style="margin-top:3px">RAG: <span style="color:' + App.ragColor(target.rag_schedule) + '">●</span><span style="color:' + App.ragColor(target.rag_resourcing) + '">●</span><span style="color:' + App.ragColor(target.rag_scope) + '">●</span></div>' +
+            '<div>Manager: ' + esc(target.manager || '—') + '</div>' +
+          '</div>'
+        : '';
+      return '<div class="wt-dep-row" data-wt-dep-row tabindex="0">' +
+        '<span class="wt-dep-kind">' + esc(d.kind) + '</span>' +
+        '<span class="wt-dep-name">' + esc(d.target_name) + '</span>' +
+        '<span class="wt-dep-state">' + esc(d.state) + '</span>' +
+        tip +
+      '</div>';
+    };
     const datesHtml = '<div class="wt-tile" data-wt-tile="dates"><h6>Dates &amp; Dependencies</h6>' +
       dateRow('Target', upcoming && upcoming.target_date) +
       dateRow('Hard deadline', upcoming && upcoming.hard_deadline) +
