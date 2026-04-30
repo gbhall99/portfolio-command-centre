@@ -83,3 +83,48 @@ describe('Walkthrough centre — open lists + capture', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough centre — hover popovers', () => {
+  it('project name area carries DevOps/WFA links when present', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'GCC-HV1' });
+    p.devops_link = 'https://dev.azure.com/x'; p.wfa_link = 'https://wfa/y';
+    const app = await loadApp(makeDataset({ projects: [p], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Walkthrough.open('GCC');
+    app.Walkthrough.selectProject('GCC-HV1');
+    const center = app.window.document.querySelector('[data-wt-center]');
+    expect(center.innerHTML).toMatch(/dash-tip[\s\S]*DevOps[\s\S]*WFA/);
+    app.teardown();
+  });
+
+  it('trajectory bar embeds an assignees popover sourced from skill_splits.assigned_to', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(2);
+    const p = makeProject({ id: 'GCC-HV2' });
+    p.skill_splits = { size_engineering: [{ sprint: sprints[0].sprint_id, points: 10, completed: 0, status: 'in_progress', assigned_to: [{ name: 'Alex', points: 5 }, { name: 'Sam', points: 5 }] }] };
+    const app = await loadApp(makeDataset({ projects: [p], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Walkthrough.open('GCC');
+    app.Walkthrough.selectProject('GCC-HV2');
+    const bar = app.window.document.querySelector('[data-wt-trajectory-bar]');
+    expect(bar.innerHTML).toMatch(/Alex/);
+    expect(bar.innerHTML).toMatch(/Sam/);
+    app.teardown();
+  });
+
+  it('dependency row carries target headline + RAG hover popover', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'GCC-HV-A', name: 'Onboard API', rag_schedule: 'Amber' });
+    a.narrative = { headline: 'API in flight', wins: [], asks: [], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
+    const b = makeProject({ id: 'GCC-HV-B', name: 'Reporting' });
+    b.dependencies = [{ type: 'project', kind: 'blocked_by', target_id: 'GCC-HV-A' }];
+    const app = await loadApp(makeDataset({ projects: [a, b], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'GCC';
+    app.Walkthrough.open('GCC');
+    app.Walkthrough.selectProject('GCC-HV-B');
+    const dep = app.window.document.querySelector('[data-wt-dep-row]');
+    expect(dep.innerHTML).toMatch(/API in flight/);
+    app.teardown();
+  });
+});
