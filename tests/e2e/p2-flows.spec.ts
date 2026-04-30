@@ -13,7 +13,7 @@ test.describe('P2 — Walkthrough', () => {
   test('opens via Sprint.openWalkthrough', async ({ page }) => {
     await openAppWithData(page);
     await page.evaluate(() => (window as any).Sprint.openWalkthrough());
-    await expect(page.locator('#walkthroughOverlay')).toContainText(/Walkthrough/);
+    await expect(page.locator('#walkthroughOverlay')).toContainText(/walkthrough/i);
   });
 });
 

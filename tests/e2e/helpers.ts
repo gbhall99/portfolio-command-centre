@@ -27,6 +27,6 @@ export async function openAppWithData(page: Page) {
   // Bridge for tests that need to poke internals — const-declared globals are visible to
   // script-context eval, so this script tag can read them and stash on window.
   await page.addScriptTag({
-    content: 'window.App = App; window.Solver = Solver; window.Sprint = Sprint; window.Dashboard = Dashboard; window.Gantt = Gantt; window.Capacity = Capacity; window.Governance = Governance; window.DetailPanel = DetailPanel; window.AuditPanel = AuditPanel; window.Forecast = Forecast; window.Report = Report;'
+    content: 'window.App = App; window.Solver = Solver; window.Sprint = Sprint; window.Dashboard = Dashboard; window.Gantt = Gantt; window.Capacity = Capacity; window.Governance = Governance; window.DetailPanel = DetailPanel; window.AuditPanel = AuditPanel; window.Forecast = Forecast; window.Report = Report; window.Walkthrough = Walkthrough;'
   });
 }
