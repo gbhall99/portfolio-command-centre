@@ -2265,6 +2265,27 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   .wt-body { grid-template-columns: 220px 1fr; }
   .wt-cust { display: none; }
 }
+.wt-section-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.wt-list-block { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+.wt-list-block h6 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin: 0 0 7px 0; display: flex; align-items: center; gap: 6px; }
+.wt-list-block h6 .count { background: #e2e8f0; color: #475569; font-size: 9px; padding: 0 5px; border-radius: 999px; font-weight: 700; }
+.wt-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 11.5px; }
+.wt-row:first-of-type { border-top: none; }
+.wt-row .pri-r { background: #fee2e2; color: #b91c1c; padding: 1px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 700; }
+.wt-row .pri-a { background: #fef3c7; color: #92400e; padding: 1px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 700; }
+.wt-row .pri-g { background: #f1f5f9; color: #475569; padding: 1px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 600; }
+.wt-row .due { background: #fef3c7; color: #92400e; padding: 1px 7px; border-radius: 4px; font-size: 9.5px; font-weight: 700; }
+.wt-row .desc { flex: 1; color: #1e293b; }
+.wt-row .meta { color: #94a3b8; font-size: 10px; }
+.wt-row .qact { display: flex; gap: 3px; }
+.wt-row .qact button { padding: 2px 7px; font-size: 10px; border: 1px solid #e2e8f0; background: white; color: #475569; border-radius: 4px; cursor: pointer; }
+.wt-row .qact button:hover { background: #f8fafc; border-color: #cbd5e1; }
+.wt-capture { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+.wt-cap-tabs { display: flex; gap: 4px; margin-bottom: 7px; }
+.wt-cap-tab { padding: 4px 10px; font-size: 10.5px; font-weight: 600; border: 1px solid #e2e8f0; border-radius: 5px; cursor: pointer; color: #64748b; background: white; }
+.wt-cap-tab.on { background: #3b82f6; color: white; border-color: #3b82f6; }
+.wt-cap-input { width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 11.5px; font-family: inherit; }
+.wt-cap-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
 </style>
 </head>
 <body>
@@ -17409,6 +17430,134 @@ const Walkthrough = {
       '<div data-wt-grid class="wt-grid">' + healthHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
       '<div data-wt-open-lists></div>' +
       '<div data-wt-capture></div>';
+    this._renderOpenLists(project);
+    this._renderCapture(project);
+  },
+
+  _renderOpenLists(project) {
+    const host = document.querySelector('[data-wt-open-lists]'); if (!host) return;
+    const esc = Dashboard.esc;
+    const openRisks = (project.risks_register || []).map((r, idx) => Object.assign({ idx }, r))
+      .filter(r => (r.status || 'open') !== 'closed' && (r.status || 'open') !== 'accepted')
+      .sort((a, b) => ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0)));
+    const forums = (App.data.governance_forums || []).filter(f => Array.isArray(f.actions));
+    const openActions = [];
+    forums.forEach(f => f.actions.forEach(a => {
+      if (a.status === 'Done') return;
+      if (a.project_id !== project.id) return;
+      openActions.push(Object.assign({ forum: f.name, forumId: f.id || f.name }, a));
+    }));
+    const riskRow = r => {
+      const score = (r.impact || 0) * (r.probability || 0);
+      const cls = score >= 9 ? 'pri-r' : score >= 5 ? 'pri-a' : 'pri-g';
+      return '<div class="wt-row"><span class="' + cls + '">' + score + '</span>' +
+        '<div class="desc"><strong>' + esc(r.description || '') + '</strong></div>' +
+        '<div class="qact">' +
+          '<button onclick="Walkthrough._closeRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Close</button>' +
+          '<button onclick="Walkthrough._acceptRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Accept</button>' +
+        '</div></div>';
+    };
+    const actionRow = a => '<div class="wt-row"><span class="due">' + esc(a.due_date || '') + '</span>' +
+        '<div class="desc">' + esc(a.description || '') + '</div>' +
+        '<span class="meta">@' + esc(a.owner || '') + '</span>' +
+        '<div class="qact">' +
+          '<button onclick="Walkthrough._deferAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Defer</button>' +
+          '<button onclick="Walkthrough._doneAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Done</button>' +
+        '</div></div>';
+    host.innerHTML =
+      '<div class="wt-section-row">' +
+        '<div class="wt-list-block"><h6>Open risks <span class="count">' + openRisks.length + '</span></h6>' +
+          (openRisks.length ? openRisks.map(riskRow).join('') : '<div style="color:var(--text-muted);font-size:11px">None</div>') +
+        '</div>' +
+        '<div class="wt-list-block"><h6>Open actions <span class="count">' + openActions.length + '</span></h6>' +
+          (openActions.length ? openActions.map(actionRow).join('') : '<div style="color:var(--text-muted);font-size:11px">None</div>') +
+        '</div>' +
+      '</div>';
+  },
+
+  _closeRisk(projectId, idx) {
+    if (typeof App.updateRiskFromWalkthrough === 'function') {
+      App.updateRiskFromWalkthrough(projectId, idx, 'closed', this._activeWalkthroughId, '');
+    } else {
+      const project = App.data.projects.find(p => p.id === projectId);
+      if (project && project.risks_register && project.risks_register[idx]) {
+        project.risks_register[idx].status = 'closed';
+        App.markDirty(); App.saveToLocalStorage();
+      }
+    }
+    this._renderCenter();
+  },
+
+  _acceptRisk(projectId, idx) {
+    if (typeof App.updateRiskFromWalkthrough === 'function') {
+      App.updateRiskFromWalkthrough(projectId, idx, 'accepted', this._activeWalkthroughId, '');
+    } else {
+      const project = App.data.projects.find(p => p.id === projectId);
+      if (project && project.risks_register && project.risks_register[idx]) {
+        project.risks_register[idx].status = 'accepted';
+        App.markDirty(); App.saveToLocalStorage();
+      }
+    }
+    this._renderCenter();
+  },
+
+  _doneAction(forumId, actionId) {
+    App.completeForumAction(forumId, actionId, this._activeWalkthroughId);
+    this._renderCenter();
+    this._renderBottomBar();
+  },
+
+  _deferAction(forumId, actionId) {
+    const newDate = (typeof prompt === 'function') ? prompt('New due date (YYYY-MM-DD):') : null;
+    if (!newDate) return;
+    App.deferForumAction(forumId, actionId, newDate, this._activeWalkthroughId);
+    this._renderCenter();
+  },
+
+  _renderCapture(project) {
+    const host = document.querySelector('[data-wt-capture]'); if (!host) return;
+    const esc = Dashboard.esc;
+    const tabs = ['Decision', 'Action', 'Risk'];
+    const active = this._captureTab || 'Decision';
+    const tabsHtml = tabs.map(t =>
+      '<button class="wt-cap-tab' + (t === active ? ' on' : '') + '" data-wt-cap-tab onclick="Walkthrough._setCaptureTab(\'' + t + '\')">+ ' + t + '</button>'
+    ).join('');
+    let body = '';
+    if (active === 'Decision') {
+      body = '<input class="wt-cap-input" data-wt-cap-text placeholder="Decision text — e.g. Park phase 2 until Q3">' +
+             '<input class="wt-cap-input" data-wt-cap-rationale placeholder="Rationale (optional)" style="margin-top:5px">' +
+             '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="Walkthrough._submitCapture(\'' + esc(project.id) + '\')">Save decision</button>';
+    } else if (active === 'Action') {
+      body = '<div style="display:flex;gap:5px"><input class="wt-cap-input" data-wt-cap-text placeholder="What needs doing" style="flex:1"><input class="wt-cap-input" data-wt-cap-owner placeholder="@owner" style="width:100px"><input class="wt-cap-input" data-wt-cap-due type="date" style="width:120px"></div>' +
+             '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="Walkthrough._submitCapture(\'' + esc(project.id) + '\')">Save action</button>';
+    } else {
+      body = '<div style="display:flex;gap:5px"><input class="wt-cap-input" data-wt-cap-text placeholder="Risk description" style="flex:1"><input class="wt-cap-input" data-wt-cap-imp type="number" placeholder="Imp" style="width:60px"><input class="wt-cap-input" data-wt-cap-prob type="number" placeholder="Prob" style="width:60px"></div>' +
+             '<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="Walkthrough._submitCapture(\'' + esc(project.id) + '\')">Save risk</button>';
+    }
+    host.innerHTML = '<div class="wt-capture"><div class="wt-cap-tabs">' + tabsHtml + '</div>' + body + '</div>';
+  },
+
+  _setCaptureTab(tab) {
+    this._captureTab = tab;
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (project) this._renderCapture(project);
+  },
+
+  _submitCapture(projectId) {
+    const wid = this._activeWalkthroughId;
+    const tab = this._captureTab || 'Decision';
+    const get = (sel) => { const el = document.querySelector(sel); return el ? el.value : ''; };
+    if (tab === 'Decision') {
+      const text = get('[data-wt-cap-text]'); if (!text) return;
+      App.recordWalkthroughDecision(wid, { projectId, text, rationale: get('[data-wt-cap-rationale]') });
+    } else if (tab === 'Action') {
+      const description = get('[data-wt-cap-text]'); if (!description) return;
+      App.recordWalkthroughAction(wid, { projectId, description, owner: get('[data-wt-cap-owner]'), due_date: get('[data-wt-cap-due]') });
+    } else {
+      const description = get('[data-wt-cap-text]'); if (!description) return;
+      App.addRiskFromWalkthrough(projectId, { description, impact: parseInt(get('[data-wt-cap-imp]'), 10) || 0, probability: parseInt(get('[data-wt-cap-prob]'), 10) || 0 }, wid);
+    }
+    this._render(App.activeCustomer);
   },
 
   _cycleRag(projectId, dim) {

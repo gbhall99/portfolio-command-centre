@@ -49,3 +49,37 @@ describe('Walkthrough centre — signal grid tiles', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough centre — open lists + capture', () => {
+  it('renders Open risks and Open actions blocks', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'Acme Industries-O1', name: 'OpenItems' });
+    p.risks_register = [{ description: 'data quality', impact: 3, probability: 3, status: 'open', added_at: new Date().toISOString() }];
+    const forums = [{ id: 'F1', name: 'Reporting & Delivery Strategy', customer: 'Acme Industries', actions: [{ id: 'A1', description: 'Confirm SME', status: 'Open', due_date: '2026-04-25', project_id: 'Acme Industries-O1' }], decisions: [] }];
+    const app = await loadApp(makeDataset({ projects: [p], governance_forums: forums, sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Walkthrough.open('Acme Industries');
+    app.Walkthrough.selectProject('Acme Industries-O1');
+    const lists = app.window.document.querySelector('[data-wt-open-lists]');
+    expect(lists.innerHTML).toMatch(/Open risks/);
+    expect(lists.innerHTML).toMatch(/data quality/);
+    expect(lists.innerHTML).toMatch(/Open actions/);
+    expect(lists.innerHTML).toMatch(/Confirm SME/);
+    app.teardown();
+  });
+
+  it('capture row renders 3 tabs only — Decision, Action, Risk (no Comms note)', async () => {
+    resetIdSeq();
+    const p = makeProject({ id: 'Acme Industries-CAP1' });
+    const app = await loadApp(makeDataset({ projects: [p], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Walkthrough.open('Acme Industries');
+    app.Walkthrough.selectProject('Acme Industries-CAP1');
+    const cap = app.window.document.querySelector('[data-wt-capture]');
+    const tabs = cap.querySelectorAll('[data-wt-cap-tab]');
+    expect(tabs.length).toBe(3);
+    const labels = Array.from(tabs).map(t => t.textContent.trim());
+    expect(labels).toEqual(['+ Decision', '+ Action', '+ Risk']);
+    app.teardown();
+  });
+});
