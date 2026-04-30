@@ -16,7 +16,8 @@ test.describe('Walkthrough — full ritual', () => {
     expect(ok).toBe(true);
   });
 
-  test('Sprint.openWalkthrough renders sectioned overlay', async ({ page }) => {
+  test.skip('Sprint.openWalkthrough renders sectioned overlay', async ({ page }) => {
+    // SKIPPED T14: old card-based overlay asserted "Weekly Walkthrough" header — replaced by three-column shell
     await openAppWithData(page);
     await page.evaluate(() => (window as any).Sprint.openWalkthrough());
     await expect(page.locator('#walkthroughOverlay')).toContainText(/Weekly Walkthrough/);
@@ -54,7 +55,8 @@ test.describe('Walkthrough — data updates roundtrip', () => {
 });
 
 test.describe('Walkthrough — card UX', () => {
-  test('cards render, can be marked reviewed, and stay collapsed', async ({ page }) => {
+  test.skip('cards render, can be marked reviewed, and stay collapsed', async ({ page }) => {
+    // SKIPPED T14: old card-based UI (.wt-card, data-wt-card-review) replaced by three-column shell
     await openAppWithData(page);
     await page.evaluate(() => (window as any).Sprint.openWalkthrough());
     const overlay = page.locator('#walkthroughOverlay');
@@ -66,12 +68,33 @@ test.describe('Walkthrough — card UX', () => {
     await expect(overlay.locator('.wt-card[data-wt-card="' + cardId + '"]')).toHaveClass(/wt-card-reviewed/);
   });
 
-  test('header strip shows progress, cohort pills, and Up next', async ({ page }) => {
+  test.skip('header strip shows progress, cohort pills, and Up next', async ({ page }) => {
+    // SKIPPED T14: old card-based header (.wt-cohort-pill, "Up next") replaced by three-column shell list sidebar
     await openAppWithData(page);
     await page.evaluate(() => (window as any).Sprint.openWalkthrough());
     const overlay = page.locator('#walkthroughOverlay');
     await expect(overlay).toContainText(/reviewed/);
     await expect(overlay.locator('.wt-cohort-pill').first()).toBeVisible();
     await expect(overlay).toContainText(/Up next|All caught up/);
+  });
+});
+
+test.describe('Walkthrough — three-column shell', () => {
+  test('Walkthrough — three-column shell + narrative writes through', async ({ page }) => {
+    await openAppWithData(page);
+    await page.evaluate(() => (window as any).Walkthrough.open('Acme Industries'));
+    await expect(page.locator('#walkthroughOverlay .wt-list')).toBeVisible();
+    await expect(page.locator('#walkthroughOverlay .wt-center')).toBeVisible();
+    // .wt-cust may be hidden via @media below 1100px — assert presence in DOM rather than visibility
+    await expect(page.locator('#walkthroughOverlay .wt-cust')).toHaveCount(1);
+    await page.locator('[data-narrative-field="headline"]').fill('Phase 1 on track');
+    await page.locator('[data-narrative-field="headline"]').dispatchEvent('change');
+    const head = await page.evaluate(() => {
+      const W = (window as any).Walkthrough;
+      const id = W.activeProjectId;
+      const proj = (window as any).App.data.projects.find((p: any) => p.id === id);
+      return proj && proj.narrative && proj.narrative.headline;
+    });
+    expect(head).toBe('Phase 1 on track');
   });
 });
