@@ -17282,7 +17282,7 @@ const Walkthrough = {
     const cards = App.computeWalkthroughCards(App.activeCustomer);
     const wt = App._findWalkthrough(this._activeWalkthroughId) || { section_status: {} };
     const reviewed = wt.section_status || {};
-    const next = cards.find(c => reviewed['proj:' + c.project.id] !== 'reviewed');
+    const next = cards.find(c => c.project.id !== this.activeProjectId && reviewed['proj:' + c.project.id] !== 'reviewed');
     if (next) {
       this.activeProjectId = next.project.id;
       this._renderCenter();
@@ -17315,6 +17315,7 @@ const Walkthrough = {
     this._renderCenter();
     this._renderCustomerPanel();
     this._renderBottomBar();
+    this._wireKeyboardShortcuts();
   },
 
   _renderTopBar() {
@@ -17734,6 +17735,31 @@ const Walkthrough = {
         '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save & continue</button>' +
         '<button class="btn btn-primary btn-sm" onclick="Walkthrough.advanceToNext()">Next project →</button>' +
       '</div>';
+  },
+
+  _wireKeyboardShortcuts() {
+    if (this._kbHandler) document.removeEventListener('keydown', this._kbHandler);
+    this._kbHandler = (e) => {
+      const overlay = document.getElementById('walkthroughOverlay');
+      if (!overlay) {
+        document.removeEventListener('keydown', this._kbHandler);
+        this._kbHandler = null;
+        return;
+      }
+      // Don't hijack typing — when keystroke comes from a form field, ignore it (except for Escape, which is fine to close from anywhere).
+      const t = e.target;
+      const isFormField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (isFormField && e.key !== 'Escape') return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        this.advanceToNext();
+      } else if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', this._kbHandler);
+        this._kbHandler = null;
+      }
+    };
+    document.addEventListener('keydown', this._kbHandler);
   },
 
   _completeAndClose() {
