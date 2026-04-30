@@ -2227,6 +2227,40 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-bot-stat strong { color: #0f172a; font-weight: 700; }
 .wt-c-hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; margin-bottom: 14px; }
 .wt-c-hd .nm { font-size: 16px; font-weight: 700; color: #0f172a; }
+.wt-c-hd .age { color: #64748b; font-size: 11px; }
+.wt-c-hd .att { margin-left: auto; background: #fef3c7; color: #854d0e; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.wt-c-hd .rev { background: #10b981; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; font-size: 11px; cursor: pointer; }
+.wt-links-hover { position: relative; cursor: help; font-size: 14px; display: inline-flex; align-items: center; }
+.wt-links-hover .dash-tip { display: none; }
+.wt-links-hover:hover .dash-tip, .wt-links-hover:focus-visible .dash-tip { display: block; }
+.wt-links-tip { position: absolute; top: 100%; left: 0; min-width: 240px; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; font-size: 11px; box-shadow: 0 6px 16px rgba(15,23,42,0.16); z-index: 20; }
+.wt-prompts { background: linear-gradient(180deg,#fffbeb,#fef3c7); border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.wt-prompts h6 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #92400e; margin: 0 0 5px 0; }
+.wt-prompt-item { display: flex; gap: 8px; align-items: center; padding: 4px 0; font-size: 11.5px; color: #422006; }
+.wt-prompt-item + .wt-prompt-item { border-top: 1px dashed #fde68a; }
+.wt-prompt-item .pill { background: #f59e0b; color: white; font-size: 8px; font-weight: 700; padding: 1px 6px; border-radius: 3px; letter-spacing: .3px; }
+.wt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.wt-tile { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+.wt-tile h6 { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; margin: 0 0 6px 0; }
+.wt-rags-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.wt-rag-w { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #475569; cursor: pointer; }
+.wt-rag-w .dot { width: 11px; height: 11px; border-radius: 50%; }
+.wt-status-sel { padding: 3px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; background: white; }
+.wt-traj-wrap { display: flex; gap: 6px; align-items: flex-end; height: 72px; padding-top: 4px; }
+.wt-traj-bar { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; border-radius: 4px 4px 0 0; min-width: 28px; cursor: help; overflow: hidden; }
+.wt-traj-fill { width: 100%; border-radius: 4px 4px 0 0; transition: height .25s; }
+.wt-traj-lbl { font-size: 9px; font-weight: 700; color: white; padding: 2px 0; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.wt-date-row { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 11.5px; }
+.wt-date-lbl { width: 100px; color: #64748b; font-weight: 600; }
+.wt-date-iso { color: #475569; flex: 1; font-variant-numeric: tabular-nums; }
+.wt-date-chip { padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.wt-green { background: #dcfce7; color: #166534; }
+.wt-amber { background: #fef3c7; color: #92400e; }
+.wt-red { background: #fee2e2; color: #b91c1c; }
+.wt-dep-row { display: flex; gap: 6px; padding: 3px 0; font-size: 11px; }
+.wt-dep-kind { color: #64748b; font-weight: 600; min-width: 80px; }
+.wt-dep-name { flex: 1; color: #1e293b; }
+.wt-dep-state { color: #64748b; }
 @media (max-width: 1100px) {
   .wt-body { grid-template-columns: 220px 1fr; }
   .wt-cust { display: none; }
@@ -17300,13 +17334,89 @@ const Walkthrough = {
     const project = App.data.projects.find(p => p.id === this.activeProjectId);
     if (!project) { host.innerHTML = ''; return; }
     const esc = Dashboard.esc;
-    // Minimal placeholder; tasks 8/9/11 will populate prompts/grid/open-lists/capture/popovers.
-    host.innerHTML =
-      '<div class="wt-c-hd"><span class="nm">' + esc(project.name) + '</span></div>' +
-      '<div data-wt-prompts></div>' +
-      '<div data-wt-grid></div>' +
+
+    // Header
+    const score = App.computeProjectAttentionScore(project);
+    const lifeChip = (App.lifecycleStageChip ? App.lifecycleStageChip(project) : '');
+    const lastTouchMs = project.last_updated ? new Date(project.last_updated).getTime() : 0;
+    const ageDays = lastTouchMs ? Math.floor((Date.now() - lastTouchMs) / 86400000) : null;
+    const linksHover = (project.devops_link || project.wfa_link)
+      ? '<span class="wt-links-hover" tabindex="0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><div class="dash-tip wt-links-tip">' +
+          (project.devops_link ? '<div><strong>DevOps:</strong> <a href="' + esc(project.devops_link) + '" target="_blank" rel="noopener">' + esc(project.devops_link) + '</a></div>' : '') +
+          (project.wfa_link ? '<div><strong>WFA:</strong> <a href="' + esc(project.wfa_link) + '" target="_blank" rel="noopener">' + esc(project.wfa_link) + '</a></div>' : '') +
+        '</div></span>'
+      : '';
+    const headerHtml = '<div class="wt-c-hd">' +
+      '<span class="nm">' + esc(project.name) + '</span>' + lifeChip + linksHover +
+      (ageDays !== null ? '<span class="age">last touched ' + ageDays + 'd ago</span>' : '') +
+      '<span class="att">Attention ' + score + '</span>' +
+      '<button class="rev" onclick="Walkthrough.markProjectReviewed(\'' + esc(project.id) + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Reviewed</button>' +
+    '</div>';
+
+    // Prompts
+    const prompts = App.computeWalkthroughPrompts(project);
+    const promptsHtml = prompts.length
+      ? '<div class="wt-prompts"><h6><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:5px"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Things to ask (' + prompts.length + ')</h6>' +
+          prompts.map(pr => '<div class="wt-prompt-item"><span class="pill">' + esc((pr.kind.split('_')[0] || '').toUpperCase()) + '</span><span>' + esc(pr.message) + '</span></div>').join('') +
+        '</div>'
+      : '';
+
+    // Trajectory tile bars
+    const traj = App.computeProjectDeliveryTrajectory(project.id);
+    const trajBars = traj.sprints.map(s => {
+      const pct = s.committed > 0 ? Math.min(100, Math.round((s.completed / s.committed) * 100)) : 0;
+      const tone = s.state === 'past' ? '#3b82f6' : s.state === 'current' ? '#7c3aed' : '#cbd5e1';
+      return '<div class="wt-traj-bar" data-wt-trajectory-bar data-sprint-id="' + esc(s.sprint_id) + '" tabindex="0" style="background:' + tone + ';opacity:' + (s.state === 'future' ? 0.55 : 1) + '" title="' + esc(s.label) + ': ' + s.completed + '/' + s.committed + '">' +
+        '<div class="wt-traj-fill" style="height:' + pct + '%;background:' + tone + '"></div>' +
+        '<span class="wt-traj-lbl">' + esc(s.label) + '</span>' +
+      '</div>';
+    }).join('');
+
+    // Dates + Dependencies tile
+    const upcoming = App.computeProjectUpcoming(project.id);
+    const dateRow = (label, item) => item ? '<div class="wt-date-row"><span class="wt-date-lbl">' + label + '</span><span class="wt-date-iso">' + esc(item.iso) + '</span><span class="wt-date-chip wt-' + item.state + '">' + item.days_to + 'd</span></div>' : '';
+    const depRow = (d) => '<div class="wt-dep-row"><span class="wt-dep-kind">' + esc(d.kind) + '</span><span class="wt-dep-name">' + esc(d.target_name) + '</span><span class="wt-dep-state">' + esc(d.state) + '</span></div>';
+    const datesHtml = '<div class="wt-tile" data-wt-tile="dates"><h6>Dates &amp; Dependencies</h6>' +
+      dateRow('Target', upcoming && upcoming.target_date) +
+      dateRow('Hard deadline', upcoming && upcoming.hard_deadline) +
+      dateRow('Next sprint end', upcoming && upcoming.next_sprint_end) +
+      (upcoming && upcoming.dependencies.length ? upcoming.dependencies.map(depRow).join('') : '<div class="wt-dep-row" style="color:var(--text-muted)">No dependencies</div>') +
+    '</div>';
+
+    // Health tile
+    const ragSel = (dim, val) => '<div class="wt-rag-w" onclick="Walkthrough._cycleRag(\'' + esc(project.id) + '\',\'' + dim + '\')"><div class="dot" style="background:' + App.ragColor(val) + '"></div>' + dim.replace('rag_', '') + '</div>';
+    const healthHtml = '<div class="wt-tile" data-wt-tile="health"><h6>Health</h6><div class="wt-rags-row">' +
+      ragSel('rag_schedule', project.rag_schedule) +
+      ragSel('rag_resourcing', project.rag_resourcing) +
+      ragSel('rag_scope', project.rag_scope) +
+      '<select class="wt-status-sel" onchange="App.updateProjectStatus(\'' + esc(project.id) + '\', this.value, \'' + esc(this._activeWalkthroughId) + '\');Walkthrough._renderCenter();">' +
+        ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'].map(s => '<option' + (project.status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
+      '</select></div></div>';
+
+    // Trajectory tile
+    const trajectoryHtml = '<div class="wt-tile" data-wt-tile="trajectory"><h6>Delivery trajectory</h6><div class="wt-traj-wrap">' +
+      (trajBars || '<div style="color:var(--text-muted);font-size:11px">No sprint allocation yet</div>') +
+    '</div></div>';
+
+    // Since-last-walkthrough tile
+    const card = App.computeWalkthroughCards(App.activeCustomer).find(c => c.project.id === project.id);
+    const sinceHtml = '<div class="wt-tile" data-wt-tile="since"><h6>Since last walkthrough</h6>' +
+      '<div style="font-size:11px;color:var(--text-muted)">' + (card && card.lastUpdatedDays != null ? card.lastUpdatedDays + 'd since last edit' : 'No prior touch') + '</div>' +
+    '</div>';
+
+    host.innerHTML = headerHtml +
+      '<div data-wt-prompts>' + promptsHtml + '</div>' +
+      '<div data-wt-grid class="wt-grid">' + healthHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
       '<div data-wt-open-lists></div>' +
       '<div data-wt-capture></div>';
+  },
+
+  _cycleRag(projectId, dim) {
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const next = project[dim] === 'Green' ? 'Amber' : project[dim] === 'Amber' ? 'Red' : 'Green';
+    App.updateProjectRag(projectId, dim, next, this._activeWalkthroughId, '');
+    this._render(App.activeCustomer);
   },
 
   _renderCustomerPanel() {
