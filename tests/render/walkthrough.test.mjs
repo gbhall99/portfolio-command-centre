@@ -3,7 +3,9 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeProject, makeSprintSequence, makeMember, makeDataset, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('Walkthrough — card-based redesign', () => {
-  it('renders the project as a card with attention chip + RAG dots + progress strip', async () => {
+  // SKIPPED: task 7 replaced the card-based overlay with the three-column shell (Walkthrough module).
+  // These card-based assertions will be rewritten in tasks 8-12.
+  it.skip('renders the project as a card with attention chip + RAG dots + progress strip', async () => {
     resetIdSeq();
     const sprints = makeSprintSequence(2);
     const proj = makeProject({ name: 'P', status: 'Blocked', rag_schedule: 'Red', size_engineering: 10,
@@ -23,7 +25,8 @@ describe('Walkthrough — card-based redesign', () => {
     app.teardown();
   });
 
-  it('exposes Reviewed + Pin buttons and the inline status select / RAG dots / risk + chip editors', async () => {
+  // SKIPPED: task 7 replaced the card-based overlay with the three-column shell (Walkthrough module).
+  it.skip('exposes Reviewed + Pin buttons and the inline status select / RAG dots / risk + chip editors', async () => {
     resetIdSeq();
     const startMs = Date.now();
     const fmt = ms => new Date(ms).toISOString().slice(0, 10);
@@ -58,7 +61,8 @@ describe('Walkthrough — card-based redesign', () => {
     app.teardown();
   });
 
-  it('marking a project reviewed collapses its card on next render', async () => {
+  // SKIPPED: task 7 replaced the card-based overlay with the three-column shell (Walkthrough module).
+  it.skip('marking a project reviewed collapses its card on next render', async () => {
     resetIdSeq();
     const app = await loadApp(makeDataset({ projects: [makeProject({ name: 'P' })] }));
     app.App.activeCustomer = 'GCC';

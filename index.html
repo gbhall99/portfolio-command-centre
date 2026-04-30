@@ -2191,6 +2191,46 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-risk-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; }
 .wt-risk-row.closed { text-decoration: line-through; color: var(--text-muted); }
 .wt-card-footer-strip { padding: 10px 18px 14px; border-top: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center; background: var(--surface); }
+
+/* === Walkthrough — three-column shell === */
+.wt-shell { background: #f8fafc; border-radius: 12px; box-shadow: 0 8px 32px rgba(15,23,42,.18); border: 1px solid #e2e8f0; flex: 1; display: grid; grid-template-rows: 56px 1fr 48px; overflow: hidden; min-height: 0; }
+.wt-top { display: flex; align-items: center; gap: 12px; padding: 0 18px; background: linear-gradient(180deg,#fff 0%,#f8fafc 100%); border-bottom: 1px solid #e2e8f0; }
+.wt-top-ttl { font-size: 14px; font-weight: 700; color: #0f172a; }
+.wt-progress { flex: 0 0 220px; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+.wt-progress-label { font-size: 11px; color: #64748b; font-weight: 600; }
+.wt-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.wt-pill-crit { background: #fee2e2; color: #b91c1c; }
+.wt-pill-watch { background: #fef3c7; color: #854d0e; }
+.wt-pill-steady { background: #dcfce7; color: #166534; }
+.wt-body { display: grid; grid-template-columns: 220px 1fr 320px; min-height: 0; }
+.wt-body > * { overflow-y: auto; min-height: 0; }
+.wt-list { background: #fff; border-right: 1px solid #e2e8f0; padding: 10px 8px; }
+.wt-list-search { margin: 0 4px 6px 4px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 11px; width: calc(100% - 8px); background: #f8fafc; }
+.wt-list-h { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; padding: 4px 8px; margin-bottom: 4px; }
+.wt-list-item { padding: 6px 8px; border-radius: 5px; font-size: 11.5px; cursor: pointer; display: flex; align-items: center; gap: 6px; margin-bottom: 1px; color: #334155; }
+.wt-list-item:hover { background: #f1f5f9; }
+.wt-list-item.active { background: #dbeafe; color: #1e40af; font-weight: 600; }
+.wt-list-item.done { color: #94a3b8; }
+.wt-list-item.done .wt-list-name { text-decoration: line-through; }
+.wt-list-check { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #cbd5e1; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 8px; }
+.wt-list-item.done .wt-list-check { background: #10b981; border-color: #10b981; color: white; }
+.wt-list-rags { display: flex; gap: 1px; flex-shrink: 0; }
+.wt-list-rags .d { width: 5px; height: 5px; border-radius: 50%; }
+.wt-list-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-list-att { font-size: 9px; color: #94a3b8; font-weight: 700; min-width: 24px; text-align: right; }
+.wt-center { background: #fff; padding: 16px 20px; }
+.wt-cust { background: linear-gradient(180deg,#faf5ff 0%,#f5f3ff 100%); border-left: 1.5px solid #c4b5fd; padding: 14px; }
+.wt-cust .wt-cust-input { width: 100%; padding: 7px 9px; border: 1px solid #c4b5fd; border-radius: 5px; font-size: 11.5px; background: white; font-family: inherit; resize: vertical; }
+.wt-cust-h .ttl { font-size: 12px; font-weight: 700; color: #5b21b6; }
+.wt-bottom { display: flex; align-items: center; gap: 12px; padding: 0 18px; background: white; border-top: 1px solid #e2e8f0; }
+.wt-bot-stat { font-size: 11px; color: #64748b; }
+.wt-bot-stat strong { color: #0f172a; font-weight: 700; }
+.wt-c-hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #e2e8f0; margin-bottom: 14px; }
+.wt-c-hd .nm { font-size: 16px; font-weight: 700; color: #0f172a; }
+@media (max-width: 1100px) {
+  .wt-body { grid-template-columns: 220px 1fr; }
+  .wt-cust { display: none; }
+}
 </style>
 </head>
 <body>
@@ -17117,6 +17157,196 @@ const Gantt = {
 };
 
 /* ============================================================
+   Walkthrough — weekly portfolio review surface
+   Three-column overlay: project list (left), focused project
+   (centre), project-narrative panel (right). Every interactive
+   control writes through to the project record via App.* helpers.
+   ============================================================ */
+const Walkthrough = {
+  activeProjectId: null,
+  _activeWalkthroughId: null,
+  _captureTab: 'Decision',
+
+  open(customer) {
+    if (!App.data) return;
+    const cust = customer || App.activeCustomer;
+    if (!cust) { App.toast('Select a customer first', 'error'); return; }
+    let active = App.getActiveWalkthrough(cust);
+    if (!active) {
+      const id = App.startWalkthrough(cust, []);
+      active = App._findWalkthrough(id);
+    }
+    this._activeWalkthroughId = active.id;
+    const cards = App.computeWalkthroughCards(cust);
+    const reviewed = active.section_status || {};
+    const upNext = cards.find(c => reviewed['proj:' + c.project.id] !== 'reviewed') || cards[0];
+    this.activeProjectId = upNext ? upNext.project.id : null;
+    this._render(cust);
+  },
+
+  selectProject(projectId) {
+    this.activeProjectId = projectId;
+    this._renderCenter();
+    this._renderCustomerPanel();
+  },
+
+  markProjectReviewed(projectId) {
+    if (!this._activeWalkthroughId) return;
+    App.bumpProjectReviewed(projectId, this._activeWalkthroughId);
+    const cards = App.computeWalkthroughCards(App.activeCustomer);
+    const wt = App._findWalkthrough(this._activeWalkthroughId) || { section_status: {} };
+    const reviewed = wt.section_status || {};
+    const next = cards.find(c => c.project.id !== projectId && reviewed['proj:' + c.project.id] !== 'reviewed');
+    if (next) this.activeProjectId = next.project.id;
+    this._render(App.activeCustomer);
+  },
+
+  advanceToNext() {
+    if (!App.activeCustomer || !this._activeWalkthroughId) return;
+    const cards = App.computeWalkthroughCards(App.activeCustomer);
+    const wt = App._findWalkthrough(this._activeWalkthroughId) || { section_status: {} };
+    const reviewed = wt.section_status || {};
+    const next = cards.find(c => reviewed['proj:' + c.project.id] !== 'reviewed');
+    if (next) {
+      this.activeProjectId = next.project.id;
+      this._renderCenter();
+      this._renderCustomerPanel();
+    }
+  },
+
+  // --- internal render plumbing ---
+  _render(customer) {
+    const old = document.getElementById('walkthroughOverlay');
+    if (old) old.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'walkthroughOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(15,23,42,0.55);padding:14px;display:flex;align-items:stretch;justify-content:stretch';
+    const shell = document.createElement('div');
+    shell.className = 'wt-shell';
+    shell.innerHTML =
+      '<div class="wt-top" data-wt-top></div>' +
+      '<div class="wt-body">' +
+        '<div class="wt-list" data-wt-list></div>' +
+        '<div class="wt-center" data-wt-center></div>' +
+        '<div class="wt-cust" data-wt-cust></div>' +
+      '</div>' +
+      '<div class="wt-bottom" data-wt-bottom></div>';
+    overlay.appendChild(shell);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+    this._renderTopBar();
+    this._renderProjectList();
+    this._renderCenter();
+    this._renderCustomerPanel();
+    this._renderBottomBar();
+  },
+
+  _renderTopBar() {
+    const host = document.querySelector('[data-wt-top]'); if (!host) return;
+    const cards = App.computeWalkthroughCards(App.activeCustomer);
+    const wt = App._findWalkthrough(this._activeWalkthroughId) || { section_status: {} };
+    const reviewed = (wt.section_status || {});
+    const reviewedCount = cards.filter(c => reviewed['proj:' + c.project.id] === 'reviewed').length;
+    const total = cards.length;
+    const pct = total ? Math.round((reviewedCount / total) * 100) : 0;
+    const cohort = { critical: 0, watch: 0, steady: 0 };
+    cards.forEach(c => { cohort[c.state] = (cohort[c.state] || 0) + 1; });
+    const esc = Dashboard.esc;
+    host.innerHTML =
+      '<div class="wt-top-ttl">Weekly walkthrough — <span style="color:var(--accent-blue)">' + esc(App.activeCustomer) + '</span> · ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + '</div>' +
+      '<div class="wt-progress" title="' + reviewedCount + ' / ' + total + ' reviewed"><div class="wt-progress-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="wt-progress-label">' + reviewedCount + ' / ' + total + ' reviewed</div>' +
+      '<span class="wt-pill wt-pill-crit">' + cohort.critical + ' critical</span>' +
+      '<span class="wt-pill wt-pill-watch">' + cohort.watch + ' watch</span>' +
+      '<span class="wt-pill wt-pill-steady">' + cohort.steady + ' steady</span>' +
+      '<div style="margin-left:auto;display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="Report.exportWalkthroughMinutes(\'' + esc(this._activeWalkthroughId) + '\')">Export minutes</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="Walkthrough._completeAndClose()">Mark Done</button>' +
+        '<button style="background:transparent;border:none;font-size:20px;color:var(--text-muted);cursor:pointer" onclick="document.getElementById(\'walkthroughOverlay\').remove()">×</button>' +
+      '</div>';
+  },
+
+  _renderProjectList() {
+    const host = document.querySelector('[data-wt-list]'); if (!host) return;
+    const cards = App.computeWalkthroughCards(App.activeCustomer);
+    const wt = App._findWalkthrough(this._activeWalkthroughId) || { section_status: {} };
+    const esc = Dashboard.esc;
+    let html = '<input class="wt-list-search" placeholder="Search…">';
+    html += '<div class="wt-list-h">By attention</div>';
+    cards.forEach(c => {
+      const isActive = c.project.id === this.activeProjectId;
+      const isDone = (wt.section_status || {})['proj:' + c.project.id] === 'reviewed';
+      const cls = 'wt-list-item' + (isActive ? ' active' : '') + (isDone ? ' done' : '');
+      html += '<div class="' + cls + '" data-wt-list-pid="' + esc(c.project.id) + '" onclick="Walkthrough.selectProject(\'' + esc(c.project.id) + '\')">' +
+        '<div class="wt-list-check">' + (isDone ? '✓' : '') + '</div>' +
+        '<div class="wt-list-rags">' +
+          '<div class="d" style="background:' + App.ragColor(c.ragSummary.schedule) + '"></div>' +
+          '<div class="d" style="background:' + App.ragColor(c.ragSummary.resourcing) + '"></div>' +
+          '<div class="d" style="background:' + App.ragColor(c.ragSummary.scope) + '"></div>' +
+        '</div>' +
+        '<div class="wt-list-name" title="' + esc(c.project.name) + '">' + esc(c.project.name) + '</div>' +
+        '<span class="wt-list-att">' + c.attentionScore + '</span>' +
+      '</div>';
+    });
+    host.innerHTML = html;
+  },
+
+  _renderCenter() {
+    const host = document.querySelector('[data-wt-center]'); if (!host) return;
+    if (!this.activeProjectId) {
+      host.innerHTML = '<div style="padding:18px;color:var(--text-muted)">Select a project from the left.</div>';
+      return;
+    }
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) { host.innerHTML = ''; return; }
+    const esc = Dashboard.esc;
+    // Minimal placeholder; tasks 8/9/11 will populate prompts/grid/open-lists/capture/popovers.
+    host.innerHTML =
+      '<div class="wt-c-hd"><span class="nm">' + esc(project.name) + '</span></div>' +
+      '<div data-wt-prompts></div>' +
+      '<div data-wt-grid></div>' +
+      '<div data-wt-open-lists></div>' +
+      '<div data-wt-capture></div>';
+  },
+
+  _renderCustomerPanel() {
+    const host = document.querySelector('[data-wt-cust]'); if (!host) return;
+    if (!this.activeProjectId) { host.innerHTML = ''; return; }
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) { host.innerHTML = ''; return; }
+    const n = project.narrative || { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+    const esc = Dashboard.esc;
+    // Minimal placeholder; task 10 fills out the full panel. Headline textarea is here so the
+    // layout test that round-trips a typed headline can find it.
+    host.innerHTML =
+      '<div class="wt-cust-h"><span class="ttl">Project narrative</span></div>' +
+      '<textarea data-narrative-field="headline" class="wt-cust-input">' + esc(n.headline || '') + '</textarea>';
+  },
+
+  _renderBottomBar() {
+    const host = document.querySelector('[data-wt-bottom]'); if (!host) return;
+    const wt = App._findWalkthrough(this._activeWalkthroughId);
+    const decisions = wt && wt.decisions ? wt.decisions.length : 0;
+    const actions = wt && wt.actions ? wt.actions.length : 0;
+    host.innerHTML =
+      '<span class="wt-bot-stat"><strong>' + decisions + '</strong> decisions · <strong>' + actions + '</strong> actions filed</span>' +
+      '<span class="wt-bot-stat" style="margin-left:18px;color:var(--text-muted)">Tab cycles capture · ⌘+Enter next project</span>' +
+      '<div style="margin-left:auto;display:flex;gap:6px">' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save & continue</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="Walkthrough.advanceToNext()">Next project →</button>' +
+      '</div>';
+  },
+
+  _completeAndClose() {
+    if (!this._activeWalkthroughId) return;
+    App.completeWalkthrough(this._activeWalkthroughId);
+    const overlay = document.getElementById('walkthroughOverlay');
+    if (overlay) overlay.remove();
+    App.toast('Walkthrough completed', 'success');
+  }
+};
+
+/* ============================================================
    Sprint — Kanban Sprint Board
    ============================================================ */
 const Sprint = {
@@ -19354,52 +19584,7 @@ const Sprint = {
   // User-facing "Settings" button on Sprint Planning now navigates to System Settings
   // (Scheduling Engine card) rather than opening a duplicate modal. The modal-building
   // openAllocSettings is retained for internal callers (e.g. re-open after an edit).
-  openWalkthrough() {
-    if (!App.data) return;
-    const customer = App.activeCustomer;
-    if (!customer) { App.toast('Select a customer first', 'error'); return; }
-    const existing = document.getElementById('walkthroughOverlay');
-    if (existing) existing.remove();
-    let active = App.getActiveWalkthrough(customer);
-    if (!active) {
-      const id = App.startWalkthrough(customer, []);
-      active = App._findWalkthrough(id);
-    }
-    const cards = App.computeWalkthroughCards(customer);
-    const reviewed = (active.section_status || {});
-    const reviewedCount = cards.filter(c => reviewed['proj:' + c.project.id] === 'reviewed').length;
-    const totalCount = cards.length;
-    const pct = totalCount > 0 ? Math.round((reviewedCount / totalCount) * 100) : 0;
-    const cohort = { critical: 0, watch: 0, steady: 0 };
-    cards.forEach(c => { cohort[c.state] = (cohort[c.state] || 0) + 1; });
-    const upNext = cards.find(c => reviewed['proj:' + c.project.id] !== 'reviewed');
-    const esc = Dashboard.esc;
-    const overlay = document.createElement('div');
-    overlay.id = 'walkthroughOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:flex-start;justify-content:center;background:rgba(15,23,42,0.55);padding:24px 16px;overflow:auto';
-    const headerStrip = '<div class="wt-header-strip">' +
-      '<h3 style="margin:0;font-size:15px;font-weight:700">Weekly Walkthrough — ' + esc(customer) + '</h3>' +
-      '<div class="wt-progress-bar" title="' + reviewedCount + ' of ' + totalCount + ' reviewed"><div class="wt-progress-fill" style="width:' + pct + '%"></div></div>' +
-      '<div style="font-size:11px;color:var(--text-dark-secondary);font-weight:600">' + reviewedCount + ' / ' + totalCount + ' reviewed</div>' +
-      '<span class="wt-cohort-pill wt-cohort-critical">' + cohort.critical + ' critical</span>' +
-      '<span class="wt-cohort-pill wt-cohort-watch">' + cohort.watch + ' watch</span>' +
-      '<span class="wt-cohort-pill wt-cohort-steady">' + cohort.steady + ' steady</span>' +
-      (upNext ? '<span class="wt-up-next">Up next: ' + esc(upNext.project.name) + '</span>' : '<span class="wt-up-next" style="color:var(--status-green);font-weight:700">All caught up ✓</span>') +
-      '<button onclick="document.getElementById(\'walkthroughOverlay\').remove()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted);margin-left:auto" aria-label="Close">&times;</button>' +
-    '</div>';
-    const body = '<div class="wt-card-list">' + cards.map(card => Sprint._wtRenderCard(card, active)).join('') + '</div>';
-    const footer = '<div class="wt-card-footer-strip">' +
-      '<div style="font-size:11px;color:var(--text-muted)">Decisions: <strong>' + active.decisions.length + '</strong> · Actions: <strong>' + active.actions.length + '</strong></div>' +
-      '<div style="display:flex;gap:6px">' +
-        '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'walkthroughOverlay\').remove()">Save &amp; Close</button>' +
-        '<button class="btn btn-outline btn-sm" onclick="Report.exportWalkthroughMinutes(\'' + esc(active.id) + '\')">Export minutes</button>' +
-        '<button class="btn btn-primary btn-sm" onclick="Sprint._wtComplete(\'' + esc(active.id) + '\')">Mark Done</button>' +
-      '</div>' +
-    '</div>';
-    overlay.innerHTML = '<div class="wt-overlay-shell">' + headerStrip + body + footer + '</div>';
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-    document.body.appendChild(overlay);
-  },
+  openWalkthrough() { Walkthrough.open(App.activeCustomer); },
 
   _wtRenderCard(card, active) {
     const esc = Dashboard.esc;
