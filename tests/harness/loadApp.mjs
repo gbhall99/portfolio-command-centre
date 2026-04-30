@@ -24,7 +24,7 @@ const INDEX_HTML_PATH = path.join(REPO_ROOT, 'index.html');
  *                            without any data hydration (file-loader state).
  * @param {object} [opts]
  * @param {boolean} [opts.silent=true]  Suppress console.* from the app.
- * @returns {Promise<{ window, document, App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, teardown }>}
+ * @returns {Promise<{ window, document, App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report, Walkthrough, teardown }>}
  */
 export async function loadApp(fixture, opts = {}) {
   const silent = opts.silent !== false;
@@ -35,7 +35,7 @@ export async function loadApp(fixture, opts = {}) {
   // </body> only — the source contains other </body> substrings inside JS template strings (report
   // generation code), and replacing those would corrupt the inline scripts.
   const bridge =
-    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report };</script>';
+    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report, Walkthrough };</script>';
   const lastBody = indexHtml.lastIndexOf('</body>');
   if (lastBody === -1) throw new Error('Could not find </body> in index.html');
   indexHtml = indexHtml.slice(0, lastBody) + bridge + indexHtml.slice(lastBody);
@@ -120,6 +120,7 @@ export async function loadApp(fixture, opts = {}) {
     AuditPanel: handles.AuditPanel,
     Forecast: handles.Forecast,
     Report: handles.Report,
+    Walkthrough: handles.Walkthrough,
     teardown
   };
 }
