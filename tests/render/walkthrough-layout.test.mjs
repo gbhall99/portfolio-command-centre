@@ -84,3 +84,35 @@ describe('Walkthrough — Project narrative panel', () => {
     app.teardown();
   });
 });
+
+describe('Walkthrough — keyboard shortcuts', () => {
+  it('Cmd+Enter advances to the next unreviewed project', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'Acme Industries-K1', name: 'Alpha' });
+    const b = makeProject({ id: 'Acme Industries-K2', name: 'Beta' });
+    const app = await loadApp(makeDataset({ projects: [a, b], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Walkthrough.open('Acme Industries');
+    app.Walkthrough.selectProject('Acme Industries-K1');
+    const evt = new app.window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true });
+    app.window.document.dispatchEvent(evt);
+    expect(app.Walkthrough.activeProjectId).toBe('Acme Industries-K2');
+    app.teardown();
+  });
+
+  it('Cmd+Enter inside a textarea does NOT advance — typing is preserved', async () => {
+    resetIdSeq();
+    const a = makeProject({ id: 'Acme Industries-K-A', name: 'Alpha' });
+    const b = makeProject({ id: 'Acme Industries-K-B', name: 'Beta' });
+    const app = await loadApp(makeDataset({ projects: [a, b], sprints: makeSprintSequence(2), team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Walkthrough.open('Acme Industries');
+    app.Walkthrough.selectProject('Acme Industries-K-A');
+    const headline = app.window.document.querySelector('[data-narrative-field="headline"]');
+    // Dispatch the keydown FROM the textarea so e.target is the textarea.
+    const evt = new app.window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true });
+    headline.dispatchEvent(evt);
+    expect(app.Walkthrough.activeProjectId).toBe('Acme Industries-K-A'); // unchanged
+    app.teardown();
+  });
+});
