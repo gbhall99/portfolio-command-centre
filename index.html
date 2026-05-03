@@ -9314,6 +9314,181 @@ document.addEventListener('DOMContentLoaded', () => {
    Dashboard — Filter, Sort, Render
    ============================================================ */
 const Dashboard = {
+  COLUMNS: (function buildColumns() {
+    const STAGES = ['Requirements', 'Data Sourcing', 'Data Modeling', 'Development', 'UAT'];
+    const fmtDate = (iso) => {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+      catch (_) { return '—'; }
+    };
+    const sumDone = (p) => Object.values(p.skill_splits || {}).reduce(
+      (s, arr) => s + (Array.isArray(arr) ? arr.reduce((s2, e) => s2 + (e.completed || 0), 0) : 0), 0
+    );
+
+    return [
+      // ---- Row chrome (alwaysOn, hidden from picker) ----
+      { id: '__drag', group: 'Chrome', label: '', width: 30, alwaysOn: true, hideFromPicker: true,
+        cellClass: 'drag-handle',
+        render: () => '⠇' },
+      { id: '__pin', group: 'Chrome', label: '', width: 26, alwaysOn: true, hideFromPicker: true,
+        render: (p) => {
+          const pinned = App.isPinned(p.id);
+          const fill = pinned ? 'currentColor' : 'none';
+          const titleTxt = pinned ? 'Remove from watchlist' : 'Add to watchlist';
+          return '<button class="pin-btn' + (pinned ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + titleTxt + '" aria-label="' + titleTxt + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + fill + '" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
+        }
+      },
+
+      // ---- Identity ----
+      { id: 'priority', group: 'Identity', label: '#', width: 48, alwaysOn: true, sortable: true,
+        cellClass: 'priority-cell',
+        render: (p) => {
+          const rec = p.recommended_priority;
+          const recChip = (rec && rec !== p.priority)
+            ? ' <span title="Recommended priority #' + rec + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">→#' + rec + '</span>'
+            : '';
+          const warnChip = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
+          const whyBtn = '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
+          return '<span>' + (p.priority || '') + '</span>' + recChip + warnChip + whyBtn;
+        },
+        edit: { type: 'number', field: 'priority' } },
+      { id: 'name', group: 'Identity', label: 'Project', width: 240, alwaysOn: true, sortable: true,
+        cellClass: 'project-name-cell',
+        render: (p) => {
+          const staleThreshold = App.getStaleThreshold(p.customer);
+          const staleDays = p.last_updated ? Math.floor((Date.now() - new Date(p.last_updated).getTime()) / 86400000) : -1;
+          const staleIcon = (staleDays >= staleThreshold && p.status !== 'Complete' && p.status !== 'Closed')
+            ? '<span class="stale-icon" title="Not updated in ' + staleDays + ' days · threshold is ' + staleThreshold + ' days"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>'
+            : '';
+          const lastReviewedMs = p.last_reviewed_at ? new Date(p.last_reviewed_at).getTime() : 0;
+          const reviewedDays = lastReviewedMs ? Math.floor((Date.now() - lastReviewedMs) / 86400000) : null;
+          const reviewedBadge = reviewedDays != null
+            ? '<span class="reviewed-badge" title="Reviewed ' + (reviewedDays <= 1 ? 'today' : reviewedDays + ' days ago') + '"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></span>'
+            : '';
+          const lifecycle = (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '');
+          return Dashboard.esc(p.name) + staleIcon + reviewedBadge + lifecycle;
+        },
+        edit: { type: 'text', field: 'name' } },
+      { id: 'customer', group: 'Identity', label: 'Customer', width: 80, sortable: true,
+        render: (p) => '<span class="badge badge-customer" style="background:' + App.customerColor(p.customer) + '">' + Dashboard.esc(p.customer) + '</span>',
+        edit: { type: 'select', field: 'customer', options: [] } },
+      { id: 'category', group: 'Identity', label: 'Category', width: 100, sortable: true,
+        render: (p) => Dashboard.esc(p.category || ''),
+        edit: { type: 'text', field: 'category' } },
+      { id: 'manager', group: 'Identity', label: 'Manager', width: 130, sortable: true, cellClass: 'manager-cell',
+        render: (p) => Dashboard.esc(p.manager || '—'),
+        edit: { type: 'text', field: 'manager' } },
+      { id: 'sponsor', group: 'Identity', label: 'Sponsor', width: 130,
+        render: (p) => Dashboard.esc(p.sponsor || '—'),
+        edit: { type: 'text', field: 'sponsor' } },
+      { id: 'status', group: 'Identity', label: 'Status', width: 110, sortable: true,
+        render: (p) => '<span class="badge badge-status" style="color:' + App.statusColor(p.status) + ';background:' + App.statusColor(p.status) + '20">' + Dashboard.esc(p.status) + '</span>',
+        edit: { type: 'select', field: 'status', options: ['Not Started','In Progress','On Hold','At Risk','Blocked','Complete','Closed'] } },
+
+      // ---- Risks ----
+      { id: 'rag', group: 'Risks', label: 'RAG', width: 80,
+        render: (p) => '<div class="rag-dots">' +
+          '<div class="rag-dot" title="Schedule: ' + (p.rag_schedule||'') + '" style="background:' + App.ragColor(p.rag_schedule) + '"></div>' +
+          '<div class="rag-dot" title="Resourcing: ' + (p.rag_resourcing||'') + '" style="background:' + App.ragColor(p.rag_resourcing) + '"></div>' +
+          '<div class="rag-dot" title="Scope: ' + (p.rag_scope||'') + '" style="background:' + App.ragColor(p.rag_scope) + '"></div>' +
+        '</div>',
+        edit: { type: 'rag' } },
+      { id: 'risks', group: 'Risks', label: 'Risks', width: 200,
+        render: (p) => Dashboard.esc((p.risks || '').slice(0, 80)) + ((p.risks||'').length > 80 ? '…' : ''),
+        edit: { type: 'textarea', field: 'risks' } },
+      { id: 'assumptions', group: 'Risks', label: 'Assumptions', width: 200,
+        render: (p) => Dashboard.esc((p.assumptions || '').slice(0, 80)) + ((p.assumptions||'').length > 80 ? '…' : ''),
+        edit: { type: 'textarea', field: 'assumptions' } },
+      { id: 'dependencies', group: 'Risks', label: 'Dependencies', width: 160,
+        render: (p) => Dashboard.esc((p.dependencies || '').slice(0, 60)) + ((p.dependencies||'').length > 60 ? '…' : ''),
+        edit: { type: 'textarea', field: 'dependencies' } },
+
+      // ---- Dates ----
+      { id: 'start_date', group: 'Dates', label: 'Start', width: 80, sortable: true,
+        render: (p) => fmtDate(p.start_date),
+        edit: { type: 'date', field: 'start_date' } },
+      { id: 'target_date', group: 'Dates', label: 'Target', width: 80, sortable: true,
+        render: (p) => fmtDate(p.target_date),
+        edit: { type: 'date', field: 'target_date' } },
+      { id: 'hard_deadline', group: 'Dates', label: 'Hard deadline', width: 80, sortable: true,
+        render: (p) => p.hard_deadline ? '<span style="color:var(--status-red)">' + fmtDate(p.hard_deadline) + '</span>' : '—',
+        edit: { type: 'date', field: 'hard_deadline' } },
+      { id: 'baseline_start', group: 'Dates', label: 'Baseline start', width: 80,
+        render: (p) => fmtDate(p.baseline_start),
+        edit: { type: 'date', field: 'baseline_start' } },
+      { id: 'baseline_end', group: 'Dates', label: 'Baseline end', width: 80,
+        render: (p) => fmtDate(p.baseline_end),
+        edit: { type: 'date', field: 'baseline_end' } },
+      { id: 'actual_date', group: 'Dates', label: 'Actual', width: 80,
+        render: (p) => fmtDate(p.actual_date),
+        edit: { type: 'date', field: 'actual_date' } },
+      { id: 'product_release_date', group: 'Dates', label: 'Product release', width: 80,
+        render: (p) => fmtDate(p.product_release_date),
+        edit: { type: 'date', field: 'product_release_date' } },
+      { id: 'comms_date', group: 'Dates', label: 'Comms date', width: 80,
+        render: (p) => fmtDate(p.comms_date),
+        edit: { type: 'date', field: 'comms_date' } },
+      { id: 'last_updated', group: 'Dates', label: 'Updated', width: 80,
+        render: (p) => fmtDate(p.last_updated),
+        edit: { type: 'derived' } },
+
+      // ---- Sprints ----
+      { id: 'sprint_range', group: 'Sprints', label: 'Sprints', width: 90, sortable: true, sortField: 'current_sprint',
+        cellClass: 'sprint-cell',
+        render: (p) => Dashboard.sprintRange(p),
+        edit: { type: 'derived' } },
+      { id: 'current_sprint', group: 'Sprints', label: 'Current sprint', width: 100,
+        render: (p) => Dashboard.esc(p.current_sprint || '—'),
+        edit: { type: 'sprint', field: 'current_sprint' } },
+      { id: 'target_sprint', group: 'Sprints', label: 'Target sprint', width: 100,
+        render: (p) => Dashboard.esc(p.target_sprint || '—'),
+        edit: { type: 'sprint', field: 'target_sprint' } },
+
+      // ---- Estimates ----
+      { id: 'size_total', group: 'Estimates', label: 'Est', width: 50, sortable: true, cellClass: 'size-cell',
+        render: (p) => p.size_total != null ? App.fmtPoints(p.size_total) : '—',
+        edit: { type: 'derived' } },
+      { id: 'size_requirements', group: 'Estimates', label: 'Req pts', width: 60, cellClass: 'size-cell',
+        render: (p) => p.size_requirements != null ? App.fmtPoints(p.size_requirements) : '—',
+        edit: { type: 'number', field: 'size_requirements' } },
+      { id: 'size_tableau', group: 'Estimates', label: 'Tab pts', width: 60, cellClass: 'size-cell',
+        render: (p) => p.size_tableau != null ? App.fmtPoints(p.size_tableau) : '—',
+        edit: { type: 'number', field: 'size_tableau' } },
+      { id: 'size_engineering', group: 'Estimates', label: 'DE pts', width: 60, cellClass: 'size-cell',
+        render: (p) => p.size_engineering != null ? App.fmtPoints(p.size_engineering) : '—',
+        edit: { type: 'number', field: 'size_engineering' } },
+      { id: 'size_data_science', group: 'Estimates', label: 'DS pts', width: 60, cellClass: 'size-cell',
+        render: (p) => p.size_data_science != null ? App.fmtPoints(p.size_data_science) : '—',
+        edit: { type: 'number', field: 'size_data_science' } },
+      { id: 'size_uat_adoption', group: 'Estimates', label: 'UAT pts', width: 60, cellClass: 'size-cell',
+        render: (p) => p.size_uat_adoption != null ? App.fmtPoints(p.size_uat_adoption) : '—',
+        edit: { type: 'number', field: 'size_uat_adoption' } },
+
+      // ---- Remaining work ----
+      { id: 'size_done', group: 'Remaining work', label: 'Done', width: 50, cellClass: 'size-cell',
+        render: (p) => { const done = sumDone(p); return done ? App.fmtPoints(done) : '—'; },
+        edit: { type: 'derived' } },
+      { id: 'size_remaining', group: 'Remaining work', label: 'Remaining', width: 70, cellClass: 'size-cell',
+        render: (p) => { const remain = (p.size_total || 0) - sumDone(p); return remain > 0 ? App.fmtPoints(remain) : '—'; },
+        edit: { type: 'derived' } },
+      { id: 'progress', group: 'Remaining work', label: 'Progress', width: 150, sortable: true, cellClass: 'progress-bar-cell',
+        render: (p) => {
+          const stages = p.stages || {};
+          const applicable = STAGES.filter(s => stages[s] && stages[s] !== 'N/A');
+          const completed = applicable.filter(s => stages[s] === 'Complete').length;
+          const pct = applicable.length > 0 ? Math.round((completed / applicable.length) * 100) : -1;
+          if (pct === -1) return '<span style="font-size:11px;color:var(--text-muted)">—</span>';
+          const segments = STAGES.map(s => {
+            const val = stages[s] || 'N/A';
+            if (val === 'N/A') return '';
+            const cls = val === 'Complete' ? 'complete' : val === 'In Progress' ? 'in-progress' : 'not-started';
+            return '<div class="progress-segment ' + cls + '" title="' + s + ': ' + val + '"></div>';
+          }).join('');
+          return '<div class="progress-bar"><div class="progress-track">' + segments + '</div><span class="progress-pct' + (pct === 100 ? ' done' : '') + '">' + pct + '%</span></div>';
+        },
+        edit: { type: 'derived' } },
+    ];
+  })(),
   sortField: 'priority',
   sortDir: 'asc',
   filteredProjects: [],
