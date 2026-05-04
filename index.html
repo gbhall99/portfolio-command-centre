@@ -700,6 +700,9 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .priority-cell > span { display: inline-flex; align-items: center; }
 .priority-cell > span:first-child { min-width: 18px; justify-content: flex-end; margin-right: 2px; }
 .priority-cell .why-rank-btn { margin-left: 1px; }
+.th-col { position: relative; }
+.col-resize-handle { position: absolute; top: 0; right: 0; width: 4px; height: 100%; cursor: col-resize; user-select: none; }
+.col-resize-handle:hover { background: var(--accent-blue); opacity: 0.4; }
 /* C3: small "why this rank?" info button that appears in priority cells and Gantt labels */
 .why-rank-btn { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 3px; padding: 0; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-muted); border-radius: 50%; font-size: 9px; font-weight: 700; line-height: 1; cursor: pointer; opacity: 0.55; transition: opacity 0.15s, border-color 0.15s, color 0.15s; vertical-align: middle; }
 .why-rank-btn:hover { opacity: 1; border-color: var(--accent-blue); color: var(--accent-blue); }
@@ -2562,25 +2565,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <!-- Project Table -->
         <div class="table-wrapper">
           <table class="project-table" id="projectTable" role="grid" aria-label="Project portfolio table">
-            <thead>
-              <tr>
-                <th style="width:30px"></th>
-                <th style="width:26px" title="Watchlist"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.4"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></th>
-                <th data-sort="priority" class="sorted" onclick="Dashboard.sortBy('priority')" style="width:48px"># <span class="sort-arrow">▲</span></th>
-                <th data-sort="name" onclick="Dashboard.sortBy('name')">Project <span class="sort-arrow">▲</span></th>
-                <th data-sort="customer" onclick="Dashboard.sortBy('customer')" style="width:72px">Customer <span class="sort-arrow">▲</span></th>
-                <th data-sort="category" onclick="Dashboard.sortBy('category')" style="width:100px">Category <span class="sort-arrow">▲</span></th>
-                <th data-sort="manager" onclick="Dashboard.sortBy('manager')" style="width:130px">Manager <span class="sort-arrow">▲</span></th>
-                <th data-sort="status" onclick="Dashboard.sortBy('status')" style="width:110px">Status <span class="sort-arrow">▲</span></th>
-                <th style="width:80px">RAG</th>
-                <th data-sort="progress" onclick="Dashboard.sortBy('progress')" style="width:150px">Progress <span class="sort-arrow">▲</span></th>
-                <th data-sort="current_sprint" onclick="Dashboard.sortBy('current_sprint')" style="width:90px">Sprints <span class="sort-arrow">▲</span></th>
-                <th data-sort="target_date" onclick="Dashboard.sortBy('target_date')" style="width:70px">Target <span class="sort-arrow">▲</span></th>
-                <th style="width:65px">Deadline</th>
-                <th data-sort="size_total" onclick="Dashboard.sortBy('size_total')" style="width:45px">Est <span class="sort-arrow">▲</span></th>
-                <th style="width:45px">Done</th>
-              </tr>
-            </thead>
+            <thead id="projectTableHead"></thead>
             <tbody id="projectTableBody"></tbody>
           </table>
           <div class="empty-state" id="emptyState" style="display:none" role="region" aria-label="Empty dashboard">
@@ -9532,6 +9517,40 @@ const Dashboard = {
     return out;
   },
 
+  renderHeader() {
+    const head = document.getElementById('projectTableHead');
+    if (!head) return;
+    const prefs = this._getColumnPrefs();
+    const cols = this.visibleColumns();
+    const ths = cols.map(col => {
+      const w = (prefs.widths && prefs.widths[col.id]) || col.width;
+      const sortKey = col.sortField || col.id;
+      const sortedCls = (col.sortable && this.sortField === sortKey) ? ' sorted' : '';
+      const sortAttr = col.sortable ? ' data-sort="' + sortKey + '"' : '';
+      const reorderable = !col.alwaysOn && !col.hideFromPicker;
+      const widthAttr = (typeof w === 'number') ? ' style="width:' + w + 'px"' : '';
+      const sortArrow = col.sortable ? ' <span class="sort-arrow">' + (this.sortDir === 'desc' ? '▼' : '▲') + '</span>' : '';
+      const resizeHandle = (col.alwaysOn || col.hideFromPicker) ? '' : '<div class="col-resize-handle" data-col-id="' + col.id + '"></div>';
+      return '<th data-col-id="' + col.id + '"' + sortAttr + ' class="th-col' + sortedCls + '"' + widthAttr +
+        (reorderable ? ' draggable="true"' : '') +
+        '><span class="th-label">' + Dashboard.esc(col.label) + sortArrow + '</span>' + resizeHandle + '</th>';
+    }).join('');
+    head.innerHTML = '<tr>' + ths + '</tr>';
+    this.attachHeaderHandlers();
+  },
+
+  attachHeaderHandlers() {
+    const head = document.getElementById('projectTableHead');
+    if (!head) return;
+    head.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', (e) => {
+        if (e.target.closest('.col-resize-handle')) return;
+        if (th.dataset.dragging === '1') return;
+        this.sortBy(th.dataset.sort);
+      });
+    });
+  },
+
   setColumnVisible(id, on) {
     const prefs = this._getColumnPrefs();
     const col = this.COLUMNS.find(c => c.id === id);
@@ -9583,6 +9602,7 @@ const Dashboard = {
     try { this.applyFilters(); } catch (e) { console.error('[PCC] Dashboard.applyFilters failed in init:', e); }
     try { this.renderSummaryCards(); } catch (e) { console.error('[PCC] Dashboard.renderSummaryCards failed:', e); }
     try { this.renderFilterPresets(); } catch (e) { /* ignore */ }
+    try { this.renderHeader(); } catch (e) { console.error('[PCC] Dashboard.renderHeader failed:', e); }
   },
 
   render() {
@@ -9976,6 +9996,7 @@ const Dashboard = {
       return;
     }
     empty.style.display = 'none';
+    this.renderHeader();
 
     // Store for virtual scrolling
     this.allFilteredProjects = projects;
