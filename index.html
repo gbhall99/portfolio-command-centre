@@ -543,6 +543,7 @@ td[data-quick-edit]:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
 td[data-quick-edit][data-editing="1"] { padding: 2px 4px; }
 .quick-edit-input { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--accent-blue); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-dark); font-size: 12px; font-family: inherit; outline: none; }
 .quick-edit-input:focus { box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
+.quick-edit-textarea { min-height: 80px; resize: vertical; }
 .quick-edit-rag .rag-dot { border: 0; cursor: pointer; padding: 0; }
 .dash-tip { position: absolute; z-index: 10; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(4px); min-width: 240px; max-width: 320px; background: var(--text-dark); color: white; padding: 10px 12px; border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(15,23,42,0.25); font-size: 11px; line-height: 1.45; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; }
 .dash-tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text-dark); }
@@ -10220,51 +10221,79 @@ const Dashboard = {
     const project = App.data && App.data.projects.find(p => p.id === projectId);
     if (!project) return;
     if (cell.dataset.editing === '1') return;
+    const col = this.COLUMNS.find(c => c.id === field);
+    const edit = col && col.edit;
+    if (!edit || edit.type === 'derived') return;
+    const dataField = edit.field || field;
+    const originalValue = project[dataField];
     const originalHtml = cell.innerHTML;
-    const originalValue = project[field];
     cell.dataset.editing = '1';
 
-    const cancel = () => {
-      cell.innerHTML = originalHtml;
-      delete cell.dataset.editing;
-    };
-    const commit = (raw) => {
-      let next = raw;
-      if (field === 'priority' || field === 'size_total') {
-        const n = parseInt(raw, 10);
-        if (isNaN(n)) { cancel(); return; }
-        next = n;
-      } else {
-        next = String(raw == null ? '' : raw).trim();
-      }
-      if (next === originalValue) { cancel(); return; }
-      App.updateProject(projectId, field, next);
-      // Re-render the table slice so the row reflects the new value (tone, sort, etc.).
+    const cancel = () => { cell.innerHTML = originalHtml; delete cell.dataset.editing; };
+    const reRender = () => {
       try {
         if (typeof Dashboard.applyAndRender === 'function') Dashboard.applyAndRender();
         else if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
-      } catch (_) { /* fall back to next render cycle */ }
+      } catch (_) {}
+    };
+
+    const parsers = {
+      number: (raw) => {
+        const n = App.toInteger(raw);
+        return (Number.isFinite(n) && n >= 0) ? n : NaN;
+      },
+      date: (raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+        const t = Date.parse(s);
+        return Number.isFinite(t) ? s : undefined;
+      },
+      text: (raw) => String(raw == null ? '' : raw).trim(),
+      textarea: (raw) => String(raw == null ? '' : raw),
+      select: (raw) => String(raw),
+      sprint: (raw) => String(raw)
+    };
+
+    const commit = (raw) => {
+      const parser = parsers[edit.type] || parsers.text;
+      const next = parser(raw);
+      if (next === undefined) {
+        App.toast('Invalid ' + edit.type + ' value', 'warn');
+        cancel();
+        return;
+      }
+      // For date editors, an empty value when there was a previous date is
+      // treated as a rejected edit — the browser strips invalid date input to
+      // empty, so we can't distinguish a typo from a deliberate clear inline.
+      if (edit.type === 'date' && next === null && originalValue) {
+        App.toast('Invalid date value', 'warn');
+        cancel();
+        return;
+      }
+      if (edit.type === 'number' && Number.isNaN(next)) {
+        App.toast('Story points must be a non-negative integer', 'warn');
+        cancel();
+        return;
+      }
+      if (next === originalValue) { cancel(); return; }
+      App.updateProject(projectId, dataField, next);
+      if (/^size_(requirements|tableau|engineering|data_science|uat_adoption)$/.test(dataField)) {
+        const p2 = App.data.projects.find(x => x.id === projectId);
+        const newTotal = ['size_requirements','size_tableau','size_engineering','size_data_science','size_uat_adoption']
+          .reduce((s, k) => s + (App.toInteger(p2[k]) || 0), 0);
+        if (newTotal !== p2.size_total) App.updateProject(projectId, 'size_total', newTotal);
+      }
+      reRender();
       delete cell.dataset.editing;
     };
 
     let editor;
-    if (field === 'status') {
-      const opts = (DetailPanel.STATUSES || ['Not Started','In Progress','On Hold','At Risk','Blocked','Complete','Closed'])
-        .map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === originalValue ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('');
-      cell.innerHTML = '<select class="quick-edit-input" aria-label="Edit status">' + opts + '</select>';
-      editor = cell.querySelector('select');
-    } else if (field === 'priority' || field === 'size_total') {
-      cell.innerHTML = '<input type="number" min="0" class="quick-edit-input" aria-label="Edit ' + Dashboard.esc(field) + '" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
-      editor = cell.querySelector('input');
-    } else if (field === 'rag') {
-      // RAG cycle — three buttons, each cycles its dim Green→Amber→Red→Green.
+    if (edit.type === 'rag') {
       const next = (cur) => cur === 'Green' ? 'Amber' : cur === 'Amber' ? 'Red' : 'Green';
       const cycle = (dim) => {
         App.updateProject(projectId, dim, next(project[dim] || 'Green'));
-        try {
-          if (typeof Dashboard.applyAndRender === 'function') Dashboard.applyAndRender();
-          else if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
-        } catch (_) {}
+        reRender();
         delete cell.dataset.editing;
       };
       cell.innerHTML =
@@ -10276,28 +10305,56 @@ const Dashboard = {
       cell.querySelectorAll('button[data-rag]').forEach(btn => {
         btn.addEventListener('click', e => { e.stopPropagation(); cycle(btn.dataset.rag); });
       });
-      // No focus target for this mode — users click a dot or click outside.
       const onAway = (e) => {
         if (!cell.contains(e.target)) {
           document.removeEventListener('click', onAway, true);
           if (cell.dataset.editing === '1') cancel();
         }
       };
-      // Defer to next tick so the originating click doesn't immediately fire onAway.
       setTimeout(() => document.addEventListener('click', onAway, true), 0);
       return;
+    }
+
+    if (edit.type === 'number') {
+      cell.innerHTML = '<input type="number" min="0" step="1" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      editor = cell.querySelector('input');
+    } else if (edit.type === 'date') {
+      const v = originalValue ? String(originalValue).slice(0, 10) : '';
+      cell.innerHTML = '<input type="date" class="quick-edit-input" value="' + Dashboard.esc(v) + '">';
+      editor = cell.querySelector('input');
+    } else if (edit.type === 'select') {
+      let options = edit.options || [];
+      if (field === 'customer' && App.getCustomers) options = App.getCustomers();
+      const opts = options.map(o =>
+        '<option value="' + Dashboard.esc(o) + '"' + (o === originalValue ? ' selected' : '') + '>' + Dashboard.esc(o) + '</option>'
+      ).join('');
+      cell.innerHTML = '<select class="quick-edit-input">' + opts + '</select>';
+      editor = cell.querySelector('select');
+    } else if (edit.type === 'textarea') {
+      cell.innerHTML = '<textarea class="quick-edit-input quick-edit-textarea" rows="4">' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '</textarea>';
+      editor = cell.querySelector('textarea');
+    } else if (edit.type === 'sprint') {
+      const sprints = (App.data && App.data.sprints || []).filter(s => s.customer === project.customer);
+      const ids = sprints.map(s => s.sprint_id);
+      const opts = ['<option value="">—</option>'].concat(
+        ids.map(id => '<option value="' + Dashboard.esc(id) + '"' + (id === originalValue ? ' selected' : '') + '>' + Dashboard.esc(id) + '</option>')
+      ).join('');
+      cell.innerHTML = '<select class="quick-edit-input">' + opts + '</select>';
+      editor = cell.querySelector('select');
     } else {
-      cell.innerHTML = '<input type="text" class="quick-edit-input" aria-label="Edit ' + Dashboard.esc(field) + '" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      cell.innerHTML = '<input type="text" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
       editor = cell.querySelector('input');
     }
 
     if (editor) {
       editor.addEventListener('blur', () => commit(editor.value));
       editor.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
-        else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        if (e.key === 'Enter') {
+          if (edit.type === 'textarea' && !(e.metaKey || e.ctrlKey)) return;
+          e.preventDefault(); editor.blur();
+        } else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        else if (e.key === 'Tab') { editor.blur(); }
       });
-      // Use rAF instead of immediate focus to play nicely with click event ordering.
       try { editor.focus(); if (editor.select) editor.select(); } catch (_) {}
     }
   },

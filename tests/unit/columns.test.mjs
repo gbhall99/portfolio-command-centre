@@ -114,3 +114,62 @@ describe('Dashboard.visibleColumns + persistence', () => {
     app.teardown();
   });
 });
+
+describe('Dashboard.openQuickEdit type dispatch', () => {
+  function setup(p) { return loadApp(makeDataset({ projects: [p] })); }
+
+  it('date editor renders date input with ISO value', async () => {
+    const p = makeProject({ id: 'P1', target_date: '2026-06-30' });
+    const app = await setup(p);
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'target_date';
+    app.Dashboard.openQuickEdit(td, 'target_date', 'P1');
+    const input = td.querySelector('input[type="date"]');
+    expect(input).toBeTruthy();
+    expect(input.value).toBe('2026-06-30');
+    app.teardown();
+  });
+
+  it('number editor parses integers via App.toInteger and writes', async () => {
+    const p = makeProject({ id: 'P2', size_engineering: 8 });
+    const app = await setup(p);
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'size_engineering';
+    app.Dashboard.openQuickEdit(td, 'size_engineering', 'P2');
+    const input = td.querySelector('input[type="number"]');
+    input.value = '12';
+    input.dispatchEvent(new app.window.Event('blur'));
+    const updated = app.App.data.projects.find(x => x.id === 'P2');
+    expect(updated.size_engineering).toBe(12);
+    app.teardown();
+  });
+
+  it('select editor lists options and commits chosen value', async () => {
+    const p = makeProject({ id: 'P3', status: 'In Progress' });
+    const app = await setup(p);
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'status';
+    app.Dashboard.openQuickEdit(td, 'status', 'P3');
+    const select = td.querySelector('select');
+    expect(select).toBeTruthy();
+    expect(select.options.length).toBe(7);
+    select.value = 'Blocked';
+    select.dispatchEvent(new app.window.Event('blur'));
+    expect(app.App.data.projects.find(x => x.id === 'P3').status).toBe('Blocked');
+    app.teardown();
+  });
+
+  it('invalid date is rejected and cell reverts', async () => {
+    const p = makeProject({ id: 'P4', target_date: '2026-06-30' });
+    const app = await setup(p);
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'target_date';
+    td.textContent = '30 Jun';
+    app.Dashboard.openQuickEdit(td, 'target_date', 'P4');
+    const input = td.querySelector('input');
+    input.value = 'not-a-date';
+    input.dispatchEvent(new app.window.Event('blur'));
+    expect(app.App.data.projects.find(x => x.id === 'P4').target_date).toBe('2026-06-30');
+    app.teardown();
+  });
+});
