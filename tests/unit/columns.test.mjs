@@ -51,3 +51,66 @@ describe('Dashboard.COLUMNS registry', () => {
     app.teardown();
   });
 });
+
+describe('Dashboard.visibleColumns + persistence', () => {
+  it('defaults expose 12 user-visible columns plus 2 chrome', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.uiStateSet('dashboard.columns', null);
+    const cols = app.Dashboard.visibleColumns();
+    expect(cols.length).toBe(14);
+    const ids = cols.map(c => c.id);
+    expect(ids).toEqual([
+      '__drag', '__pin',
+      'priority', 'name', 'customer', 'manager', 'status',
+      'rag', 'target_date', 'hard_deadline', 'sprint_range',
+      'size_total', 'size_done', 'size_remaining'
+    ]);
+    app.teardown();
+  });
+
+  it('respects stored visibility prefs', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.uiStateSet('dashboard.columns', {
+      visible: ['priority', 'name', 'customer', 'status'],
+      order: ['priority', 'name', 'customer', 'status'],
+      widths: {}
+    });
+    const ids = app.Dashboard.visibleColumns().map(c => c.id);
+    expect(ids).toEqual(['__drag', '__pin', 'priority', 'name', 'customer', 'status']);
+    app.teardown();
+  });
+
+  it('alwaysOn columns cannot be hidden', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.uiStateSet('dashboard.columns', {
+      visible: ['customer'],
+      order: ['customer'],
+      widths: {}
+    });
+    const ids = app.Dashboard.visibleColumns().map(c => c.id);
+    expect(ids).toContain('priority');
+    expect(ids).toContain('name');
+    app.teardown();
+  });
+
+  it('falls back to defaults when prefs are malformed', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.uiStateSet('dashboard.columns', { not: 'an object we expect' });
+    const ids = app.Dashboard.visibleColumns().map(c => c.id);
+    expect(ids).toContain('priority');
+    expect(ids).toContain('name');
+    expect(ids.length).toBeGreaterThan(2);
+    app.teardown();
+  });
+
+  it('setColumnVisible persists', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.uiStateSet('dashboard.columns', null);
+    app.Dashboard.setColumnVisible('manager', false);
+    const ids = app.Dashboard.visibleColumns().map(c => c.id);
+    expect(ids).not.toContain('manager');
+    const prefs = app.App.uiStateGet('dashboard.columns');
+    expect(prefs.visible).not.toContain('manager');
+    app.teardown();
+  });
+});

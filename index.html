@@ -9489,6 +9489,78 @@ const Dashboard = {
         edit: { type: 'derived' } },
     ];
   })(),
+
+  DEFAULT_VISIBLE: [
+    '__drag', '__pin',
+    'priority', 'name', 'customer', 'manager', 'status',
+    'rag', 'target_date', 'hard_deadline', 'sprint_range',
+    'size_total', 'size_done', 'size_remaining'
+  ],
+
+  _getColumnPrefs() {
+    const raw = (App && App.uiStateGet) ? App.uiStateGet('dashboard.columns', null) : null;
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.visible)) {
+      return { visible: this.DEFAULT_VISIBLE.slice(), order: this.DEFAULT_VISIBLE.slice(), widths: {} };
+    }
+    const visible = Array.isArray(raw.visible) ? raw.visible : this.DEFAULT_VISIBLE.slice();
+    const order = Array.isArray(raw.order) && raw.order.length ? raw.order : visible.slice();
+    const widths = (raw.widths && typeof raw.widths === 'object') ? raw.widths : {};
+    return { visible, order, widths };
+  },
+
+  _setColumnPrefs(prefs) {
+    if (App && App.uiStateSet) App.uiStateSet('dashboard.columns', prefs);
+  },
+
+  visibleColumns() {
+    const prefs = this._getColumnPrefs();
+    const byId = new Map(this.COLUMNS.map(c => [c.id, c]));
+    const visibleSet = new Set(prefs.visible);
+    this.COLUMNS.filter(c => c.alwaysOn).forEach(c => visibleSet.add(c.id));
+    const seen = new Set();
+    const out = [];
+    // Prepend alwaysOn columns that are missing from the stored order so
+    // chrome (drag/pin) and pinned identity columns are always present.
+    for (const c of this.COLUMNS) {
+      if (c.alwaysOn && !prefs.order.includes(c.id) && !seen.has(c.id)) {
+        out.push(c); seen.add(c.id);
+      }
+    }
+    for (const id of prefs.order) {
+      if (visibleSet.has(id) && byId.has(id) && !seen.has(id)) { out.push(byId.get(id)); seen.add(id); }
+    }
+    return out;
+  },
+
+  setColumnVisible(id, on) {
+    const prefs = this._getColumnPrefs();
+    const col = this.COLUMNS.find(c => c.id === id);
+    if (!col || col.alwaysOn) return;
+    const set = new Set(prefs.visible);
+    if (on) set.add(id); else set.delete(id);
+    prefs.visible = Array.from(set);
+    if (on && !prefs.order.includes(id)) prefs.order.push(id);
+    this._setColumnPrefs(prefs);
+  },
+
+  setColumnOrder(orderedIds) {
+    if (!Array.isArray(orderedIds)) return;
+    const prefs = this._getColumnPrefs();
+    prefs.order = orderedIds.slice();
+    this._setColumnPrefs(prefs);
+  },
+
+  setColumnWidth(id, px) {
+    const prefs = this._getColumnPrefs();
+    prefs.widths = prefs.widths || {};
+    prefs.widths[id] = Math.max(40, Math.round(px));
+    this._setColumnPrefs(prefs);
+  },
+
+  resetColumns() {
+    if (App && App.uiStateSet) App.uiStateSet('dashboard.columns', null);
+  },
+
   sortField: 'priority',
   sortDir: 'asc',
   filteredProjects: [],
