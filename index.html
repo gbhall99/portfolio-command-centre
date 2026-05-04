@@ -9629,7 +9629,30 @@ const Dashboard = {
   setColumnOrder(orderedIds) {
     if (!Array.isArray(orderedIds)) return;
     const prefs = this._getColumnPrefs();
-    prefs.order = orderedIds.slice();
+    // The header only sees visible <th>s, so `orderedIds` is a partial reordering.
+    // Splice the visible-only sequence back into the full persisted order, preserving
+    // hidden columns at their existing positions.
+    const fullOrder = (prefs.order || []).slice();
+    const visibleSet = new Set(orderedIds);
+    const newFull = [];
+    let visibleCursor = 0;
+    for (const id of fullOrder) {
+      if (visibleSet.has(id)) {
+        // place the next id from the new sequence at this position
+        if (visibleCursor < orderedIds.length) {
+          newFull.push(orderedIds[visibleCursor]);
+          visibleCursor++;
+        }
+      } else {
+        newFull.push(id);
+      }
+    }
+    // Append any visible ids that weren't in the prior order (newly enabled)
+    while (visibleCursor < orderedIds.length) {
+      newFull.push(orderedIds[visibleCursor]);
+      visibleCursor++;
+    }
+    prefs.order = newFull;
     this._setColumnPrefs(prefs);
   },
 
@@ -10081,14 +10104,12 @@ const Dashboard = {
     const table = document.getElementById('projectTable');
     table.classList.toggle('drag-disabled', !canDrag);
 
-    // Attach click and drag handlers
-    tbody.querySelectorAll('tr[data-id]').forEach(row => {
-      row.addEventListener('click', (e) => {
-        // Don't open panel if clicking drag handle
-        if (e.target.classList.contains('drag-handle')) return;
-        DetailPanel.open(row.dataset.id);
-      });
-      if (canDrag) {
+    // Click + double-click dispatch (quick-edit, detail panel) — shared between virtual and non-virtual paths.
+    this.attachRowHandlers(tbody);
+
+    // Priority-drag reorder is only enabled when sorted by priority asc.
+    if (canDrag) {
+      tbody.querySelectorAll('tr[data-id]').forEach(row => {
         row.addEventListener('dragstart', (e) => {
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', row.dataset.id);
@@ -10119,8 +10140,8 @@ const Dashboard = {
           this.reorderPriority(draggedId, targetId, above);
           tbody.querySelectorAll('tr').forEach(r => { r.classList.remove('drag-over-above','drag-over-below'); });
         });
-      }
-    });
+      });
+    }
 
     // Tooltip positioning for progress bars
     tbody.querySelectorAll('.stage-tooltip').forEach(tip => {
@@ -10239,8 +10260,11 @@ const Dashboard = {
 
     const parsers = {
       number: (raw) => {
-        const n = App.toInteger(raw);
-        return (Number.isFinite(n) && n >= 0) ? n : NaN;
+        const s = String(raw == null ? '' : raw).trim();
+        if (s === '') return NaN;       // empty rejects rather than writing 0
+        if (!/^-?\d+$/.test(s)) return NaN;
+        const n = App.toInteger(s);
+        return Number.isFinite(n) && n >= 0 ? n : NaN;
       },
       date: (raw) => {
         const s = String(raw || '').trim();

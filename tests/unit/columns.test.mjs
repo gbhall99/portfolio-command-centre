@@ -208,3 +208,55 @@ describe('Skill-size cascade', () => {
     app.teardown();
   });
 });
+
+describe('Number editor input validation (C2)', () => {
+  it('rejects non-numeric input with a toast and reverts', async () => {
+    const p = makeProject({ id: 'NUM1', size_engineering: 8 });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'size_engineering';
+    app.Dashboard.openQuickEdit(td, 'size_engineering', 'NUM1');
+    const input = td.querySelector('input[type="number"]');
+    input.value = 'abc';
+    input.dispatchEvent(new app.window.Event('blur'));
+    const updated = app.App.data.projects.find(x => x.id === 'NUM1');
+    expect(updated.size_engineering).toBe(8); // unchanged
+    app.teardown();
+  });
+
+  it('rejects empty input rather than writing 0', async () => {
+    const p = makeProject({ id: 'NUM2', size_engineering: 8 });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'size_engineering';
+    app.Dashboard.openQuickEdit(td, 'size_engineering', 'NUM2');
+    const input = td.querySelector('input[type="number"]');
+    input.value = '';
+    input.dispatchEvent(new app.window.Event('blur'));
+    const updated = app.App.data.projects.find(x => x.id === 'NUM2');
+    expect(updated.size_engineering).toBe(8); // unchanged
+    app.teardown();
+  });
+});
+
+describe('Reorder preserves hidden columns (I1)', () => {
+  it('reordering visible columns does not drop hidden ids from prefs.order', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    // Seed a pref state with hidden ids interleaved.
+    app.App.uiStateSet('dashboard.columns', {
+      visible: ['priority', 'name', 'manager', 'status'],
+      order:   ['priority', 'name', 'category', 'manager', 'sponsor', 'status'], // category + sponsor hidden
+      widths: {}
+    });
+    // Simulate the drop handler's call: reorder visible-only sequence (manager moved before name).
+    app.Dashboard.setColumnOrder(['priority', 'manager', 'name', 'status']);
+    const after = app.App.uiStateGet('dashboard.columns');
+    // Hidden ids must still be present.
+    expect(after.order).toContain('category');
+    expect(after.order).toContain('sponsor');
+    // Visible sequence reflects the new order.
+    const visibleAfter = after.order.filter(id => ['priority','name','manager','status'].includes(id));
+    expect(visibleAfter).toEqual(['priority', 'manager', 'name', 'status']);
+    app.teardown();
+  });
+});
