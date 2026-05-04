@@ -703,6 +703,8 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .th-col { position: relative; }
 .col-resize-handle { position: absolute; top: 0; right: 0; width: 4px; height: 100%; cursor: col-resize; user-select: none; }
 .col-resize-handle:hover { background: var(--accent-blue); opacity: 0.4; }
+.th-col.th-drop-before { box-shadow: inset 2px 0 0 var(--accent-blue); }
+.th-col.th-drop-after { box-shadow: inset -2px 0 0 var(--accent-blue); }
 /* C3: small "why this rank?" info button that appears in priority cells and Gantt labels */
 .why-rank-btn { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 3px; padding: 0; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-muted); border-radius: 50%; font-size: 9px; font-weight: 700; line-height: 1; cursor: pointer; opacity: 0.55; transition: opacity 0.15s, border-color 0.15s, color 0.15s; vertical-align: middle; }
 .why-rank-btn:hover { opacity: 1; border-color: var(--accent-blue); color: var(--accent-blue); }
@@ -9570,6 +9572,44 @@ const Dashboard = {
         };
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
+      });
+    });
+    head.querySelectorAll('th[draggable="true"]').forEach(th => {
+      th.addEventListener('dragstart', (e) => {
+        th.dataset.dragging = '1';
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', th.dataset.colId);
+      });
+      th.addEventListener('dragend', () => {
+        delete th.dataset.dragging;
+        head.querySelectorAll('th').forEach(x => { x.classList.remove('th-drop-before','th-drop-after'); });
+      });
+      th.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = th.getBoundingClientRect();
+        const before = e.clientX < rect.left + rect.width / 2;
+        head.querySelectorAll('th').forEach(x => { x.classList.remove('th-drop-before','th-drop-after'); });
+        th.classList.add(before ? 'th-drop-before' : 'th-drop-after');
+      });
+      th.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        const targetId = th.dataset.colId;
+        if (!draggedId || draggedId === targetId) return;
+        const rect = th.getBoundingClientRect();
+        const before = e.clientX < rect.left + rect.width / 2;
+        const ids = Array.from(head.querySelectorAll('th[data-col-id]')).map(x => x.dataset.colId);
+        const fromIdx = ids.indexOf(draggedId);
+        const toBaseIdx = ids.indexOf(targetId);
+        if (fromIdx === -1 || toBaseIdx === -1) return;
+        const reordered = ids.slice();
+        reordered.splice(fromIdx, 1);
+        const insertAt = before ? toBaseIdx - (fromIdx < toBaseIdx ? 1 : 0) : toBaseIdx + (fromIdx > toBaseIdx ? 1 : 0);
+        reordered.splice(Math.max(0, insertAt), 0, draggedId);
+        this.setColumnOrder(reordered);
+        this.renderHeader();
+        this.renderTable(this.filteredProjects);
       });
     });
   },
