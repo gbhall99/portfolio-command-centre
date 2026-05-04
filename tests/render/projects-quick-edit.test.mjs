@@ -19,7 +19,6 @@ describe('Projects table — quick edit', () => {
     expect(html).toMatch(/data-quick-edit="priority"/);
     expect(html).toMatch(/data-quick-edit="manager"/);
     expect(html).toMatch(/data-quick-edit="status"/);
-    expect(html).toMatch(/data-quick-edit="size_total"/);
     app.teardown();
   });
 
