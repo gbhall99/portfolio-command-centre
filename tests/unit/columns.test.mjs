@@ -173,3 +173,38 @@ describe('Dashboard.openQuickEdit type dispatch', () => {
     app.teardown();
   });
 });
+
+describe('Skill-size cascade', () => {
+  it('editing size_engineering recomputes size_total', async () => {
+    const p = makeProject({
+      id: 'CASCADE',
+      size_requirements: 5,
+      size_tableau: 13,
+      size_engineering: 8,
+      size_data_science: 0,
+      size_uat_adoption: 3,
+      size_total: 29
+    });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'size_engineering';
+    app.Dashboard.openQuickEdit(td, 'size_engineering', 'CASCADE');
+    const input = td.querySelector('input[type="number"]');
+    input.value = '12';
+    input.dispatchEvent(new app.window.Event('blur'));
+    const updated = app.App.data.projects.find(x => x.id === 'CASCADE');
+    expect(updated.size_engineering).toBe(12);
+    expect(updated.size_total).toBe(33);
+    app.teardown();
+  });
+
+  it('size_total is read-only (derived columns reject inline edit)', async () => {
+    const p = makeProject({ id: 'NODERIV', size_total: 29 });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const td = app.window.document.createElement('td');
+    td.dataset.quickEdit = 'size_total';
+    app.Dashboard.openQuickEdit(td, 'size_total', 'NODERIV');
+    expect(td.querySelector('input')).toBeNull();
+    app.teardown();
+  });
+});
