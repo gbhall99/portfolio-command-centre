@@ -9447,7 +9447,7 @@ const Dashboard = {
       // ---- Estimates ----
       { id: 'size_total', group: 'Estimates', label: 'Est', width: 50, sortable: true, cellClass: 'size-cell',
         render: (p) => p.size_total != null ? App.fmtPoints(p.size_total) : '—',
-        edit: { type: 'derived' } },
+        edit: { type: 'number', field: 'size_total' } },
       { id: 'size_requirements', group: 'Estimates', label: 'Req pts', width: 60, cellClass: 'size-cell',
         render: (p) => p.size_requirements != null ? App.fmtPoints(p.size_requirements) : '—',
         edit: { type: 'number', field: 'size_requirements' } },
@@ -10170,71 +10170,17 @@ const Dashboard = {
   },
 
   buildRowHtml(p) {
-    const STAGES = ['Requirements', 'Data Sourcing', 'Data Modeling', 'Development', 'UAT'];
-    const custBg = App.customerColor(p.customer);
-    const statusBg = App.statusColor(p.status);
-    const rowClass = p.status === 'At Risk' ? ' class="row-at-risk"' : p.status === 'Blocked' ? ' class="row-blocked"' : '';
-
-    const ragDots = '<div class="rag-dots">' +
-      '<div class="rag-dot" title="Schedule: ' + (p.rag_schedule||'') + '" style="background:' + App.ragColor(p.rag_schedule) + '"></div>' +
-      '<div class="rag-dot" title="Resourcing: ' + (p.rag_resourcing||'') + '" style="background:' + App.ragColor(p.rag_resourcing) + '"></div>' +
-      '<div class="rag-dot" title="Scope: ' + (p.rag_scope||'') + '" style="background:' + App.ragColor(p.rag_scope) + '"></div>' +
-    '</div>';
-
-    const stages = p.stages || {};
-    const applicable = STAGES.filter(s => stages[s] && stages[s] !== 'N/A');
-    const completed = applicable.filter(s => stages[s] === 'Complete').length;
-    const pct = applicable.length > 0 ? Math.round((completed / applicable.length) * 100) : -1;
-
-    let progressHtml = '';
-    if (pct === -1) {
-      progressHtml = '<span style="font-size:11px;color:var(--text-muted)">\u2014</span>';
-    } else {
-      const segments = STAGES.map(s => {
-        const val = stages[s] || 'N/A';
-        if (val === 'N/A') return '';
-        const cls = val === 'Complete' ? 'complete' : val === 'In Progress' ? 'in-progress' : 'not-started';
-        return '<div class="progress-segment ' + cls + '" title="' + s + ': ' + val + '"></div>';
-      }).join('');
-      progressHtml = '<div class="progress-bar"><div class="progress-track">' + segments + '</div><span class="progress-pct' + (pct === 100 ? ' done' : '') + '">' + pct + '%</span></div>';
-    }
-
-    const staleThreshold2 = App.getStaleThreshold(p.customer);
-    const staleDays2 = p.last_updated ? Math.floor((Date.now() - new Date(p.last_updated).getTime()) / 86400000) : -1;
-    const staleIcon2 = (staleDays2 >= staleThreshold2 && p.status !== 'Complete' && p.status !== 'Closed') ? '<span class="stale-icon" title="Not updated in ' + staleDays2 + ' days \u00B7 threshold is ' + staleThreshold2 + ' days (change in Settings)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>' : '';
-
-
-    const lastReviewedMs = p.last_reviewed_at ? new Date(p.last_reviewed_at).getTime() : 0;
-    const reviewedDays = lastReviewedMs ? Math.floor((Date.now() - lastReviewedMs) / 86400000) : null;
-    const reviewedBadge = reviewedDays != null
-      ? '<span class="reviewed-badge" title="Reviewed ' + (reviewedDays <= 1 ? 'today' : reviewedDays + ' days ago') + '">' +
-          '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>' +
-        '</span>'
-      : '';
-    const pinned2 = App.isPinned(p.id);
-    const pinIcon2 = '<button class="pin-btn' + (pinned2 ? ' pinned' : '') + '" onclick="event.stopPropagation();App.togglePin(\'' + p.id + '\')" title="' + (pinned2 ? 'Remove from watchlist' : 'Add to watchlist') + '" aria-label="' + (pinned2 ? 'Remove ' + this.esc(p.name) + ' from watchlist' : 'Add ' + this.esc(p.name) + ' to watchlist') + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="' + (pinned2 ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></button>';
-
-    const rec2 = p.recommended_priority;
-    const warnChip2 = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
-    const whyBtn = '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
-    return '<tr' + rowClass + ' data-id="' + p.id + '" draggable="true">' +
-      '<td class="drag-handle" title="Drag to reorder">\u2807</td>' +
-      '<td style="width:24px;padding:4px 2px;text-align:center">' + pinIcon2 + '</td>' +
-      '<td class="priority-cell" data-quick-edit="priority" title="Click to edit priority"><span>' + (p.priority || '') + '</span>' +
-        (rec2 && rec2 !== p.priority
-          ? ' <span title="Recommended priority #' + rec2 + ' \u2014 click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">\u2192#' + rec2 + '</span>'
-          : '') + warnChip2 + whyBtn +
-      '</td>' +
-      '<td class="project-name-cell" data-quick-edit="name" title="' + this.esc(p.name) + '">' + this.esc(p.name) + staleIcon2 + reviewedBadge + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</td>' +
-      '<td><span class="badge badge-customer" style="background:' + custBg + '">' + this.esc(p.customer) + '</span></td>' +
-      '<td data-quick-edit="category">' + this.esc(p.category || '') + '</td>' +
-      '<td class="manager-cell" data-quick-edit="manager" title="' + this.esc(p.manager||'') + '">' + this.esc(p.manager || '\u2014') + '</td>' +
-      '<td data-quick-edit="status"><span class="badge badge-status" style="color:' + statusBg + ';background:' + statusBg + '20">' + this.esc(p.status) + '</span></td>' +
-      '<td data-quick-edit="rag">' + ragDots + '</td>' +
-      '<td class="progress-bar-cell">' + progressHtml + '</td>' +
-      '<td class="sprint-cell">' + this.sprintRange(p) + '</td>' +
-      '<td class="size-cell" data-quick-edit="size_total">' + (p.size_total || '\u2014') + '</td>' +
-    '</tr>';
+    const tone = p.status === 'At Risk' ? ' class="row-at-risk"'
+               : p.status === 'Blocked' ? ' class="row-blocked"' : '';
+    const cells = this.visibleColumns().map(col => {
+      const editAttr = (col.edit && col.edit.type !== 'derived') ? ' data-quick-edit="' + col.id + '"' : '';
+      const cls = col.cellClass ? ' class="' + col.cellClass + '"' : '';
+      let inner;
+      try { inner = col.render(p); }
+      catch (e) { console.error('[PCC] render failed for column ' + col.id, e); inner = '\u2014'; }
+      return '<td' + cls + editAttr + '>' + inner + '</td>';
+    }).join('');
+    return '<tr' + tone + ' data-id="' + p.id + '" draggable="true">' + cells + '</tr>';
   },
 
   attachRowHandlers(tbody) {
