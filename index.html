@@ -9549,6 +9549,29 @@ const Dashboard = {
         this.sortBy(th.dataset.sort);
       });
     });
+    head.querySelectorAll('.col-resize-handle').forEach(handle => {
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const colId = handle.dataset.colId;
+        const th = handle.closest('th');
+        if (!th) return;
+        const startX = e.clientX;
+        const startW = th.getBoundingClientRect().width;
+        const onMove = (ev) => {
+          const next = Math.max(40, startW + (ev.clientX - startX));
+          th.style.width = next + 'px';
+        };
+        const onUp = (ev) => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          const finalW = Math.max(40, startW + (ev.clientX - startX));
+          this.setColumnWidth(colId, finalW);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
   },
 
   setColumnVisible(id, on) {
