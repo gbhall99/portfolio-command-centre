@@ -671,7 +671,7 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .filter-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
 .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border-radius: var(--radius-md); border: 1px solid var(--border-dim); box-shadow: var(--shadow-sm); }
-.project-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.project-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 .project-table thead { position: sticky; top: 0; z-index: 10; }
 .project-table th { background: var(--bg-content); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-light); cursor: pointer; white-space: nowrap; user-select: none; }
 .project-table th:hover { color: var(--text-dark); }
@@ -9299,13 +9299,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Event delegation for dashboard table
-  document.getElementById('projectTableBody').addEventListener('click', (e) => {
-    const row = e.target.closest('tr[data-id]');
-    if (row && !e.target.closest('button') && !e.target.closest('.drag-handle') && !e.target.closest('.pin-btn')) {
-      DetailPanel.open(row.dataset.id);
-    }
-  });
+  // Note: per-row click+dblclick handlers are attached in Dashboard.attachRowHandlers
+  // each time the table renders. A previous duplicate delegated listener here would
+  // open the detail panel synchronously on the first click of a dblclick, defeating
+  // the deferred-open logic that lets quick-edit dblclicks win.
 });
 
 /* ============================================================
@@ -10227,12 +10224,22 @@ const Dashboard = {
 
   attachRowHandlers(tbody) {
     tbody.querySelectorAll('tr[data-id]').forEach(row => {
+      let pendingOpen = null;
       row.addEventListener('click', (e) => {
         if (e.target.classList.contains('drag-handle')) return;
         if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
-        DetailPanel.open(row.dataset.id);
+        // Don't immediately open — wait briefly so a dblclick on a data-quick-edit cell can cancel.
+        // (Detail panel still opens reliably for clicks not followed by another within 280 ms.)
+        if (pendingOpen) clearTimeout(pendingOpen);
+        const id = row.dataset.id;
+        pendingOpen = setTimeout(() => {
+          pendingOpen = null;
+          DetailPanel.open(id);
+        }, 280);
       });
       row.addEventListener('dblclick', (e) => {
+        // Cancel any pending detail-panel open (we treat the dblclick as decisive).
+        if (pendingOpen) { clearTimeout(pendingOpen); pendingOpen = null; }
         const editCell = e.target.closest('td[data-quick-edit]');
         if (!editCell || !row.contains(editCell)) return;
         if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
