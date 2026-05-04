@@ -10226,21 +10226,19 @@ const Dashboard = {
   },
 
   attachRowHandlers(tbody) {
-    const canDrag = this.sortField === 'priority' && this.sortDir === 'asc';
     tbody.querySelectorAll('tr[data-id]').forEach(row => {
       row.addEventListener('click', (e) => {
         if (e.target.classList.contains('drag-handle')) return;
-        // Quick-edit takes precedence over opening the detail panel — single click on
-        // a flagged cell swaps it for an inline editor in place.
-        const editCell = e.target.closest('td[data-quick-edit]');
-        if (editCell && row.contains(editCell) && !editCell.dataset.editing) {
-          // Skip helpers that have their own click handlers (RAG cycle, why-rank, recommended chip).
-          if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
-          e.stopPropagation();
-          Dashboard.openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id);
-          return;
-        }
+        if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
         DetailPanel.open(row.dataset.id);
+      });
+      row.addEventListener('dblclick', (e) => {
+        const editCell = e.target.closest('td[data-quick-edit]');
+        if (!editCell || !row.contains(editCell)) return;
+        if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        Dashboard.openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id);
       });
     });
   },
