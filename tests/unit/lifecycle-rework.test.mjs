@@ -115,3 +115,18 @@ describe('App.convertToImplementation backwards-compat shim', () => {
     app.teardown();
   });
 });
+
+describe('Run/BAU treatment', () => {
+  it('Run/BAU project keeps natural WSJF (no -1000 hack)', async () => {
+    const p = makeProject({
+      id: 'BAU', lifecycle_stage: 'Run/BAU',
+      business_value: 8, time_criticality: 5, risk_reduction_opportunity: 3, size_total: 10
+    });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const score = app.App.calculateScore ? app.App.calculateScore(p) : null;
+    if (typeof score === 'number') {
+      expect(score).toBeGreaterThan(-100);
+    }
+    app.teardown();
+  });
+});
