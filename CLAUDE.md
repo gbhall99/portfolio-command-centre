@@ -14,6 +14,7 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **Data model**: Projects → Delivery Config → Phases/Skills → Sprints. Team Members with flexible capacity. Governance Forums with project mapping.
 - **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal` — all as plain JS objects in a single `<script>` block.
 - **No emojis** — all icons are inline SVGs throughout.
+- **Schema-driven Projects table** — `Dashboard.COLUMNS` is the single source of truth for header (`renderHeader`), row body (`buildRowHtml`), the column picker (`ColumnPicker`), and the inline editor (`openQuickEdit`). Add a column = one entry. Inline edits dispatch on `col.edit.type` (text/number/date/select/textarea/sprint/rag/derived) and write through `App.updateProject`. Visibility/order/width persist globally via `App.uiStateSet('dashboard.columns', …)`. Single-click row opens the detail panel (deferred ~280 ms so a double-click on a `data-quick-edit` cell can take over and open the inline editor instead). `.project-table` uses `table-layout: fixed` so column widths are authoritative.
 - **Customer-scoped** — `App.activeCustomer` is the single source of truth. Defaults to Acme Industries. Syncs across all views.
 - **Skill colors** — defined in `Sprint.SKILL_COLORS`. Avoid green/amber/red (RAG confusion). Current: Indigo (Req), Cyan (Tab), Blue (DE), Violet (DS), Pink (UAT).
 
