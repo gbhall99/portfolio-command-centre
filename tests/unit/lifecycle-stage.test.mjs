@@ -10,7 +10,7 @@ import {
 describe('lifecycle_stage — schema and migration', () => {
   it('exposes the canonical enum on App.LIFECYCLE_STAGES', async () => {
     const app = await loadApp(makeDataset({}));
-    expect(app.App.LIFECYCLE_STAGES).toEqual(['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU']);
+    expect(app.App.LIFECYCLE_STAGES).toEqual(['Idea', 'Discovery', 'POC', 'Implementation', 'Run/BAU']);
     app.teardown();
   });
 
@@ -67,7 +67,7 @@ describe('lifecycleStageChip + WSJF banding', () => {
     app.teardown();
   });
 
-  it('low-conviction projects sort below high-conviction projects within the same WSJF band', async () => {
+  it('lifecycle stage no longer affects WSJF score (penalty removed in 2026-05 rework)', async () => {
     resetIdSeq();
     const poc = makeProject({
       name: 'A POC', lifecycle_stage: 'POC',
@@ -84,7 +84,7 @@ describe('lifecycleStageChip + WSJF banding', () => {
     const app = await loadApp(makeDataset({ projects: [poc, impl] }));
     const pocScore = app.App.calculateProjectPriorityScore(poc, 0);
     const implScore = app.App.calculateProjectPriorityScore(impl, 0);
-    expect(implScore).toBeGreaterThan(pocScore);
+    expect(implScore).toBe(pocScore);
     app.teardown();
   });
 });

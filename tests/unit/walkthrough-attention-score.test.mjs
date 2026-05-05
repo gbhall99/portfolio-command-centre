@@ -12,12 +12,12 @@ describe('App.computeProjectAttentionScore', () => {
     app.teardown();
   });
 
-  it('Run/BAU sinks below all other lifecycle stages', async () => {
+  it('lifecycle stage no longer perturbs attention score (Run/BAU == Idea on equal inputs)', async () => {
     resetIdSeq();
-    const bau = makeProject({ name: 'BAU', status: 'In Progress', rag_schedule: 'Green', lifecycle_stage: 'Run/BAU', size_total: 5 });
-    const idea = makeProject({ name: 'IDEA', status: 'Not Started', rag_schedule: 'Green', lifecycle_stage: 'Idea', size_total: 5 });
+    const bau = makeProject({ name: 'BAU', status: 'In Progress', rag_schedule: 'Green', rag_resourcing: 'Green', rag_scope: 'Green', lifecycle_stage: 'Run/BAU', size_total: 5 });
+    const idea = makeProject({ name: 'IDEA', status: 'In Progress', rag_schedule: 'Green', rag_resourcing: 'Green', rag_scope: 'Green', lifecycle_stage: 'Idea', size_total: 5 });
     const app = await loadApp(makeDataset({ projects: [bau, idea] }));
-    expect(app.App.computeProjectAttentionScore(bau)).toBeLessThan(app.App.computeProjectAttentionScore(idea));
+    expect(app.App.computeProjectAttentionScore(bau)).toBe(app.App.computeProjectAttentionScore(idea));
     app.teardown();
   });
 
