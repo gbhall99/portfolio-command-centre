@@ -53,3 +53,65 @@ describe('Lifecycle WSJF penalty removed', () => {
     app.teardown();
   });
 });
+
+describe('App.advanceStage', () => {
+  it('exists as a function', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    expect(typeof app.App.advanceStage).toBe('function');
+    app.teardown();
+  });
+
+  it('writes via updateProject and audits the transition', async () => {
+    const p = makeProject({ id: 'X', lifecycle_stage: 'Discovery' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const ok = app.App.advanceStage('X', 'POC');
+    expect(ok).toBe(true);
+    const got = app.App.data.projects.find(x => x.id === 'X');
+    expect(got.lifecycle_stage).toBe('POC');
+    app.teardown();
+  });
+
+  it('returns false for invalid stage', async () => {
+    const p = makeProject({ id: 'Y', lifecycle_stage: 'Discovery' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const ok = app.App.advanceStage('Y', 'Bogus');
+    expect(ok).toBe(false);
+    expect(app.App.data.projects[0].lifecycle_stage).toBe('Discovery');
+    app.teardown();
+  });
+
+  it('returns false when stage unchanged (no-op)', async () => {
+    const p = makeProject({ id: 'Z', lifecycle_stage: 'POC' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const ok = app.App.advanceStage('Z', 'POC');
+    expect(ok).toBe(false);
+    app.teardown();
+  });
+
+  it('does NOT auto-snapshot baseline (decoupled from stage)', async () => {
+    const p = makeProject({
+      id: 'NB', lifecycle_stage: 'POC',
+      start_date: '2026-04-01', target_date: '2026-06-30',
+      baseline_start: null, baseline_end: null
+    });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    app.App.advanceStage('NB', 'Implementation');
+    const got = app.App.data.projects.find(x => x.id === 'NB');
+    expect(got.lifecycle_stage).toBe('Implementation');
+    expect(got.baseline_start).toBeNull();
+    expect(got.baseline_end).toBeNull();
+    app.teardown();
+  });
+});
+
+describe('App.convertToImplementation backwards-compat shim', () => {
+  it('still exists and flips stage to Implementation', async () => {
+    const p = makeProject({ id: 'C', lifecycle_stage: 'POC' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    expect(typeof app.App.convertToImplementation).toBe('function');
+    const ok = app.App.convertToImplementation('C');
+    expect(ok).toBe(true);
+    expect(app.App.data.projects[0].lifecycle_stage).toBe('Implementation');
+    app.teardown();
+  });
+});

@@ -5317,23 +5317,26 @@ const App = {
   sandboxMode: false,
   viewAsMember: null,
 
-  convertToImplementation(projectId, opts) {
+  advanceStage(projectId, nextStage, opts) {
     opts = opts || {};
+    if (this.LIFECYCLE_STAGES.indexOf(nextStage) < 0) return false;
     const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
     if (!p) return false;
-    if (p.lifecycle_stage === 'Implementation' || p.lifecycle_stage === 'Run/BAU') return false;
-    const before = p.lifecycle_stage;
-    p.lifecycle_stage = 'Implementation';
-    if (p.start_date) p.baseline_start = p.start_date;
-    if (p.target_date) p.baseline_end = p.target_date;
-    p.baseline_set_date = new Date().toISOString();
-    if (opts.sponsor) p.sponsor = opts.sponsor;
-    if (opts.notes) p.notes = (p.notes ? p.notes + '\n\n' : '') + 'Converted to Implementation: ' + opts.notes;
-    this.logChange(projectId, 'lifecycle_stage', before || 'Unknown', 'Implementation', 'user', { rationale: opts.notes || 'Converted to Implementation' });
+    const before = p.lifecycle_stage || this.LIFECYCLE_STAGE_DEFAULT;
+    if (before === nextStage) return false;
+    this.pushUndo('Advance stage on ' + (p.name || projectId) + ' (' + before + ' -> ' + nextStage + ')');
+    this.logChange(projectId, 'lifecycle_stage', before, nextStage, 'user', { rationale: opts.rationale || '' });
+    p.lifecycle_stage = nextStage;
+    p.last_updated = new Date().toISOString();
     this.markDirty();
     this.saveToLocalStorage();
     if (this.notifyDataChange) this.notifyDataChange();
     return true;
+  },
+
+  // Backwards-compat shim for older callers / external integrations. Kept thin so removal later is trivial.
+  convertToImplementation(projectId, opts) {
+    return this.advanceStage(projectId, 'Implementation', opts);
   },
 
   promoteTbdPhase(projectId, phaseName, opts) {
