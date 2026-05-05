@@ -2609,7 +2609,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 
           <button class="btn btn-outline btn-sm" onclick="Sprint.autoAllocate()" title="Auto-allocate projects to sprints based on capacity and priority"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Auto-Allocate</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openWalkthrough()" title="Walkthrough — guided weekly review of every open chip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Walkthrough</button>
-          <button class="btn btn-outline btn-sm" onclick="(function(){var s=(App.data&&App.data.sprints||[]).find(function(x){return x.sprint_id===Sprint.activeSprintId})||(App.data.sprints||[])[0];if(s)Report.exportSprintBrief(App.activeCustomer,s.sprint_id)})()" title="Per-member sprint brief — printable PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg> Sprint Brief</button>
+          <button class="btn btn-outline btn-sm" onclick="Report.openSprintBriefPicker()" title="Per-member sprint brief — printable PDF"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg> Sprint Brief</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openSchedulingSettings()" title="Open System Settings → Scheduling Engine"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> Settings</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()" title="Manage sprints"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Sprints</button>
           <button class="btn btn-outline btn-sm" onclick="Sprint.openVelocityModal()" title="Committed vs completed story points per sprint window (customer-scoped throughput, not per-team Scrum velocity)" aria-label="Portfolio throughput"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg> Portfolio throughput</button>
@@ -26575,6 +26575,117 @@ const Report = {
           includeAppendix: false
         })
       : ('<html><body><h1>Sprint Brief — ' + esc(sprintId) + '</h1>' + sections.map(s => '<h2>' + esc(s.title) + '</h2>' + s.html).join('') + '</body></html>');
+  },
+
+  openSprintBriefPicker() {
+    if (!App.data || !App.activeCustomer) {
+      App.toast('Select a customer first', 'error');
+      return;
+    }
+    const all = (App.data.sprints || []).filter(s => !s.customer || s.customer === App.activeCustomer);
+    const sprints = all.slice().sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+    if (!sprints.length) {
+      Report._renderSprintBriefPicker({ empty: true, customer: App.activeCustomer });
+      return;
+    }
+    const todayIso = new Date().toISOString().slice(0, 10);
+    let chosenId = null;
+    for (const s of sprints) {
+      if (s.start_date && s.end_date && s.start_date <= todayIso && todayIso <= s.end_date) { chosenId = s.sprint_id; break; }
+    }
+    if (!chosenId) {
+      const future = sprints.find(s => s.start_date && s.start_date > todayIso);
+      if (future) chosenId = future.sprint_id;
+    }
+    if (!chosenId) {
+      const past = sprints.slice().reverse().find(s => s.end_date && s.end_date < todayIso);
+      if (past) chosenId = past.sprint_id;
+    }
+    if (!chosenId) chosenId = sprints[0].sprint_id;
+    Report._renderSprintBriefPicker({ sprints, chosenId, customer: App.activeCustomer });
+  },
+
+  _renderSprintBriefPicker(opts) {
+    const esc = Dashboard.esc;
+    const customer = opts.customer || '';
+    const existing = document.getElementById('sprintBriefPickerOverlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sprintBriefPickerOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9000;display:flex;align-items:center;justify-content:center';
+    overlay.onclick = (e) => { if (e.target === overlay) Report._closeSprintBriefPicker(); };
+
+    let bodyHtml;
+    if (opts.empty) {
+      bodyHtml = '<div style="font-size:13px;color:var(--text-dark-secondary);margin-bottom:12px">No sprints configured for ' + esc(customer) + '. Add one in <strong>Sprints</strong> to generate a brief.</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-primary btn-sm" onclick="Report._closeSprintBriefPicker()">Close</button></div>';
+    } else {
+      const sprints = opts.sprints || [];
+      const chosenId = opts.chosenId;
+      const fmtRange = (s) => {
+        const fmt = (iso) => {
+          if (!iso) return '—';
+          try { return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+          catch (_) { return iso; }
+        };
+        return fmt(s.start_date) + ' – ' + fmt(s.end_date);
+      };
+      const countAssignments = (sprintId) => {
+        let n = 0;
+        (App.data.projects || []).forEach(p => {
+          if (p.customer !== customer) return;
+          Object.values(p.skill_splits || {}).forEach(arr => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach(sp => { if (sp.sprint === sprintId) n++; });
+          });
+        });
+        return n;
+      };
+      const rows = sprints.map(s => {
+        const checked = s.sprint_id === chosenId ? ' checked' : '';
+        const count = countAssignments(s.sprint_id);
+        return '<label class="sb-picker-row" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;font-size:12px">' +
+          '<input type="radio" name="sb-picker-sprint" value="' + esc(s.sprint_id) + '"' + checked + '>' +
+          '<span style="font-weight:700;font-family:var(--font-mono);min-width:90px">' + esc(s.sprint_id) + '</span>' +
+          '<span style="color:var(--text-dark-secondary);min-width:130px">' + esc(fmtRange(s)) + '</span>' +
+          '<span style="color:var(--text-muted);font-size:11px">' + count + ' assignment' + (count === 1 ? '' : 's') + '</span>' +
+        '</label>';
+      }).join('');
+      bodyHtml =
+        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">Choose a sprint to generate a per-member brief.</div>' +
+        '<div style="max-height:50vh;overflow-y:auto;margin-bottom:12px">' + rows + '</div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button class="btn btn-ghost btn-sm" onclick="Report._closeSprintBriefPicker()">Cancel</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="Report._generateSprintBriefFromPicker()">Generate Brief</button>' +
+        '</div>';
+    }
+
+    overlay.innerHTML = '<div style="background:var(--surface);border-radius:12px;padding:20px;max-width:480px;width:90%;box-shadow:var(--shadow-lg)" role="dialog" aria-label="Choose sprint for brief">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Brief — ' + esc(customer) + '</h3>' +
+      bodyHtml +
+    '</div>';
+
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', Report._sprintBriefPickerEsc);
+  },
+
+  _sprintBriefPickerEsc(e) {
+    if (e.key === 'Escape') Report._closeSprintBriefPicker();
+  },
+
+  _closeSprintBriefPicker() {
+    const el = document.getElementById('sprintBriefPickerOverlay');
+    if (el) el.remove();
+    document.removeEventListener('keydown', Report._sprintBriefPickerEsc);
+  },
+
+  _generateSprintBriefFromPicker() {
+    const sel = document.querySelector('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked');
+    if (!sel) { App.toast('Pick a sprint', 'warn'); return; }
+    const sprintId = sel.value;
+    Report._closeSprintBriefPicker();
+    Report.exportSprintBrief(App.activeCustomer, sprintId);
   },
 
   exportSprintBrief(customer, sprintId) {
