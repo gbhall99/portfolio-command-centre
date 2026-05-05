@@ -10072,13 +10072,9 @@ const Dashboard = {
         '<div style="overflow:auto;background:white;border:1px solid rgba(245,158,11,0.15);border-top:none;border-radius:0 0 var(--radius-md) var(--radius-md)">' +
         '<table class="project-table" style="font-size:12px"><tbody>' + pinnedRows + '</tbody></table></div>';
       watchingEl.style.display = '';
-      // Add click handlers for watching rows
-      watchingEl.querySelectorAll('tr[data-id]').forEach(function(row) {
-        row.addEventListener('click', function(e) {
-          if (e.target.closest('.pin-btn') || e.target.closest('.drag-handle')) return;
-          DetailPanel.open(row.dataset.id);
-        });
-      });
+      // Pinned rows share the same click/dblclick dispatch as the main table
+      // (single → detail panel deferred, double → quick-edit on data-quick-edit cells).
+      this.attachRowHandlers(watchingEl);
     } else if (watchingEl) {
       watchingEl.style.display = 'none';
       watchingEl.innerHTML = '';
@@ -10191,10 +10187,11 @@ const Dashboard = {
       const topPad = start * this.ROW_HEIGHT;
       const bottomPad = (projects.length - end) * this.ROW_HEIGHT;
 
+      const cs = this.visibleColumns().length;
       let html = '';
-      if (topPad > 0) html += '<tr style="height:' + topPad + 'px"><td colspan="15"></td></tr>';
+      if (topPad > 0) html += '<tr style="height:' + topPad + 'px"><td colspan="' + cs + '"></td></tr>';
       html += slice.map(p => this.buildRowHtml(p)).join('');
-      if (bottomPad > 0) html += '<tr style="height:' + bottomPad + 'px"><td colspan="15"></td></tr>';
+      if (bottomPad > 0) html += '<tr style="height:' + bottomPad + 'px"><td colspan="' + cs + '"></td></tr>';
 
       tbody.innerHTML = html;
       this.attachRowHandlers(tbody);
@@ -10268,8 +10265,7 @@ const Dashboard = {
     const cancel = () => { cell.innerHTML = originalHtml; delete cell.dataset.editing; };
     const reRender = () => {
       try {
-        if (typeof Dashboard.applyAndRender === 'function') Dashboard.applyAndRender();
-        else if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
+        if (typeof Dashboard.renderTable === 'function' && Array.isArray(Dashboard.filteredProjects)) Dashboard.renderTable(Dashboard.filteredProjects);
       } catch (_) {}
     };
 
