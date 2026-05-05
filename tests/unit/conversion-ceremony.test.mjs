@@ -3,16 +3,14 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeProject, makeDataset, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('POC → Implementation conversion', () => {
-  it('flips lifecycle_stage and captures a baseline + audit entry', async () => {
+  it('flips lifecycle_stage and audits the transition (baseline now decoupled — set separately)', async () => {
     resetIdSeq();
     const proj = makeProject({ name: 'P', lifecycle_stage: 'POC', size_engineering: 10, start_date: '2026-04-01', target_date: '2026-06-30' });
     proj.size_total = 10;
     const app = await loadApp(makeDataset({ projects: [proj] }));
-    app.App.convertToImplementation(proj.id, { sponsor: 'Sandra Lee', notes: 'Demo accepted in March steerco' });
+    app.App.convertToImplementation(proj.id, { rationale: 'Demo accepted in March steerco' });
     const after = app.App.data.projects[0];
     expect(after.lifecycle_stage).toBe('Implementation');
-    expect(after.baseline_start).toBe('2026-04-01');
-    expect(after.baseline_end).toBe('2026-06-30');
     const lastAudit = (app.App.data.audit_log || []).slice(-1)[0];
     expect(lastAudit.field).toBe('lifecycle_stage');
     expect(lastAudit.rationale).toMatch(/Demo accepted/);
