@@ -4,11 +4,11 @@ import { openAppWithData } from './helpers';
 test('editing a project in the detail panel refreshes the active view', async ({ page }) => {
   await openAppWithData(page);
 
-  // Pick the first project row and open it.
+  // Pick the first project row and open it via the project-name cell.
   const firstRow = page.locator('#projectTableBody tr').first();
   const projectId = await firstRow.getAttribute('data-id');
   expect(projectId).toBeTruthy();
-  await firstRow.click();
+  await firstRow.locator('.project-name-cell').click();
 
   await expect(page.locator('#detailPanel.open')).toBeVisible();
 
