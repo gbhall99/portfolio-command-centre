@@ -61,12 +61,12 @@ test('column resize persists across reload', async ({ page }) => {
   expect(Math.abs(afterReload - newWidth)).toBeLessThan(5);
 });
 
-test('double-click edits target date', async ({ page }) => {
+test('single-click edits target date', async ({ page }) => {
   await openAppWithData(page);
   const firstRow = page.locator('#projectTableBody tr').first();
   const projectId = await firstRow.getAttribute('data-id');
   const cell = firstRow.locator('td[data-quick-edit="target_date"]');
-  await cell.dblclick();
+  await cell.click();
   const input = cell.locator('input[type="date"]');
   await expect(input).toBeVisible();
   await input.fill('2026-12-31');
@@ -94,7 +94,7 @@ test('skill cascade updates size_total', async ({ page }) => {
   const newDe = (before.size_engineering || 0) + 5;
   const expectedTotal = (before.size_total || 0) - (before.size_engineering || 0) + newDe;
   const cell = firstRow.locator('td[data-quick-edit="size_engineering"]');
-  await cell.dblclick();
+  await cell.click();
   const input = cell.locator('input[type="number"]');
   await input.fill(String(newDe));
   await input.blur();
@@ -105,9 +105,18 @@ test('skill cascade updates size_total', async ({ page }) => {
   expect(after.size_total).toBe(expectedTotal);
 });
 
-test('single-click opens detail panel', async ({ page }) => {
+test('clicking the project name opens detail panel', async ({ page }) => {
   await openAppWithData(page);
   const firstRow = page.locator('#projectTableBody tr').first();
-  await firstRow.click();
+  await firstRow.locator('.project-name-cell').click();
   await expect(page.locator('#detailPanel.open')).toBeVisible();
+});
+
+test('clicking a non-name, non-edit cell does nothing', async ({ page }) => {
+  await openAppWithData(page);
+  const firstRow = page.locator('#projectTableBody tr').first();
+  // RAG cell has its own cycle behaviour; sprint range cell is derived (no quick-edit). Click a derived cell.
+  const sprintCell = firstRow.locator('td.sprint-cell').first();
+  await sprintCell.click();
+  await expect(page.locator('#detailPanel.open')).not.toBeVisible();
 });

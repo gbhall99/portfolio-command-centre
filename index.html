@@ -696,11 +696,13 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
    Every child is forced to vertical-align:middle so the warning triangle, recommendation chip
    and "?" button sit on the priority number's centre line (they were drifting off the baseline
    because inline-block and inline-flex mix baselines in subtly different ways). */
-.priority-cell { font-weight: 700; font-size: 12px; color: var(--text-muted); width: 72px; padding-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
+.priority-cell { font-weight: 700; font-size: 12px; color: var(--text-muted); padding-right: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1; }
 .priority-cell > * { vertical-align: middle; }
-.priority-cell > span { display: inline-flex; align-items: center; }
-.priority-cell > span:first-child { min-width: 18px; justify-content: flex-end; margin-right: 2px; }
-.priority-cell .why-rank-btn { margin-left: 1px; }
+.priority-cell > span:first-child { display: inline-flex; align-items: center; min-width: 18px; justify-content: flex-end; margin-right: 2px; }
+.priority-cell .why-rank-btn { margin-left: 2px; }
+.priority-rec-chip { display: inline-flex; align-items: center; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--accent-violet); color: white; font-weight: 700; cursor: pointer; margin-left: 3px; line-height: 1; }
+.project-name-cell { cursor: pointer; }
+.project-name-cell:hover { color: var(--accent-blue); }
 .th-col { position: relative; }
 .col-resize-handle { position: absolute; top: 0; right: 0; width: 4px; height: 100%; cursor: col-resize; user-select: none; }
 .col-resize-handle:hover { background: var(--accent-blue); opacity: 0.4; }
@@ -9335,12 +9337,12 @@ const Dashboard = {
       },
 
       // ---- Identity ----
-      { id: 'priority', group: 'Identity', label: '#', width: 48, alwaysOn: true, sortable: true,
+      { id: 'priority', group: 'Identity', label: '#', width: 80, alwaysOn: true, sortable: true,
         cellClass: 'priority-cell',
         render: (p) => {
           const rec = p.recommended_priority;
           const recChip = (rec && rec !== p.priority)
-            ? ' <span title="Recommended priority #' + rec + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')" style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:var(--accent-violet);color:white;font-weight:700;cursor:pointer;margin-left:3px">→#' + rec + '</span>'
+            ? ' <span class="priority-rec-chip" title="Recommended priority #' + rec + ' — click to apply" onclick="event.stopPropagation();App.applyRecommendedPriority(\'' + p.id + '\')">→#' + rec + '</span>'
             : '';
           const warnChip = (App.priorityWarningChip ? App.priorityWarningChip(p) : '');
           const whyBtn = '<button class="why-rank-btn" onclick="event.stopPropagation();App.openWhyRank(\'' + p.id + '\')" aria-label="Why is this project ranked here?" title="Why this rank?" tabindex="0">?</button>';
@@ -9360,10 +9362,8 @@ const Dashboard = {
           const reviewedBadge = reviewedDays != null
             ? '<span class="reviewed-badge" title="Reviewed ' + (reviewedDays <= 1 ? 'today' : reviewedDays + ' days ago') + '"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></span>'
             : '';
-          const lifecycle = (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '');
-          return Dashboard.esc(p.name) + staleIcon + reviewedBadge + lifecycle;
-        },
-        edit: { type: 'text', field: 'name' } },
+          return Dashboard.esc(p.name) + staleIcon + reviewedBadge;
+        } },
       { id: 'customer', group: 'Identity', label: 'Customer', width: 80, sortable: true,
         render: (p) => '<span class="badge badge-customer" style="background:' + App.customerColor(p.customer) + '">' + Dashboard.esc(p.customer) + '</span>',
         edit: { type: 'select', field: 'customer', options: [] } },
@@ -10221,28 +10221,22 @@ const Dashboard = {
 
   attachRowHandlers(tbody) {
     tbody.querySelectorAll('tr[data-id]').forEach(row => {
-      let pendingOpen = null;
       row.addEventListener('click', (e) => {
         if (e.target.classList.contains('drag-handle')) return;
         if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
-        // Don't immediately open — wait briefly so a dblclick on a data-quick-edit cell can cancel.
-        // (Detail panel still opens reliably for clicks not followed by another within 280 ms.)
-        if (pendingOpen) clearTimeout(pendingOpen);
-        const id = row.dataset.id;
-        pendingOpen = setTimeout(() => {
-          pendingOpen = null;
-          DetailPanel.open(id);
-        }, 280);
-      });
-      row.addEventListener('dblclick', (e) => {
-        // Cancel any pending detail-panel open (we treat the dblclick as decisive).
-        if (pendingOpen) { clearTimeout(pendingOpen); pendingOpen = null; }
+        // Project name cell is the only "open detail panel" affordance — click anywhere else
+        // on a data-quick-edit cell triggers the inline editor (single click, Excel-style is too
+        // slow when the panel and edit fight for the same gesture).
+        const nameCell = e.target.closest('.project-name-cell');
+        if (nameCell && row.contains(nameCell)) {
+          DetailPanel.open(row.dataset.id);
+          return;
+        }
         const editCell = e.target.closest('td[data-quick-edit]');
-        if (!editCell || !row.contains(editCell)) return;
-        if (e.target.closest('.why-rank-btn, .pin-btn, .rag-dot, [onclick]')) return;
-        e.stopPropagation();
-        e.preventDefault();
-        Dashboard.openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id);
+        if (editCell && row.contains(editCell)) {
+          e.stopPropagation();
+          Dashboard.openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id);
+        }
       });
     });
   },
