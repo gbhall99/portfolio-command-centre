@@ -2962,7 +2962,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 const App = {
   // Project conviction classes — sorts low-conviction work into a separate WSJF band so
   // an Idea cannot displace an Implementation by virtue of arithmetic alone.
-  LIFECYCLE_STAGES: ['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU'],
+  LIFECYCLE_STAGES: ['Idea', 'Discovery', 'POC', 'Implementation', 'Run/BAU'],
   LIFECYCLE_STAGE_DEFAULT: 'Implementation',
 
   data: null,
@@ -3307,6 +3307,10 @@ const App = {
 
   // --- Schema Migration ---
   migrateSchema(data) {
+    // Lifecycle rework (2026-05): collapse 'Phase-1 Build' into 'Implementation'.
+    (data.projects || []).forEach(p => {
+      if (p.lifecycle_stage === 'Phase-1 Build') p.lifecycle_stage = 'Implementation';
+    });
     // Always-run: default missing lifecycle_stage to Implementation so legacy projects
     // are treated as committed deliveries until explicitly reclassified.
     (data.projects || []).forEach(p => {
@@ -7391,16 +7395,6 @@ const App = {
     return '<span class="lifecycle-chip" style="display:inline-block;padding:1px 6px;border-radius:3px;background:' + c.bg + ';color:' + c.fg + ';font-size:10px;font-weight:700;letter-spacing:0.3px;margin-left:4px" title="Project conviction class">' + Dashboard.esc(stage) + '</span>';
   },
 
-  // Low-conviction stages (Idea, Discovery, POC) sort BELOW high-conviction within the same priority band.
-  lifecycleConvictionPenalty(project) {
-    const stage = (project && project.lifecycle_stage) || App.LIFECYCLE_STAGE_DEFAULT;
-    if (stage === 'Idea')      return 25;
-    if (stage === 'Discovery') return 15;
-    if (stage === 'POC')       return 10;
-    return 0;
-  },
-
-
   // Coarse MoSCoW banding. Unset / unknown → "Could". Lower numeric band sorts first.
   moscowBand(project) {
     const m = project && project.moscow;
@@ -7425,7 +7419,7 @@ const App = {
       const deadlineScore = this.calculateDeadlineScore(project);
       const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
       const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
-      return Math.round(wsjfScore + deadlineScore + depScore - this.lifecycleConvictionPenalty(project));
+      return Math.round(wsjfScore + deadlineScore + depScore);
     }
     // Hybrid fallback (legacy) — status + RAG + risk + size + deadline + dep leverage.
     const statusScore = (cfg.statusWeights[project.status] || 0) * cfg.statusMultiplier;
@@ -7439,7 +7433,7 @@ const App = {
     // If caller passed a precomputed leverageCount, use it (saves repeated graph builds during autoPrioritise).
     const lev = (leverageCount != null) ? leverageCount : (this.computeDependencyLeverage([project])[project.id] || 0);
     const depScore = Math.min(cfg.dependencyLeverageCap, lev * cfg.dependencyLeverageWeight);
-    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore - this.lifecycleConvictionPenalty(project));
+    return Math.round(statusScore + ragScore + riskScore + sizeScore + deadlineScore + depScore);
   },
 
   // Shared recommendation engine. Returns { perCustomerOrder, heldUpByDep } WITHOUT mutating anything.
