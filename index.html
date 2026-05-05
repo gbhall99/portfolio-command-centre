@@ -12578,10 +12578,22 @@ const DetailPanel = {
     // H5: baseline provenance — make explicit what the EVM measures against.
     const hasBaseline = !!(p.baseline_start && p.baseline_end);
     const baselineSetOn = p.baseline_set_date ? new Date(p.baseline_set_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
-    const conversionBanner = (p.lifecycle_stage === 'POC' || p.lifecycle_stage === 'Discovery' || p.lifecycle_stage === 'Idea')
-      ? '<div style="grid-column:1/-1;background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:6px 10px;font-size:11px;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">' +
-          '<span><strong>This is a ' + esc(p.lifecycle_stage) + '.</strong> Convert to Implementation when ready to lock scope + auto-baseline.</span>' +
-          '<button class="btn btn-primary btn-sm" onclick="DetailPanel.openConvertModal(\'' + esc(p.id) + '\')" style="font-size:10px;padding:3px 8px">Convert to Implementation</button>' +
+    const stageBannerCopy = {
+      'Idea':           'Captured as an Idea — promote to Discovery to start exploring.',
+      'Discovery':      'Currently in Discovery — set or update the baseline when scope is firm enough to track.',
+      'POC':            'Currently a POC — set or update the baseline when scope is firm enough to track.',
+      'Run/BAU':        'Running — excluded from active scoring views.'
+    };
+    const stageMsg = stageBannerCopy[p.lifecycle_stage] || '';
+    const stageOpts = App.LIFECYCLE_STAGES
+      .filter(s => s !== p.lifecycle_stage)
+      .map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>')
+      .join('');
+    const conversionBanner = stageMsg
+      ? '<div class="evm-banner evm-banner-info" style="grid-column:1/-1;background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:6px 10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
+          '<span>' + esc(stageMsg) + '</span>' +
+          '<select id="advanceStageSelect-' + esc(p.id) + '" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"><option value="">Advance to…</option>' + stageOpts + '</select>' +
+          '<button class="btn btn-primary btn-sm" onclick="DetailPanel.confirmAdvanceStage(\'' + esc(p.id) + '\')" style="font-size:10px;padding:3px 8px">Advance stage</button>' +
         '</div>'
       : '';
     const tbdEntries = ((p.delivery_config && p.delivery_config.phase_order) || [])
@@ -12730,6 +12742,32 @@ const DetailPanel = {
     App.saveToLocalStorage();
     if (this.currentId === projectId) this.renderBody();
     App.toast('Baseline captured \u2014 EVM now measures against ' + p.baseline_start + ' \u2192 ' + p.baseline_end, 'success');
+  },
+
+  // Lifecycle stage rework (Task 4): generic Advance-stage handler triggered from the
+  // detail-panel banner dropdown. Supersedes the old "Convert to Implementation" CTA.
+  confirmAdvanceStage(projectId) {
+    const sel = document.getElementById('advanceStageSelect-' + projectId);
+    if (!sel || !sel.value) { App.toast('Choose a stage', 'warn'); return; }
+    const nextStage = sel.value;
+    const p = (App.data && App.data.projects || []).find(x => x.id === projectId);
+    if (!p) return;
+    const priorStage = p.lifecycle_stage;
+    const ok = App.advanceStage(projectId, nextStage);
+    if (!ok) { App.toast('Could not advance stage', 'error'); return; }
+    if (nextStage === 'Implementation') {
+      const hasFreshBaseline = !!(p.baseline_start && p.baseline_end && p.baseline_set_date && p.baseline_set_date >= (p.last_updated || ''));
+      if (!hasFreshBaseline) {
+        const choice = window.confirm('Re-set baseline to current dates?\n\nOK = set baseline now\nCancel = revert stage change');
+        if (choice && typeof DetailPanel.setProjectBaseline === 'function') {
+          DetailPanel.setProjectBaseline(projectId);
+        } else if (!choice) {
+          App.advanceStage(projectId, priorStage);
+          App.toast('Stage advance cancelled', 'info');
+        }
+      }
+    }
+    if (typeof DetailPanel.open === 'function') DetailPanel.open(projectId);
   },
 
   // Issue 1: full-EVM glossary modal. Plain-English definitions + the specific project's own numbers as a worked example.
