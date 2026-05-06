@@ -8,7 +8,9 @@ describe('App.renderConfig output', () => {
   it('Scheduling Engine card exposes optimisation summary + new R8/R11 controls', async () => {
     const app = await loadApp();
     app.App.activeCustomer = 'GCC';
-    app.App.renderConfig();
+    app.App.navigate('config');
+    // Settings IA: Scheduling Engine lives behind the 'scheduler' tile drill-down.
+    app.App.openConfigCategory('scheduler');
     const card = app.document.getElementById('schedulingEngineCard');
     expect(card).not.toBeNull();
     const html = card.outerHTML;
@@ -27,7 +29,9 @@ describe('App.renderConfig output', () => {
   it('Scoring card surfaces the worked-example table', async () => {
     const app = await loadApp();
     app.App.activeCustomer = 'GCC';
-    app.App.renderConfig();
+    app.App.navigate('config');
+    // Settings IA: Scoring card lives behind the 'scoring' tile drill-down.
+    app.App.openConfigCategory('scoring');
     const card = app.document.getElementById('scoringCard');
     expect(card).not.toBeNull();
     const html = card.outerHTML;
