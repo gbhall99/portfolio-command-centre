@@ -13342,8 +13342,13 @@ const DetailPanel = {
       '<div class="panel-section">' +
         '<div class="panel-section-title">Notes</div>' +
         textarea('notes', p.notes) +
-        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
-        textarea('assumptions', p.assumptions) + '</div>' +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
+        '<div id="assumptionListInner">' + this.renderAssumptions(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Log Assumption</button>' +
       '</div>'
     );
     healthSections.push(
@@ -13612,13 +13617,6 @@ const DetailPanel = {
         '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits_register || []).length || 0) + '</span></div>' +
         '<div id="benefitList">' + this.renderBenefits(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
-      '</div>'
-    );
-    setupSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Assumptions & Constraints <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
-        '<div id="assumptionList">' + this.renderAssumptions(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Add Entry</button>' +
       '</div>'
     );
 
@@ -14569,22 +14567,19 @@ const DetailPanel = {
     if (field === 'status') document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
   },
 
-  // --- Assumptions & Constraints -------------------------------------
-  ASSUMPTION_KINDS: ['Assumption', 'Constraint', 'Dependency'],
-  ASSUMPTION_STATUSES: ['Open', 'Validated', 'Invalidated'],
+  // --- Project-level Assumptions register ----------------------------
   renderAssumptions(p) {
     const list = p.assumptions_register || [];
-    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No assumptions or constraints recorded</div>';
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No assumptions logged</div>';
     const esc = Dashboard.esc;
     return list.map((a, i) =>
       '<div class="risk-item" data-assumption-idx="' + i + '">' +
         '<button class="risk-remove" onclick="DetailPanel.removeAssumption(' + i + ')" title="Remove">&times;</button>' +
         '<div class="risk-fields">' +
-          '<div><div class="risk-field-label">Kind</div><select data-assumption-idx="' + i + '" data-assumption-field="kind" onchange="DetailPanel.onAssumptionChange(this)">' + this.ASSUMPTION_KINDS.map(k => '<option value="' + k + '"' + (k === a.kind ? ' selected' : '') + '>' + k + '</option>').join('') + '</select></div>' +
-          '<div><div class="risk-field-label">Status</div><select data-assumption-idx="' + i + '" data-assumption-field="status" onchange="DetailPanel.onAssumptionChange(this)">' + this.ASSUMPTION_STATUSES.map(s => '<option value="' + s + '"' + (s === a.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>' +
-          '<div><div class="risk-field-label">Owner</div><input type="text" data-assumption-idx="' + i + '" data-assumption-field="owner" value="' + esc(a.owner || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
-          '<div><div class="risk-field-label">Logged</div><input type="date" data-assumption-idx="' + i + '" data-assumption-field="date" value="' + (a.date || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
-          '<div class="full"><div class="risk-field-label">Description</div><textarea data-assumption-idx="' + i + '" data-assumption-field="description" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.description || '') + '</textarea></div>' +
+          '<div><div class="risk-field-label">Date</div><input type="date" data-assumption-idx="' + i + '" data-assumption-field="date" value="' + (a.date || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Made by</div><input type="text" data-assumption-idx="' + i + '" data-assumption-field="made_by" value="' + esc(a.made_by || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
+          '<div class="full"><div class="risk-field-label">Assumption</div><textarea data-assumption-idx="' + i + '" data-assumption-field="text" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.text || '') + '</textarea></div>' +
+          '<div class="full"><div class="risk-field-label">Notes</div><textarea data-assumption-idx="' + i + '" data-assumption-field="notes" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.notes || '') + '</textarea></div>' +
         '</div>' +
       '</div>'
     ).join('');
@@ -14593,23 +14588,23 @@ const DetailPanel = {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
     if (!p.assumptions_register) p.assumptions_register = [];
-    App.pushUndo('Add assumption');
-    p.assumptions_register.push({ kind: 'Assumption', status: 'Open', owner: '', date: new Date().toISOString().split('T')[0], description: '' });
+    App.pushUndo('Log project assumption');
+    p.assumptions_register.push({ date: new Date().toISOString().split('T')[0], made_by: '', text: '', notes: '' });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('assumptionList').innerHTML = this.renderAssumptions(p);
+    document.getElementById('assumptionListInner').innerHTML = this.renderAssumptions(p);
     document.getElementById('assumptionCount').textContent = p.assumptions_register.length;
   },
   removeAssumption(idx) {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !p.assumptions_register) return;
-    App.pushUndo('Remove assumption');
+    App.pushUndo('Remove project assumption');
     p.assumptions_register.splice(idx, 1);
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('assumptionList').innerHTML = this.renderAssumptions(p);
+    document.getElementById('assumptionListInner').innerHTML = this.renderAssumptions(p);
     document.getElementById('assumptionCount').textContent = p.assumptions_register.length;
   },
   onAssumptionChange(el) {
