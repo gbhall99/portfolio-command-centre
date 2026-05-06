@@ -3450,6 +3450,69 @@ const App = {
       }
     });
 
+    // Always-run (Project Details Overhaul, 2026-05): drop comms_log/comms_date/external_delivery_date,
+    // migrate string assumptions/benefits to structured arrays, init success_criteria. Idempotent.
+    (data.projects || []).forEach(p => {
+      if (!p) return;
+      // 1. Drop legacy comms + external delivery fields.
+      if ('comms_log' in p) delete p.comms_log;
+      if ('comms_date' in p) delete p.comms_date;
+      if ('external_delivery_date' in p) delete p.external_delivery_date;
+      // 2. Migrate string assumptions -> assumptions_register array.
+      if (typeof p.assumptions === 'string' && !p.assumptions_register) {
+        const text = p.assumptions.trim();
+        p.assumptions_register = text ? [{ date: '', made_by: '', text: text, notes: '' }] : [];
+        delete p.assumptions;
+      } else if (typeof p.assumptions === 'string') {
+        // assumptions_register already exists; just drop the legacy string.
+        delete p.assumptions;
+      }
+      if (!Array.isArray(p.assumptions_register)) p.assumptions_register = [];
+      // 3. Migrate string benefits -> single-entry array of structured records.
+      if (typeof p.benefits === 'string') {
+        const desc = p.benefits.trim();
+        p.benefits = desc ? [{ type: 'cost_saving', amount: 0, units: '', description: desc }] : [];
+      }
+      if (!Array.isArray(p.benefits)) p.benefits = [];
+      // 4. Initialise success_criteria.
+      if (!Array.isArray(p.success_criteria)) p.success_criteria = [];
+    });
+
+    // Always-run (Project Details Overhaul, 2026-05): seed customer.sponsors from project sponsors,
+    // unioning with any sponsors already present. Ensures data.customers exists (legacy datasets
+    // without the field get one derived from project.customer values) so this block stays
+    // idempotent regardless of whether the version-gated migration has executed yet.
+    if (!Array.isArray(data.customers)) {
+      const existingCustomers = [...new Set((data.projects || []).map(p => p && p.customer).filter(Boolean))].sort();
+      const defaultColors = { 'Acme Industries': '#3b82f6', 'Globex': '#14b8a6', 'Initech': '#8b5cf6' };
+      data.customers = existingCustomers.length
+        ? existingCustomers.map(name => ({ name: name, color: defaultColors[name] || '#6366f1', staleThreshold: 14 }))
+        : [
+            { name: 'Acme Industries', color: '#3b82f6', staleThreshold: 14 },
+            { name: 'Globex', color: '#14b8a6', staleThreshold: 14 },
+            { name: 'Initech', color: '#8b5cf6', staleThreshold: 14 }
+          ];
+    }
+    {
+      const sponsorsByCustomer = {};
+      (data.projects || []).forEach(p => {
+        if (!p || !p.customer) return;
+        const s = typeof p.sponsor === 'string' ? p.sponsor.trim() : '';
+        if (!s) return;
+        if (!sponsorsByCustomer[p.customer]) sponsorsByCustomer[p.customer] = new Set();
+        sponsorsByCustomer[p.customer].add(s);
+      });
+      data.customers.forEach(c => {
+        if (!c || !c.name) return;
+        const existing = Array.isArray(c.sponsors) ? c.sponsors.map(s => String(s || '').trim()).filter(Boolean) : [];
+        const seeded = sponsorsByCustomer[c.name] ? Array.from(sponsorsByCustomer[c.name]) : [];
+        const seen = new Set();
+        const union = [];
+        existing.concat(seeded).forEach(s => { if (!seen.has(s)) { seen.add(s); union.push(s); } });
+        c.sponsors = union;
+      });
+    }
+
     const version = (data.meta && data.meta.schema_version) || '0.0';
     if (version === this.SCHEMA_VERSION) return data;
     console.log('[PCC] Migrating schema from', version, 'to', this.SCHEMA_VERSION);
@@ -3560,15 +3623,10 @@ const App = {
         };
         delete p.teams_involved;
       }
-      // Migrate comms_status/date to comms_log
-      if (!p.comms_log) {
-        p.comms_log = [];
-        if (p.comms_status && p.comms_status !== 'Not Required') {
-          p.comms_log.push({ type: 'Status Update', date: p.comms_date || new Date().toISOString().split('T')[0], note: 'Status: ' + p.comms_status, created_at: new Date().toISOString() });
-        }
-        delete p.comms_status;
-        delete p.comms_date;
-      }
+      // Communications was dropped in the 2026-05 Project Details Overhaul. The always-run
+      // block above strips comms_log/comms_date; the legacy comms_status field (never widely
+      // used) is also discarded here for cleanliness.
+      if ('comms_status' in p) delete p.comms_status;
     });
     // Ensure team members have sprint_overrides
     (data.team_members || []).forEach(tm => {
@@ -4584,20 +4642,6 @@ const App = {
     opts = opts || {};
     const entry = { project_id: opts.projectId || null, text: String(opts.text || '').slice(0, 400), rationale: String(opts.rationale || '').slice(0, 400), recorded_at: new Date().toISOString() };
     wt.decisions.push(entry);
-    if (opts.projectId) {
-      const project = (this.data.projects || []).find(p => p.id === opts.projectId);
-      if (project) {
-        if (!Array.isArray(project.comms_log)) project.comms_log = [];
-        const note = entry.text + (entry.rationale ? ' (' + entry.rationale + ')' : '');
-        project.comms_log.push({
-          type: 'Status Update',
-          date: new Date().toISOString().slice(0, 10),
-          note: note,
-          source: 'walkthrough',
-          walkthrough_id: walkthroughId
-        });
-      }
-    }
     if (typeof this.logChange === 'function') {
       this.logChange(opts.projectId || null, 'walkthrough_decision', '', entry.text, 'walkthrough', { rationale: entry.rationale });
     }
@@ -4652,21 +4696,6 @@ const App = {
     if (typeof this.logChange === 'function') {
       this.logChange(projectId, 'risk_added', '', entry.description, 'walkthrough', { score: entry.impact * entry.probability });
     }
-    this.markDirty(); this.saveToLocalStorage();
-    return true;
-  },
-
-  addCommFromWalkthrough(projectId, note, walkthroughId) {
-    const project = (this.data.projects || []).find(p => p.id === projectId);
-    if (!project) return false;
-    if (!Array.isArray(project.comms_log)) project.comms_log = [];
-    project.comms_log.push({
-      type: 'Status Update',
-      date: new Date().toISOString().split('T')[0],
-      note: String(note || '').slice(0, 400),
-      source: 'walkthrough',
-      walkthrough_id: walkthroughId || null
-    });
     this.markDirty(); this.saveToLocalStorage();
     return true;
   },
@@ -4904,7 +4933,7 @@ const App = {
       prompts.push({
         severity: 'red', kind: 'red_no_decision',
         message: 'Schedule is red — confirm the recovery plan in writing.',
-        hint: 'A decision recorded here also lands in the comms log.',
+        hint: 'Capture the recovery plan as a decision so it persists.',
         action: 'focus_decision_capture'
       });
     }
@@ -6793,7 +6822,7 @@ const App = {
       var custs = (App.data && App.data.customers) || [];
       if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
       var tbl = '<table class="customer-config-table"><thead><tr>' +
-        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th>Logo</th><th></th>' +
+        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th>Logo</th><th>Sponsors</th><th></th>' +
       '</tr></thead><tbody>';
       custs.forEach(function(c, idx) {
         var pCount = (App.data.projects || []).filter(function(p) { return p.customer === c.name; }).length;
@@ -6804,12 +6833,20 @@ const App = {
         } else {
           logoCell = '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px" onclick="App._openLogoEditor(\'' + nameAttr + '\')">Set logo&hellip;</button>';
         }
+        var sponsors = Array.isArray(c.sponsors) ? c.sponsors.slice() : [];
+        var sponsorPreview = sponsors.length === 0
+          ? '<span style="color:var(--text-muted);font-size:11px">&mdash;</span>'
+          : (sponsors.length <= 3 ? sponsors.map(function(s) { return Dashboard.esc(s); }).join(', ')
+                                  : (sponsors.slice(0, 3).map(function(s) { return Dashboard.esc(s); }).join(', ') + ' +' + (sponsors.length - 3)));
+        var sponsorCell = '<span style="font-size:11px;color:var(--text-dark-secondary)">' + sponsorPreview + '</span>' +
+          ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px" onclick="App._openSponsorEditor(\'' + nameAttr + '\')" title="Edit sponsors">&#9998;</button>';
         tbl += '<tr>' +
           '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + nameAttr + '\',this.value)"></td>' +
           '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
           '<td>' + logoCell + '</td>' +
+          '<td>' + sponsorCell + '</td>' +
           '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + nameAttr + '\')">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
           '</button></td>' +
@@ -8112,6 +8149,47 @@ const App = {
     this.saveToLocalStorage();
   },
 
+  computeSprintWindow(project) {
+    const sprintIds = new Set();
+    Object.values((project && project.skill_splits) || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => { if (sp && sp.sprint) sprintIds.add(sp.sprint); });
+    });
+    if (!sprintIds.size) return { start: null, end: null };
+    const allSprints = (this.data && this.data.sprints) || [];
+    const ordered = allSprints.filter(s => sprintIds.has(s.sprint_id))
+      .slice()
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+    if (!ordered.length) return { start: null, end: null };
+    return { start: ordered[0], end: ordered[ordered.length - 1] };
+  },
+
+  addCustomerSponsor(customerName, sponsorName) {
+    if (!sponsorName || !sponsorName.trim()) return false;
+    const c = (this.data && this.data.customers || []).find(x => x.name === customerName);
+    if (!c) return false;
+    if (!Array.isArray(c.sponsors)) c.sponsors = [];
+    const trimmed = sponsorName.trim();
+    if (c.sponsors.indexOf(trimmed) < 0) c.sponsors.push(trimmed);
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return true;
+  },
+
+  setCustomerSponsors(customerName, sponsors) {
+    const c = (this.data && this.data.customers || []).find(x => x.name === customerName);
+    if (!c) return false;
+    const cleaned = (sponsors || []).map(s => String(s || '').trim()).filter(Boolean);
+    const seen = new Set();
+    const dedup = [];
+    cleaned.forEach(s => { if (!seen.has(s)) { seen.add(s); dedup.push(s); } });
+    dedup.sort();
+    c.sponsors = dedup;
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return true;
+  },
+
   _openLogoEditor(customerName) {
     if (!this.data || !this.data.customers) return;
     const c = this.data.customers.find(c => c.name === customerName);
@@ -8150,6 +8228,41 @@ const App = {
       this.setCustomerLogo(customerName, value);
     }
     const overlay = document.getElementById('logoEditorOverlay');
+    if (overlay) overlay.remove();
+    this.renderConfig();
+  },
+
+  _openSponsorEditor(customerName) {
+    if (!this.data || !this.data.customers) return;
+    const c = this.data.customers.find(c => c.name === customerName);
+    if (!c) return;
+    const existing = document.getElementById('sponsorEditorOverlay');
+    if (existing) existing.remove();
+    const nameAttr = customerName.replace(/'/g, "\\'");
+    const sponsors = Array.isArray(c.sponsors) ? c.sponsors : [];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9000;display:flex;align-items:center;justify-content:center';
+    overlay.id = 'sponsorEditorOverlay';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    overlay.innerHTML = '<div style="background:white;border-radius:12px;padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow-lg)">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px">Customer Sponsors &mdash; ' + Dashboard.esc(customerName) + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Comma-separated list of sponsor names. Used to populate the sponsor dropdown when editing projects for this customer.</div>' +
+      '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase">Sponsors</div>' +
+      '<textarea id="sponsorEditorValue" class="field-input" style="width:100%;min-height:96px;font-family:inherit;font-size:12px;resize:vertical">' + Dashboard.esc(sponsors.join(', ')) + '</textarea>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'sponsorEditorOverlay\').remove()">Cancel</button>' +
+        '<button class="btn btn-sm" style="background:var(--accent-blue);color:white" onclick="App._commitSponsorEditor(\'' + nameAttr + '\')">Save</button>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+  },
+
+  _commitSponsorEditor(customerName) {
+    const ta = document.getElementById('sponsorEditorValue');
+    const raw = ta ? ta.value : '';
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    this.setCustomerSponsors(customerName, parts);
+    const overlay = document.getElementById('sponsorEditorOverlay');
     if (overlay) overlay.remove();
     this.renderConfig();
   },
@@ -9122,7 +9235,7 @@ const ProjectImport = {
         delivery_config: { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
         notes: r.notes,
         last_updated: new Date().toISOString(),
-        devops_link: '', comms_log: [], risks_register: [], issues_register: [],
+        devops_link: '', risks_register: [], issues_register: [],
         data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
         skill_splits: {},
         stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
@@ -9593,9 +9706,6 @@ const Dashboard = {
       { id: 'product_release_date', group: 'Dates', label: 'Product release', width: 80,
         render: (p) => fmtDate(p.product_release_date),
         edit: { type: 'date', field: 'product_release_date' } },
-      { id: 'comms_date', group: 'Dates', label: 'Comms date', width: 80,
-        render: (p) => fmtDate(p.comms_date),
-        edit: { type: 'date', field: 'comms_date' } },
       { id: 'last_updated', group: 'Dates', label: 'Updated', width: 80,
         render: (p) => fmtDate(p.last_updated),
         edit: { type: 'derived' } },
@@ -12769,7 +12879,7 @@ const DetailPanel = {
     const conversionBanner = stageMsg
       ? '<div class="evm-banner evm-banner-info" style="grid-column:1/-1;background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:6px 10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
           '<span>' + esc(stageMsg) + '</span>' +
-          '<select id="advanceStageSelect-' + esc(p.id) + '" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"><option value="">Advance to…</option>' + stageOpts + '</select>' +
+          '<select id="advanceStageSelect-' + esc(p.id) + '" class="field-input" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"><option value="">Advance to…</option>' + stageOpts + '</select>' +
           '<button class="btn btn-primary btn-sm" onclick="DetailPanel.confirmAdvanceStage(\'' + esc(p.id) + '\')" style="font-size:10px;padding:3px 8px">Advance stage</button>' +
         '</div>'
       : '';
@@ -12987,7 +13097,7 @@ const DetailPanel = {
     overlay.innerHTML =
       '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:18px 22px;max-width:520px;width:100%;color:var(--text-dark)">' +
         '<h3 style="margin:0 0 10px;font-size:14px;font-weight:700">Promote phase — ' + esc(p.name) + '</h3>' +
-        '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Phase to promote<br><select id="promPhase" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + opts + '</select></label>' +
+        '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Phase to promote<br><select id="promPhase" class="field-input" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + opts + '</select></label>' +
         '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:6px">Size (story points)<br><input type="number" id="promSize" min="0" step="1" value="0" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
         '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:10px">Rationale (audit)<br><textarea id="promNotes" rows="2" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></textarea></label>' +
         '<div style="display:flex;gap:8px;justify-content:flex-end">' +
@@ -13188,20 +13298,18 @@ const DetailPanel = {
         '</div>' +
       '</div>'
     );
-    if (p.status === 'Complete' || p.status === 'Closed') {
-      healthSections.push(
-        '<div class="panel-section"><div class="panel-section-title">Completion</div>' +
-          '<div class="field-group"><div class="field-label">Actual Completion Date</div>' +
-            '<input type="date" class="field-input" data-field="actual_date" value="' + (p.actual_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
-        '</div>'
-      );
-    }
+    // Completion date moved to Delivery > Dates as a read-only badge (Project Details Overhaul, T8).
     healthSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Notes</div>' +
         textarea('notes', p.notes) +
-        '<div style="margin-top:8px"><div class="field-label">Assumptions</div>' +
-        textarea('assumptions', p.assumptions) + '</div>' +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
+        '<div id="assumptionListInner">' + this.renderAssumptions(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Log Assumption</button>' +
       '</div>'
     );
     healthSections.push(
@@ -13227,39 +13335,6 @@ const DetailPanel = {
         '<div class="panel-section-title">Decisions <span class="risk-count" id="decisionCount">' + ((p.decisions_register || []).length || 0) + '</span></div>' +
         '<div id="decisionListInner">' + this.renderDecisions(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addDecisionLog()">+ Log Decision</button>' +
-      '</div>'
-    );
-    healthSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
-        '<div id="commsLog">' +
-          (p.comms_log || []).slice().reverse().map((c, i) => {
-            const idx = (p.comms_log || []).length - 1 - i;
-            const typeColors = { 'Status Update': '#3b82f6', 'Project Start': '#22c55e', 'Phase Gate': '#8b5cf6', 'Escalation': '#ef4444', 'Closure': '#64748b', 'Ad Hoc': '#f59e0b' };
-            const color = typeColors[c.type] || '#94a3b8';
-            return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
-              '<span style="padding:1px 6px;border-radius:3px;background:' + color + '15;color:' + color + ';font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(c.type) + '</span>' +
-              '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (c.date || '') + '</span>' +
-              '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(c.note || '') + '</span>' +
-              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px" onclick="DetailPanel.removeComm(' + idx + ')" title="Remove">&times;</button>' +
-            '</div>';
-          }).join('') +
-          (!(p.comms_log || []).length ? '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No communications recorded</div>' : '') +
-        '</div>' +
-        '<div id="commsAddForm" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
-          '<div style="display:flex;gap:6px">' +
-            '<select id="commsType" class="field-input" style="width:140px;font-size:11px">' +
-              ['Status Update', 'Project Start', 'Phase Gate', 'Escalation', 'Closure', 'Ad Hoc'].map(t => '<option>' + t + '</option>').join('') +
-            '</select>' +
-            '<input type="date" id="commsDate" class="field-input" style="font-size:11px" value="' + new Date().toISOString().split('T')[0] + '">' +
-          '</div>' +
-          '<textarea id="commsNote" class="field-input" placeholder="Note..." style="font-size:11px;min-height:40px;resize:vertical"></textarea>' +
-          '<div style="display:flex;gap:6px;justify-content:flex-end">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="document.getElementById(\'commsAddForm\').style.display=\'none\'">Cancel</button>' +
-            '<button class="btn btn-sm" style="font-size:10px;background:var(--accent-blue);color:white" onclick="DetailPanel.addComm()">Save</button>' +
-          '</div>' +
-        '</div>' +
-        '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
       '</div>'
     );
     (function() {
@@ -13332,7 +13407,7 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Delivery Role</div>' + sel('ownership', this.OWNERSHIPS, p.ownership) + '</div>' +
           '<div class="field-group"><div class="field-label">Category</div>' + sel('category', this.CATEGORIES, p.category) + '</div>' +
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
-          '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
+          '<div class="field-group"><div class="field-label">Sponsor</div>' + DetailPanel.renderSponsorField(p) + '</div>' +
           '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
           '<div class="field-group"><div class="field-label">Governance Forum</div>' +
             '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
@@ -13388,19 +13463,6 @@ const DetailPanel = {
             'Confidence <span style="color:' + confColor + ';font-weight:700">' + w.confidence + '</span>' +
           '</div>';
         })() +
-      '</div>'
-    );
-    setupSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Timeline</div>' +
-        '<div class="field-grid">' +
-          '<div class="field-group"><div class="field-label">Start Sprint</div>' + sprintSel('current_sprint', p.current_sprint) + '</div>' +
-          '<div class="field-group"><div class="field-label">Start Date</div>' + inp('start_date', p.start_date, 'date') + '</div>' +
-          '<div class="field-group"><div class="field-label">End Sprint</div>' + sprintSel('target_sprint', p.target_sprint) + '</div>' +
-          '<div class="field-group"><div class="field-label">Target Date</div>' + inp('target_date', p.target_date, 'date') + '</div>' +
-          (p.category === 'Product Release' ? '<div class="field-group"><div class="field-label">Product Release Date</div>' + inp('product_release_date', p.product_release_date, 'date') + '</div>' : '') +
-          '<div class="field-group"><div class="field-label">Hard Deadline (external)</div>' + inp('hard_deadline', p.hard_deadline, 'date') + '</div>' +
-        '</div>' +
       '</div>'
     );
     setupSections.push((function() {
@@ -13467,21 +13529,54 @@ const DetailPanel = {
     );
     setupSections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits_register || []).length || 0) + '</span></div>' +
-        '<div id="benefitList">' + this.renderBenefits(p) + '</div>' +
+        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits || []).length || 0) + '</span></div>' +
+        '<div id="benefitListInner">' + this.renderBenefits(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
       '</div>'
     );
     setupSections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Assumptions & Constraints <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
-        '<div id="assumptionList">' + this.renderAssumptions(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Add Entry</button>' +
+        '<div class="panel-section-title">Success criteria <span class="risk-count" id="successCriteriaCount">' + ((p.success_criteria || []).length || 0) + '</span></div>' +
+        '<div id="successCriteriaListInner">' + this.renderSuccessCriteria(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addSuccessCriterion()">+ Add success criterion</button>' +
       '</div>'
     );
 
     // ===== DELIVERY tab — daily ops =====
     const deliverySections = [];
+    deliverySections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Dates</div>' +
+        '<div class="field-grid">' +
+          '<div class="field-group"><div class="field-label">Hard deadline (external)</div>' +
+            '<input type="date" class="field-input" data-field="hard_deadline" value="' + (p.hard_deadline || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
+          '<div class="field-group"><div class="field-label">Target date</div>' +
+            '<input type="date" class="field-input" data-field="target_date" value="' + (p.target_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
+        '</div>' +
+        '<div style="margin-top:10px;font-size:11px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:14px">' +
+          (p.start_date ? '<span><strong>Started:</strong> ' + new Date(p.start_date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) + '</span>' : '') +
+          ((p.status === 'Complete' || p.status === 'Closed') && p.actual_date ? '<span><strong>Completed:</strong> ' + new Date(p.actual_date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) + '</span>' : '') +
+          (p.baseline_start && p.baseline_end ? '<span><strong>Baseline:</strong> ' + p.baseline_start + ' &rarr; ' + p.baseline_end + '</span>' : '') +
+        '</div>' +
+      '</div>'
+    );
+    (function() {
+      const win = (typeof App.computeSprintWindow === 'function') ? App.computeSprintWindow(p) : { start: null, end: null };
+      const fmtSprint = (s) => s ? (s.sprint_id + ' · ' + (s.start_date ? new Date(s.start_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '—')) : '—';
+      const fmtSprintEnd = (s) => s ? (s.sprint_id + ' · ' + (s.end_date ? new Date(s.end_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '—')) : '—';
+      deliverySections.push(
+        '<div class="panel-section">' +
+          '<div class="panel-section-title">Sprint window</div>' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Auto-populated by Sprint Planning when work is allocated.</div>' +
+          '<div class="field-grid">' +
+            '<div class="field-group"><div class="field-label">Start sprint</div>' +
+              '<div class="field-input" style="background:var(--bg-content);cursor:default">' + fmtSprint(win.start) + '</div></div>' +
+            '<div class="field-group"><div class="field-label">End sprint</div>' +
+              '<div class="field-input" style="background:var(--bg-content);cursor:default">' + fmtSprintEnd(win.end) + '</div></div>' +
+          '</div>' +
+        '</div>'
+      );
+    })();
     deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Delivery Phases</div>' +
@@ -13973,6 +14068,42 @@ const DetailPanel = {
     document.body.appendChild(backdrop);
   },
 
+  renderSponsorField(p) {
+    const customer = (App.data && App.data.customers || []).find(c => c.name === p.customer);
+    const pool = (customer && Array.isArray(customer.sponsors)) ? customer.sponsors : [];
+    const opts = ['<option value="">(none)</option>'];
+    if (p.sponsor && pool.indexOf(p.sponsor) < 0) {
+      opts.push('<option value="' + Dashboard.esc(p.sponsor) + '" selected>' + Dashboard.esc(p.sponsor) + ' (legacy)</option>');
+    }
+    pool.forEach(s => {
+      opts.push('<option value="' + Dashboard.esc(s) + '"' + (s === p.sponsor ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>');
+    });
+    opts.push('<option value="__add__">+ Add new sponsor…</option>');
+    return '<select class="field-input" data-field="sponsor" onchange="DetailPanel.onSponsorChange(this, \'' + Dashboard.esc(p.id) + '\')">' + opts.join('') + '</select>';
+  },
+
+  onSponsorChange(sel, projectId) {
+    if (sel.value === '__add__') {
+      this.addSponsor(projectId, sel);
+      return;
+    }
+    App.updateProject(projectId, 'sponsor', sel.value);
+  },
+
+  addSponsor(projectId, sel) {
+    const p = (App.data && App.data.projects || []).find(x => x.id === projectId);
+    if (!p) return;
+    const name = (typeof window !== 'undefined' && window.prompt) ? window.prompt('New sponsor name:') : '';
+    if (!name || !name.trim()) {
+      sel.value = p.sponsor || '';
+      return;
+    }
+    const ok = App.addCustomerSponsor(p.customer, name.trim());
+    if (!ok) { App.toast && App.toast('Could not add sponsor', 'error'); sel.value = p.sponsor || ''; return; }
+    App.updateProject(projectId, 'sponsor', name.trim());
+    if (typeof DetailPanel.renderBody === 'function') DetailPanel.renderBody(p);
+  },
+
   renderRisks(p) {
     const risks = p.risks_register || [];
     if (!risks.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No risks registered</div>';
@@ -14243,7 +14374,7 @@ const DetailPanel = {
         '<button class="risk-remove" onclick="DetailPanel.removeStakeholder(' + i + ')" title="Remove">&times;</button>' +
         '<div class="risk-fields">' +
           '<div><div class="risk-field-label">Name</div><input type="text" data-stakeholder-idx="' + i + '" data-stakeholder-field="name" value="' + esc(s.name || '') + '" onchange="DetailPanel.onStakeholderChange(this)"></div>' +
-          '<div><div class="risk-field-label">Role</div><select data-stakeholder-idx="' + i + '" data-stakeholder-field="role" onchange="DetailPanel.onStakeholderChange(this)">' + this.STAKEHOLDER_ROLES.map(r => '<option value="' + r + '"' + (r === s.role ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
+          '<div><div class="risk-field-label">Role</div><select class="field-input" data-stakeholder-idx="' + i + '" data-stakeholder-field="role" onchange="DetailPanel.onStakeholderChange(this)">' + this.STAKEHOLDER_ROLES.map(r => '<option value="' + r + '"' + (r === s.role ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
           '<div><div class="risk-field-label">Organisation</div><input type="text" data-stakeholder-idx="' + i + '" data-stakeholder-field="organisation" value="' + esc(s.organisation || '') + '" onchange="DetailPanel.onStakeholderChange(this)"></div>' +
           '<div><div class="risk-field-label">Contact</div><input type="text" data-stakeholder-idx="' + i + '" data-stakeholder-field="contact" value="' + esc(s.contact || '') + '" onchange="DetailPanel.onStakeholderChange(this)"></div>' +
         '</div>' +
@@ -14336,77 +14467,131 @@ const DetailPanel = {
   },
 
   // --- Benefits -------------------------------------------------------
-  BENEFIT_STATUSES: ['Planned', 'On Track', 'At Risk', 'Realised', 'Missed'],
+  BENEFIT_TYPES: [
+    { value: 'time_saving', label: 'Time saving' },
+    { value: 'cost_saving', label: 'Cost saving' }
+  ],
   renderBenefits(p) {
-    const list = p.benefits_register || [];
-    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No benefits tracked</div>';
+    const list = p.benefits || [];
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No benefits logged</div>';
     const esc = Dashboard.esc;
-    return list.map((b, i) => {
-      const statusColor = { 'Realised': 'var(--status-green)', 'On Track': 'var(--status-green)', 'At Risk': 'var(--status-amber)', 'Missed': 'var(--status-red)', 'Planned': 'var(--text-muted)' }[b.status] || 'var(--text-muted)';
-      return '<div class="risk-item" data-benefit-idx="' + i + '">' +
+    return list.map((b, i) =>
+      '<div class="risk-item" data-benefit-idx="' + i + '">' +
         '<button class="risk-remove" onclick="DetailPanel.removeBenefit(' + i + ')" title="Remove">&times;</button>' +
         '<div class="risk-fields">' +
-          '<div class="full"><div class="risk-field-label">Benefit description</div><textarea data-benefit-idx="' + i + '" data-benefit-field="description" onchange="DetailPanel.onBenefitChange(this)">' + esc(b.description || '') + '</textarea></div>' +
-          '<div><div class="risk-field-label">Owner</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="owner" value="' + esc(b.owner || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
-          '<div><div class="risk-field-label">Target date</div><input type="date" data-benefit-idx="' + i + '" data-benefit-field="target_date" value="' + (b.target_date || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
-          '<div><div class="risk-field-label">KPI</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="kpi" value="' + esc(b.kpi || '') + '" onchange="DetailPanel.onBenefitChange(this)" placeholder="e.g. +15% conversion"></div>' +
-          '<div><div class="risk-field-label">Status</div><select data-benefit-idx="' + i + '" data-benefit-field="status" onchange="DetailPanel.onBenefitChange(this)" style="color:' + statusColor + ';font-weight:600">' +
-            this.BENEFIT_STATUSES.map(s => '<option value="' + s + '"' + (s === b.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>' +
+          '<div><div class="risk-field-label">Type</div><select class="field-input" data-benefit-idx="' + i + '" data-benefit-field="type" onchange="DetailPanel.onBenefitChange(this)">' +
+            this.BENEFIT_TYPES.map(t => '<option value="' + t.value + '"' + (t.value === (b.type || 'time_saving') ? ' selected' : '') + '>' + t.label + '</option>').join('') +
+          '</select></div>' +
+          '<div><div class="risk-field-label">Amount</div><input type="number" min="0" step="1" data-benefit-idx="' + i + '" data-benefit-field="amount" value="' + (App.toInteger(b.amount) || 0) + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
+          '<div><div class="risk-field-label">Units</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="units" value="' + esc(b.units || '') + '" placeholder="e.g. hours/year, GBP/year" onchange="DetailPanel.onBenefitChange(this)"></div>' +
+          '<div class="full"><div class="risk-field-label">Description</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="description" value="' + esc(b.description || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
         '</div>' +
-      '</div>';
-    }).join('');
+      '</div>'
+    ).join('');
   },
   addBenefit() {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
-    if (!p.benefits_register) p.benefits_register = [];
+    if (!Array.isArray(p.benefits)) p.benefits = [];
     App.pushUndo('Add benefit');
-    p.benefits_register.push({ description: '', owner: '', target_date: '', kpi: '', status: 'Planned' });
+    p.benefits.push({ type: 'time_saving', amount: 0, units: '', description: '' });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
-    document.getElementById('benefitCount').textContent = p.benefits_register.length;
+    document.getElementById('benefitListInner').innerHTML = this.renderBenefits(p);
+    document.getElementById('benefitCount').textContent = p.benefits.length;
   },
   removeBenefit(idx) {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.benefits_register) return;
+    if (!p || !Array.isArray(p.benefits)) return;
     App.pushUndo('Remove benefit');
-    p.benefits_register.splice(idx, 1);
+    p.benefits.splice(idx, 1);
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
-    document.getElementById('benefitCount').textContent = p.benefits_register.length;
+    document.getElementById('benefitListInner').innerHTML = this.renderBenefits(p);
+    document.getElementById('benefitCount').textContent = p.benefits.length;
   },
   onBenefitChange(el) {
     const idx = parseInt(el.dataset.benefitIdx);
     const field = el.dataset.benefitField;
     const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.benefits_register || !p.benefits_register[idx]) return;
-    p.benefits_register[idx][field] = el.value;
+    if (!p || !Array.isArray(p.benefits) || !p.benefits[idx]) return;
+    let value = el.value;
+    if (field === 'amount') value = App.toInteger(value);
+    p.benefits[idx][field] = value;
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    if (field === 'status') document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
   },
 
-  // --- Assumptions & Constraints -------------------------------------
-  ASSUMPTION_KINDS: ['Assumption', 'Constraint', 'Dependency'],
-  ASSUMPTION_STATUSES: ['Open', 'Validated', 'Invalidated'],
+  // --- Success criteria multi-row ------------------------------------
+  SUCCESS_CRITERIA_TAGS: ['Adoption', 'Cost', 'Cycle time', 'Quality', 'Revenue'],
+  renderSuccessCriteria(p) {
+    const list = p.success_criteria || [];
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No success criteria logged</div>';
+    const esc = Dashboard.esc;
+    return list.map((s, i) =>
+      '<div class="risk-item" data-success-idx="' + i + '">' +
+        '<button class="risk-remove" onclick="DetailPanel.removeSuccessCriterion(' + i + ')" title="Remove">&times;</button>' +
+        '<div class="risk-fields">' +
+          '<div class="full"><div class="risk-field-label">Name</div><input type="text" data-success-idx="' + i + '" data-success-field="name" value="' + esc(s.name || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Target</div><input type="text" data-success-idx="' + i + '" data-success-field="target" value="' + esc(s.target || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Measure</div><input type="text" data-success-idx="' + i + '" data-success-field="measure" value="' + esc(s.measure || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Tag</div><select class="field-input" data-success-idx="' + i + '" data-success-field="tag" onchange="DetailPanel.onSuccessCriterionChange(this)">' +
+            this.SUCCESS_CRITERIA_TAGS.map(t => '<option value="' + t + '"' + (t === (s.tag || 'Quality') ? ' selected' : '') + '>' + t + '</option>').join('') +
+          '</select></div>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  },
+  addSuccessCriterion() {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p) return;
+    if (!Array.isArray(p.success_criteria)) p.success_criteria = [];
+    App.pushUndo('Add success criterion');
+    p.success_criteria.push({ name: '', target: '', measure: '', tag: 'Quality' });
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('successCriteriaListInner').innerHTML = this.renderSuccessCriteria(p);
+    document.getElementById('successCriteriaCount').textContent = p.success_criteria.length;
+  },
+  removeSuccessCriterion(idx) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !Array.isArray(p.success_criteria)) return;
+    App.pushUndo('Remove success criterion');
+    p.success_criteria.splice(idx, 1);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('successCriteriaListInner').innerHTML = this.renderSuccessCriteria(p);
+    document.getElementById('successCriteriaCount').textContent = p.success_criteria.length;
+  },
+  onSuccessCriterionChange(el) {
+    const idx = parseInt(el.dataset.successIdx);
+    const field = el.dataset.successField;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !Array.isArray(p.success_criteria) || !p.success_criteria[idx]) return;
+    p.success_criteria[idx][field] = el.value;
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // --- Project-level Assumptions register ----------------------------
   renderAssumptions(p) {
     const list = p.assumptions_register || [];
-    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No assumptions or constraints recorded</div>';
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No assumptions logged</div>';
     const esc = Dashboard.esc;
     return list.map((a, i) =>
       '<div class="risk-item" data-assumption-idx="' + i + '">' +
         '<button class="risk-remove" onclick="DetailPanel.removeAssumption(' + i + ')" title="Remove">&times;</button>' +
         '<div class="risk-fields">' +
-          '<div><div class="risk-field-label">Kind</div><select data-assumption-idx="' + i + '" data-assumption-field="kind" onchange="DetailPanel.onAssumptionChange(this)">' + this.ASSUMPTION_KINDS.map(k => '<option value="' + k + '"' + (k === a.kind ? ' selected' : '') + '>' + k + '</option>').join('') + '</select></div>' +
-          '<div><div class="risk-field-label">Status</div><select data-assumption-idx="' + i + '" data-assumption-field="status" onchange="DetailPanel.onAssumptionChange(this)">' + this.ASSUMPTION_STATUSES.map(s => '<option value="' + s + '"' + (s === a.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>' +
-          '<div><div class="risk-field-label">Owner</div><input type="text" data-assumption-idx="' + i + '" data-assumption-field="owner" value="' + esc(a.owner || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
-          '<div><div class="risk-field-label">Logged</div><input type="date" data-assumption-idx="' + i + '" data-assumption-field="date" value="' + (a.date || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
-          '<div class="full"><div class="risk-field-label">Description</div><textarea data-assumption-idx="' + i + '" data-assumption-field="description" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.description || '') + '</textarea></div>' +
+          '<div><div class="risk-field-label">Date</div><input type="date" data-assumption-idx="' + i + '" data-assumption-field="date" value="' + (a.date || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Made by</div><input type="text" data-assumption-idx="' + i + '" data-assumption-field="made_by" value="' + esc(a.made_by || '') + '" onchange="DetailPanel.onAssumptionChange(this)"></div>' +
+          '<div class="full"><div class="risk-field-label">Assumption</div><textarea data-assumption-idx="' + i + '" data-assumption-field="text" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.text || '') + '</textarea></div>' +
+          '<div class="full"><div class="risk-field-label">Notes</div><textarea data-assumption-idx="' + i + '" data-assumption-field="notes" onchange="DetailPanel.onAssumptionChange(this)">' + esc(a.notes || '') + '</textarea></div>' +
         '</div>' +
       '</div>'
     ).join('');
@@ -14415,23 +14600,23 @@ const DetailPanel = {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
     if (!p.assumptions_register) p.assumptions_register = [];
-    App.pushUndo('Add assumption');
-    p.assumptions_register.push({ kind: 'Assumption', status: 'Open', owner: '', date: new Date().toISOString().split('T')[0], description: '' });
+    App.pushUndo('Log project assumption');
+    p.assumptions_register.push({ date: new Date().toISOString().split('T')[0], made_by: '', text: '', notes: '' });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('assumptionList').innerHTML = this.renderAssumptions(p);
+    document.getElementById('assumptionListInner').innerHTML = this.renderAssumptions(p);
     document.getElementById('assumptionCount').textContent = p.assumptions_register.length;
   },
   removeAssumption(idx) {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !p.assumptions_register) return;
-    App.pushUndo('Remove assumption');
+    App.pushUndo('Remove project assumption');
     p.assumptions_register.splice(idx, 1);
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('assumptionList').innerHTML = this.renderAssumptions(p);
+    document.getElementById('assumptionListInner').innerHTML = this.renderAssumptions(p);
     document.getElementById('assumptionCount').textContent = p.assumptions_register.length;
   },
   onAssumptionChange(el) {
@@ -14873,33 +15058,6 @@ const DetailPanel = {
     });
   },
 
-  addComm() {
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p) return;
-    if (!p.comms_log) p.comms_log = [];
-    const type = document.getElementById('commsType').value;
-    const date = document.getElementById('commsDate').value;
-    const note = document.getElementById('commsNote').value;
-    App.pushUndo('Add communication');
-    p.comms_log.push({ type, date, note, created_at: new Date().toISOString() });
-    App.logChange(p.id, 'comms_log', '', type + ' - ' + date, 'user');
-    p.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-    this.renderBody(p);
-  },
-
-  removeComm(idx) {
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.comms_log) return;
-    App.pushUndo('Remove communication');
-    p.comms_log.splice(idx, 1);
-    p.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-    this.renderBody(p);
-  },
-
   cloneProject() {
     if (!this.currentId || !App.data) return;
     const src = App.data.projects.find(pr => pr.id === this.currentId);
@@ -14920,7 +15078,6 @@ const DetailPanel = {
     if (App.data.audit_log) {
       // Don't copy audit entries - they belong to the original
     }
-    clone.comms_log = [];
     clone.priority = App.data.projects.filter(p => p.customer === clone.customer).length + 1;
     App.data.projects.push(clone);
     App.logChange(clone.id, 'project_created', '', 'Cloned from ' + src.id, 'user');
@@ -14998,7 +15155,6 @@ const DetailPanel = {
       notes: '',
       last_updated: new Date().toISOString(),
       devops_link: '',
-      comms_log: [],
       risks_register: [],
       issues_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
@@ -15069,10 +15225,10 @@ const DetailPanel = {
         '</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">' +
           '<label style="font-size:11px;font-weight:600">Name<br><input type="text" id="qaName" placeholder="New project name" autofocus style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-          '<label style="font-size:11px;font-weight:600">Customer<br><select id="qaCustomer" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
-          '<label style="font-size:11px;font-weight:600">Template<br><select id="qaTemplate" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
+          '<label style="font-size:11px;font-weight:600">Customer<br><select id="qaCustomer" class="field-input" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
+          '<label style="font-size:11px;font-weight:600">Template<br><select id="qaTemplate" class="field-input" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
           '<label style="font-size:11px;font-weight:600">Total size (SP)<br><input type="number" id="qaSize" value="20" min="0" step="1" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"><div style="font-size:10px;color:var(--text-muted);margin-top:2px">Split evenly across the chosen template\'s phases; edit per-phase in the detail panel.</div></label>' +
-          '<label style="font-size:11px;font-weight:600">Lifecycle stage<br><select id="qaLifecycleStage" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+          '<label style="font-size:11px;font-weight:600">Lifecycle stage<br><select id="qaLifecycleStage" class="field-input" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
             App.LIFECYCLE_STAGES.map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === App.LIFECYCLE_STAGE_DEFAULT ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('') +
           '</select><div style="font-size:10px;color:var(--text-muted);margin-top:2px">Informational tag for the project\'s phase of maturity.</div></label>' +
         '</div>' +
@@ -15086,7 +15242,7 @@ const DetailPanel = {
 
           '<div id="qaPriorityBlock">' +
             '<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px">' +
-              '<label style="font-size:11px;font-weight:600;flex:0 0 120px">Priority slot<br><select id="qaPriority" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + prioOpts + '</select></label>' +
+              '<label style="font-size:11px;font-weight:600;flex:0 0 120px">Priority slot<br><select id="qaPriority" class="field-input" onchange="DetailPanel._refreshWizardContext()" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + prioOpts + '</select></label>' +
               '<div id="qaReserveSummary" style="flex:1;font-size:11px;color:var(--text-muted);padding:6px 8px;background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);min-height:30px">—</div>' +
             '</div>' +
             '<div id="qaContextTable" style="max-height:200px;overflow:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px"></div>' +
@@ -15376,7 +15532,7 @@ const DetailPanel = {
       delivery_config: tpl && tpl.delivery_config ? JSON.parse(JSON.stringify(tpl.delivery_config))
         : { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
       notes: '', last_updated: new Date().toISOString(), devops_link: '',
-      comms_log: [], risks_register: [], issues_register: [],
+      risks_register: [], issues_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
       skill_splits: {},
       stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }

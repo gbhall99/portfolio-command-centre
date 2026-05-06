@@ -64,9 +64,12 @@ describe('Detail Panel — three-tab redesign', () => {
     const health = app.window.document.querySelector('[data-dp-tab="health"]');
     const delivery = app.window.document.querySelector('[data-dp-tab="delivery"]');
     expect(setup.innerHTML).toMatch(/Identity/);
-    expect(setup.innerHTML).toMatch(/Timeline/);
+    // Timeline section was removed in T9 — Start/End sprint now live in Delivery as a
+    // read-only Sprint window (auto-populated by the solver).
+    expect(setup.innerHTML).not.toMatch(/panel-section-title">Timeline</);
     expect(health.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
+    expect(delivery.innerHTML).toMatch(/Sprint window/);
     app.teardown();
   });
 });
