@@ -3450,6 +3450,69 @@ const App = {
       }
     });
 
+    // Always-run (Project Details Overhaul, 2026-05): drop comms_log/comms_date/external_delivery_date,
+    // migrate string assumptions/benefits to structured arrays, init success_criteria. Idempotent.
+    (data.projects || []).forEach(p => {
+      if (!p) return;
+      // 1. Drop legacy comms + external delivery fields.
+      if ('comms_log' in p) delete p.comms_log;
+      if ('comms_date' in p) delete p.comms_date;
+      if ('external_delivery_date' in p) delete p.external_delivery_date;
+      // 2. Migrate string assumptions -> assumptions_register array.
+      if (typeof p.assumptions === 'string' && !p.assumptions_register) {
+        const text = p.assumptions.trim();
+        p.assumptions_register = text ? [{ date: '', made_by: '', text: text, notes: '' }] : [];
+        delete p.assumptions;
+      } else if (typeof p.assumptions === 'string') {
+        // assumptions_register already exists; just drop the legacy string.
+        delete p.assumptions;
+      }
+      if (!Array.isArray(p.assumptions_register)) p.assumptions_register = [];
+      // 3. Migrate string benefits -> single-entry array of structured records.
+      if (typeof p.benefits === 'string') {
+        const desc = p.benefits.trim();
+        p.benefits = desc ? [{ type: 'cost_saving', amount: 0, units: '', description: desc }] : [];
+      }
+      if (!Array.isArray(p.benefits)) p.benefits = [];
+      // 4. Initialise success_criteria.
+      if (!Array.isArray(p.success_criteria)) p.success_criteria = [];
+    });
+
+    // Always-run (Project Details Overhaul, 2026-05): seed customer.sponsors from project sponsors,
+    // unioning with any sponsors already present. Ensures data.customers exists (legacy datasets
+    // without the field get one derived from project.customer values) so this block stays
+    // idempotent regardless of whether the version-gated migration has executed yet.
+    if (!Array.isArray(data.customers)) {
+      const existingCustomers = [...new Set((data.projects || []).map(p => p && p.customer).filter(Boolean))].sort();
+      const defaultColors = { 'GCC': '#3b82f6', 'KS': '#14b8a6', 'DR&I': '#8b5cf6' };
+      data.customers = existingCustomers.length
+        ? existingCustomers.map(name => ({ name: name, color: defaultColors[name] || '#6366f1', staleThreshold: 14 }))
+        : [
+            { name: 'GCC', color: '#3b82f6', staleThreshold: 14 },
+            { name: 'KS', color: '#14b8a6', staleThreshold: 14 },
+            { name: 'DR&I', color: '#8b5cf6', staleThreshold: 14 }
+          ];
+    }
+    {
+      const sponsorsByCustomer = {};
+      (data.projects || []).forEach(p => {
+        if (!p || !p.customer) return;
+        const s = typeof p.sponsor === 'string' ? p.sponsor.trim() : '';
+        if (!s) return;
+        if (!sponsorsByCustomer[p.customer]) sponsorsByCustomer[p.customer] = new Set();
+        sponsorsByCustomer[p.customer].add(s);
+      });
+      data.customers.forEach(c => {
+        if (!c || !c.name) return;
+        const existing = Array.isArray(c.sponsors) ? c.sponsors.map(s => String(s || '').trim()).filter(Boolean) : [];
+        const seeded = sponsorsByCustomer[c.name] ? Array.from(sponsorsByCustomer[c.name]) : [];
+        const seen = new Set();
+        const union = [];
+        existing.concat(seeded).forEach(s => { if (!seen.has(s)) { seen.add(s); union.push(s); } });
+        c.sponsors = union;
+      });
+    }
+
     const version = (data.meta && data.meta.schema_version) || '0.0';
     if (version === this.SCHEMA_VERSION) return data;
     console.log('[PCC] Migrating schema from', version, 'to', this.SCHEMA_VERSION);
@@ -3560,15 +3623,10 @@ const App = {
         };
         delete p.teams_involved;
       }
-      // Migrate comms_status/date to comms_log
-      if (!p.comms_log) {
-        p.comms_log = [];
-        if (p.comms_status && p.comms_status !== 'Not Required') {
-          p.comms_log.push({ type: 'Status Update', date: p.comms_date || new Date().toISOString().split('T')[0], note: 'Status: ' + p.comms_status, created_at: new Date().toISOString() });
-        }
-        delete p.comms_status;
-        delete p.comms_date;
-      }
+      // Communications was dropped in the 2026-05 Project Details Overhaul. The always-run
+      // block above strips comms_log/comms_date; the legacy comms_status field (never widely
+      // used) is also discarded here for cleanliness.
+      if ('comms_status' in p) delete p.comms_status;
     });
     // Ensure team members have sprint_overrides
     (data.team_members || []).forEach(tm => {
