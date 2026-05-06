@@ -6851,7 +6851,7 @@ const App = {
       var custs = (App.data && App.data.customers) || [];
       if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
       var tbl = '<table class="customer-config-table"><thead><tr>' +
-        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th>Logo</th><th></th>' +
+        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th>Logo</th><th>Sponsors</th><th></th>' +
       '</tr></thead><tbody>';
       custs.forEach(function(c, idx) {
         var pCount = (App.data.projects || []).filter(function(p) { return p.customer === c.name; }).length;
@@ -6862,12 +6862,20 @@ const App = {
         } else {
           logoCell = '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px" onclick="App._openLogoEditor(\'' + nameAttr + '\')">Set logo&hellip;</button>';
         }
+        var sponsors = Array.isArray(c.sponsors) ? c.sponsors.slice() : [];
+        var sponsorPreview = sponsors.length === 0
+          ? '<span style="color:var(--text-muted);font-size:11px">&mdash;</span>'
+          : (sponsors.length <= 3 ? sponsors.map(function(s) { return Dashboard.esc(s); }).join(', ')
+                                  : (sponsors.slice(0, 3).map(function(s) { return Dashboard.esc(s); }).join(', ') + ' +' + (sponsors.length - 3)));
+        var sponsorCell = '<span style="font-size:11px;color:var(--text-dark-secondary)">' + sponsorPreview + '</span>' +
+          ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px" onclick="App._openSponsorEditor(\'' + nameAttr + '\')" title="Edit sponsors">&#9998;</button>';
         tbl += '<tr>' +
           '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + nameAttr + '\',this.value)"></td>' +
           '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
           '<td>' + logoCell + '</td>' +
+          '<td>' + sponsorCell + '</td>' +
           '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + nameAttr + '\')">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
           '</button></td>' +
@@ -8249,6 +8257,41 @@ const App = {
       this.setCustomerLogo(customerName, value);
     }
     const overlay = document.getElementById('logoEditorOverlay');
+    if (overlay) overlay.remove();
+    this.renderConfig();
+  },
+
+  _openSponsorEditor(customerName) {
+    if (!this.data || !this.data.customers) return;
+    const c = this.data.customers.find(c => c.name === customerName);
+    if (!c) return;
+    const existing = document.getElementById('sponsorEditorOverlay');
+    if (existing) existing.remove();
+    const nameAttr = customerName.replace(/'/g, "\\'");
+    const sponsors = Array.isArray(c.sponsors) ? c.sponsors : [];
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9000;display:flex;align-items:center;justify-content:center';
+    overlay.id = 'sponsorEditorOverlay';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    overlay.innerHTML = '<div style="background:white;border-radius:12px;padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow-lg)">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px">Customer Sponsors &mdash; ' + Dashboard.esc(customerName) + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Comma-separated list of sponsor names. Used to populate the sponsor dropdown when editing projects for this customer.</div>' +
+      '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase">Sponsors</div>' +
+      '<textarea id="sponsorEditorValue" class="field-input" style="width:100%;min-height:96px;font-family:inherit;font-size:12px;resize:vertical">' + Dashboard.esc(sponsors.join(', ')) + '</textarea>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'sponsorEditorOverlay\').remove()">Cancel</button>' +
+        '<button class="btn btn-sm" style="background:var(--accent-blue);color:white" onclick="App._commitSponsorEditor(\'' + nameAttr + '\')">Save</button>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+  },
+
+  _commitSponsorEditor(customerName) {
+    const ta = document.getElementById('sponsorEditorValue');
+    const raw = ta ? ta.value : '';
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    this.setCustomerSponsors(customerName, parts);
+    const overlay = document.getElementById('sponsorEditorOverlay');
     if (overlay) overlay.remove();
     this.renderConfig();
   },
