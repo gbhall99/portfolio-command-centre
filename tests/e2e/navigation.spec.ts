@@ -23,8 +23,8 @@ test('navigation through all six views', async ({ page }) => {
   await page.click('.nav-item[data-view="governance"]');
   await expect(page.locator('#viewGovernance')).toHaveClass(/active/);
 
-  // Settings
+  // Settings — tile dashboard is the default landing (post-IA-redesign).
   await page.click('.nav-item[data-view="config"]');
-  await expect(page.locator('#schedulingEngineCard')).toBeVisible();
-  await expect(page.locator('#scoringCard')).toBeVisible();
+  await expect(page.locator('#configBody .config-tile-grid')).toBeVisible();
+  await expect(page.locator('#configBody .config-tile')).toHaveCount(8);
 });

@@ -701,6 +701,18 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .priority-cell > span:first-child { display: inline-flex; align-items: center; min-width: 18px; justify-content: flex-end; margin-right: 2px; }
 .priority-cell .why-rank-btn { margin-left: 2px; }
 .priority-rec-chip { display: inline-flex; align-items: center; font-size: 9px; padding: 1px 4px; border-radius: 3px; background: var(--accent-violet); color: white; font-weight: 700; cursor: pointer; margin-left: 3px; line-height: 1; }
+.config-tile-grid { display: grid; grid-template-columns: repeat(3, minmax(220px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.config-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 18px; background: var(--bg-card, white); border: 1px solid var(--border-light); border-radius: var(--radius-md); cursor: pointer; text-align: left; transition: transform 0.1s, box-shadow 0.1s, border-color 0.1s; min-height: 110px; font-family: inherit; color: inherit; }
+.config-tile:hover { transform: translateY(-1px); border-color: var(--accent-blue); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.config-tile:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.config-tile-icon { width: 22px; height: 22px; color: var(--accent-blue); display: inline-flex; }
+.config-tile-label { font-size: 14px; font-weight: 700; color: var(--text-dark); }
+.config-tile-summary { font-size: 11px; color: var(--text-muted); }
+.config-stat { background: var(--bg-card, white); border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 12px 18px; flex: 1; min-width: 110px; text-align: center; }
+.config-stat-num { font-size: 22px; font-weight: 700; }
+.config-stat-lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+@media (max-width: 900px) { .config-tile-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .config-tile-grid { grid-template-columns: 1fr; } }
 .project-name-cell { cursor: pointer; }
 .project-name-cell:hover { color: var(--accent-blue); }
 .th-col { position: relative; }
@@ -2698,7 +2710,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
             <button class="view-help-btn" onclick="Onboarding.showViewHelp('capacity')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
             <div style="flex:1"></div>
             <!-- R3-L3: quick-jump to the Annual Holidays editor. -->
-            <button class="btn btn-outline btn-sm" onclick="App.navigate('config');setTimeout(function(){var e=document.getElementById('annualHolidaysCard');if(e)e.scrollIntoView({behavior:'smooth',block:'center'})},80)" title="Edit company-wide annual holidays in Settings" aria-label="Edit annual holidays"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Annual holidays&hellip;</button>
+            <button class="btn btn-outline btn-sm" onclick="App.navigate('config');App.openConfigCategory('team');setTimeout(function(){var e=document.getElementById('annualHolidaysCard');if(e)e.scrollIntoView({behavior:'smooth',block:'center'})},80)" title="Edit company-wide annual holidays in Settings" aria-label="Edit annual holidays"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Annual holidays&hellip;</button>
           </div>
         </div>
         <div class="view-help-panel" id="helpCapacity"></div>
@@ -6254,572 +6266,656 @@ const App = {
     if (el) el.classList.toggle('visible');
   },
 
-  renderConfig() {
+  CONFIG_CATEGORIES: [
+    { id: 'customers', label: 'Customers',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+      summary: () => (App.getCustomers ? App.getCustomers().length : 0) + ' customers',
+      render: () => App._renderCustomersCard ? App._renderCustomersCard() : '' },
+    { id: 'team', label: 'Team & calendar',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+      summary: () => {
+        const m = (App.data && App.data.team_members || []).length;
+        const h = (App.data && App.data.settings && App.data.settings.annual_holidays || []).length;
+        return m + ' members · ' + h + ' holiday' + (h === 1 ? '' : 's');
+      },
+      render: () => (App._renderTeamIntro ? App._renderTeamIntro() : '') + (App._renderAnnualHolidaysCard ? App._renderAnnualHolidaysCard() : '') },
+    { id: 'sprints', label: 'Sprints',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+      summary: () => (App.data && App.data.sprints || []).length + ' configured',
+      render: () => (App._renderSprintCycleCard ? App._renderSprintCycleCard() : '') + (App._renderSprintMgmtCard ? App._renderSprintMgmtCard() : '') },
+    { id: 'scheduler', label: 'Scheduling engine',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/></svg>',
+      summary: () => 'R1–R12 · solver knobs',
+      render: () => App._renderSchedulerCard ? App._renderSchedulerCard() : '' },
+    { id: 'scoring', label: 'Scoring & priority',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>',
+      summary: () => {
+        const r = (App.data && App.data.settings && App.data.settings.ragRules || []).length;
+        return 'WSJF · MoSCoW · ' + r + ' RAG rule' + (r === 1 ? '' : 's');
+      },
+      render: () => (App._renderScoringCard ? App._renderScoringCard() : '') + (App._renderRagRulesCard ? App._renderRagRulesCard() : '') + (App._renderSkillsCard ? App._renderSkillsCard() : '') + (App._renderBacklogHealthCard ? App._renderBacklogHealthCard() : '') },
+    { id: 'templates', label: 'Workflow templates',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+      summary: () => {
+        const t = (App.data && App.data.settings && App.data.settings.workflow_templates || {});
+        const n = Object.keys(t).length;
+        return n + ' template' + (n === 1 ? '' : 's');
+      },
+      render: () => App._renderTemplatesCard ? App._renderTemplatesCard() : '<div style="font-size:13px;color:var(--text-muted);padding:12px">No workflow templates configured.</div>' },
+    { id: 'display', label: 'Display & branding',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
+      summary: () => 'Theme & thresholds',
+      render: () => (App._renderDisplayThresholdsCard ? App._renderDisplayThresholdsCard() : '') + (App._renderBrandingCard ? App._renderBrandingCard() : '') },
+    { id: 'data', label: 'Data',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+      summary: () => 'Export · import · backups',
+      render: () => App._renderDataCard ? App._renderDataCard() : '' }
+  ],
+
+  _configActiveCategory: null,
+
+  openConfigCategory(id) {
+    if (!App.CONFIG_CATEGORIES.find(c => c.id === id)) return;
+    this._configActiveCategory = id;
+    this.renderConfig();
     const body = document.getElementById('configBody');
-    if (!body) return;
-    // Defensive: ensure settings defaults exist before any IIFE reads them.
-    if (this._ensureSettingsDefaults) this._ensureSettingsDefaults();
-    const s = Sprint.allocSettings;
-    const esc = Dashboard.esc;
-    const ch = this.configHelp.bind(this);
+    if (body) body.scrollTop = 0;
+  },
+
+  closeConfigCategory() {
+    this._configActiveCategory = null;
+    this.renderConfig();
+  },
+
+  _renderConfigDashboard() {
     const customers = this.getCustomers();
     const sprintCount = this.data ? (this.data.sprints || []).length : 0;
     const teamCount = this.data ? (this.data.team_members || []).length : 0;
-    const projectCount = this.data ? this.data.projects.length : 0;
+    const projectCount = this.data ? (this.data.projects || []).length : 0;
+    const stats = '<div style="display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap">' +
+      '<div class="config-stat"><div class="config-stat-num" style="color:var(--accent-blue)">' + projectCount + '</div><div class="config-stat-lbl">Projects</div></div>' +
+      '<div class="config-stat"><div class="config-stat-num" style="color:var(--accent-teal)">' + teamCount + '</div><div class="config-stat-lbl">Team</div></div>' +
+      '<div class="config-stat"><div class="config-stat-num" style="color:var(--accent-violet)">' + sprintCount + '</div><div class="config-stat-lbl">Sprints</div></div>' +
+      '<div class="config-stat"><div class="config-stat-num">' + customers.length + '</div><div class="config-stat-lbl">Customers</div></div>' +
+    '</div>';
+    const tiles = this.CONFIG_CATEGORIES.map(c => {
+      let summary = '';
+      try { summary = c.summary() || ''; } catch (_) { summary = ''; }
+      return '<button class="config-tile" type="button" onclick="App.openConfigCategory(\'' + c.id + '\')">' +
+        '<div class="config-tile-icon">' + c.icon + '</div>' +
+        '<div class="config-tile-label">' + Dashboard.esc(c.label) + '</div>' +
+        '<div class="config-tile-summary">' + Dashboard.esc(summary) + '</div>' +
+      '</button>';
+    }).join('');
+    return stats + '<div class="config-tile-grid">' + tiles + '</div>';
+  },
 
-    // Wrap the entire render in try/catch — a broken IIFE previously blanked the page silently.
+  _renderConfigCategory(id) {
+    const cat = this.CONFIG_CATEGORIES.find(c => c.id === id);
+    if (!cat) return this._renderConfigDashboard();
+    const breadcrumb = '<div class="config-breadcrumb" style="display:flex;align-items:center;gap:6px;margin-bottom:12px;font-size:12px">' +
+      '<button class="btn btn-ghost btn-sm" onclick="App.closeConfigCategory()" aria-label="Back to settings" style="padding:4px 10px">&larr; Settings</button>' +
+      '<span style="color:var(--text-muted)">/</span>' +
+      '<span style="font-weight:600;color:var(--text-dark)">' + Dashboard.esc(cat.label) + '</span>' +
+    '</div>';
+    let body;
+    try { body = cat.render() || ''; }
+    catch (e) {
+      console.error('[PCC] settings category render failed for ' + id, e);
+      body = '<div style="padding:12px;color:var(--status-red)">This category failed to render. Reload to try again.</div>';
+    }
+    return breadcrumb + body;
+  },
+
+  renderConfig() {
+    const body = document.getElementById('configBody');
+    if (!body) return;
+    if (this._ensureSettingsDefaults) this._ensureSettingsDefaults();
     let html;
     try {
-      html =
-      // Table of contents — quick-jump to each section so the whole page is discoverable at a glance.
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;margin-bottom:14px;background:linear-gradient(to right, rgba(59,130,246,0.06), rgba(139,92,246,0.04));border:1px solid var(--border-light);border-radius:var(--radius-md);font-size:11px">' +
-        '<span style="font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-right:6px;align-self:center">Jump to:</span>' +
-        '<a href="#schedulingEngineCard" data-toc-target="schedulingEngineCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Scheduling Engine</a>' +
-        '<a href="#scoringCard" data-toc-target="scoringCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Scoring &amp; Prioritisation</a>' +
-        '<a href="#displayThresholdsCard" data-toc-target="displayThresholdsCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Display Thresholds</a>' +
-        '<a href="#brandingCard" data-toc-target="brandingCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Branding</a>' +
-        '<a href="#dataCard" data-toc-target="dataCard" style="padding:4px 10px;background:white;border:1px solid var(--border-light);border-radius:999px;color:var(--accent-blue);text-decoration:none;font-weight:600">Data</a>' +
-      '</div>' +
-
-      // Data summary
-      '<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">' +
-        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-blue)">' + projectCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Projects</div></div>' +
-        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-teal)">' + teamCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Team Members</div></div>' +
-        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700;color:var(--accent-violet)">' + sprintCount + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Sprints</div></div>' +
-        '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:700">' + customers.length + '</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:600">Customers</div></div>' +
-      '</div>' +
-
-      // Scheduling Engine — every knob the solver consumes (inline-editable; mirrors the Sprint toolbar modal)
-      (function() {
-        const sched = (App.data.settings && App.data.settings.scheduler) || {};
-        const sprintsOpts = '<option value="">First available</option>' +
-          (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace(/^CY\d+-/, '') + '</option>').join('');
-        const numInput = (id, val, min, max, title) =>
-          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + '" title="' + title + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
-        // Rules R1–R11 reference — derived from SOLVER.md §4. Each row declares whether the rule is
-        // enforced unconditionally, toggleable via a setting, or not currently exposed in the UI.
-        const rules = [
-          { id: 'R1',  name: 'Fill sprints earliest-to-latest',        cfg: 'enforced',        note: 'Forward loop; Pass 3 never moves work earlier.' },
-          { id: 'R2',  name: 'Phase hand-off buffer',                   cfg: 'phaseBufferPoints', note: 'Reserves SP when consecutive phases share a sprint.' },
-          { id: 'R3',  name: '(retired) Hypercare',                     cfg: 'n/a',             note: 'Hypercare phase was removed in v1.1.' },
-          { id: 'R4',  name: 'Per-person capacity cap',                 cfg: 'enforcePerPersonCap', note: 'Hard: no member exceeds available_points_per_sprint.' },
-          { id: 'R5',  name: 'Cross-phase overlap when R2/R11 hold',    cfg: 'respectSkillOrder', note: 'Replaces the old strict phase gate.' },
-          { id: 'R6',  name: 'Buffer-slide safety cap',                 cfg: 'maxBufferSlides', note: 'Phase slides N sprints before giving up the buffer.' },
-          { id: 'R7',  name: 'Deadline beats buffer',                   cfg: 'enforced',        note: 'Buffer dropped, overlap allowed, warning emitted.' },
-          { id: 'R8',  name: '"Both"-customer capacity split',          cfg: 'per-member',      note: 'Edit per-member capacity_by_customer below.' },
-          { id: 'R9',  name: 'Graded deadline urgency (scoring)',       cfg: 'deadlineTiers',   note: 'Configured in Scoring & Prioritisation.' },
-          { id: 'R10', name: 'Slice metadata (assigned_to, reasons)',   cfg: 'enforced',        note: 'UI tooltip source.' },
-          { id: 'R11', name: 'Project day-budget per sprint',           cfg: 'defaultDevDays / daysPerSPMultiplier', note: 'Splits phases when calendar-day budget would overflow.' },
-          { id: 'R12', name: 'One person, one delivery at a time',      cfg: 'enforceConcurrentSinglePerson', note: 'Blocks overlapping assignments across projects unless both are in the allow-list (Req + UAT by default).' }
-        ];
-        const rulesRows = rules.map(r =>
-          '<tr>' +
-            '<td style="padding:4px 6px;font-weight:600">' + esc(r.name) + '</td>' +
-            '<td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + esc(r.cfg) + '</td>' +
-            '<td style="padding:4px 6px;font-size:11px;color:var(--text-dark-secondary)">' + esc(r.note) + '</td>' +
-            '<td style="padding:4px 6px;font-size:10px;color:var(--text-muted);font-variant-numeric:tabular-nums" title="Internal reference used in SOLVER.md">' + r.id + '</td>' +
-          '</tr>'
-        ).join('');
-
-        // R8 per-member capacity-by-customer grid (only members with customer === "Both"). Editable inline.
-        const bothMembers = (App.data.team_members || []).filter(m => m.customer === 'Both');
-        const bothRows = bothMembers.length
-          ? bothMembers.map((m, i) => {
-              const cap = m.capacity_by_customer || {};
-              const cells = customers.map(c =>
-                '<td style="padding:4px 6px"><input type="number" data-capmember="' + esc(m.name) + '" data-capcust="' + esc(c) + '" value="' + (cap[c] != null ? cap[c] : '') + '" min="0" step="0.5" placeholder="auto" style="width:70px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-variant-numeric:tabular-nums"></td>'
-              ).join('');
-              return '<tr><td style="padding:4px 6px;font-weight:600">' + esc(m.name) + '</td><td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + (m.available_points_per_sprint || 0) + ' SP/sprint total</td>' + cells + '</tr>';
-            }).join('')
-          : '<tr><td colspan="' + (2 + customers.length) + '" style="padding:10px;color:var(--text-muted);font-style:italic;text-align:center">No team members with customer = "Both". Members tagged to a single customer use their full capacity there.</td></tr>';
-        const bothHeader = '<tr style="background:#f8fafc"><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Member</th><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Total</th>' +
-          customers.map(c => '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">' + esc(c) + ' (SP)</th>').join('') +
-          '</tr>';
-
-        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="schedulingEngineCard">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">How work gets assigned to sprints</h3>' +
-          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Controls used by Auto-Allocate when it packs story points into sprints. Changes apply on the next run.</div>' +
-
-          // What the solver optimises for — plain-English summary.
-          '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:11px;line-height:1.6;color:var(--text-dark-secondary)">' +
-            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">What the solver optimises for</div>' +
-            'Auto-Allocate packs work into sprints starting from the earliest available, in priority order. It tries to hit every hard deadline without overloading any person or any skill, and spreads work evenly across sprints as a secondary goal. ' +
-            'Ordering: <strong>hard deadline first</strong> \u2192 <strong>MoSCoW band</strong> (Must > Should > \u2026) \u2192 <strong>WSJF</strong> (value-per-effort) \u2192 the manual <strong>priority</strong> field. ' +
-            'It makes one pass forward, repairs deadlines, then balances load \u2014 this is fast and stable but not a perfect global optimum (it cannot reclaim an early-sprint idle slot once later work has filled around it). See SOLVER.md for the full algorithm.' +
-          '</div>' +
-
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity limits</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How busy can a skill get? (%)' + ch('seMaxCap', 'The highest share of the team\u2019s available points we\u2019ll assign to any one skill (e.g. Data Engineering) in a single sprint. Default is 95% — earlier sprints pack tightly with a small rounding buffer. Per-person cap is still hard, so real over-booking is impossible.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hand-off buffer (SP) — gap between consecutive phases' + ch('seBuffer', 'When two phases of one project share a sprint, leave this many points free as a buffer for slippage. Zero means phases butt straight up against each other. 2\u20133 is a sensible default.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How far can a phase slide?' + ch('seMaxSlides', 'If a phase can\u2019t fit in its intended sprint, we push it to the next one. This is the most sprints we\u2019ll push before giving up on the buffer altogether. Higher is more forgiving, lower forces the schedule to reshape.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
-          '</div>' +
-
-          '<details style="margin-bottom:14px"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Advanced: load-balancing tuning</summary>' +
-          '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">These knobs control the third pass of the solver, which evens out work across sprints once the forward packing is done. Defaults are good for most teams \u2014 only change these if sprints are repeatedly over- or under-committed.</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Balancing passes' + ch('seIter', 'How many times we try to even out sprint workloads. More passes give a smoother plan but take slightly longer to compute.') + '</div>' + numInput('seIter', sched.loadBalanceIterations != null ? sched.loadBalanceIterations : 3, 1, 10, '1–10') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cOver-committed\u201d at (%)' + ch('seHot', 'Any sprint above this utilisation triggers a redistribution. 90% = only reshape when sprints are really full.') + '</div>' + numInput('seHot', sched.hotSprintThresholdPct != null ? sched.hotSprintThresholdPct : 90, 60, 100, '60–100%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cStill has room\u201d below (%)' + ch('seCool', 'A neighbouring sprint must be below this level to absorb shifted work. 60% leaves comfortable headroom in the target.') + '</div>' + numInput('seCool', sched.coolSprintThresholdPct != null ? sched.coolSprintThresholdPct : 60, 0, 80, '0–80%') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Chunk size divisor' + ch('seShift', 'How big each reshuffled chunk is, as a fraction of the phase. 2 = halves (biggest chunks); 5 = fifths (smallest, smoothest).') + '</div>' + numInput('seShift', sched.shiftGranuleDivisor != null ? sched.shiftGranuleDivisor : 2, 1, 5, '1–5') + '</div>' +
-          '</div>' +
-          '</details>' +
-
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Timeline &amp; locks</div>' +
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start scheduling from' + ch('seStart', 'The earliest sprint the solver will place new work in. Use this to freeze the current sprint and only reshape future work.') + '</div><select id="seStartSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + sprintsOpts + '</select></div>' +
-            '<div></div>' +
-          '</div>' +
-          '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seEnforcePerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Never overload a team member' + ch('sePerPerson', 'Hard limit: no-one is assigned more than their available points per sprint. Slices slide to later sprints if someone would be over-loaded.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Keep phases in order' + ch('seOrder', 'Phase N+1 never starts before phase N in the same project. Without this, the solver might e.g. start UAT before Data Engineering is done.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seSpread"' + (s.spreadWork ? ' checked' : '') + '> Balance workload across sprints' + ch('seSpread2', 'Runs a smoothing pass after the initial schedule so no sprint is boiling hot while the next one is empty.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockComp"' + (s.lockCompleted ? ' checked' : '') + '> Don\u2019t touch completed/closed projects</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockIP"' + (s.lockInProgress ? ' checked' : '') + '> Don\u2019t touch in-progress projects</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seProtectPast"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Freeze past sprints' + ch('sePast', 'Work already scheduled in a past sprint stays put, and no new work ever lands in a sprint that\u2019s already ended. Prevents history from being rewritten.') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seCrossCust"' + (sched.enforceCrossCustomerDeps ? ' checked' : '') + '> Honour cross-customer dependencies' + ch('seCross', 'When ON, a project in another customer\u2019s portfolio can delay this customer\u2019s start if a dependency points to it. Default OFF (each customer solves in isolation).') + '</label>' +
-            '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seConcurrent"' + (s.enforceConcurrentSinglePerson !== false ? ' checked' : '') + '> One person, one delivery at a time' + ch('seConc', 'Prevents a team member from being booked on two deliveries that overlap in time \u2014 unless both are in the \u201callow overlap\u201d list below (typically Requirements and UAT, which are naturally collaborative/async).') + '</label>' +
-          '</div>' +
-          // R12 — overlap allow-list
-          (function() {
-            const allowed = Array.isArray(s.concurrentOverlapAllowedSkills) ? s.concurrentOverlapAllowedSkills : ['size_requirements', 'size_uat_adoption'];
-            const skillList = (App.data.skills || []).filter(sk => sk && sk.active !== false);
-            if (!skillList.length) return '';
-            const chips = skillList.map(sk =>
-              '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 7px;border:1px solid var(--border-light);border-radius:999px;background:' + (allowed.includes(sk.key) ? '#e0f2fe' : '#fff') + ';cursor:pointer">' +
-                '<input type="checkbox" data-r12-overlap="' + esc(sk.key) + '"' + (allowed.includes(sk.key) ? ' checked' : '') + ' style="margin:0"> ' + esc(sk.label || sk.key) +
-              '</label>'
-            ).join(' ');
-            return '<div style="font-size:11px;color:var(--text-dark-secondary);margin:6px 0 0 0"><span style="font-weight:600">Overlap allow-list:</span> overlapping assignments are permitted only when <em>both</em> skills are ticked below. Typical: Req + UAT only.<br><div style="margin-top:5px">' + chips + '</div></div>';
-          })() +
-
-          // R11 + R8: calendar-day and Both-customer controls. Hidden by default — only needed
-          // when teams are hitting time-budget overruns or when members split across customers.
-          '<details style="margin:18px 0 8px">' +
-            '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Advanced: time and split-customer controls</summary>' +
-            '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">Only touch these if projects keep overrunning their sprint time-budget, or if team members are shared across multiple customers.</div>' +
-            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 8px">Sprint time-budget</div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
-              '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Working days per sprint' + ch('seDefDD', 'How many working days a sprint has for development. Used as a fallback when a sprint has no explicit hardening date. The solver checks each project\u2019s total phase-days against this budget.') + '</div>' + numInput('seDefaultDevDays', sched.defaultDevDays != null ? sched.defaultDevDays : 20, 1, 60, '1–60 working days') + '</div>' +
-              '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Story-point effort multiplier' + ch('seDpsp', 'How much real time a story point actually costs. 1.0 = team\u2019s measured average. Raise this if projects keep overrunning; lower if they finish early.') + '</div><input type="number" id="seDaysPerSPMult" value="' + (sched.daysPerSPMultiplier != null ? sched.daysPerSPMultiplier : 1) + '" min="0.25" max="3" step="0.1" title="0.25–3×" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"></div>' +
-            '</div>' +
-            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Team members split across customers</div>' +
-            '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">For each team member tagged as working across multiple customers (<code>customer = "Both"</code>), declare how many points they give to each customer per sprint. Leave blank to use an equal split.</div>' +
-            '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead>' + bothHeader + '</thead><tbody>' + bothRows + '</tbody></table></div>' +
-            // R3-M2: forecast horizon used by KPI + Portfolio views.
-            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Forecast horizon</div>' +
-            '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">How many future sprints the capacity-vs-demand KPI and the Portfolio workforce view look ahead.</div>' +
-            '<label style="font-size:11px;color:var(--text-dark);display:inline-flex;align-items:center;gap:8px"><span style="color:var(--text-muted)">Next</span>' +
-              '<select id="seForecastHorizon" style="padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
-                [4, 6, 8, 12].map(n => '<option value="' + n + '"' + ((sched.forecastHorizon || 4) === n ? ' selected' : '') + '>' + n + '</option>').join('') +
-              '</select>' +
-              '<span style="color:var(--text-muted)">sprints</span>' +
-            '</label>' +
-            // R3-M1: per-skill hardening factor. 0 = no capacity during hardening (default),
-            // 1.0 = full capacity continues through hardening (typical for UAT).
-            '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Hardening-week capacity factor per skill</div>' +
-            '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">How much of each skill\u2019s capacity continues into the hardening week. Default 0 = hardening is excluded entirely (current behaviour). Raise to 1.0 for skills that naturally work through hardening (typically UAT).</div>' +
-            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px">' +
-              (function() {
-                const factors = (sched.hardeningFactors || {});
-                return (App.data.skills || []).filter(sk => sk && sk.active !== false).map(sk => {
-                  const val = factors[sk.key] != null ? factors[sk.key] : 0;
-                  return '<label style="font-size:11px;color:var(--text-dark)"><span style="color:var(--text-muted)">' + esc(sk.label || sk.short || sk.key) + '</span>' +
-                    '<input type="number" min="0" max="1" step="0.05" data-hardening-factor="' + esc(sk.key) + '" value="' + val + '" style="display:block;margin-top:2px;width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
-                  '</label>';
-                }).join('');
-              })() +
-            '</div>' +
-          '</details>' +
-
-          // Rules — plain-English reference (internal codes retained as secondary labels for SOLVER.md cross-reference)
-          '<details style="margin-top:14px">' +
-            '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Solver rules &middot; plain-English reference</summary>' +
-            '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-top:8px">' +
-              '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
-                '<thead style="background:#f8fafc"><tr>' +
-                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Rule</th>' +
-                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Config</th>' +
-                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Note</th>' +
-                  '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase" title="Internal code for SOLVER.md cross-reference">Ref</th>' +
-                '</tr></thead>' +
-                '<tbody>' + rulesRows + '</tbody>' +
-              '</table>' +
-            '</div>' +
-          '</details>' +
-
-          '<div style="margin-top:14px;display:flex;gap:8px">' +
-            '<button class="btn btn-primary btn-sm" onclick="App.saveSchedulingEngineSettings()">Save</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.resetSchedulingEngineSettings()">Reset to defaults</button>' +
-          '</div>' +
-        '</div>';
-      })() +
-
-      // Scoring & Prioritisation — auto-prioritise weights
-      (function() {
-        const cfg = App._scoringCfg ? App._scoringCfg() : {};
-        const numInput = (id, val, min, max, step) =>
-          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
-        const tiers = (cfg.deadlineTiers || []).slice().sort((a, b) => a.days - b.days);
-        const tiersHtml = tiers.map((t, i) =>
-          '<tr><td style="padding:4px 6px">&le; ' + numInput('scoreDlDays_' + i, t.days, 1, 365) + ' days</td>' +
-          '<td style="padding:4px 6px">' + numInput('scoreDlScore_' + i, t.score, 0, 200) + ' pts</td></tr>'
-        ).join('');
-        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="scoringCard">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Scoring &amp; Prioritisation</h3>' +
-          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Weights that drive Auto-Prioritise. Components sum into a single project score; higher = more urgent.</div>' +
-
-          '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Status multiplier' + ch('scoreStatus', 'Each status has a fixed weight (Blocked=5, At Risk=4, In Progress=3, Not Started=2, On Hold=1, Complete/Closed=0). Component = status_weight × this multiplier. Default 10 \u2192 Blocked projects contribute 50 pts here.') + '</div>' + numInput('scoreStatusMult', cfg.statusMultiplier, 0, 50) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">RAG multiplier' + ch('scoreRag', 'Each RAG dimension has a weight (Red=3, Amber=2, Green=1). Component = (rag_schedule + rag_resourcing + rag_scope) × this multiplier. All-Red project \u2192 9 × 5 = 45 pts by default.') + '</div>' + numInput('scoreRagMult', cfg.ragMultiplier, 0, 20) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Risk multiplier' + ch('scoreRisk', 'Component = \u03A3(severity_weight × probability_weight) \u00D7 this multiplier across the project\'s risk register. Severity/probability use 1\u20135 scales. Empty register \u2192 0 pts.') + '</div>' + numInput('scoreRiskMult', cfg.riskMultiplier, 0, 10, '0.1') + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size divisor' + ch('scoreSize', 'Component = size_total \u00F7 divisor, capped by \u201CSize cap\u201D. Default 5 \u2192 every 5 SP earns 1 pt. Prevents huge projects from dominating.') + '</div>' + numInput('scoreSizeDiv', cfg.sizeDivisor, 1, 50) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size cap' + ch('scoreSizeCap', 'Upper bound on the size component, regardless of divisor. Default 20 = a 100 SP project still only contributes 20 pts.') + '</div>' + numInput('scoreSizeCap', cfg.sizeCap, 1, 100) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage weight' + ch('scoreDep', 'Component = (count of downstream projects this one transitively blocks) \u00D7 this weight, capped. Rewards upstream projects that unblock others.') + '</div>' + numInput('scoreDepWeight', cfg.dependencyLeverageWeight, 0, 20) + '</div>' +
-            '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage cap' + ch('scoreDepCap', 'Upper bound on the dependency-leverage component.') + '</div>' + numInput('scoreDepCap', cfg.dependencyLeverageCap, 0, 200) + '</div>' +
-          '</div>' +
-          '<details style="margin-bottom:14px;font-size:11px">' +
-            '<summary style="cursor:pointer;font-weight:600;color:var(--text-dark-secondary)">How are the status / RAG weights derived?</summary>' +
-            '<div style="padding:8px 4px 2px;color:var(--text-dark-secondary);line-height:1.6">' +
-              'Fixed constants in the scoring engine (not currently user-editable). They are integer ordinal weights chosen to make actively-blocked work outrank pre-started work, while the multipliers let you control the size of each category relative to the total.<br><br>' +
-              '<strong>Status weights:</strong> Blocked 5, At Risk 4, In Progress 3, Not Started 2, On Hold 1, Complete/Closed 0.<br>' +
-              '<strong>RAG weights:</strong> Red 3, Amber 2, Green 1 per dimension (schedule, resource, scope).<br>' +
-              '<strong>Risks:</strong> severity_weight \u00D7 probability_weight, summed across the register; severity and probability each map 1\u20135 to their integer value.<br>' +
-              '<strong>Deadline:</strong> graded tiers (below) \u2014 first matching tier wins.<br>' +
-              'Total score = \u03A3(components above). Higher = more urgent. Per-customer recommendations layer this by dependency order so ancestors always outrank descendants.' +
-            '</div>' +
-          '</details>' +
-
-          '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Deadline urgency tiers</div>' +
-          '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
-            '<thead><tr style="border-bottom:1px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">When deadline is within</th><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">Score contribution</th></tr></thead>' +
-            '<tbody>' + tiersHtml + '</tbody>' +
-          '</table>' +
-
-          '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
-            '<button class="btn btn-primary btn-sm" onclick="App.saveScoringSettings()">Save</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.resetScoringSettings()">Reset to defaults</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()" title="Compute recommended priorities. Does NOT overwrite manual priorities.">Recompute recommendations</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.applyAllRecommendationsConfirmed()" title="Copy recommended_priority \u2192 priority for every project where they differ.">Apply all recommendations</button>' +
-          '</div>' +
-          '<div id="scoringPreview" style="margin-top:12px;font-size:11px;color:var(--text-muted)">' + App._renderScoringPreview() + '</div>' +
-        '</div>';
-      })() +
-
-      // Display Thresholds — every colour-band cutoff in one place
-      (function() {
-        const t = (App.data.settings && App.data.settings.thresholds) || {};
-        const numInput = (id, val, min, max, step) =>
-          '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
-        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="displayThresholdsCard">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Display Thresholds</h3>' +
-          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Colour band cut-offs used across the dashboard, capacity views, and reports.</div>' +
-
-          '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
-            '<thead><tr style="border-bottom:1px solid var(--border-light)">' +
-              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Metric</th>' +
-              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Green at</th>' +
-              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Amber at</th>' +
-              '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Direction</th>' +
-            '</tr></thead><tbody>' +
-            '<tr><td style="padding:5px 7px">Utilisation (%)</td><td style="padding:5px 7px">' + numInput('tUtilGreen', (t.utilisation || {}).green != null ? t.utilisation.green : 80, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tUtilAmber', (t.utilisation || {}).amber != null ? t.utilisation.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better — green is the ceiling</td></tr>' +
-            '<tr><td style="padding:5px 7px">Capacity vs demand (%)</td><td style="padding:5px 7px">' + numInput('tCvdGreen', (t.capacityDemand || {}).green != null ? t.capacityDemand.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tCvdAmber', (t.capacityDemand || {}).amber != null ? t.capacityDemand.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better</td></tr>' +
-            '<tr><td style="padding:5px 7px">Forecast P80 (sprints)</td><td style="padding:5px 7px">' + numInput('tFcGreen', (t.forecastP80Sprints || {}).green != null ? t.forecastP80Sprints.green : 4, 1, 52) + '</td><td style="padding:5px 7px">' + numInput('tFcAmber', (t.forecastP80Sprints || {}).amber != null ? t.forecastP80Sprints.amber : 8, 1, 52) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Fewer is better</td></tr>' +
-            '<tr><td style="padding:5px 7px">Delivery rate (%)</td><td style="padding:5px 7px">' + numInput('tDrGreen', (t.deliveryRate || {}).green != null ? t.deliveryRate.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tDrAmber', (t.deliveryRate || {}).amber != null ? t.deliveryRate.amber : 65, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better — green is the floor</td></tr>' +
-            '<tr><td style="padding:5px 7px">SPI / CPI (ratio)</td><td style="padding:5px 7px">' + numInput('tEvmGreen', (t.evmIndex || {}).green != null ? t.evmIndex.green : 0.95, 0, 2, '0.01') + '</td><td style="padding:5px 7px">' + numInput('tEvmAmber', (t.evmIndex || {}).amber != null ? t.evmIndex.amber : 0.80, 0, 2, '0.01') + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better</td></tr>' +
-            '<tr><td style="padding:5px 7px">Stale activity (days)</td><td style="padding:5px 7px" colspan="2">' + numInput('tStaleDays', t.staleActivityDays != null ? t.staleActivityDays : 14, 1, 90) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Global default (per-customer overrides still apply)</td></tr>' +
-          '</tbody></table>' +
-
-          '<div style="margin-top:10px;display:flex;gap:8px">' +
-            '<button class="btn btn-primary btn-sm" onclick="App.saveDisplayThresholds()">Save</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.resetDisplayThresholds()">Reset to defaults</button>' +
-          '</div>' +
-        '</div>';
-      })() +
-
-      // Backlog Health — Definition of Ready + Definition of Done templates (H7, L18)
-      (function() {
-        const cfg = (App.data.settings && App.data.settings.backlogHealth) || {};
-        const defaultItems = Array.isArray(cfg.default) ? cfg.default : BacklogHealth.DEFAULT_DOR;
-        const defaultDodItems = Array.isArray(cfg.defaultDod) ? cfg.defaultDod : ['Acceptance criteria met', 'Tests passing', 'Documentation updated', 'Demo walked-through with sponsor', 'UAT sign-off captured'];
-        const customers = App.getCustomers();
-        const customerBlock = (() => {
-          const byCust = cfg.byCustomer || {};
-          return customers.map(c => {
-            const items = Array.isArray(byCust[c]) ? byCust[c] : null;
-            const value = items ? items.join('\n') : '';
-            return '<div style="margin-bottom:8px">' +
-              '<label style="font-size:10px;color:var(--text-muted);font-weight:600">Override for ' + esc(c) + ' (leave blank to use default)</label>' +
-              '<textarea id="dorCustomer_' + esc(c) + '" rows="3" placeholder="(uses default)" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(value) + '</textarea>' +
-            '</div>';
-          }).join('');
-        })();
-        return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="backlogHealthCard">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Backlog Health &middot; Definition of Ready</h3>' +
-          '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Checklist items that must be ticked on a project before it counts as &ldquo;refined&rdquo; in the Backlog Health view.</div>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Definition of Ready (one item per line)</label>' +
-          '<textarea id="dorDefault" rows="5" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(defaultItems.join('\n')) + '</textarea>' +
-          '<label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin:10px 0 4px">Definition of Done (one item per line)</label>' +
-          '<textarea id="dodDefault" rows="5" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(defaultDodItems.join('\n')) + '</textarea>' +
-          '<div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Per-customer DoR overrides (optional)</div>' +
-          customerBlock +
-          '<div style="margin-top:10px;display:flex;gap:8px">' +
-            '<button class="btn btn-primary btn-sm" onclick="App.saveBacklogHealthSettings()">Save</button>' +
-            '<button class="btn btn-outline btn-sm" onclick="App.resetBacklogHealthSettings()">Reset to defaults</button>' +
-          '</div>' +
-        '</div>';
-      })() +
-
-      // Sprint cycle settings (editable)
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Cycle Settings</h3>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dev Weeks/Sprint' + ch('devWeeks', 'Number of development weeks per sprint cycle. The hardening week is added automatically. Standard is 4 weeks dev + 1 week hardening = 5 weeks total.') + '</div><input type="number" value="' + (Sprint.SPRINT_DEV_WEEKS || 4) + '" min="1" max="8" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.SPRINT_DEV_WEEKS=parseInt(this.value)||4"></div>' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Business Days/Sprint</div><input type="number" value="20" min="10" max="30" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" disabled title="Derived from dev weeks + hardening"></div>' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hours per Story Point' + ch('hrsPerSP', 'Conversion factor between story points and hours. Used to calculate available points from contracted hours and utilisation target.') + '</div><input type="number" value="8" min="1" max="16" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" title="1 SP = X hours of focused work"></div>' +
-          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">FY Start Month' + ch('fyStart', 'Financial year start month. Used for sprint naming and reporting boundaries.') + '</div><select style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"><option selected>June</option></select></div>' +
-        '</div>' +
-      '</div>' +
-
-      // Skills Management (REQ-CFG-02)
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Skills Management</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure skills, their display names, colours, and active status. Retiring a skill hides it from new allocations but preserves historical data.</div>' +
-        (function() {
-          var skills = (App.data && App.data.skills) || [];
-          if (!skills.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No skills configured</div>';
-          var tbl = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
-          tbl += '<thead><tr style="border-bottom:2px solid var(--border-light)">' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Skill Name</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Short Name</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Key</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Colour</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Active</th>' +
-            '<th style="padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Actions</th>' +
-          '</tr></thead><tbody>';
-          skills.forEach(function(sk, idx) {
-            var activeChecked = sk.active ? ' checked' : '';
-            var rowOpacity = sk.active ? '' : ';opacity:0.5';
-            tbl += '<tr style="border-bottom:1px solid var(--border-light)' + rowOpacity + '">' +
-              '<td style="padding:6px"><input type="text" value="' + Dashboard.esc(sk.label) + '" style="width:100%;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px" onchange="App.updateSkillField(' + idx + ',\'label\',this.value)"></td>' +
-              '<td style="padding:6px"><input type="text" value="' + Dashboard.esc(sk.short) + '" maxlength="6" style="width:60px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px" onchange="App.updateSkillField(' + idx + ',\'short\',this.value)"></td>' +
-              '<td style="padding:6px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono)">' + Dashboard.esc(sk.key) + '</td>' +
-              '<td style="padding:6px"><input type="color" value="' + (sk.color || '#666666') + '" style="width:32px;height:24px;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:0;cursor:pointer" onchange="App.updateSkillField(' + idx + ',\'color\',this.value)"></td>' +
-              '<td style="padding:6px"><input type="checkbox"' + activeChecked + ' onchange="App.updateSkillField(' + idx + ',\'active\',this.checked)"></td>' +
-              '<td style="padding:6px;text-align:center">' +
-                '<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeSkill(' + idx + ')" title="Delete skill">' +
-                  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
-                '</button>' +
-              '</td>' +
-            '</tr>';
-          });
-          tbl += '</tbody></table>';
-          return tbl;
-        })() +
-        '<button class="btn btn-outline btn-sm" onclick="App.addSkill()" style="margin-top:8px">' +
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Skill' +
-        '</button>' +
-      '</div>' +
-
-      // Customer Management (REQ-CFG-01)
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Customer Management</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure customers, their colours, and stale-update thresholds. Renaming cascades to all projects, team members, and forums.</div>' +
-        (function() {
-          var custs = (App.data && App.data.customers) || [];
-          if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
-          var tbl = '<table class="customer-config-table"><thead><tr>' +
-            '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th></th>' +
-          '</tr></thead><tbody>';
-          custs.forEach(function(c, idx) {
-            var pCount = (App.data.projects || []).filter(function(p) { return p.customer === c.name; }).length;
-            tbl += '<tr>' +
-              '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-              '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-              '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-              '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
-              '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + c.name.replace(/'/g, "\\'") + '\')">' +
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
-              '</button></td>' +
-            '</tr>';
-          });
-          tbl += '</tbody></table>';
-          return tbl;
-        })() +
-        '<button class="btn btn-outline btn-sm" onclick="var n=prompt(\'Customer name:\');if(n)App.addCustomer(n.trim())" style="margin-top:8px">+ Add Customer</button>' +
-      '</div>' +
-
-      // Sprint management
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Management</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + sprintCount + ' sprints configured</div>' +
-        '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
-      '</div>' +
-
-      // Team holidays summary
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Team & Holidays</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + teamCount + ' team members. Holidays and per-sprint capacity overrides can be managed from the Capacity view or by clicking sprint headers in Sprint Planning.</div>' +
-        '<button class="btn btn-outline btn-sm" onclick="App.navigate(\'capacity\')">Go to Capacity View</button>' +
-      '</div>' +
-
-      // Annual Holidays (REQ-CAP-02)
-      '<div id="annualHolidaysCard" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Holidays reduce capacity for team members in-scope. Leave scope blank (All) to apply company-wide, or pick specific customers (e.g. UK-only bank holidays).</div>' +
-        (function() {
-          var hols = (App.data && App.data.annual_holidays) || [];
-          var html = '';
-          if (hols.length) {
-            html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
-            html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Scope</th><th style="text-align:center;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
-            hols.forEach(function(h, i) {
-              var scopeLabel = (h.customers && h.customers.length) ? h.customers.join(', ') : '<span style="color:var(--text-muted);font-style:italic">All</span>';
-              html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;font-size:10px">' + scopeLabel + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
-            });
-            html += '</tbody></table>';
-          } else {
-            html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No annual holidays configured</div>';
-          }
-          return html;
-        })() +
-        '<button class="btn btn-outline btn-sm" onclick="App.addAnnualHoliday()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Holiday</button>' +
-      '</div>' +
-
-      // Data actions
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Data Management</h3>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()">Variance Report (PDF)</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="App.showAuditExportModal()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Export Audit Log</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="App._integrityIssues=App.validateDataIntegrity();App.renderConfig()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Integrity Check</button>' +
-        '</div>' +
-      '</div>' +
-
-      // REQ-UX-02: Data Integrity
-      (function() {
-        var issues = App._integrityIssues || [];
-        var hasCls = issues.length ? ' has-issues' : '';
-        var html = '<div class="integrity-panel' + hasCls + '">' +
-          '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
-            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="' + (issues.length ? 'var(--status-amber)' : 'var(--status-green)') + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
-            'Data Integrity' +
-            (issues.length ? '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.12);color:var(--status-amber)">' + issues.length + ' issue' + (issues.length > 1 ? 's' : '') + ' found</span>' : '<span style="font-size:11px;font-weight:400;color:var(--status-green)">All clear</span>') +
-          '</h3>';
-        if (issues.length) {
-          html += '<div style="max-height:200px;overflow-y:auto;margin-bottom:8px">';
-          issues.forEach(function(issue, idx) {
-            html += '<div class="integrity-issue-row">' +
-              '<span class="integrity-issue-type ' + issue.type + '">' + issue.type + '</span>' +
-              '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(issue.message) + '</span>' +
-              '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px" onclick="App.fixIntegrityIssue(' + idx + ')">Fix</button>' +
-            '</div>';
-          });
-          html += '</div>';
-          html += '<button class="btn btn-outline btn-sm" onclick="App.fixAllIntegrityIssues()" style="font-size:10px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Fix All Issues</button>';
-        }
-        html += '</div>';
-        return html;
-      })() +
-
-      // RAG Auto-Scoring Rules
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">RAG Auto-Scoring Rules</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Define rules that automatically set project RAG status. Manual overrides take precedence.</div>' +
-        (function() {
-          const rules = (App.data && App.data.settings && App.data.settings.ragRules) || [];
-          if (!rules.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No rules configured</div>';
-          let tbl = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
-          tbl += '<thead><tr style="border-bottom:2px solid var(--border-light)">' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Active</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Field</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Operator</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Value</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Target RAG</th>' +
-            '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Result</th>' +
-            '<th style="padding:4px 6px"></th>' +
-          '</tr></thead><tbody>';
-          rules.forEach(function(rule, idx) {
-            const opLabels = { 'eq': 'Equals', 'neq': 'Not Equals', 'days_until_lt': 'Days Until <', 'days_until_gt': 'Days Until >' };
-            tbl += '<tr style="border-bottom:1px solid #f1f5f9">' +
-              '<td style="padding:4px 6px"><input type="checkbox" ' + (rule.active ? 'checked' : '') + ' onchange="App.toggleRagRule(' + idx + ',this.checked)"></td>' +
-              '<td style="padding:4px 6px">' + Dashboard.esc(rule.field) + '</td>' +
-              '<td style="padding:4px 6px">' + (opLabels[rule.operator] || rule.operator) + '</td>' +
-              '<td style="padding:4px 6px">' + Dashboard.esc(String(rule.value)) + '</td>' +
-              '<td style="padding:4px 6px">' + Dashboard.esc(rule.rag) + '</td>' +
-              '<td style="padding:4px 6px"><span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;color:white;background:' + App.ragColor(rule.result) + '">' + rule.result + '</span></td>' +
-              '<td style="padding:4px 6px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeRagRule(' + idx + ')">&times;</button></td>' +
-            '</tr>';
-          });
-          tbl += '</tbody></table>';
-          return tbl;
-        })() +
-        '<button class="btn btn-outline btn-sm" onclick="App.addRagRule()" style="font-size:10px">+ Add Rule</button>' +
-      '</div>' +
-
-      // Project Templates
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Project Templates</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Saved templates pre-fill delivery config and sizing when creating new projects.</div>' +
-        (function() {
-          const templates = (App.data && App.data.project_templates) || [];
-          if (!templates.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No templates saved. Open a project and click "Save as Template".</div>';
-          return templates.map(function(tpl, idx) {
-            const phases = (tpl.delivery_config && tpl.delivery_config.phase_order) || [];
-            const totalPts = (tpl.size_requirements || 0) + (tpl.size_tableau || 0) + (tpl.size_engineering || 0) + (tpl.size_data_science || 0) + (tpl.size_uat_adoption || 0);
-            return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
-              '<div style="flex:1"><span style="font-weight:600;font-size:12px">' + Dashboard.esc(tpl.name) + '</span>' +
-              '<div style="font-size:10px;color:var(--text-muted)">' + phases.join(' > ') + ' | ' + totalPts + ' pts</div></div>' +
-              '<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeTemplate(' + idx + ')">&times;</button>' +
-            '</div>';
-          }).join('');
-        })() +
-      '</div>' +
-
-      // Branding per customer (D2 — relocated from Dashboard toolbar)
-      '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-        '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Report Branding</h3>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">Logo, primary colour, company name, and footer text used in PDF reports and the Portfolio Pack, per customer.</div>' +
-        (function() {
-          const brandings = (App.data && App.data.settings && App.data.settings.branding) || {};
-          return customers.map(function(cName) {
-            const b = brandings[cName] || {};
-            const logo = b.logo ? ('<img src="' + Dashboard.esc(b.logo) + '" alt="" style="max-width:36px;max-height:24px;border:1px solid var(--border-light);border-radius:3px;background:white;object-fit:contain">') : '<span style="font-size:10px;color:var(--text-muted)">no logo</span>';
-            const colour = b.primaryColor || App.getCustomerColor(cName) || '#94a3b8';
-            const companyName = b.companyName || cName;
-            const footer = b.footerText ? Dashboard.esc(b.footerText.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
-            return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">' +
-              '<div style="width:40px;display:flex;align-items:center;justify-content:center">' + logo + '</div>' +
-              '<div style="flex:1">' +
-                '<div style="font-weight:600;font-size:12px;color:var(--text-dark)">' + Dashboard.esc(companyName) + ' <span style="font-size:10px;font-weight:400;color:var(--text-muted)">· ' + Dashboard.esc(cName) + '</span></div>' +
-                '<div style="font-size:10px;color:var(--text-muted)">Footer: ' + footer + '</div>' +
-              '</div>' +
-              '<span title="Primary colour" style="width:18px;height:18px;border-radius:50%;background:' + colour + ';border:1px solid var(--border-light);flex-shrink:0"></span>' +
-              '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="Report.configureBranding(\'' + Dashboard.esc(cName).replace(/\x27/g, "\\'") + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Configure</button>' +
-            '</div>';
-          }).join('');
-        })() +
-      '</div>';
+      html = this._configActiveCategory
+        ? this._renderConfigCategory(this._configActiveCategory)
+        : this._renderConfigDashboard();
     } catch (err) {
-      console.error('[PCC] renderConfig error — falling back to error card:', err);
-      html = '<div class="bg-red-weak" style="border:1px solid var(--status-red);border-radius:var(--radius-md);padding:20px;color:var(--status-red)">' +
+      console.error('[PCC] System Settings failed to render', err);
+      html = '<div style="background:white;border:1px solid var(--status-red);border-radius:var(--radius-md);padding:16px;color:var(--status-red);margin-top:8px">' +
         '<div style="font-weight:700;margin-bottom:8px">System Settings failed to render</div>' +
-        '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">An error occurred building this page. The app itself is unaffected — reload to try again.</div>' +
         '<pre style="font-size:11px;background:var(--surface);border:1px solid var(--border-light);padding:8px;border-radius:4px;overflow:auto;max-height:200px">' + Dashboard.esc(String(err && err.stack || err)) + '</pre>' +
       '</div>';
     }
     body.innerHTML = html;
-    // L14: wire the TOC scroll-spy after the markup is in place.
-    try { this._installConfigScrollSpy(); } catch (e) { /* non-fatal */ }
+  },
 
-    // Add stable ids to existing cards so the TOC anchors land. Scheduling/scoring/thresholds already have ids.
-    const brandingCard = body.querySelector('h3') ? Array.from(body.querySelectorAll('h3')).find(h => h.textContent.indexOf('Branding') >= 0) : null;
-    if (brandingCard && brandingCard.parentElement && !brandingCard.parentElement.id) brandingCard.parentElement.id = 'brandingCard';
-    const dataMgmtCard = body.querySelector('h3') ? Array.from(body.querySelectorAll('h3')).find(h => h.textContent.indexOf('Data Management') >= 0) : null;
-    if (dataMgmtCard && dataMgmtCard.parentElement && !dataMgmtCard.parentElement.id) dataMgmtCard.parentElement.id = 'dataCard';
+  _renderSprintCycleCard() {
+    const ch = this.configHelp.bind(this);
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Cycle Settings</h3>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dev Weeks/Sprint' + ch('devWeeks', 'Number of development weeks per sprint cycle. The hardening week is added automatically. Standard is 4 weeks dev + 1 week hardening = 5 weeks total.') + '</div><input type="number" value="' + (Sprint.SPRINT_DEV_WEEKS || 4) + '" min="1" max="8" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" onchange="Sprint.SPRINT_DEV_WEEKS=parseInt(this.value)||4"></div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Business Days/Sprint</div><input type="number" value="20" min="10" max="30" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" disabled title="Derived from dev weeks + hardening"></div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hours per Story Point' + ch('hrsPerSP', 'Conversion factor between story points and hours. Used to calculate available points from contracted hours and utilisation target.') + '</div><input type="number" value="8" min="1" max="16" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px" title="1 SP = X hours of focused work"></div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">FY Start Month' + ch('fyStart', 'Financial year start month. Used for sprint naming and reporting boundaries.') + '</div><select style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"><option selected>June</option></select></div>' +
+      '</div>' +
+    '</div>';
+  },
+
+  _renderSprintMgmtCard() {
+    const sprintCount = this.data ? (this.data.sprints || []).length : 0;
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Sprint Management</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + sprintCount + ' sprints configured</div>' +
+      '<button class="btn btn-outline btn-sm" onclick="Sprint.openSprintMgmt()">Manage Sprints</button>' +
+    '</div>';
+  },
+
+  _renderSkillsCard() {
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Skills Management</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure skills, their display names, colours, and active status. Retiring a skill hides it from new allocations but preserves historical data.</div>' +
+      (function() {
+        var skills = (App.data && App.data.skills) || [];
+        if (!skills.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No skills configured</div>';
+        var tbl = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
+        tbl += '<thead><tr style="border-bottom:2px solid var(--border-light)">' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Skill Name</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Short Name</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Key</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Colour</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Active</th>' +
+          '<th style="padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Actions</th>' +
+        '</tr></thead><tbody>';
+        skills.forEach(function(sk, idx) {
+          var activeChecked = sk.active ? ' checked' : '';
+          var rowOpacity = sk.active ? '' : ';opacity:0.5';
+          tbl += '<tr style="border-bottom:1px solid var(--border-light)' + rowOpacity + '">' +
+            '<td style="padding:6px"><input type="text" value="' + Dashboard.esc(sk.label) + '" style="width:100%;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px" onchange="App.updateSkillField(' + idx + ',\'label\',this.value)"></td>' +
+            '<td style="padding:6px"><input type="text" value="' + Dashboard.esc(sk.short) + '" maxlength="6" style="width:60px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px" onchange="App.updateSkillField(' + idx + ',\'short\',this.value)"></td>' +
+            '<td style="padding:6px;font-size:10px;color:var(--text-muted);font-family:var(--font-mono)">' + Dashboard.esc(sk.key) + '</td>' +
+            '<td style="padding:6px"><input type="color" value="' + (sk.color || '#666666') + '" style="width:32px;height:24px;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:0;cursor:pointer" onchange="App.updateSkillField(' + idx + ',\'color\',this.value)"></td>' +
+            '<td style="padding:6px"><input type="checkbox"' + activeChecked + ' onchange="App.updateSkillField(' + idx + ',\'active\',this.checked)"></td>' +
+            '<td style="padding:6px;text-align:center">' +
+              '<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeSkill(' + idx + ')" title="Delete skill">' +
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+              '</button>' +
+            '</td>' +
+          '</tr>';
+        });
+        tbl += '</tbody></table>';
+        return tbl;
+      })() +
+      '<button class="btn btn-outline btn-sm" onclick="App.addSkill()" style="margin-top:8px">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Skill' +
+      '</button>' +
+    '</div>';
+  },
+
+  _renderRagRulesCard() {
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">RAG Auto-Scoring Rules</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Define rules that automatically set project RAG status. Manual overrides take precedence.</div>' +
+      (function() {
+        const rules = (App.data && App.data.settings && App.data.settings.ragRules) || [];
+        if (!rules.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No rules configured</div>';
+        let tbl = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
+        tbl += '<thead><tr style="border-bottom:2px solid var(--border-light)">' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Active</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Field</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Operator</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Value</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Target RAG</th>' +
+          '<th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Result</th>' +
+          '<th style="padding:4px 6px"></th>' +
+        '</tr></thead><tbody>';
+        rules.forEach(function(rule, idx) {
+          const opLabels = { 'eq': 'Equals', 'neq': 'Not Equals', 'days_until_lt': 'Days Until <', 'days_until_gt': 'Days Until >' };
+          tbl += '<tr style="border-bottom:1px solid #f1f5f9">' +
+            '<td style="padding:4px 6px"><input type="checkbox" ' + (rule.active ? 'checked' : '') + ' onchange="App.toggleRagRule(' + idx + ',this.checked)"></td>' +
+            '<td style="padding:4px 6px">' + Dashboard.esc(rule.field) + '</td>' +
+            '<td style="padding:4px 6px">' + (opLabels[rule.operator] || rule.operator) + '</td>' +
+            '<td style="padding:4px 6px">' + Dashboard.esc(String(rule.value)) + '</td>' +
+            '<td style="padding:4px 6px">' + Dashboard.esc(rule.rag) + '</td>' +
+            '<td style="padding:4px 6px"><span style="display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:600;color:white;background:' + App.ragColor(rule.result) + '">' + rule.result + '</span></td>' +
+            '<td style="padding:4px 6px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeRagRule(' + idx + ')">&times;</button></td>' +
+          '</tr>';
+        });
+        tbl += '</tbody></table>';
+        return tbl;
+      })() +
+      '<button class="btn btn-outline btn-sm" onclick="App.addRagRule()" style="font-size:10px">+ Add Rule</button>' +
+    '</div>';
+  },
+
+  _renderSchedulerCard() {
+    const s = Sprint.allocSettings;
+    const esc = Dashboard.esc;
+    const ch = this.configHelp.bind(this);
+    const customers = this.getCustomers();
+    const sched = (App.data.settings && App.data.settings.scheduler) || {};
+    const sprintsOpts = '<option value="">First available</option>' +
+      (App.data.sprints || []).map(sp => '<option value="' + sp.sprint_id + '"' + (s.startFromSprint === sp.sprint_id ? ' selected' : '') + '>' + sp.sprint_id.replace(/^CY\d+-/, '') + '</option>').join('');
+    const numInput = (id, val, min, max, title) =>
+      '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + '" title="' + title + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+    // Rules R1–R11 reference — derived from SOLVER.md §4. Each row declares whether the rule is
+    // enforced unconditionally, toggleable via a setting, or not currently exposed in the UI.
+    const rules = [
+      { id: 'R1',  name: 'Fill sprints earliest-to-latest',        cfg: 'enforced',        note: 'Forward loop; Pass 3 never moves work earlier.' },
+      { id: 'R2',  name: 'Phase hand-off buffer',                   cfg: 'phaseBufferPoints', note: 'Reserves SP when consecutive phases share a sprint.' },
+      { id: 'R3',  name: '(retired) Hypercare',                     cfg: 'n/a',             note: 'Hypercare phase was removed in v1.1.' },
+      { id: 'R4',  name: 'Per-person capacity cap',                 cfg: 'enforcePerPersonCap', note: 'Hard: no member exceeds available_points_per_sprint.' },
+      { id: 'R5',  name: 'Cross-phase overlap when R2/R11 hold',    cfg: 'respectSkillOrder', note: 'Replaces the old strict phase gate.' },
+      { id: 'R6',  name: 'Buffer-slide safety cap',                 cfg: 'maxBufferSlides', note: 'Phase slides N sprints before giving up the buffer.' },
+      { id: 'R7',  name: 'Deadline beats buffer',                   cfg: 'enforced',        note: 'Buffer dropped, overlap allowed, warning emitted.' },
+      { id: 'R8',  name: '"Both"-customer capacity split',          cfg: 'per-member',      note: 'Edit per-member capacity_by_customer below.' },
+      { id: 'R9',  name: 'Graded deadline urgency (scoring)',       cfg: 'deadlineTiers',   note: 'Configured in Scoring & Prioritisation.' },
+      { id: 'R10', name: 'Slice metadata (assigned_to, reasons)',   cfg: 'enforced',        note: 'UI tooltip source.' },
+      { id: 'R11', name: 'Project day-budget per sprint',           cfg: 'defaultDevDays / daysPerSPMultiplier', note: 'Splits phases when calendar-day budget would overflow.' },
+      { id: 'R12', name: 'One person, one delivery at a time',      cfg: 'enforceConcurrentSinglePerson', note: 'Blocks overlapping assignments across projects unless both are in the allow-list (Req + UAT by default).' }
+    ];
+    const rulesRows = rules.map(r =>
+      '<tr>' +
+        '<td style="padding:4px 6px;font-weight:600">' + esc(r.name) + '</td>' +
+        '<td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + esc(r.cfg) + '</td>' +
+        '<td style="padding:4px 6px;font-size:11px;color:var(--text-dark-secondary)">' + esc(r.note) + '</td>' +
+        '<td style="padding:4px 6px;font-size:10px;color:var(--text-muted);font-variant-numeric:tabular-nums" title="Internal reference used in SOLVER.md">' + r.id + '</td>' +
+      '</tr>'
+    ).join('');
+
+    // R8 per-member capacity-by-customer grid (only members with customer === "Both"). Editable inline.
+    const bothMembers = (App.data.team_members || []).filter(m => m.customer === 'Both');
+    const bothRows = bothMembers.length
+      ? bothMembers.map((m, i) => {
+          const cap = m.capacity_by_customer || {};
+          const cells = customers.map(c =>
+            '<td style="padding:4px 6px"><input type="number" data-capmember="' + esc(m.name) + '" data-capcust="' + esc(c) + '" value="' + (cap[c] != null ? cap[c] : '') + '" min="0" step="0.5" placeholder="auto" style="width:70px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;font-variant-numeric:tabular-nums"></td>'
+          ).join('');
+          return '<tr><td style="padding:4px 6px;font-weight:600">' + esc(m.name) + '</td><td style="padding:4px 6px;font-size:10px;color:var(--text-muted)">' + (m.available_points_per_sprint || 0) + ' SP/sprint total</td>' + cells + '</tr>';
+        }).join('')
+      : '<tr><td colspan="' + (2 + customers.length) + '" style="padding:10px;color:var(--text-muted);font-style:italic;text-align:center">No team members with customer = "Both". Members tagged to a single customer use their full capacity there.</td></tr>';
+    const bothHeader = '<tr style="background:#f8fafc"><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Member</th><th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Total</th>' +
+      customers.map(c => '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">' + esc(c) + ' (SP)</th>').join('') +
+      '</tr>';
+
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="schedulingEngineCard">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">How work gets assigned to sprints</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Controls used by Auto-Allocate when it packs story points into sprints. Changes apply on the next run.</div>' +
+
+      // What the solver optimises for — plain-English summary.
+      '<div style="background:#f8fafc;border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:11px;line-height:1.6;color:var(--text-dark-secondary)">' +
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">What the solver optimises for</div>' +
+        'Auto-Allocate packs work into sprints starting from the earliest available, in priority order. It tries to hit every hard deadline without overloading any person or any skill, and spreads work evenly across sprints as a secondary goal. ' +
+        'Ordering: <strong>hard deadline first</strong> \u2192 <strong>MoSCoW band</strong> (Must > Should > \u2026) \u2192 <strong>WSJF</strong> (value-per-effort) \u2192 the manual <strong>priority</strong> field. ' +
+        'It makes one pass forward, repairs deadlines, then balances load \u2014 this is fast and stable but not a perfect global optimum (it cannot reclaim an early-sprint idle slot once later work has filled around it). See SOLVER.md for the full algorithm.' +
+      '</div>' +
+
+      '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Capacity limits</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How busy can a skill get? (%)' + ch('seMaxCap', 'The highest share of the team\u2019s available points we\u2019ll assign to any one skill (e.g. Data Engineering) in a single sprint. Default is 95% — earlier sprints pack tightly with a small rounding buffer. Per-person cap is still hard, so real over-booking is impossible.') + '</div>' + numInput('seMaxCap', s.maxCapacityPct, 50, 100, '50–100%') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Hand-off buffer (SP) — gap between consecutive phases' + ch('seBuffer', 'When two phases of one project share a sprint, leave this many points free as a buffer for slippage. Zero means phases butt straight up against each other. 2\u20133 is a sensible default.') + '</div>' + numInput('seBuffer', s.phaseBufferPoints != null ? s.phaseBufferPoints : 2, 0, 10, '0–10 SP') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">How far can a phase slide?' + ch('seMaxSlides', 'If a phase can\u2019t fit in its intended sprint, we push it to the next one. This is the most sprints we\u2019ll push before giving up on the buffer altogether. Higher is more forgiving, lower forces the schedule to reshape.') + '</div>' + numInput('seMaxSlides', s.maxBufferSlides != null ? s.maxBufferSlides : 4, 1, 10, '1–10 sprints') + '</div>' +
+      '</div>' +
+
+      '<details style="margin-bottom:14px"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Advanced: load-balancing tuning</summary>' +
+      '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">These knobs control the third pass of the solver, which evens out work across sprints once the forward packing is done. Defaults are good for most teams \u2014 only change these if sprints are repeatedly over- or under-committed.</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Balancing passes' + ch('seIter', 'How many times we try to even out sprint workloads. More passes give a smoother plan but take slightly longer to compute.') + '</div>' + numInput('seIter', sched.loadBalanceIterations != null ? sched.loadBalanceIterations : 3, 1, 10, '1–10') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cOver-committed\u201d at (%)' + ch('seHot', 'Any sprint above this utilisation triggers a redistribution. 90% = only reshape when sprints are really full.') + '</div>' + numInput('seHot', sched.hotSprintThresholdPct != null ? sched.hotSprintThresholdPct : 90, 60, 100, '60–100%') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">\u201cStill has room\u201d below (%)' + ch('seCool', 'A neighbouring sprint must be below this level to absorb shifted work. 60% leaves comfortable headroom in the target.') + '</div>' + numInput('seCool', sched.coolSprintThresholdPct != null ? sched.coolSprintThresholdPct : 60, 0, 80, '0–80%') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Chunk size divisor' + ch('seShift', 'How big each reshuffled chunk is, as a fraction of the phase. 2 = halves (biggest chunks); 5 = fifths (smallest, smoothest).') + '</div>' + numInput('seShift', sched.shiftGranuleDivisor != null ? sched.shiftGranuleDivisor : 2, 1, 5, '1–5') + '</div>' +
+      '</div>' +
+      '</details>' +
+
+      '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Timeline &amp; locks</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Start scheduling from' + ch('seStart', 'The earliest sprint the solver will place new work in. Use this to freeze the current sprint and only reshape future work.') + '</div><select id="seStartSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' + sprintsOpts + '</select></div>' +
+        '<div></div>' +
+      '</div>' +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seEnforcePerPerson"' + (s.enforcePerPersonCap !== false ? ' checked' : '') + '> Never overload a team member' + ch('sePerPerson', 'Hard limit: no-one is assigned more than their available points per sprint. Slices slide to later sprints if someone would be over-loaded.') + '</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seRespectOrder"' + (s.respectSkillOrder ? ' checked' : '') + '> Keep phases in order' + ch('seOrder', 'Phase N+1 never starts before phase N in the same project. Without this, the solver might e.g. start UAT before Data Engineering is done.') + '</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seSpread"' + (s.spreadWork ? ' checked' : '') + '> Balance workload across sprints' + ch('seSpread2', 'Runs a smoothing pass after the initial schedule so no sprint is boiling hot while the next one is empty.') + '</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockComp"' + (s.lockCompleted ? ' checked' : '') + '> Don\u2019t touch completed/closed projects</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seLockIP"' + (s.lockInProgress ? ' checked' : '') + '> Don\u2019t touch in-progress projects</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seProtectPast"' + (s.preservePastSprintAllocations !== false ? ' checked' : '') + '> Freeze past sprints' + ch('sePast', 'Work already scheduled in a past sprint stays put, and no new work ever lands in a sprint that\u2019s already ended. Prevents history from being rewritten.') + '</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seCrossCust"' + (sched.enforceCrossCustomerDeps ? ' checked' : '') + '> Honour cross-customer dependencies' + ch('seCross', 'When ON, a project in another customer\u2019s portfolio can delay this customer\u2019s start if a dependency points to it. Default OFF (each customer solves in isolation).') + '</label>' +
+        '<label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="seConcurrent"' + (s.enforceConcurrentSinglePerson !== false ? ' checked' : '') + '> One person, one delivery at a time' + ch('seConc', 'Prevents a team member from being booked on two deliveries that overlap in time \u2014 unless both are in the \u201callow overlap\u201d list below (typically Requirements and UAT, which are naturally collaborative/async).') + '</label>' +
+      '</div>' +
+      // R12 — overlap allow-list
+      (function() {
+        const allowed = Array.isArray(s.concurrentOverlapAllowedSkills) ? s.concurrentOverlapAllowedSkills : ['size_requirements', 'size_uat_adoption'];
+        const skillList = (App.data.skills || []).filter(sk => sk && sk.active !== false);
+        if (!skillList.length) return '';
+        const chips = skillList.map(sk =>
+          '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 7px;border:1px solid var(--border-light);border-radius:999px;background:' + (allowed.includes(sk.key) ? '#e0f2fe' : '#fff') + ';cursor:pointer">' +
+            '<input type="checkbox" data-r12-overlap="' + esc(sk.key) + '"' + (allowed.includes(sk.key) ? ' checked' : '') + ' style="margin:0"> ' + esc(sk.label || sk.key) +
+          '</label>'
+        ).join(' ');
+        return '<div style="font-size:11px;color:var(--text-dark-secondary);margin:6px 0 0 0"><span style="font-weight:600">Overlap allow-list:</span> overlapping assignments are permitted only when <em>both</em> skills are ticked below. Typical: Req + UAT only.<br><div style="margin-top:5px">' + chips + '</div></div>';
+      })() +
+
+      // R11 + R8: calendar-day and Both-customer controls. Hidden by default — only needed
+      // when teams are hitting time-budget overruns or when members split across customers.
+      '<details style="margin:18px 0 8px">' +
+        '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Advanced: time and split-customer controls</summary>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin:8px 0 10px">Only touch these if projects keep overrunning their sprint time-budget, or if team members are shared across multiple customers.</div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 8px">Sprint time-budget</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Working days per sprint' + ch('seDefDD', 'How many working days a sprint has for development. Used as a fallback when a sprint has no explicit hardening date. The solver checks each project\u2019s total phase-days against this budget.') + '</div>' + numInput('seDefaultDevDays', sched.defaultDevDays != null ? sched.defaultDevDays : 20, 1, 60, '1–60 working days') + '</div>' +
+          '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Story-point effort multiplier' + ch('seDpsp', 'How much real time a story point actually costs. 1.0 = team\u2019s measured average. Raise this if projects keep overrunning; lower if they finish early.') + '</div><input type="number" id="seDaysPerSPMult" value="' + (sched.daysPerSPMultiplier != null ? sched.daysPerSPMultiplier : 1) + '" min="0.25" max="3" step="0.1" title="0.25–3×" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px"></div>' +
+        '</div>' +
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Team members split across customers</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">For each team member tagged as working across multiple customers (<code>customer = "Both"</code>), declare how many points they give to each customer per sprint. Leave blank to use an equal split.</div>' +
+        '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:8px"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead>' + bothHeader + '</thead><tbody>' + bothRows + '</tbody></table></div>' +
+        // R3-M2: forecast horizon used by KPI + Portfolio views.
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Forecast horizon</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">How many future sprints the capacity-vs-demand KPI and the Portfolio workforce view look ahead.</div>' +
+        '<label style="font-size:11px;color:var(--text-dark);display:inline-flex;align-items:center;gap:8px"><span style="color:var(--text-muted)">Next</span>' +
+          '<select id="seForecastHorizon" style="padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
+            [4, 6, 8, 12].map(n => '<option value="' + n + '"' + ((sched.forecastHorizon || 4) === n ? ' selected' : '') + '>' + n + '</option>').join('') +
+          '</select>' +
+          '<span style="color:var(--text-muted)">sprints</span>' +
+        '</label>' +
+        // R3-M1: per-skill hardening factor. 0 = no capacity during hardening (default),
+        // 1.0 = full capacity continues through hardening (typical for UAT).
+        '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px">Hardening-week capacity factor per skill</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-bottom:6px">How much of each skill\u2019s capacity continues into the hardening week. Default 0 = hardening is excluded entirely (current behaviour). Raise to 1.0 for skills that naturally work through hardening (typically UAT).</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px">' +
+          (function() {
+            const factors = (sched.hardeningFactors || {});
+            return (App.data.skills || []).filter(sk => sk && sk.active !== false).map(sk => {
+              const val = factors[sk.key] != null ? factors[sk.key] : 0;
+              return '<label style="font-size:11px;color:var(--text-dark)"><span style="color:var(--text-muted)">' + esc(sk.label || sk.short || sk.key) + '</span>' +
+                '<input type="number" min="0" max="1" step="0.05" data-hardening-factor="' + esc(sk.key) + '" value="' + val + '" style="display:block;margin-top:2px;width:100%;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">' +
+              '</label>';
+            }).join('');
+          })() +
+        '</div>' +
+      '</details>' +
+
+      // Rules — plain-English reference (internal codes retained as secondary labels for SOLVER.md cross-reference)
+      '<details style="margin-top:14px">' +
+        '<summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Solver rules &middot; plain-English reference</summary>' +
+        '<div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-top:8px">' +
+          '<table style="width:100%;border-collapse:collapse;font-size:11px">' +
+            '<thead style="background:#f8fafc"><tr>' +
+              '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Rule</th>' +
+              '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Config</th>' +
+              '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase">Note</th>' +
+              '<th style="padding:4px 6px;text-align:left;font-size:10px;color:var(--text-muted);text-transform:uppercase" title="Internal code for SOLVER.md cross-reference">Ref</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rulesRows + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</details>' +
+
+      '<div style="margin-top:14px;display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" onclick="App.saveSchedulingEngineSettings()">Save</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.resetSchedulingEngineSettings()">Reset to defaults</button>' +
+      '</div>' +
+    '</div>';
+  },
+
+  _renderScoringCard() {
+    const esc = Dashboard.esc;
+    const ch = this.configHelp.bind(this);
+    const cfg = App._scoringCfg ? App._scoringCfg() : {};
+    const numInput = (id, val, min, max, step) =>
+      '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+    const tiers = (cfg.deadlineTiers || []).slice().sort((a, b) => a.days - b.days);
+    const tiersHtml = tiers.map((t, i) =>
+      '<tr><td style="padding:4px 6px">&le; ' + numInput('scoreDlDays_' + i, t.days, 1, 365) + ' days</td>' +
+      '<td style="padding:4px 6px">' + numInput('scoreDlScore_' + i, t.score, 0, 200) + ' pts</td></tr>'
+    ).join('');
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="scoringCard">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Scoring &amp; Prioritisation</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Weights that drive Auto-Prioritise. Components sum into a single project score; higher = more urgent.</div>' +
+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Status multiplier' + ch('scoreStatus', 'Each status has a fixed weight (Blocked=5, At Risk=4, In Progress=3, Not Started=2, On Hold=1, Complete/Closed=0). Component = status_weight × this multiplier. Default 10 \u2192 Blocked projects contribute 50 pts here.') + '</div>' + numInput('scoreStatusMult', cfg.statusMultiplier, 0, 50) + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">RAG multiplier' + ch('scoreRag', 'Each RAG dimension has a weight (Red=3, Amber=2, Green=1). Component = (rag_schedule + rag_resourcing + rag_scope) × this multiplier. All-Red project \u2192 9 × 5 = 45 pts by default.') + '</div>' + numInput('scoreRagMult', cfg.ragMultiplier, 0, 20) + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Risk multiplier' + ch('scoreRisk', 'Component = \u03A3(severity_weight × probability_weight) \u00D7 this multiplier across the project\'s risk register. Severity/probability use 1\u20135 scales. Empty register \u2192 0 pts.') + '</div>' + numInput('scoreRiskMult', cfg.riskMultiplier, 0, 10, '0.1') + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size divisor' + ch('scoreSize', 'Component = size_total \u00F7 divisor, capped by \u201CSize cap\u201D. Default 5 \u2192 every 5 SP earns 1 pt. Prevents huge projects from dominating.') + '</div>' + numInput('scoreSizeDiv', cfg.sizeDivisor, 1, 50) + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Size cap' + ch('scoreSizeCap', 'Upper bound on the size component, regardless of divisor. Default 20 = a 100 SP project still only contributes 20 pts.') + '</div>' + numInput('scoreSizeCap', cfg.sizeCap, 1, 100) + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage weight' + ch('scoreDep', 'Component = (count of downstream projects this one transitively blocks) \u00D7 this weight, capped. Rewards upstream projects that unblock others.') + '</div>' + numInput('scoreDepWeight', cfg.dependencyLeverageWeight, 0, 20) + '</div>' +
+        '<div><div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:2px">Dep leverage cap' + ch('scoreDepCap', 'Upper bound on the dependency-leverage component.') + '</div>' + numInput('scoreDepCap', cfg.dependencyLeverageCap, 0, 200) + '</div>' +
+      '</div>' +
+      '<details style="margin-bottom:14px;font-size:11px">' +
+        '<summary style="cursor:pointer;font-weight:600;color:var(--text-dark-secondary)">How are the status / RAG weights derived?</summary>' +
+        '<div style="padding:8px 4px 2px;color:var(--text-dark-secondary);line-height:1.6">' +
+          'Fixed constants in the scoring engine (not currently user-editable). They are integer ordinal weights chosen to make actively-blocked work outrank pre-started work, while the multipliers let you control the size of each category relative to the total.<br><br>' +
+          '<strong>Status weights:</strong> Blocked 5, At Risk 4, In Progress 3, Not Started 2, On Hold 1, Complete/Closed 0.<br>' +
+          '<strong>RAG weights:</strong> Red 3, Amber 2, Green 1 per dimension (schedule, resource, scope).<br>' +
+          '<strong>Risks:</strong> severity_weight \u00D7 probability_weight, summed across the register; severity and probability each map 1\u20135 to their integer value.<br>' +
+          '<strong>Deadline:</strong> graded tiers (below) \u2014 first matching tier wins.<br>' +
+          'Total score = \u03A3(components above). Higher = more urgent. Per-customer recommendations layer this by dependency order so ancestors always outrank descendants.' +
+        '</div>' +
+      '</details>' +
+
+      '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Deadline urgency tiers</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
+        '<thead><tr style="border-bottom:1px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">When deadline is within</th><th style="text-align:left;padding:4px 6px;font-size:10px;color:var(--text-muted)">Score contribution</th></tr></thead>' +
+        '<tbody>' + tiersHtml + '</tbody>' +
+      '</table>' +
+
+      '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-primary btn-sm" onclick="App.saveScoringSettings()">Save</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.resetScoringSettings()">Reset to defaults</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.autoPrioritise()" title="Compute recommended priorities. Does NOT overwrite manual priorities.">Recompute recommendations</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.applyAllRecommendationsConfirmed()" title="Copy recommended_priority \u2192 priority for every project where they differ.">Apply all recommendations</button>' +
+      '</div>' +
+      '<div id="scoringPreview" style="margin-top:12px;font-size:11px;color:var(--text-muted)">' + App._renderScoringPreview() + '</div>' +
+    '</div>';
+  },
+
+  _renderDisplayThresholdsCard() {
+    const t = (App.data.settings && App.data.settings.thresholds) || {};
+    const numInput = (id, val, min, max, step) =>
+      '<input type="number" id="' + id + '" value="' + val + '" min="' + min + '" max="' + max + (step ? '" step="' + step : '') + '" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px">';
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="displayThresholdsCard">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Display Thresholds</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Colour band cut-offs used across the dashboard, capacity views, and reports.</div>' +
+
+      '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px">' +
+        '<thead><tr style="border-bottom:1px solid var(--border-light)">' +
+          '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Metric</th>' +
+          '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Green at</th>' +
+          '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Amber at</th>' +
+          '<th style="text-align:left;padding:5px 7px;font-size:10px;color:var(--text-muted)">Direction</th>' +
+        '</tr></thead><tbody>' +
+        '<tr><td style="padding:5px 7px">Utilisation (%)</td><td style="padding:5px 7px">' + numInput('tUtilGreen', (t.utilisation || {}).green != null ? t.utilisation.green : 80, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tUtilAmber', (t.utilisation || {}).amber != null ? t.utilisation.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better — green is the ceiling</td></tr>' +
+        '<tr><td style="padding:5px 7px">Capacity vs demand (%)</td><td style="padding:5px 7px">' + numInput('tCvdGreen', (t.capacityDemand || {}).green != null ? t.capacityDemand.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tCvdAmber', (t.capacityDemand || {}).amber != null ? t.capacityDemand.amber : 100, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Lower is better</td></tr>' +
+        '<tr><td style="padding:5px 7px">Forecast P80 (sprints)</td><td style="padding:5px 7px">' + numInput('tFcGreen', (t.forecastP80Sprints || {}).green != null ? t.forecastP80Sprints.green : 4, 1, 52) + '</td><td style="padding:5px 7px">' + numInput('tFcAmber', (t.forecastP80Sprints || {}).amber != null ? t.forecastP80Sprints.amber : 8, 1, 52) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Fewer is better</td></tr>' +
+        '<tr><td style="padding:5px 7px">Delivery rate (%)</td><td style="padding:5px 7px">' + numInput('tDrGreen', (t.deliveryRate || {}).green != null ? t.deliveryRate.green : 85, 0, 200) + '</td><td style="padding:5px 7px">' + numInput('tDrAmber', (t.deliveryRate || {}).amber != null ? t.deliveryRate.amber : 65, 0, 200) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better — green is the floor</td></tr>' +
+        '<tr><td style="padding:5px 7px">SPI / CPI (ratio)</td><td style="padding:5px 7px">' + numInput('tEvmGreen', (t.evmIndex || {}).green != null ? t.evmIndex.green : 0.95, 0, 2, '0.01') + '</td><td style="padding:5px 7px">' + numInput('tEvmAmber', (t.evmIndex || {}).amber != null ? t.evmIndex.amber : 0.80, 0, 2, '0.01') + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Higher is better</td></tr>' +
+        '<tr><td style="padding:5px 7px">Stale activity (days)</td><td style="padding:5px 7px" colspan="2">' + numInput('tStaleDays', t.staleActivityDays != null ? t.staleActivityDays : 14, 1, 90) + '</td><td style="padding:5px 7px;color:var(--text-muted);font-size:10px">Global default (per-customer overrides still apply)</td></tr>' +
+      '</tbody></table>' +
+
+      '<div style="margin-top:10px;display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" onclick="App.saveDisplayThresholds()">Save</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.resetDisplayThresholds()">Reset to defaults</button>' +
+      '</div>' +
+    '</div>';
+  },
+
+  _renderBacklogHealthCard() {
+    const esc = Dashboard.esc;
+    const cfg = (App.data.settings && App.data.settings.backlogHealth) || {};
+    const defaultItems = Array.isArray(cfg.default) ? cfg.default : BacklogHealth.DEFAULT_DOR;
+    const defaultDodItems = Array.isArray(cfg.defaultDod) ? cfg.defaultDod : ['Acceptance criteria met', 'Tests passing', 'Documentation updated', 'Demo walked-through with sponsor', 'UAT sign-off captured'];
+    const customers = App.getCustomers();
+    const customerBlock = (() => {
+      const byCust = cfg.byCustomer || {};
+      return customers.map(c => {
+        const items = Array.isArray(byCust[c]) ? byCust[c] : null;
+        const value = items ? items.join('\n') : '';
+        return '<div style="margin-bottom:8px">' +
+          '<label style="font-size:10px;color:var(--text-muted);font-weight:600">Override for ' + esc(c) + ' (leave blank to use default)</label>' +
+          '<textarea id="dorCustomer_' + esc(c) + '" rows="3" placeholder="(uses default)" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(value) + '</textarea>' +
+        '</div>';
+      }).join('');
+    })();
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px" id="backlogHealthCard">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Backlog Health &middot; Definition of Ready</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Checklist items that must be ticked on a project before it counts as &ldquo;refined&rdquo; in the Backlog Health view.</div>' +
+      '<label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Definition of Ready (one item per line)</label>' +
+      '<textarea id="dorDefault" rows="5" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(defaultItems.join('\n')) + '</textarea>' +
+      '<label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin:10px 0 4px">Definition of Done (one item per line)</label>' +
+      '<textarea id="dodDefault" rows="5" style="width:100%;padding:6px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;line-height:1.4">' + esc(defaultDodItems.join('\n')) + '</textarea>' +
+      '<div style="margin-top:10px;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Per-customer DoR overrides (optional)</div>' +
+      customerBlock +
+      '<div style="margin-top:10px;display:flex;gap:8px">' +
+        '<button class="btn btn-primary btn-sm" onclick="App.saveBacklogHealthSettings()">Save</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="App.resetBacklogHealthSettings()">Reset to defaults</button>' +
+      '</div>' +
+    '</div>';
+  },
+
+  _renderCustomersCard() {
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Customer Management</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure customers, their colours, and stale-update thresholds. Renaming cascades to all projects, team members, and forums.</div>' +
+    (function() {
+      var custs = (App.data && App.data.customers) || [];
+      if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
+      var tbl = '<table class="customer-config-table"><thead><tr>' +
+        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th></th>' +
+      '</tr></thead><tbody>';
+      custs.forEach(function(c, idx) {
+        var pCount = (App.data.projects || []).filter(function(p) { return p.customer === c.name; }).length;
+        tbl += '<tr>' +
+          '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
+          '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
+          '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
+          '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
+          '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + c.name.replace(/'/g, "\\'") + '\')">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+          '</button></td>' +
+        '</tr>';
+      });
+      tbl += '</tbody></table>';
+      return tbl;
+    })() +
+    '<button class="btn btn-outline btn-sm" onclick="var n=prompt(\'Customer name:\');if(n)App.addCustomer(n.trim())" style="margin-top:8px">+ Add Customer</button>' +
+    '</div>';
+  },
+
+  _renderTeamIntro() {
+    const teamCount = this.data ? (this.data.team_members || []).length : 0;
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Team & Holidays</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">' + teamCount + ' team members. Holidays and per-sprint capacity overrides can be managed from the Capacity view or by clicking sprint headers in Sprint Planning.</div>' +
+    '<button class="btn btn-outline btn-sm" onclick="App.navigate(\'capacity\')">Go to Capacity View</button>' +
+    '</div>';
+  },
+
+  _renderAnnualHolidaysCard() {
+    return '<div id="annualHolidaysCard" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Holidays reduce capacity for team members in-scope. Leave scope blank (All) to apply company-wide, or pick specific customers (e.g. UK-only bank holidays).</div>' +
+    (function() {
+      var hols = (App.data && App.data.annual_holidays) || [];
+      var html = '';
+      if (hols.length) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
+        html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:left;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Scope</th><th style="text-align:center;padding:4px 6px;font-size:10px;text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
+        hols.forEach(function(h, i) {
+          var scopeLabel = (h.customers && h.customers.length) ? h.customers.join(', ') : '<span style="color:var(--text-muted);font-style:italic">All</span>';
+          html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;font-size:10px">' + scopeLabel + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No annual holidays configured</div>';
+      }
+      return html;
+    })() +
+    '<button class="btn btn-outline btn-sm" onclick="App.addAnnualHoliday()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Holiday</button>' +
+    '</div>';
+  },
+
+  _renderDataCard() {
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Data Management</h3>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()">Variance Report (PDF)</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="App.showAuditExportModal()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Export Audit Log</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="App._integrityIssues=App.validateDataIntegrity();App.renderConfig()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Integrity Check</button>' +
+    '</div>' +
+    '</div>' +
+
+    // REQ-UX-02: Data Integrity
+    (function() {
+    var issues = App._integrityIssues || [];
+    var hasCls = issues.length ? ' has-issues' : '';
+    var html = '<div class="integrity-panel' + hasCls + '">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="' + (issues.length ? 'var(--status-amber)' : 'var(--status-green)') + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+        'Data Integrity' +
+        (issues.length ? '<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,0.12);color:var(--status-amber)">' + issues.length + ' issue' + (issues.length > 1 ? 's' : '') + ' found</span>' : '<span style="font-size:11px;font-weight:400;color:var(--status-green)">All clear</span>') +
+      '</h3>';
+    if (issues.length) {
+      html += '<div style="max-height:200px;overflow-y:auto;margin-bottom:8px">';
+      issues.forEach(function(issue, idx) {
+        html += '<div class="integrity-issue-row">' +
+          '<span class="integrity-issue-type ' + issue.type + '">' + issue.type + '</span>' +
+          '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(issue.message) + '</span>' +
+          '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 8px" onclick="App.fixIntegrityIssue(' + idx + ')">Fix</button>' +
+        '</div>';
+      });
+      html += '</div>';
+      html += '<button class="btn btn-outline btn-sm" onclick="App.fixAllIntegrityIssues()" style="font-size:10px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Fix All Issues</button>';
+    }
+    html += '</div>';
+    return html;
+    })();
+  },
+
+  _renderTemplatesCard() {
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Project Templates</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Saved templates pre-fill delivery config and sizing when creating new projects.</div>' +
+    (function() {
+      const templates = (App.data && App.data.project_templates) || [];
+      if (!templates.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No templates saved. Open a project and click "Save as Template".</div>';
+      return templates.map(function(tpl, idx) {
+        const phases = (tpl.delivery_config && tpl.delivery_config.phase_order) || [];
+        const totalPts = (tpl.size_requirements || 0) + (tpl.size_tableau || 0) + (tpl.size_engineering || 0) + (tpl.size_data_science || 0) + (tpl.size_uat_adoption || 0);
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9">' +
+          '<div style="flex:1"><span style="font-weight:600;font-size:12px">' + Dashboard.esc(tpl.name) + '</span>' +
+          '<div style="font-size:10px;color:var(--text-muted)">' + phases.join(' > ') + ' | ' + totalPts + ' pts</div></div>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeTemplate(' + idx + ')">&times;</button>' +
+        '</div>';
+      }).join('');
+    })() +
+    '</div>';
+  },
+
+  _renderBrandingCard() {
+    const customers = this.getCustomers();
+    return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Report Branding</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">Logo, primary colour, company name, and footer text used in PDF reports and the Portfolio Pack, per customer.</div>' +
+    (function() {
+      const brandings = (App.data && App.data.settings && App.data.settings.branding) || {};
+      return customers.map(function(cName) {
+        const b = brandings[cName] || {};
+        const logo = b.logo ? ('<img src="' + Dashboard.esc(b.logo) + '" alt="" style="max-width:36px;max-height:24px;border:1px solid var(--border-light);border-radius:3px;background:white;object-fit:contain">') : '<span style="font-size:10px;color:var(--text-muted)">no logo</span>';
+        const colour = b.primaryColor || App.getCustomerColor(cName) || '#94a3b8';
+        const companyName = b.companyName || cName;
+        const footer = b.footerText ? Dashboard.esc(b.footerText.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">' +
+          '<div style="width:40px;display:flex;align-items:center;justify-content:center">' + logo + '</div>' +
+          '<div style="flex:1">' +
+            '<div style="font-weight:600;font-size:12px;color:var(--text-dark)">' + Dashboard.esc(companyName) + ' <span style="font-size:10px;font-weight:400;color:var(--text-muted)">· ' + Dashboard.esc(cName) + '</span></div>' +
+            '<div style="font-size:10px;color:var(--text-muted)">Footer: ' + footer + '</div>' +
+          '</div>' +
+          '<span title="Primary colour" style="width:18px;height:18px;border-radius:50%;background:' + colour + ';border:1px solid var(--border-light);flex-shrink:0"></span>' +
+          '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="Report.configureBranding(\'' + Dashboard.esc(cName).replace(/\x27/g, "\\'") + '\')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Configure</button>' +
+        '</div>';
+      }).join('');
+    })() +
+    '</div>';
   },
 
   setupKeyboardShortcuts() {
@@ -6847,6 +6943,13 @@ const App = {
         const tag = t && t.tagName;
         const editable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable);
         if (!editable) { e.preventDefault(); this.openShortcutsOverlay(); }
+      }
+      if (e.key === 'Escape' && this._configActiveCategory && this.currentView === 'config') {
+        const tag = e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '';
+        if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+          e.preventDefault();
+          this.closeConfigCategory();
+        }
       }
     });
   },
@@ -20578,6 +20681,7 @@ const Sprint = {
 
   openSchedulingSettings() {
     App.navigate('config');
+    App.openConfigCategory('scheduler');
     setTimeout(() => {
       const el = document.getElementById('schedulingEngineCard');
       if (el && typeof el.scrollIntoView === 'function') {
@@ -20940,6 +21044,7 @@ const Sprint = {
   saveAllocSettings() {
     this.closeAllocSettings();
     App.navigate('config');
+    App.openConfigCategory('scheduler');
   },
 
   pendingAllocation: null,
