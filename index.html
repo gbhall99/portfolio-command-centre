@@ -8170,6 +8170,47 @@ const App = {
     this.saveToLocalStorage();
   },
 
+  computeSprintWindow(project) {
+    const sprintIds = new Set();
+    Object.values((project && project.skill_splits) || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => { if (sp && sp.sprint) sprintIds.add(sp.sprint); });
+    });
+    if (!sprintIds.size) return { start: null, end: null };
+    const allSprints = (this.data && this.data.sprints) || [];
+    const ordered = allSprints.filter(s => sprintIds.has(s.sprint_id))
+      .slice()
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+    if (!ordered.length) return { start: null, end: null };
+    return { start: ordered[0], end: ordered[ordered.length - 1] };
+  },
+
+  addCustomerSponsor(customerName, sponsorName) {
+    if (!sponsorName || !sponsorName.trim()) return false;
+    const c = (this.data && this.data.customers || []).find(x => x.name === customerName);
+    if (!c) return false;
+    if (!Array.isArray(c.sponsors)) c.sponsors = [];
+    const trimmed = sponsorName.trim();
+    if (c.sponsors.indexOf(trimmed) < 0) c.sponsors.push(trimmed);
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return true;
+  },
+
+  setCustomerSponsors(customerName, sponsors) {
+    const c = (this.data && this.data.customers || []).find(x => x.name === customerName);
+    if (!c) return false;
+    const cleaned = (sponsors || []).map(s => String(s || '').trim()).filter(Boolean);
+    const seen = new Set();
+    const dedup = [];
+    cleaned.forEach(s => { if (!seen.has(s)) { seen.add(s); dedup.push(s); } });
+    dedup.sort();
+    c.sponsors = dedup;
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return true;
+  },
+
   _openLogoEditor(customerName) {
     if (!this.data || !this.data.customers) return;
     const c = this.data.customers.find(c => c.name === customerName);

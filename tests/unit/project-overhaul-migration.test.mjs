@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
-import { makeDataset, makeProject } from '../harness/fixtures.mjs';
+import { makeDataset, makeProject, makeSprintSequence } from '../harness/fixtures.mjs';
 
 describe('Project details overhaul — migration', () => {
   it('drops comms_log + comms_date + external_delivery_date', async () => {
@@ -56,6 +56,50 @@ describe('Project details overhaul — migration', () => {
     expect(gcc).toBeTruthy();
     expect(Array.isArray(gcc.sponsors)).toBe(true);
     expect(gcc.sponsors).toEqual(expect.arrayContaining(['Sarah T.', 'James M.']));
+    app.teardown();
+  });
+});
+
+describe('App.computeSprintWindow', () => {
+  it('returns null/null for projects with no skill_splits', async () => {
+    const p = makeProject({ id: 'NS' });
+    const app = await loadApp(makeDataset({ projects: [p] }));
+    const w = app.App.computeSprintWindow(p);
+    expect(w).toEqual({ start: null, end: null });
+    app.teardown();
+  });
+
+  it('returns earliest + latest sprints from skill_splits', async () => {
+    const p = makeProject({
+      id: 'WS', skill_splits: {
+        size_engineering: [{ sprint: 'CY26-S2', points: 3 }, { sprint: 'CY26-S5', points: 2 }],
+        size_uat_adoption: [{ sprint: 'CY26-S3', points: 1 }]
+      }
+    });
+    const app = await loadApp(makeDataset({ projects: [p], sprints: makeSprintSequence(6) }));
+    const w = app.App.computeSprintWindow(p);
+    expect(w.start.sprint_id).toBe('CY26-S2');
+    expect(w.end.sprint_id).toBe('CY26-S5');
+    app.teardown();
+  });
+});
+
+describe('App.addCustomerSponsor / setCustomerSponsors', () => {
+  it('addCustomerSponsor appends and dedups', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.addCustomerSponsor('GCC', 'Sarah T.');
+    app.App.addCustomerSponsor('GCC', 'Sarah T.');
+    const c = app.App.data.customers.find(x => x.name === 'GCC');
+    const matches = (c.sponsors || []).filter(s => s === 'Sarah T.');
+    expect(matches.length).toBe(1);
+    app.teardown();
+  });
+
+  it('setCustomerSponsors replaces with a sorted, deduped, trimmed list', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject()] }));
+    app.App.setCustomerSponsors('GCC', ['  Bob  ', 'Alice', 'Bob', '']);
+    const c = app.App.data.customers.find(x => x.name === 'GCC');
+    expect(c.sponsors).toEqual(['Alice', 'Bob']);
     app.teardown();
   });
 });
