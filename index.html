@@ -13619,6 +13619,13 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
       '</div>'
     );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Success criteria <span class="risk-count" id="successCriteriaCount">' + ((p.success_criteria || []).length || 0) + '</span></div>' +
+        '<div id="successCriteriaListInner">' + this.renderSuccessCriteria(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addSuccessCriterion()">+ Add success criterion</button>' +
+      '</div>'
+    );
 
     // ===== DELIVERY tab — daily ops =====
     const deliverySections = [];
@@ -14565,6 +14572,60 @@ const DetailPanel = {
     let value = el.value;
     if (field === 'amount') value = App.toInteger(value);
     p.benefits[idx][field] = value;
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // --- Success criteria multi-row ------------------------------------
+  SUCCESS_CRITERIA_TAGS: ['Adoption', 'Cost', 'Cycle time', 'Quality', 'Revenue'],
+  renderSuccessCriteria(p) {
+    const list = p.success_criteria || [];
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No success criteria logged</div>';
+    const esc = Dashboard.esc;
+    return list.map((s, i) =>
+      '<div class="risk-item" data-success-idx="' + i + '">' +
+        '<button class="risk-remove" onclick="DetailPanel.removeSuccessCriterion(' + i + ')" title="Remove">&times;</button>' +
+        '<div class="risk-fields">' +
+          '<div class="full"><div class="risk-field-label">Name</div><input type="text" data-success-idx="' + i + '" data-success-field="name" value="' + esc(s.name || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Target</div><input type="text" data-success-idx="' + i + '" data-success-field="target" value="' + esc(s.target || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Measure</div><input type="text" data-success-idx="' + i + '" data-success-field="measure" value="' + esc(s.measure || '') + '" onchange="DetailPanel.onSuccessCriterionChange(this)"></div>' +
+          '<div><div class="risk-field-label">Tag</div><select data-success-idx="' + i + '" data-success-field="tag" onchange="DetailPanel.onSuccessCriterionChange(this)">' +
+            this.SUCCESS_CRITERIA_TAGS.map(t => '<option value="' + t + '"' + (t === (s.tag || 'Quality') ? ' selected' : '') + '>' + t + '</option>').join('') +
+          '</select></div>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  },
+  addSuccessCriterion() {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p) return;
+    if (!Array.isArray(p.success_criteria)) p.success_criteria = [];
+    App.pushUndo('Add success criterion');
+    p.success_criteria.push({ name: '', target: '', measure: '', tag: 'Quality' });
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('successCriteriaListInner').innerHTML = this.renderSuccessCriteria(p);
+    document.getElementById('successCriteriaCount').textContent = p.success_criteria.length;
+  },
+  removeSuccessCriterion(idx) {
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !Array.isArray(p.success_criteria)) return;
+    App.pushUndo('Remove success criterion');
+    p.success_criteria.splice(idx, 1);
+    p.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    document.getElementById('successCriteriaListInner').innerHTML = this.renderSuccessCriteria(p);
+    document.getElementById('successCriteriaCount').textContent = p.success_criteria.length;
+  },
+  onSuccessCriterionChange(el) {
+    const idx = parseInt(el.dataset.successIdx);
+    const field = el.dataset.successField;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !Array.isArray(p.success_criteria) || !p.success_criteria[idx]) return;
+    p.success_criteria[idx][field] = el.value;
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
