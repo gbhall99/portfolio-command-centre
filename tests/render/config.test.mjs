@@ -7,7 +7,7 @@ import { loadApp } from '../harness/loadApp.mjs';
 describe('App.renderConfig output', () => {
   it('Scheduling Engine card exposes optimisation summary + new R8/R11 controls', async () => {
     const app = await loadApp();
-    app.App.activeCustomer = 'Acme Industries';
+    app.App.activeCustomer = ((app.App.data.customers || [])[0] && app.App.data.customers[0].name) || 'Acme Industries';
     app.App.navigate('config');
     // Settings IA: Scheduling Engine lives behind the 'scheduler' tile drill-down.
     app.App.openConfigCategory('scheduler');
@@ -28,7 +28,7 @@ describe('App.renderConfig output', () => {
 
   it('Scoring card surfaces the worked-example table', async () => {
     const app = await loadApp();
-    app.App.activeCustomer = 'Acme Industries';
+    app.App.activeCustomer = ((app.App.data.customers || [])[0] && app.App.data.customers[0].name) || 'Acme Industries';
     app.App.navigate('config');
     // Settings IA: Scoring card lives behind the 'scoring' tile drill-down.
     app.App.openConfigCategory('scoring');

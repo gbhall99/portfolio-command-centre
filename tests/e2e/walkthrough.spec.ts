@@ -82,7 +82,11 @@ test.describe('Walkthrough — card UX', () => {
 test.describe('Walkthrough — three-column shell', () => {
   test('Walkthrough — three-column shell + narrative writes through', async ({ page }) => {
     await openAppWithData(page);
-    await page.evaluate(() => (window as any).Walkthrough.open('Acme Industries'));
+    await page.evaluate(() => {
+      const App = (window as any).App;
+      const cust = (App.data && App.data.customers && App.data.customers[0] && App.data.customers[0].name) || App.activeCustomer || 'Acme Industries';
+      (window as any).Walkthrough.open(cust);
+    });
     await expect(page.locator('#walkthroughOverlay .wt-list')).toBeVisible();
     await expect(page.locator('#walkthroughOverlay .wt-center')).toBeVisible();
     // .wt-cust may be hidden via @media below 1100px — assert presence in DOM rather than visibility
