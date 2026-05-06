@@ -13474,7 +13474,7 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Delivery Role</div>' + sel('ownership', this.OWNERSHIPS, p.ownership) + '</div>' +
           '<div class="field-group"><div class="field-label">Category</div>' + sel('category', this.CATEGORIES, p.category) + '</div>' +
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
-          '<div class="field-group"><div class="field-label">Sponsor</div>' + inp('sponsor', p.sponsor) + '</div>' +
+          '<div class="field-group"><div class="field-label">Sponsor</div>' + DetailPanel.renderSponsorField(p) + '</div>' +
           '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
           '<div class="field-group"><div class="field-label">Governance Forum</div>' +
             '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
@@ -14113,6 +14113,42 @@ const DetailPanel = {
         (rec && rec !== p.priority ? '<div style="margin-top:12px;text-align:right"><button onclick="App.applyRecommendedPriority(\'' + projectId + '\');document.getElementById(\'priorityExplainerBackdrop\').remove()" style="padding:6px 14px;border:none;background:var(--accent-violet);color:white;font-weight:600;border-radius:var(--radius-sm);cursor:pointer">Apply recommended (#' + rec + ')</button></div>' : '') +
       '</div>';
     document.body.appendChild(backdrop);
+  },
+
+  renderSponsorField(p) {
+    const customer = (App.data && App.data.customers || []).find(c => c.name === p.customer);
+    const pool = (customer && Array.isArray(customer.sponsors)) ? customer.sponsors : [];
+    const opts = ['<option value="">(none)</option>'];
+    if (p.sponsor && pool.indexOf(p.sponsor) < 0) {
+      opts.push('<option value="' + Dashboard.esc(p.sponsor) + '" selected>' + Dashboard.esc(p.sponsor) + ' (legacy)</option>');
+    }
+    pool.forEach(s => {
+      opts.push('<option value="' + Dashboard.esc(s) + '"' + (s === p.sponsor ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>');
+    });
+    opts.push('<option value="__add__">+ Add new sponsor…</option>');
+    return '<select class="field-input" data-field="sponsor" onchange="DetailPanel.onSponsorChange(this, \'' + Dashboard.esc(p.id) + '\')">' + opts.join('') + '</select>';
+  },
+
+  onSponsorChange(sel, projectId) {
+    if (sel.value === '__add__') {
+      this.addSponsor(projectId, sel);
+      return;
+    }
+    App.updateProject(projectId, 'sponsor', sel.value);
+  },
+
+  addSponsor(projectId, sel) {
+    const p = (App.data && App.data.projects || []).find(x => x.id === projectId);
+    if (!p) return;
+    const name = (typeof window !== 'undefined' && window.prompt) ? window.prompt('New sponsor name:') : '';
+    if (!name || !name.trim()) {
+      sel.value = p.sponsor || '';
+      return;
+    }
+    const ok = App.addCustomerSponsor(p.customer, name.trim());
+    if (!ok) { App.toast && App.toast('Could not add sponsor', 'error'); sel.value = p.sponsor || ''; return; }
+    App.updateProject(projectId, 'sponsor', name.trim());
+    if (typeof DetailPanel.renderBody === 'function') DetailPanel.renderBody(p);
   },
 
   renderRisks(p) {
