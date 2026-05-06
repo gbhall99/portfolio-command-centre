@@ -13614,8 +13614,8 @@ const DetailPanel = {
     );
     setupSections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits_register || []).length || 0) + '</span></div>' +
-        '<div id="benefitList">' + this.renderBenefits(p) + '</div>' +
+        '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits || []).length || 0) + '</span></div>' +
+        '<div id="benefitListInner">' + this.renderBenefits(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
       '</div>'
     );
@@ -14512,59 +14512,62 @@ const DetailPanel = {
   },
 
   // --- Benefits -------------------------------------------------------
-  BENEFIT_STATUSES: ['Planned', 'On Track', 'At Risk', 'Realised', 'Missed'],
+  BENEFIT_TYPES: [
+    { value: 'time_saving', label: 'Time saving' },
+    { value: 'cost_saving', label: 'Cost saving' }
+  ],
   renderBenefits(p) {
-    const list = p.benefits_register || [];
-    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No benefits tracked</div>';
+    const list = p.benefits || [];
+    if (!list.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No benefits logged</div>';
     const esc = Dashboard.esc;
-    return list.map((b, i) => {
-      const statusColor = { 'Realised': 'var(--status-green)', 'On Track': 'var(--status-green)', 'At Risk': 'var(--status-amber)', 'Missed': 'var(--status-red)', 'Planned': 'var(--text-muted)' }[b.status] || 'var(--text-muted)';
-      return '<div class="risk-item" data-benefit-idx="' + i + '">' +
+    return list.map((b, i) =>
+      '<div class="risk-item" data-benefit-idx="' + i + '">' +
         '<button class="risk-remove" onclick="DetailPanel.removeBenefit(' + i + ')" title="Remove">&times;</button>' +
         '<div class="risk-fields">' +
-          '<div class="full"><div class="risk-field-label">Benefit description</div><textarea data-benefit-idx="' + i + '" data-benefit-field="description" onchange="DetailPanel.onBenefitChange(this)">' + esc(b.description || '') + '</textarea></div>' +
-          '<div><div class="risk-field-label">Owner</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="owner" value="' + esc(b.owner || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
-          '<div><div class="risk-field-label">Target date</div><input type="date" data-benefit-idx="' + i + '" data-benefit-field="target_date" value="' + (b.target_date || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
-          '<div><div class="risk-field-label">KPI</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="kpi" value="' + esc(b.kpi || '') + '" onchange="DetailPanel.onBenefitChange(this)" placeholder="e.g. +15% conversion"></div>' +
-          '<div><div class="risk-field-label">Status</div><select data-benefit-idx="' + i + '" data-benefit-field="status" onchange="DetailPanel.onBenefitChange(this)" style="color:' + statusColor + ';font-weight:600">' +
-            this.BENEFIT_STATUSES.map(s => '<option value="' + s + '"' + (s === b.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>' +
+          '<div><div class="risk-field-label">Type</div><select data-benefit-idx="' + i + '" data-benefit-field="type" onchange="DetailPanel.onBenefitChange(this)">' +
+            this.BENEFIT_TYPES.map(t => '<option value="' + t.value + '"' + (t.value === (b.type || 'time_saving') ? ' selected' : '') + '>' + t.label + '</option>').join('') +
+          '</select></div>' +
+          '<div><div class="risk-field-label">Amount</div><input type="number" min="0" step="1" data-benefit-idx="' + i + '" data-benefit-field="amount" value="' + (App.toInteger(b.amount) || 0) + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
+          '<div><div class="risk-field-label">Units</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="units" value="' + esc(b.units || '') + '" placeholder="e.g. hours/year, GBP/year" onchange="DetailPanel.onBenefitChange(this)"></div>' +
+          '<div class="full"><div class="risk-field-label">Description</div><input type="text" data-benefit-idx="' + i + '" data-benefit-field="description" value="' + esc(b.description || '') + '" onchange="DetailPanel.onBenefitChange(this)"></div>' +
         '</div>' +
-      '</div>';
-    }).join('');
+      '</div>'
+    ).join('');
   },
   addBenefit() {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
-    if (!p.benefits_register) p.benefits_register = [];
+    if (!Array.isArray(p.benefits)) p.benefits = [];
     App.pushUndo('Add benefit');
-    p.benefits_register.push({ description: '', owner: '', target_date: '', kpi: '', status: 'Planned' });
+    p.benefits.push({ type: 'time_saving', amount: 0, units: '', description: '' });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
-    document.getElementById('benefitCount').textContent = p.benefits_register.length;
+    document.getElementById('benefitListInner').innerHTML = this.renderBenefits(p);
+    document.getElementById('benefitCount').textContent = p.benefits.length;
   },
   removeBenefit(idx) {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.benefits_register) return;
+    if (!p || !Array.isArray(p.benefits)) return;
     App.pushUndo('Remove benefit');
-    p.benefits_register.splice(idx, 1);
+    p.benefits.splice(idx, 1);
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
-    document.getElementById('benefitCount').textContent = p.benefits_register.length;
+    document.getElementById('benefitListInner').innerHTML = this.renderBenefits(p);
+    document.getElementById('benefitCount').textContent = p.benefits.length;
   },
   onBenefitChange(el) {
     const idx = parseInt(el.dataset.benefitIdx);
     const field = el.dataset.benefitField;
     const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.benefits_register || !p.benefits_register[idx]) return;
-    p.benefits_register[idx][field] = el.value;
+    if (!p || !Array.isArray(p.benefits) || !p.benefits[idx]) return;
+    let value = el.value;
+    if (field === 'amount') value = App.toInteger(value);
+    p.benefits[idx][field] = value;
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
-    if (field === 'status') document.getElementById('benefitList').innerHTML = this.renderBenefits(p);
   },
 
   // --- Project-level Assumptions register ----------------------------
