@@ -1,11 +1,12 @@
 # Portfolio Command Centre
 
 ## What This Is
-A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across three customers (GCC, KS, DR&I). Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. Every view is **customer-scoped** — a customer must always be selected; there is no "All" option.
+A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across multiple customer accounts. Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. Every view is **customer-scoped** — a customer must always be selected; there is no "All" option. Demo data ships with three fictional customers (Acme Industries, Globex, Initech); rename or replace them in Settings → Customers.
 
 ## Files
 - `index.html` — The complete single-file app (~18,000 lines). All CSS, HTML, and JS in one file.
-- `portfolio-data.json` — Sample data (39 projects, 7 team members, 6 sprints, 10 governance forums)
+- `portfolio-data.json` — Sample (fictional) data shipped with the repo for first-time loaders. For private/local data, drop a file matching `*.local.json` (gitignored).
+- `portfolio-data-demo.json` — Same sample data, fetched by the **Load demo dataset** button in Settings → Data.
 - `SOLVER.md` — Technical reference for the auto-allocation solver: settings, rules R1–R12, algorithm passes, warnings, scoring, and known limitations. Read this before tweaking `Solver.solve` or `Sprint.allocSettings`.
 
 ## Architecture
@@ -15,11 +16,11 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal` — all as plain JS objects in a single `<script>` block.
 - **No emojis** — all icons are inline SVGs throughout.
 - **Schema-driven Projects table** — `Dashboard.COLUMNS` is the single source of truth for header (`renderHeader`), row body (`buildRowHtml`), the column picker (`ColumnPicker`), and the inline editor (`openQuickEdit`). Add a column = one entry. Inline edits dispatch on `col.edit.type` (text/number/date/select/textarea/sprint/rag/derived) and write through `App.updateProject`. Visibility/order/width persist globally via `App.uiStateSet('dashboard.columns', …)`. Single-click row opens the detail panel (deferred ~280 ms so a double-click on a `data-quick-edit` cell can take over and open the inline editor instead). `.project-table` uses `table-layout: fixed` so column widths are authoritative.
-- **Customer-scoped** — `App.activeCustomer` is the single source of truth. Defaults to GCC. Syncs across all views.
+- **Customer-scoped** — `App.activeCustomer` is the single source of truth. Defaults to the first configured customer. Syncs across all views.
 - **Skill colors** — defined in `Sprint.SKILL_COLORS`. Avoid green/amber/red (RAG confusion). Current: Indigo (Req), Cyan (Tab), Blue (DE), Violet (DS), Pink (UAT).
 
 ## Data Model Key Facts
-- **Customer** is always single-select and mandatory: GCC, KS, DR&I
+- **Customer** is always single-select and mandatory; configured in Settings → Customers.
 - **Delivery Config** per project: `delivery_config` with toggles (include_req, include_de, include_ds, include_tableau, include_uat, include_hypercare) and `phase_order` array
 - **Delivery Phases** (6 possible): Requirements, Data Sourcing, Data Engineering, Data Science, Tableau, UAT. Each has status + optional story points.
 - **Skills** (5 with points): Requirements (size_requirements), Tableau (size_tableau), Data Engineering (size_engineering), Data Science (size_data_science), UAT (size_uat_adoption)
