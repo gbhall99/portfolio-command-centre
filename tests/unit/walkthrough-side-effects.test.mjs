@@ -3,18 +3,20 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeProject, makeSprintSequence, makeMember, makeDataset, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('Walkthrough write-back helpers', () => {
-  it('recordWalkthroughDecision auto-feeds the project comms_log with source: walkthrough', async () => {
+  it('recordWalkthroughDecision records the decision on the walkthrough without touching the dropped comms_log', async () => {
     resetIdSeq();
     const p = makeProject({ id: 'GCC-WB1' });
     const app = await loadApp(makeDataset({ projects: [p] }));
     const wid = app.App.startWalkthrough('GCC', []);
     app.App.recordWalkthroughDecision(wid, { projectId: 'GCC-WB1', text: 'Park phase 2 until Q3', rationale: 'Capacity constrained' });
+    const wt = app.App._findWalkthrough(wid);
+    expect(wt.decisions.length).toBe(1);
+    expect(wt.decisions[0].text).toContain('Park phase 2 until Q3');
+    expect(wt.decisions[0].project_id).toBe('GCC-WB1');
+    // comms_log was dropped by the 2026-05 Project Details Overhaul; the migration strips
+    // it on load and recordWalkthroughDecision must no longer rehydrate it.
     const proj = app.App.data.projects[0];
-    expect(Array.isArray(proj.comms_log)).toBe(true);
-    const entry = proj.comms_log[proj.comms_log.length - 1];
-    expect(entry.note).toContain('Park phase 2 until Q3');
-    expect(entry.source).toBe('walkthrough');
-    expect(entry.walkthrough_id).toBe(wid);
+    expect(proj.comms_log).toBeUndefined();
     app.teardown();
   });
 

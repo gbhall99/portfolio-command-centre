@@ -4642,20 +4642,6 @@ const App = {
     opts = opts || {};
     const entry = { project_id: opts.projectId || null, text: String(opts.text || '').slice(0, 400), rationale: String(opts.rationale || '').slice(0, 400), recorded_at: new Date().toISOString() };
     wt.decisions.push(entry);
-    if (opts.projectId) {
-      const project = (this.data.projects || []).find(p => p.id === opts.projectId);
-      if (project) {
-        if (!Array.isArray(project.comms_log)) project.comms_log = [];
-        const note = entry.text + (entry.rationale ? ' (' + entry.rationale + ')' : '');
-        project.comms_log.push({
-          type: 'Status Update',
-          date: new Date().toISOString().slice(0, 10),
-          note: note,
-          source: 'walkthrough',
-          walkthrough_id: walkthroughId
-        });
-      }
-    }
     if (typeof this.logChange === 'function') {
       this.logChange(opts.projectId || null, 'walkthrough_decision', '', entry.text, 'walkthrough', { rationale: entry.rationale });
     }
@@ -4710,21 +4696,6 @@ const App = {
     if (typeof this.logChange === 'function') {
       this.logChange(projectId, 'risk_added', '', entry.description, 'walkthrough', { score: entry.impact * entry.probability });
     }
-    this.markDirty(); this.saveToLocalStorage();
-    return true;
-  },
-
-  addCommFromWalkthrough(projectId, note, walkthroughId) {
-    const project = (this.data.projects || []).find(p => p.id === projectId);
-    if (!project) return false;
-    if (!Array.isArray(project.comms_log)) project.comms_log = [];
-    project.comms_log.push({
-      type: 'Status Update',
-      date: new Date().toISOString().split('T')[0],
-      note: String(note || '').slice(0, 400),
-      source: 'walkthrough',
-      walkthrough_id: walkthroughId || null
-    });
     this.markDirty(); this.saveToLocalStorage();
     return true;
   },
@@ -4962,7 +4933,7 @@ const App = {
       prompts.push({
         severity: 'red', kind: 'red_no_decision',
         message: 'Schedule is red — confirm the recovery plan in writing.',
-        hint: 'A decision recorded here also lands in the comms log.',
+        hint: 'Capture the recovery plan as a decision so it persists.',
         action: 'focus_decision_capture'
       });
     }
@@ -9264,7 +9235,7 @@ const ProjectImport = {
         delivery_config: { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
         notes: r.notes,
         last_updated: new Date().toISOString(),
-        devops_link: '', comms_log: [], risks_register: [], issues_register: [],
+        devops_link: '', risks_register: [], issues_register: [],
         data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
         skill_splits: {},
         stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
@@ -9735,9 +9706,6 @@ const Dashboard = {
       { id: 'product_release_date', group: 'Dates', label: 'Product release', width: 80,
         render: (p) => fmtDate(p.product_release_date),
         edit: { type: 'date', field: 'product_release_date' } },
-      { id: 'comms_date', group: 'Dates', label: 'Comms date', width: 80,
-        render: (p) => fmtDate(p.comms_date),
-        edit: { type: 'date', field: 'comms_date' } },
       { id: 'last_updated', group: 'Dates', label: 'Updated', width: 80,
         render: (p) => fmtDate(p.last_updated),
         edit: { type: 'derived' } },
@@ -13369,39 +13337,6 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addDecisionLog()">+ Log Decision</button>' +
       '</div>'
     );
-    healthSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Communications <span class="risk-count">' + ((p.comms_log || []).length) + '</span></div>' +
-        '<div id="commsLog">' +
-          (p.comms_log || []).slice().reverse().map((c, i) => {
-            const idx = (p.comms_log || []).length - 1 - i;
-            const typeColors = { 'Status Update': '#3b82f6', 'Project Start': '#22c55e', 'Phase Gate': '#8b5cf6', 'Escalation': '#ef4444', 'Closure': '#64748b', 'Ad Hoc': '#f59e0b' };
-            const color = typeColors[c.type] || '#94a3b8';
-            return '<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:11px;align-items:flex-start">' +
-              '<span style="padding:1px 6px;border-radius:3px;background:' + color + '15;color:' + color + ';font-weight:600;font-size:10px;white-space:nowrap">' + Dashboard.esc(c.type) + '</span>' +
-              '<span style="color:var(--text-muted);white-space:nowrap;min-width:70px">' + (c.date || '') + '</span>' +
-              '<span style="flex:1;color:var(--text-dark-secondary)">' + Dashboard.esc(c.note || '') + '</span>' +
-              '<button style="border:none;background:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 4px" onclick="DetailPanel.removeComm(' + idx + ')" title="Remove">&times;</button>' +
-            '</div>';
-          }).join('') +
-          (!(p.comms_log || []).length ? '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No communications recorded</div>' : '') +
-        '</div>' +
-        '<div id="commsAddForm" style="display:none;margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
-          '<div style="display:flex;gap:6px">' +
-            '<select id="commsType" class="field-input" style="width:140px;font-size:11px">' +
-              ['Status Update', 'Project Start', 'Phase Gate', 'Escalation', 'Closure', 'Ad Hoc'].map(t => '<option>' + t + '</option>').join('') +
-            '</select>' +
-            '<input type="date" id="commsDate" class="field-input" style="font-size:11px" value="' + new Date().toISOString().split('T')[0] + '">' +
-          '</div>' +
-          '<textarea id="commsNote" class="field-input" placeholder="Note..." style="font-size:11px;min-height:40px;resize:vertical"></textarea>' +
-          '<div style="display:flex;gap:6px;justify-content:flex-end">' +
-            '<button class="btn btn-outline btn-sm" style="font-size:10px" onclick="document.getElementById(\'commsAddForm\').style.display=\'none\'">Cancel</button>' +
-            '<button class="btn btn-sm" style="font-size:10px;background:var(--accent-blue);color:white" onclick="DetailPanel.addComm()">Save</button>' +
-          '</div>' +
-        '</div>' +
-        '<button class="risk-add-btn" onclick="document.getElementById(\'commsAddForm\').style.display=\'flex\'" style="margin-top:4px">+ Add Communication</button>' +
-      '</div>'
-    );
     (function() {
       const allForums = App.data.governance_forums || [];
       const linkedDecisions = [];
@@ -15123,33 +15058,6 @@ const DetailPanel = {
     });
   },
 
-  addComm() {
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p) return;
-    if (!p.comms_log) p.comms_log = [];
-    const type = document.getElementById('commsType').value;
-    const date = document.getElementById('commsDate').value;
-    const note = document.getElementById('commsNote').value;
-    App.pushUndo('Add communication');
-    p.comms_log.push({ type, date, note, created_at: new Date().toISOString() });
-    App.logChange(p.id, 'comms_log', '', type + ' - ' + date, 'user');
-    p.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-    this.renderBody(p);
-  },
-
-  removeComm(idx) {
-    const p = App.data.projects.find(pr => pr.id === this.currentId);
-    if (!p || !p.comms_log) return;
-    App.pushUndo('Remove communication');
-    p.comms_log.splice(idx, 1);
-    p.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-    this.renderBody(p);
-  },
-
   cloneProject() {
     if (!this.currentId || !App.data) return;
     const src = App.data.projects.find(pr => pr.id === this.currentId);
@@ -15170,7 +15078,6 @@ const DetailPanel = {
     if (App.data.audit_log) {
       // Don't copy audit entries - they belong to the original
     }
-    clone.comms_log = [];
     clone.priority = App.data.projects.filter(p => p.customer === clone.customer).length + 1;
     App.data.projects.push(clone);
     App.logChange(clone.id, 'project_created', '', 'Cloned from ' + src.id, 'user');
@@ -15248,7 +15155,6 @@ const DetailPanel = {
       notes: '',
       last_updated: new Date().toISOString(),
       devops_link: '',
-      comms_log: [],
       risks_register: [],
       issues_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
@@ -15626,7 +15532,7 @@ const DetailPanel = {
       delivery_config: tpl && tpl.delivery_config ? JSON.parse(JSON.stringify(tpl.delivery_config))
         : { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
       notes: '', last_updated: new Date().toISOString(), devops_link: '',
-      comms_log: [], risks_register: [], issues_register: [],
+      risks_register: [], issues_register: [],
       data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
       skill_splits: {},
       stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
