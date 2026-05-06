@@ -6302,7 +6302,7 @@ const App = {
         return n + ' template' + (n === 1 ? '' : 's');
       },
       render: () => App._renderTemplatesCard ? App._renderTemplatesCard() : '<div style="font-size:13px;color:var(--text-muted);padding:12px">No workflow templates configured.</div>' },
-    { id: 'display', label: 'Display & branding',
+    { id: 'display', label: 'Display & white-labelling',
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
       summary: () => 'Theme & thresholds',
       render: () => (App._renderDisplayThresholdsCard ? App._renderDisplayThresholdsCard() : '') + (App._renderBrandingCard ? App._renderBrandingCard() : '') },
@@ -6777,16 +6777,24 @@ const App = {
       var custs = (App.data && App.data.customers) || [];
       if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
       var tbl = '<table class="customer-config-table"><thead><tr>' +
-        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th></th>' +
+        '<th>Name</th><th>Colour</th><th>Stale Threshold (days)</th><th>Projects</th><th>Logo</th><th></th>' +
       '</tr></thead><tbody>';
       custs.forEach(function(c, idx) {
         var pCount = (App.data.projects || []).filter(function(p) { return p.customer === c.name; }).length;
+        var nameAttr = c.name.replace(/'/g, "\\'");
+        var logoCell;
+        if (c.logo) {
+          logoCell = '<img src="' + Dashboard.esc(c.logo) + '" alt="' + Dashboard.esc(c.name) + ' logo" style="width:24px;height:24px;object-fit:contain;cursor:pointer;border:1px solid var(--border-light);border-radius:4px;background:white" onclick="App._openLogoEditor(\'' + nameAttr + '\')" title="Edit logo">';
+        } else {
+          logoCell = '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px" onclick="App._openLogoEditor(\'' + nameAttr + '\')">Set logo&hellip;</button>';
+        }
         tbl += '<tr>' +
-          '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-          '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
-          '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + c.name.replace(/'/g, "\\'") + '\',this.value)"></td>' +
+          '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + nameAttr + '\',this.value)"></td>' +
+          '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + nameAttr + '\',this.value)"></td>' +
+          '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + nameAttr + '\',this.value)"></td>' +
           '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
-          '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + c.name.replace(/'/g, "\\'") + '\')">' +
+          '<td>' + logoCell + '</td>' +
+          '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--status-red);padding:2px 6px" onclick="App.removeCustomer(\'' + nameAttr + '\')">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
           '</button></td>' +
         '</tr>';
@@ -6894,18 +6902,16 @@ const App = {
   _renderBrandingCard() {
     const customers = this.getCustomers();
     return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">Report Branding</h3>' +
-    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">Logo, primary colour, company name, and footer text used in PDF reports and the Portfolio Pack, per customer.</div>' +
+    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:4px">White-labelling</h3>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:10px">Primary colour, company name, and footer text used in PDF reports and the Portfolio Pack, per customer. Logos live on the Customers card.</div>' +
     (function() {
       const brandings = (App.data && App.data.settings && App.data.settings.branding) || {};
       return customers.map(function(cName) {
         const b = brandings[cName] || {};
-        const logo = b.logo ? ('<img src="' + Dashboard.esc(b.logo) + '" alt="" style="max-width:36px;max-height:24px;border:1px solid var(--border-light);border-radius:3px;background:white;object-fit:contain">') : '<span style="font-size:10px;color:var(--text-muted)">no logo</span>';
         const colour = b.primaryColor || App.getCustomerColor(cName) || '#94a3b8';
         const companyName = b.companyName || cName;
         const footer = b.footerText ? Dashboard.esc(b.footerText.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">' +
-          '<div style="width:40px;display:flex;align-items:center;justify-content:center">' + logo + '</div>' +
           '<div style="flex:1">' +
             '<div style="font-weight:600;font-size:12px;color:var(--text-dark)">' + Dashboard.esc(companyName) + ' <span style="font-size:10px;font-weight:400;color:var(--text-muted)">· ' + Dashboard.esc(cName) + '</span></div>' +
             '<div style="font-size:10px;color:var(--text-muted)">Footer: ' + footer + '</div>' +
@@ -8077,6 +8083,58 @@ const App = {
       this.markDirty();
       this.saveToLocalStorage();
     }
+  },
+
+  setCustomerLogo(customerName, logoUrl) {
+    if (!this.data || !this.data.customers) return;
+    const c = this.data.customers.find(c => c.name === customerName);
+    if (!c) return;
+    c.logo = logoUrl == null ? '' : String(logoUrl);
+    Report.setBranding(customerName, { logo: c.logo });
+    this.markDirty();
+    this.saveToLocalStorage();
+  },
+
+  _openLogoEditor(customerName) {
+    if (!this.data || !this.data.customers) return;
+    const c = this.data.customers.find(c => c.name === customerName);
+    if (!c) return;
+    const existing = document.getElementById('logoEditorOverlay');
+    if (existing) existing.remove();
+    const nameAttr = customerName.replace(/'/g, "\\'");
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9000;display:flex;align-items:center;justify-content:center';
+    overlay.id = 'logoEditorOverlay';
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    const preview = c.logo
+      ? '<div style="margin-bottom:12px;padding:12px;border:1px dashed var(--border-light);border-radius:8px;text-align:center;background:#f8fafc"><img src="' + Dashboard.esc(c.logo) + '" alt="Current logo" style="max-width:120px;max-height:48px;object-fit:contain"></div>'
+      : '';
+    overlay.innerHTML = '<div style="background:white;border-radius:12px;padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow-lg)">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:8px">Customer Logo &mdash; ' + Dashboard.esc(customerName) + '</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:12px">Paste an image URL or a base64 data URI (e.g. <code style="font-size:11px">data:image/png;base64,&hellip;</code>). Used in dashboard header, status reports, and exports.</div>' +
+      preview +
+      '<div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase">Logo URL or data URI</div>' +
+      '<textarea id="logoEditorValue" class="field-input" style="width:100%;min-height:96px;font-family:monospace;font-size:11px;resize:vertical">' + Dashboard.esc(c.logo || '') + '</textarea>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'logoEditorOverlay\').remove()">Cancel</button>' +
+        '<button class="btn btn-outline btn-sm" style="color:var(--status-red)" onclick="App._commitLogoEditor(\'' + nameAttr + '\',true)">Remove</button>' +
+        '<button class="btn btn-sm" style="background:var(--accent-blue);color:white" onclick="App._commitLogoEditor(\'' + nameAttr + '\',false)">Save</button>' +
+      '</div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+  },
+
+  _commitLogoEditor(customerName, removeOnly) {
+    if (removeOnly) {
+      this.setCustomerLogo(customerName, '');
+    } else {
+      const ta = document.getElementById('logoEditorValue');
+      const value = ta ? ta.value.trim() : '';
+      this.setCustomerLogo(customerName, value);
+    }
+    const overlay = document.getElementById('logoEditorOverlay');
+    if (overlay) overlay.remove();
+    this.renderConfig();
   },
 
   // --- Skills Management (REQ-CFG-02) ---
