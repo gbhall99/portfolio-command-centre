@@ -242,7 +242,7 @@ Add a new column to the Customers config table (in `_renderCustomersCard`):
 
 ```
 | Name | Color | Stale (days) | Sponsors                          | Actions       |
-| Acme Industries  | ⬛    | 14           | Sam Carter, Riley Chen ✎  | Rename Delete |
+| Acme | ⬛    | 14           | Sam Carter, Riley Chen ✎  | Rename Delete |
 ```
 
 Click "✎" opens a small inline editor: textarea, comma-separated, trims and dedups on save. New `App.setCustomerSponsors(customerName, sponsorsArray)` handles the write.

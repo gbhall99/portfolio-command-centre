@@ -9,7 +9,7 @@
 
 ## Goal
 
-Ship the product with a clean dummy dataset. The current `portfolio-data.json` mixes real-looking names (Sam Carter, Riley Chen, etc.) with internal references that aren't appropriate to ship publicly. Replace it with a file written specifically for demos and onboarding.
+Ship the product with a clean dummy dataset. The current `portfolio-data.json` carries internal names that aren't appropriate to ship publicly. Replace it with a file written specifically for demos and onboarding.
 
 ## Non-goals
 
