@@ -1333,7 +1333,7 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
-  position: absolute; top: 6px; height: 24px; border-radius: 5px;
+  position: absolute; top: 8px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
   font-size: 11px; font-weight: 700; color: white; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
@@ -1345,14 +1345,34 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
 .gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
 html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
-/* 2H: Baseline ghost bar with bumped contrast. Opacity 0.60 (was 0.45) and a denser 2-px dash / 3-px
-   gap pattern (was 4/3) so the ghost reads clearly without competing with the live bar. */
-.gantt-bar-baseline {
-  position: absolute; top: 33px; height: 3px; border-radius: 1.5px;
-  opacity: 0.60; box-shadow: inset 0 0 0 1px rgba(15,23,42,0.28);
-  background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px);
+/* Baseline-vs-actual: bracket above the bar + inline delta pill.
+   Replaces the legacy 3px dashed strip (.gantt-bar-baseline) and the SVG
+   baseline-arrow. The bracket reads as a caliper spanning the original
+   start→end; the pill quantifies any slip on the right edge. */
+.gantt-baseline-bracket {
+  position: absolute; top: 1px; height: 6px;
+  pointer-events: auto; cursor: pointer;
 }
-html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
+.gantt-baseline-bracket::before,
+.gantt-baseline-bracket::after {
+  content: ''; position: absolute; top: 0; width: 1.5px; height: 6px;
+  background: var(--gantt-baseline);
+}
+.gantt-baseline-bracket::before { left: 0; }
+.gantt-baseline-bracket::after { right: 0; }
+.gantt-baseline-bracket > .gantt-baseline-spine {
+  position: absolute; left: 1.5px; right: 1.5px; top: 5px; height: 1px;
+  background: var(--gantt-baseline);
+}
+
+.gantt-delta-pill {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  white-space: nowrap; pointer-events: none; z-index: 4;
+}
+.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak); }
+.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); }
+.gantt-delta-pill.onplan { color: var(--text-muted); background: transparent; }
 .gantt-ms { transform: translateY(-50%); transition: transform 0.12s; }
 .gantt-ms:hover { transform: translateY(-50%) scale(1.15); }
 /* 2E: "Today" = the one live reference line — solid 2px in accent blue to own that role. */
@@ -16788,8 +16808,7 @@ const Gantt = {
           if (startSp) bStart = startSp.start_date;
           if (endSp) bEnd = endSp.end_date;
         }
-        // Fallback: legacy project.baseline_start/end (pre-D2.3 data).
-        // Prefer the named baseline's project-level dates (D2.4); legacy fields are a final fallback.
+        // Fallback: per-project dates inside the active named baseline (D2.4).
         if (!bStart || !bEnd) {
           const ab = this._activeBaseline();
           const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
@@ -16798,27 +16817,23 @@ const Gantt = {
             bEnd = node.target_date;
           }
         }
+        // Final fallback: legacy project.baseline_start/end (pre-D2.3).
         if (!bStart || !bEnd) { bStart = p.baseline_start; bEnd = p.baseline_end; }
         if (bStart && bEnd) {
           const bx1 = Math.max(0, dateToX(bStart));
           const bx2 = Math.max(bx1 + 4, dateToX(bEnd));
-          baselineHtml = '<div class="gantt-bar-baseline" data-baseline-project="' + Dashboard.esc(p.id) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px;background:' + color + '"></div>';
-          // Baseline → current connector: arrow from baseline end to current end when slipped.
-          if (p.target_date && p.target_date !== bEnd) {
-            const cx2 = bx2;
-            const tx2 = Math.max(cx2 + 4, dateToX(p.target_date));
-            const dir = tx2 > cx2 ? 1 : -1;
-            const left = Math.min(cx2, tx2);
-            const width = Math.max(8, Math.abs(tx2 - cx2));
-            const arrowColor = dir > 0 ? 'var(--status-red)' : 'var(--status-green)';
-            const headPts = dir > 0
-              ? width + ',7 ' + (width - 6) + ',3 ' + (width - 6) + ',11'
-              : '0,7 6,3 6,11';
-            baselineHtml += '<svg class="baseline-arrow" style="position:absolute;left:' + left + 'px;top:50%;width:' + width + 'px;height:14px;pointer-events:none;overflow:visible" aria-hidden="true">' +
-              '<line x1="0" y1="7" x2="' + width + '" y2="7" stroke="' + arrowColor + '" stroke-width="1.6" stroke-dasharray="3,2"/>' +
-              '<polygon points="' + headPts + '" fill="' + arrowColor + '"/>' +
-              '<title>Baseline ' + Dashboard.esc(bEnd) + ' → current ' + Dashboard.esc(p.target_date) + '</title>' +
-            '</svg>';
+          // Bracket sits above the bar, spanning the baseline's original start → end.
+          baselineHtml += '<div class="gantt-baseline-bracket gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" role="img" aria-label="Baseline ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"><div class="gantt-baseline-spine"></div></div>';
+          // Delta pill — quantify the slip / early / on-plan state vs current target_date.
+          if (p.target_date) {
+            const targetDelta = Math.round((new Date(p.target_date) - new Date(bEnd)) / 86400000);
+            let pillCls, pillText;
+            if (targetDelta > 0)      { pillCls = 'slip';   pillText = '+' + targetDelta + 'd'; }
+            else if (targetDelta < 0) { pillCls = 'early';  pillText = '−' + Math.abs(targetDelta) + 'd'; }
+            else                      { pillCls = 'onplan'; pillText = 'on plan'; }
+            const pillX = Math.max(x2, bx2) + 4;
+            const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
+            baselineHtml += '<div class="gantt-delta-pill ' + pillCls + '" style="left:' + pillX + 'px" title="' + Dashboard.esc(tipText) + '">' + pillText + '</div>';
           }
         }
       }
