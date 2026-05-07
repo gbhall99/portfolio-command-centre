@@ -1393,7 +1393,7 @@ html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, r
 .gantt-legend-swatch { width: 14px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
 /* --- Gantt Tooltip --- */
-.gantt-tooltip { position: fixed; z-index: 1500; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px 14px; font-size: 11px; max-width: 300px; pointer-events: none; display: none; }
+.gantt-tooltip { position: fixed; z-index: 1500; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px 14px; font-size: 11px; max-width: 360px; pointer-events: none; display: none; }
 .gantt-tooltip.visible { display: block; }
 .gantt-tooltip-title { font-weight: 700; font-size: 12px; color: var(--text-dark); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .gantt-tooltip-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; color: var(--text-dark-secondary); }
@@ -16023,6 +16023,55 @@ const Gantt = {
       '</div>';
     };
 
+    // Plan-vs-actual narrative — appended to bar/label/baseline tooltips when an active
+    // baseline contains this project. Returns '' otherwise so the existing tooltip stays
+    // unchanged.
+    const buildPlanVsActual = (proj) => {
+      if (!proj) return '';
+      const ab = self._activeBaseline ? self._activeBaseline() : null;
+      const node = (ab && ab.snapshot && ab.snapshot[proj.id]) || null;
+      // Fallback: legacy project.baseline_start/end (pre-D2.3) when no named baseline matches.
+      const baseStart  = (node && node.start_date)  || proj.baseline_start;
+      const baseEnd    = (node && node.target_date) || proj.baseline_end;
+      const baseSize   = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
+      const liveStart  = proj.start_date;
+      const liveEnd    = proj.target_date;
+      const liveSize   = proj.size_total || 0;
+      if (!baseStart || !baseEnd || !liveStart || !liveEnd) return '';
+      const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
+      const startDelta = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
+      const targetDelta = Math.round((new Date(liveEnd) - new Date(baseEnd)) / 86400000);
+      const sizeDelta = liveSize - baseSize;
+      const startBit = startDelta === 0 ? 'start unchanged' : (startDelta > 0 ? '+' + startDelta + 'd on start' : startDelta + 'd on start');
+      const targetBit = targetDelta === 0 ? 'target unchanged' : (targetDelta > 0 ? '+' + targetDelta + 'd on target' : targetDelta + 'd on target');
+      const sizeBit = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? '+' + sizeDelta + ' SP' : sizeDelta + ' SP');
+      const setMeta = (ab && ab.created_at) ? 'set ' + new Date(ab.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (ab.created_by ? ' by ' + esc(ab.created_by) : '') : '';
+      let movers = '';
+      try {
+        const sinceTs = (ab && ab.created_at) || '';
+        const log = (App.data.audit_log || []).filter(e => e.project_id === proj.id && (!sinceTs || (e.timestamp || '') >= sinceTs));
+        const seen = new Set();
+        const bullets = [];
+        for (let i = log.length - 1; i >= 0 && bullets.length < 3; i--) {
+          const e = log[i];
+          if (!e.field || seen.has(e.field)) continue;
+          seen.add(e.field);
+          bullets.push('<li>' + esc(e.field) + ': ' + esc(String(e.old_value || '')) + ' → ' + esc(String(e.new_value || '')) + '</li>');
+        }
+        if (bullets.length) {
+          movers = '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">What moved</div>' +
+                   '<ul style="margin:2px 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul>';
+        }
+      } catch (_) { /* audit log may be absent — fine */ }
+      return '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + esc(setMeta) + '</span></div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:2px"><span style="color:var(--text-muted)">Baseline</span> ' + fmtD(baseStart) + ' → ' + fmtD(baseEnd) + ' · ' + baseSize + ' SP</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Current</span> ' + fmtD(liveStart) + ' → ' + fmtD(liveEnd) + ' · ' + liveSize + ' SP</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' · ' + targetBit + ' · ' + sizeBit + '</div>' +
+        movers +
+      '</div>';
+    };
+
     const buildTooltip = (type, el) => {
       if (type === 'seg') {
         const parentBar = el.closest('.gantt-bar');
@@ -16062,7 +16111,7 @@ const Gantt = {
           (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
           (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' +
-          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildProjectSummary(p);
+          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildPlanVsActual(p) + buildProjectSummary(p);
       }
       // Phase-specific tooltip — fired when hovering a detailed sub-row bar. Shows just the
       // hovered phase in full detail plus a compact header identifying the parent project.
@@ -16163,6 +16212,16 @@ const Gantt = {
           '<div class="gantt-tooltip-row">' + esc(primary ? primary.name : '?') + '</div>' +
           '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + verb + '</div>' +
           '<div class="gantt-tooltip-row">' + esc(secondary ? secondary.name : '?') + '</div>';
+      }
+      if (type === 'baseline') {
+        const id = el.dataset.id;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        if (!p) return '';
+        const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
+          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
+        const block = buildPlanVsActual(p);
+        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline.</div>';
+        return projHeader + block;
       }
       return '';
     };
@@ -16300,6 +16359,7 @@ const Gantt = {
     };
     attachTo(scroll);
     attachTo(document.getElementById('ganttLabels'));
+    self._buildTooltipForTest = buildTooltip;
   },
 
   init() {
