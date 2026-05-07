@@ -65,7 +65,7 @@ describe('Walkthrough — Project narrative panel', () => {
     app.Walkthrough.selectProject('Acme Industries-NP1');
     const cust = app.window.document.querySelector('.wt-cust');
     expect(cust.innerHTML).toMatch(/Project narrative/);
-    expect(cust.innerHTML).toMatch(/customer · forum · sponsor/i);
+    expect(cust.innerHTML).toMatch(/customer · meeting · sponsor/i);
     expect(cust.innerHTML).toMatch(/data-narrative-field="headline"/);
     app.teardown();
   });
