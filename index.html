@@ -16061,10 +16061,19 @@ const Gantt = {
         if (bullets.length) {
           movers = '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">What moved</div>' +
                    '<ul style="margin:2px 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul>';
+        } else {
+          // No qualifying audit entries — fall back to the most recent touch on this project so
+          // the user still has a "what / when / who" anchor.
+          const lastEntry = log.length ? log[log.length - 1] : null;
+          if (lastEntry && lastEntry.timestamp) {
+            const when = new Date(lastEntry.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            const who = lastEntry.user || lastEntry.author || lastEntry.changed_by || '';
+            movers = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Last touched ' + esc(when) + (who ? ' by ' + esc(who) : '') + '</div>';
+          }
         }
       } catch (_) { /* audit log may be absent — fine */ }
       return '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
-        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + esc(setMeta) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + setMeta + '</span></div>' +
         '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:2px"><span style="color:var(--text-muted)">Baseline</span> ' + fmtD(baseStart) + ' → ' + fmtD(baseEnd) + ' · ' + baseSize + ' SP</div>' +
         '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Current</span> ' + fmtD(liveStart) + ' → ' + fmtD(liveEnd) + ' · ' + liveSize + ' SP</div>' +
         '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' · ' + targetBit + ' · ' + sizeBit + '</div>' +
@@ -16220,7 +16229,7 @@ const Gantt = {
         const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
           ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
         const block = buildPlanVsActual(p);
-        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline.</div>';
+        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline</div>';
         return projHeader + block;
       }
       return '';
