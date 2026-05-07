@@ -4239,6 +4239,17 @@ const App = {
   onDataLoaded() {
     // Hydrate settings defaults before any UI/solver code reads them.
     this._ensureSettingsDefaults();
+    // Clear stale activeCustomer (in-memory + localStorage) if the previously-active
+    // customer is no longer in data.customers. Otherwise the header dropdown would
+    // display a customer that the loaded dataset doesn't contain.
+    const validCustomers = new Set((this.data && this.data.customers || []).map(c => c.name));
+    if (this.activeCustomer && !validCustomers.has(this.activeCustomer)) {
+      this.activeCustomer = null;
+    }
+    try {
+      const stored = localStorage.getItem(this.LS_CUSTOMER_KEY);
+      if (stored && !validCustomers.has(stored)) localStorage.removeItem(this.LS_CUSTOMER_KEY);
+    } catch (e) { /* private mode */ }
     // Populate the View-as picker with team members.
     try {
       const sel = document.getElementById('viewAsPicker');
