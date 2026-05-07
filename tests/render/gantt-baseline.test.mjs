@@ -47,4 +47,24 @@ describe('Gantt baseline bracket + delta pill', () => {
     expect(html).toContain('on plan');
     app.teardown();
   });
+
+  it('renders neither bracket nor pill when project has no baseline', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(2);
+    const proj = makeProject({
+      name: 'NoBaseline',
+      start_date: '2026-01-05', target_date: '2026-02-09',
+      size_engineering: 5
+    });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    const checkbox = app.window.document.getElementById('ganttBaseline');
+    if (checkbox) checkbox.checked = true;
+    app.Gantt.render();
+    const html = app.window.document.getElementById('ganttRows').innerHTML;
+    expect(html).not.toMatch(/gantt-baseline-bracket/);
+    expect(html).not.toMatch(/gantt-delta-pill/);
+    app.teardown();
+  });
 });
