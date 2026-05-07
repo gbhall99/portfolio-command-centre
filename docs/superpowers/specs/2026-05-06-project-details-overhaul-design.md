@@ -103,7 +103,7 @@ DELIVERY tab
 ```jsonc
 // On project
 "assumptions_register": [
-  { "date": "2026-04-22", "made_by": "Sarah Thompson", "text": "Stakeholders sign-off by S5", "notes": "Confirmed verbally" }
+  { "date": "2026-04-22", "made_by": "Sam Carter", "text": "Stakeholders sign-off by S5", "notes": "Confirmed verbally" }
 ],
 "benefits": [
   { "type": "time_saving",  "amount": 200,    "units": "hours/year", "description": "Auto-generated weekly metric pack" },
@@ -117,7 +117,7 @@ DELIVERY tab
 ### On customer (settings)
 
 ```jsonc
-{ "name": "GCC", "color": "#3b82f6", "staleThreshold": 14, "sponsors": ["Sarah Thompson", "James Mitchell"] }
+{ "name": "Acme Industries", "color": "#3b82f6", "staleThreshold": 14, "sponsors": ["Sam Carter", "Riley Chen"] }
 ```
 
 ### Dropped fields
@@ -242,7 +242,7 @@ Add a new column to the Customers config table (in `_renderCustomersCard`):
 
 ```
 | Name | Color | Stale (days) | Sponsors                          | Actions       |
-| GCC  | ⬛    | 14           | Sarah Thompson, James Mitchell ✎  | Rename Delete |
+| Acme | ⬛    | 14           | Sam Carter, Riley Chen ✎  | Rename Delete |
 ```
 
 Click "✎" opens a small inline editor: textarea, comma-separated, trims and dedups on save. New `App.setCustomerSponsors(customerName, sponsorsArray)` handles the write.
@@ -258,7 +258,7 @@ Sweep DetailPanel's renders for any `<select>` not using `class="field-input"` �
 ```
 1. User opens project detail panel
 2. Sponsor select renders with active customer's sponsors as <option>s + "+ Add new sponsor…"
-3. User picks "Sarah Thompson" → onchange → DetailPanel.onFieldChange(this) → App.updateProject(id, 'sponsor', 'Sarah Thompson')
+3. User picks "Sam Carter" → onchange → DetailPanel.onFieldChange(this) → App.updateProject(id, 'sponsor', 'Sam Carter')
 4. Audit + dirty + save fire as today.
 ```
 

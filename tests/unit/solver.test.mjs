@@ -152,10 +152,17 @@ describe('Solver — R8: "Both"-customer capacity split', () => {
       customer: 'Both',
       available_points_per_sprint: 30
     });
-    const app = await loadApp(makeDataset({
+    const dataset = makeDataset({
       projects: [], sprints, team_members: [bothMember]
-    }));
-    // With 3 customers (GCC, KS, DR&I) and no per-customer map, each scope sees 30/3 = 10.
+    });
+    // Seed 3 customers explicitly — production source no longer hardcodes a default customer list.
+    dataset.customers = [
+      { name: 'GCC', color: '#3b82f6', staleThreshold: 14 },
+      { name: 'KS',  color: '#10b981', staleThreshold: 14 },
+      { name: 'DR&I', color: '#a855f7', staleThreshold: 14 }
+    ];
+    const app = await loadApp(dataset);
+    // With 3 customers and no per-customer map, each scope sees 30/3 = 10.
     const gccCap = app.Sprint.calcMemberCapacityForSprint(bothMember, 'CY26-S1', 'GCC').points;
     expect(gccCap).toBeLessThan(30);
     expect(gccCap).toBeGreaterThan(0);
