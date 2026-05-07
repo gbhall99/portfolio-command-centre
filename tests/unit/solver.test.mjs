@@ -133,7 +133,7 @@ describe('Solver — R8: "Both"-customer capacity split', () => {
       name: 'Both-Person',
       customer: 'Both',
       available_points_per_sprint: 20,
-      capacity_by_customer: { Acme Industries: 7, Globex: 13 }
+      capacity_by_customer: { 'Acme Industries': 7, 'Globex': 13 }
     });
     const app = await loadApp(makeDataset({
       projects: [], sprints, team_members: [bothMember]

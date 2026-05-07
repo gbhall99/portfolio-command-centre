@@ -106,7 +106,7 @@ describe('_computePriorityOrderings', () => {
     });
     const app = await loadApp(makeDataset({ projects: [descendant, ancestor] }));
     const { perCustomerOrder } = app.App._computePriorityOrderings();
-    const gcc = perCustomerOrder.Acme Industries.map(p => p.id);
+    const gcc = perCustomerOrder['Acme Industries'].map(p => p.id);
     expect(gcc.indexOf('Acme Industries-ANC')).toBeLessThan(gcc.indexOf('Acme Industries-DESC'));
     app.teardown();
   });

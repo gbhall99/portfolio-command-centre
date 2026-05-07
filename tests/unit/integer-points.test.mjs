@@ -78,7 +78,7 @@ describe('migrateSchema — integer points', () => {
         secondary_skills: [],
         available_points_per_sprint: 14.06,
         story_points_per_sprint: 14.06,
-        capacity_by_customer: { Acme Industries: 7.5, Globex: 6.56 },
+        capacity_by_customer: { 'Acme Industries': 7.5, 'Globex': 6.56 },
         sprint_overrides: { 'CY26-S1': { available_points: 12.4 } },
         holidays: [],
         holiday_impact_per_sprint: 0
@@ -87,8 +87,8 @@ describe('migrateSchema — integer points', () => {
     const tm = app.App.data.team_members[0];
     expect(tm.available_points_per_sprint).toBe(14);
     expect(tm.story_points_per_sprint).toBe(14);
-    expect(tm.capacity_by_customer.Acme Industries).toBe(8);
-    expect(tm.capacity_by_customer.Globex).toBe(7);
+    expect(tm.capacity_by_customer['Acme Industries']).toBe(8);
+    expect(tm.capacity_by_customer['Globex']).toBe(7);
     expect(tm.sprint_overrides['CY26-S1'].available_points).toBe(12);
     app.teardown();
   });
