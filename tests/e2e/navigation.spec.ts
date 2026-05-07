@@ -19,7 +19,7 @@ test('navigation through all six views', async ({ page }) => {
   await page.click('.nav-item[data-view="capacity"]');
   await expect(page.locator('#viewCapacity')).toHaveClass(/active/);
 
-  // Governance Forums
+  // Governance Meetings
   await page.click('.nav-item[data-view="governance"]');
   await expect(page.locator('#viewGovernance')).toHaveClass(/active/);
 

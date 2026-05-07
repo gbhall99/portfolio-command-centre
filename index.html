@@ -97,6 +97,8 @@
   --gantt-critical-teal: #0f766e;
   --gantt-critical-grey: #475569;
   --gantt-milestone-stroke: #5b21b6;
+  --gantt-ms-stroke: #0f172a;
+  --gantt-ms-fill: #ffffff;
   --gantt-guide: #e5e7eb;
   --gantt-baseline: #94a3b8;
   --gantt-row-border: #f1f5f9;
@@ -131,6 +133,9 @@ html[data-theme="dark"] {
   --gantt-critical-teal: #2dd4bf;
   --gantt-critical-grey: #94a3b8;
   --gantt-milestone-stroke: #c4b5fd;
+  --gantt-ms-stroke: #e2e8f0;
+  /* #1e293b is --surface-hover / --surface-inset — slightly lighter than --surface-2 (#0f172a) so glyphs stay legible against dark bars */
+  --gantt-ms-fill: #1e293b;
   --gantt-guide: #1f2937;
   --gantt-baseline: #64748b;
   --gantt-row-border: #1f2937;
@@ -1328,7 +1333,7 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
-  position: absolute; top: 6px; height: 24px; border-radius: 5px;
+  position: absolute; top: 8px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
   font-size: 11px; font-weight: 700; color: white; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
@@ -1340,14 +1345,34 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
 .gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
 html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
-/* 2H: Baseline ghost bar with bumped contrast. Opacity 0.60 (was 0.45) and a denser 2-px dash / 3-px
-   gap pattern (was 4/3) so the ghost reads clearly without competing with the live bar. */
-.gantt-bar-baseline {
-  position: absolute; top: 33px; height: 3px; border-radius: 1.5px;
-  opacity: 0.60; box-shadow: inset 0 0 0 1px rgba(15,23,42,0.28);
-  background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 5px);
+/* Baseline-vs-actual: bracket above the bar + inline delta pill.
+   Replaces the legacy 3px dashed strip (.gantt-bar-baseline) and the SVG
+   baseline-arrow. The bracket reads as a caliper spanning the original
+   start→end; the pill quantifies any slip on the right edge. */
+.gantt-baseline-bracket {
+  position: absolute; top: 1px; height: 6px;
+  pointer-events: auto; cursor: pointer;
 }
-html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
+.gantt-baseline-bracket::before,
+.gantt-baseline-bracket::after {
+  content: ''; position: absolute; top: 0; width: 1.5px; height: 6px;
+  background: var(--gantt-baseline);
+}
+.gantt-baseline-bracket::before { left: 0; }
+.gantt-baseline-bracket::after { right: 0; }
+.gantt-baseline-bracket > .gantt-baseline-spine {
+  position: absolute; left: 1.5px; right: 1.5px; top: 5px; height: 1px;
+  background: var(--gantt-baseline);
+}
+
+.gantt-delta-pill {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+  white-space: nowrap; pointer-events: none; z-index: 4;
+}
+.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak); }
+.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); }
+.gantt-delta-pill.onplan { color: var(--text-muted); background: transparent; }
 .gantt-ms { transform: translateY(-50%); transition: transform 0.12s; }
 .gantt-ms:hover { transform: translateY(-50%) scale(1.15); }
 /* 2E: "Today" = the one live reference line — solid 2px in accent blue to own that role. */
@@ -1368,7 +1393,7 @@ html[data-theme="dark"] .gantt-bar-baseline { opacity: 0.70; }
 .gantt-legend-swatch { width: 14px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
 /* --- Gantt Tooltip --- */
-.gantt-tooltip { position: fixed; z-index: 1500; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px 14px; font-size: 11px; max-width: 300px; pointer-events: none; display: none; }
+.gantt-tooltip { position: fixed; z-index: 1500; background: white; border: 1px solid var(--border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 10px 14px; font-size: 11px; max-width: 360px; pointer-events: none; display: none; }
 .gantt-tooltip.visible { display: block; }
 .gantt-tooltip-title { font-weight: 700; font-size: 12px; color: var(--text-dark); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
 .gantt-tooltip-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; color: var(--text-dark-secondary); }
@@ -2173,7 +2198,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
    already existed; previously they referenced hardcoded hex inline. */
 .gantt-fy-line { background: var(--gantt-fy-marker) !important; }
 .gantt-guide-line { background: var(--gantt-guide) !important; }
-.gantt-baseline-bar { background: var(--gantt-baseline) !important; }
+
 
 /* --- UI-M12: detail-panel responsive clamp. Below ~540px, old fixed 480px
    width would spill off-screen on narrow windows. */
@@ -2386,7 +2411,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   <div class="cmdk-panel" id="cmdkPanel">
     <div class="cmdk-input-wrap">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" class="cmdk-input" id="cmdkInput" placeholder="Search projects, forums, views, actions…" autocomplete="off" spellcheck="false">
+      <input type="text" class="cmdk-input" id="cmdkInput" placeholder="Search projects, meetings, views, actions…" autocomplete="off" spellcheck="false">
       <span class="cmdk-kbd">Esc</span>
     </div>
     <div class="cmdk-list" id="cmdkList"></div>
@@ -2443,13 +2468,13 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Governance</div>
-      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="Decisions awaiting approval + overdue actions across all forums">
+      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="Decisions awaiting approval + overdue actions across all meetings">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         My Actions <span class="nav-badge" id="navBadgeMyActions">0</span>
       </div>
       <div class="nav-item" data-view="governance" onclick="App.navigate('governance')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
-        Forums <span class="nav-badge" id="navBadgeForums">0</span>
+        Meetings <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
       <div class="nav-section-label">System</div>
       <!-- Activity moved here from the Portfolio section — audit-trail browsing is an admin/system task. -->
@@ -2498,7 +2523,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <div class="portfolio-header">
           <div>
             <h2 class="portfolio-title">My Actions</h2>
-            <div class="portfolio-subtitle">Decisions awaiting approval and overdue actions across all forums</div>
+            <div class="portfolio-subtitle">Decisions awaiting approval and overdue actions across all meetings</div>
           </div>
         </div>
         <div id="myActionsBody" style="display:flex;flex-direction:column;gap:14px"></div>
@@ -2584,7 +2609,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <button class="btn btn-outline btn-sm" onclick="ColumnPicker.toggle(this)" title="Show / hide columns" aria-label="Columns"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="9"/><rect x="14" y="15" width="7" height="6"/></svg> Columns</button>
           <button class="btn btn-outline btn-sm" onclick="App.exportCSV()" title="Export as CSV"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> CSV</button>
           <button class="btn btn-outline btn-sm" onclick="Dashboard.copyTable()" title="Copy filtered table to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy Table</button>
-          <button class="btn btn-outline btn-sm" onclick="ProjectImport.showBulkEdit()" title="Bulk edit visible projects — change status, manager, RAG, forum, or sprint across many rows"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Bulk Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="ProjectImport.showBulkEdit()" title="Bulk edit visible projects — change status, manager, RAG, meeting, or sprint across many rows"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Bulk Edit</button>
         </div>
         <div class="view-help-panel" id="helpDashboard"></div>
         <!-- Watching / Pinned Projects -->
@@ -2761,7 +2786,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <button class="btn btn-outline btn-sm" id="govExportPortfolioPackBtn" onclick="Report.exportPortfolioPack(App.activeCustomer)" title="Branded portfolio pack (active customer)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Portfolio Pack</button>
         </div>
         <div class="gov-tabs" id="govTabs">
-          <div class="gov-tab active" data-tab="forums" onclick="Governance.switchTab('forums')">Forums <span class="tab-count" id="govForumCount">0</span></div>
+          <div class="gov-tab active" data-tab="forums" onclick="Governance.switchTab('forums')">Meetings <span class="tab-count" id="govForumCount">0</span></div>
           <div class="gov-tab" data-tab="risks" onclick="Governance.switchTab('risks')">Risks <span class="tab-count" id="govRiskCount">0</span></div>
         </div>
         <div id="govForumsContent"></div>
@@ -2809,7 +2834,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 <!-- Forum Edit Modal -->
 <div class="team-edit-overlay" id="forumModalOverlay" style="display:none" onclick="Governance.closeForumModal()"></div>
 <div class="team-edit-modal" id="forumModalModal" style="display:none;max-width:440px">
-  <h3 id="forumModalTitle" style="font-size:15px;font-weight:700;margin-bottom:14px">Add Forum</h3>
+  <h3 id="forumModalTitle" style="font-size:15px;font-weight:700;margin-bottom:14px">Add Meeting</h3>
   <div id="forumModalFields" style="display:flex;flex-direction:column;gap:10px"></div>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
     <button class="btn btn-ghost btn-sm" onclick="Governance.closeForumModal()">Cancel</button>
@@ -2929,7 +2954,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 <div class="split-modal" id="rosterEditorModal" style="display:none;max-width:560px" role="dialog" aria-labelledby="rosterEditorTitle" aria-modal="true">
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
     <div>
-      <h3 id="rosterEditorTitle" style="margin:0">Edit forum roster</h3>
+      <h3 id="rosterEditorTitle" style="margin:0">Edit meeting roster</h3>
       <div id="rosterEditorSubtitle" style="font-size:12px;color:var(--text-muted);margin-top:2px">Name each attendee and pick their RACI role.</div>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="Governance.cancelRosterEditor()" aria-label="Close" style="padding:4px 8px;font-size:16px;line-height:1">&times;</button>
@@ -3918,11 +3943,11 @@ const App = {
         var changed = Object.keys(igf).some(function(k) { return k !== 'name' && JSON.stringify(ef[k]) !== JSON.stringify(igf[k]); });
         if (changed) {
           report.updatedForums++;
-          report.details.push('Updated forum "' + igf.name + '"');
+          report.details.push('Updated meeting "' + igf.name + '"');
         }
       } else {
         report.addedForums++;
-        report.details.push('New forum "' + igf.name + '"');
+        report.details.push('New meeting "' + igf.name + '"');
       }
     });
 
@@ -3985,7 +4010,7 @@ const App = {
     html += '<div style="font-size:12px;color:var(--text-dark);margin-bottom:8px">' +
       '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Projects</span><span>' + report.updatedProjects + ' updated, ' + report.addedProjects + ' new</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Team Members</span><span>' + report.updatedMembers + ' updated, ' + report.addedMembers + ' new</span></div>' +
-      '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Governance Forums</span><span>' + report.updatedForums + ' updated, ' + report.addedForums + ' new</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Governance Meetings</span><span>' + report.updatedForums + ' updated, ' + report.addedForums + ' new</span></div>' +
       '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Sprints</span><span>' + report.updatedSprints + ' updated, ' + report.addedSprints + ' new</span></div>' +
     '</div>';
 
@@ -4403,7 +4428,7 @@ const App = {
     // Check governance_forum references
     projects.forEach(p => {
       if (p.governance_forum && !forumNames.has(p.governance_forum)) {
-        issues.push({ type: 'warning', message: 'Project "' + p.name + '" references non-existent forum: ' + p.governance_forum, fixAction: 'clear_forum', projectId: p.id });
+        issues.push({ type: 'warning', message: 'Project "' + p.name + '" references non-existent meeting: ' + p.governance_forum, fixAction: 'clear_forum', projectId: p.id });
       }
     });
 
@@ -4462,7 +4487,7 @@ const App = {
       const oldForum = p.governance_forum;
       p.governance_forum = '';
       this.logChange(p.id, 'integrity_autofix', oldForum || '', '', 'auto-fix: orphan forum reference');
-      this.toast('Cleared orphaned forum reference from ' + p.name, 'success');
+      this.toast('Cleared orphaned meeting reference from ' + p.name, 'success');
     } else if (issue.fixAction === 'clear_split_sprint' && p && p.skill_splits && p.skill_splits[issue.skillKey]) {
       const oldSprint = p.skill_splits[issue.skillKey][issue.splitIndex].sprint;
       p.skill_splits[issue.skillKey][issue.splitIndex].sprint = '_backlog';
@@ -5934,7 +5959,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Forums', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Meetings', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -6820,7 +6845,7 @@ const App = {
   _renderCustomersCard() {
     return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
     '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Customer Management</h3>' +
-    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure customers, their colours, and stale-update thresholds. Renaming cascades to all projects, team members, and forums.</div>' +
+    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Configure customers, their colours, and stale-update thresholds. Renaming cascades to all projects, team members, and meetings.</div>' +
     (function() {
       var custs = (App.data && App.data.customers) || [];
       if (!custs.length) return '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No customers configured</div>';
@@ -9308,7 +9333,7 @@ const ProjectImport = {
         '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Schedule RAG</div><select id="pimBeRagSched" class="field-input" style="width:100%">' + rags.map(r => '<option value="' + r + '">' + (r || '— unchanged —') + '</option>').join('') + '</select></div>' +
         '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Resource RAG</div><select id="pimBeRagRes" class="field-input" style="width:100%">' + rags.map(r => '<option value="' + r + '">' + (r || '— unchanged —') + '</option>').join('') + '</select></div>' +
         '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Scope RAG</div><select id="pimBeRagScope" class="field-input" style="width:100%">' + rags.map(r => '<option value="' + r + '">' + (r || '— unchanged —') + '</option>').join('') + '</select></div>' +
-        '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Forum</div><select id="pimBeForum" class="field-input" style="width:100%"><option value="">— unchanged —</option>' + forums.map(f => '<option value="' + esc(f) + '">' + esc(f) + '</option>').join('') + '</select></div>' +
+        '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Meeting</div><select id="pimBeForum" class="field-input" style="width:100%"><option value="">— unchanged —</option>' + forums.map(f => '<option value="' + esc(f) + '">' + esc(f) + '</option>').join('') + '</select></div>' +
         // M6: bulk sprint assignment — updates current_sprint for selected projects.
         '<div><div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:3px">Current sprint</div><select id="pimBeSprint" class="field-input" style="width:100%"><option value="">\u2014 unchanged \u2014</option>' + sprintIds.map(s => '<option value="' + esc(s) + '">' + esc(s.replace(/CY\d+-/, '')) + '</option>').join('') + '</select></div>' +
       '</div>' +
@@ -9414,7 +9439,7 @@ const CommandPalette = {
       { title: 'Sprint Planning', id: 'sprint' },
       { title: 'Roadmap / Gantt', id: 'roadmap' },
       { title: 'Capacity & Workload', id: 'capacity' },
-      { title: 'Governance Forums', id: 'governance' },
+      { title: 'Governance Meetings', id: 'governance' },
       { title: 'System Settings', id: 'config' }
     ].forEach(v => items.push({ group: 'Views', title: v.title, meta: 'View · ' + v.id, action: () => App.navigate(v.id), keywords: v.title.toLowerCase() }));
 
@@ -9457,13 +9482,13 @@ const CommandPalette = {
         action: () => DetailPanel.open(p.id),
         keywords: (p.name + ' ' + p.id + ' ' + (p.manager || '') + ' ' + (p.category || '') + ' ' + p.customer).toLowerCase()
       }));
-      // Forums
+      // Meetings
       (App.data.governance_forums || []).forEach((f, idx) => items.push({
-        group: 'Forums',
+        group: 'Meetings',
         title: f.name,
-        meta: 'Forum · ' + (f.cadence || 'Ad-hoc') + (f.customer ? ' · ' + f.customer : ''),
+        meta: 'Meeting · ' + (f.cadence || 'Ad-hoc') + (f.customer ? ' · ' + f.customer : ''),
         action: () => { App.navigate('governance'); setTimeout(() => { const el = document.querySelector('.forum-card:nth-of-type(' + (idx + 1) + ')'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100); },
-        keywords: ('forum ' + f.name + ' ' + (f.customer || '') + ' ' + (f.cadence || '')).toLowerCase()
+        keywords: ('meeting forum ' + f.name + ' ' + (f.customer || '') + ' ' + (f.cadence || '')).toLowerCase()
       }));
       // Team members
       (App.data.team_members || []).forEach(tm => items.push({
@@ -11032,7 +11057,7 @@ const Dashboard = {
     // Sentence 3: risks + forward look
     const forwardBits = [];
     if (milestones30) forwardBits.push('<strong>' + milestones30 + '</strong> milestone' + (milestones30 === 1 ? '' : 's') + ' within 30 days');
-    if (forums7) forwardBits.push('<strong>' + forums7 + '</strong> governance forum' + (forums7 === 1 ? '' : 's') + ' within 7 days');
+    if (forums7) forwardBits.push('<strong>' + forums7 + '</strong> governance meeting' + (forums7 === 1 ? '' : 's') + ' within 7 days');
     if (overdueActions) forwardBits.push('<span class="es-red">' + overdueActions + ' overdue governance action' + (overdueActions === 1 ? '' : 's') + '</span>');
     const riskBits = [];
     if (openRisks) {
@@ -11554,7 +11579,7 @@ const Dashboard = {
         type: 'forums', severity: 'blue',
         icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',
         count: upcomingForums.length,
-        summary: upcomingForums.length + ' forum' + (upcomingForums.length > 1 ? 's' : '') + ' in the next 7 days',
+        summary: upcomingForums.length + ' meeting' + (upcomingForums.length > 1 ? 's' : '') + ' in the next 7 days',
         items: upcomingForums
       });
     }
@@ -12441,7 +12466,7 @@ const MyActions = {
         '</div>' +
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-primary btn-sm" onclick="MyActions.approveDecision(' + d.forumIdx + ', ' + d.dIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Approve this decision">Approve</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + d.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this forum">Open</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + d.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this meeting">Open</button>' +
         '</div>' +
       '</div>';
     };
@@ -12457,7 +12482,7 @@ const MyActions = {
         '<div style="display:flex;gap:4px">' +
           '<button class="btn btn-primary btn-sm" onclick="MyActions.markActionDone(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Mark as done">Mark done</button>' +
           '<button class="btn btn-outline btn-sm" onclick="MyActions.reassignAction(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Reassign to a different owner">Reassign</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + a.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this forum">Open</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + a.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this meeting">Open</button>' +
         '</div>' +
       '</div>';
     };
@@ -13380,7 +13405,7 @@ const DetailPanel = {
         const todayStr = new Date().toISOString().split('T')[0];
         healthSections.push(
           '<div class="panel-section">' +
-            '<div class="panel-section-title">Forum Actions <span class="risk-count">' + linkedActions.length + '</span></div>' +
+            '<div class="panel-section-title">Meeting Actions <span class="risk-count">' + linkedActions.length + '</span></div>' +
             linkedActions.map(a => {
               const isDone = a.status === 'Done';
               const isOverdue = !isDone && a.due_date && a.due_date < todayStr;
@@ -13412,7 +13437,7 @@ const DetailPanel = {
           '<div class="field-group"><div class="field-label">Visibility</div>' + sel('visibility', ['Internal', 'Internal & External'], p.visibility || 'Internal') + '</div>' +
           '<div class="field-group"><div class="field-label">Sponsor</div>' + DetailPanel.renderSponsorField(p) + '</div>' +
           '<div class="field-group"><div class="field-label">Manager</div>' + sel('manager', ['', ...managers], p.manager) + '</div>' +
-          '<div class="field-group"><div class="field-label">Governance Forum</div>' +
+          '<div class="field-group"><div class="field-label">Governance Meeting</div>' +
             '<select class="field-input" data-field="governance_forum" onchange="DetailPanel.onFieldChange(this)">' +
               '<option value="">None</option>' +
               (App.data.governance_forums || []).filter(f => f.customer === p.customer && f.name !== 'Acme Industries ELT' && !f.name.startsWith('MD Connect')).map(f =>
@@ -14184,7 +14209,7 @@ const DetailPanel = {
     const r = p.risks_register[idx];
     const reason = prompt('Reason for escalation (optional):', '');
     if (reason === null) return;
-    const forum = prompt('Escalate to forum (optional, leave blank):', p.governance_forum || '');
+    const forum = prompt('Escalate to meeting (optional, leave blank):', p.governance_forum || '');
     if (forum === null) return;
     App.pushUndo('Escalate risk');
     r.escalation_severity = severity;
@@ -15774,11 +15799,11 @@ const Gantt = {
     // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat).
     html += '<div class="gantt-legend-group">' +
       '<span class="gantt-legend-item" title="Deadline (hard_deadline) — the project cannot slip past this date.">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="#8b5cf6" stroke="#5b21b6" stroke-width="1.2"/><line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#5b21b6" stroke-width="1"/><line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/><line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#5b21b6" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="8.5" x2="8" y2="11" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12.5" r="0.9" fill="#fff"/></svg> Deadline</span>' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/><line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#0f172a" stroke-width="1"/><line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#0f172a" stroke-width="1.3" stroke-linecap="round"/><line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#0f172a" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="8.5" x2="8" y2="11" stroke="#0f172a" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12.5" r="0.9" fill="#0f172a"/></svg> Deadline</span>' +
       '<span class="gantt-legend-item" title="Product launch milestone (category=Product Release + product_release_date).">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="7" r="1.2" fill="#b45309"/><path d="M5 11 L3 14 M11 11 L13 14" stroke="#b45309" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg> Launch</span>' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="7" r="1.2" fill="#0f172a"/><path d="M5 11 L3 14 M11 11 L13 14" stroke="#0f172a" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg> Launch</span>' +
       '<span class="gantt-legend-item" title="DT UAT release — the data-sourcing partner has signed off.">' +
-        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/><polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> UAT release</span>' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/><polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> UAT release</span>' +
       '</div>';
 
     // Lines — today (live reference), sprint boundaries, financial year.
@@ -15998,6 +16023,64 @@ const Gantt = {
       '</div>';
     };
 
+    // Plan-vs-actual narrative — appended to bar/label/baseline tooltips when an active
+    // baseline contains this project. Returns '' otherwise so the existing tooltip stays
+    // unchanged.
+    const buildPlanVsActual = (proj) => {
+      if (!proj) return '';
+      const ab = self._activeBaseline ? self._activeBaseline() : null;
+      const node = (ab && ab.snapshot && ab.snapshot[proj.id]) || null;
+      // Fallback: legacy project.baseline_start/end (pre-D2.3) when no named baseline matches.
+      const baseStart  = (node && node.start_date)  || proj.baseline_start;
+      const baseEnd    = (node && node.target_date) || proj.baseline_end;
+      const baseSize   = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
+      const liveStart  = proj.start_date;
+      const liveEnd    = proj.target_date;
+      const liveSize   = proj.size_total || 0;
+      if (!baseStart || !baseEnd || !liveStart || !liveEnd) return '';
+      const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
+      const startDelta = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
+      const targetDelta = Math.round((new Date(liveEnd) - new Date(baseEnd)) / 86400000);
+      const sizeDelta = liveSize - baseSize;
+      const startBit = startDelta === 0 ? 'start unchanged' : (startDelta > 0 ? '+' + startDelta + 'd on start' : startDelta + 'd on start');
+      const targetBit = targetDelta === 0 ? 'target unchanged' : (targetDelta > 0 ? '+' + targetDelta + 'd on target' : targetDelta + 'd on target');
+      const sizeBit = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? '+' + sizeDelta + ' SP' : sizeDelta + ' SP');
+      const setMeta = (ab && ab.created_at) ? 'set ' + new Date(ab.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (ab.created_by ? ' by ' + esc(ab.created_by) : '') : '';
+      let movers = '';
+      try {
+        const sinceTs = (ab && ab.created_at) || '';
+        const log = (App.data.audit_log || []).filter(e => e.projectId === proj.id && (!sinceTs || (e.timestamp || '') >= sinceTs));
+        const seen = new Set();
+        const bullets = [];
+        for (let i = log.length - 1; i >= 0 && bullets.length < 3; i--) {
+          const e = log[i];
+          if (!e.field || seen.has(e.field)) continue;
+          seen.add(e.field);
+          bullets.push('<li>' + esc(e.field) + ': ' + esc(String(e.oldValue || '')) + ' → ' + esc(String(e.newValue || '')) + '</li>');
+        }
+        if (bullets.length) {
+          movers = '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">What moved</div>' +
+                   '<ul style="margin:2px 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul>';
+        } else {
+          // Audit log has no qualifying entries — fall back to the most recent touch on this
+          // project so the user still has a "what / when" anchor. (Audit entries don't store a
+          // person's name; `source` is a category like 'user' / 'walkthrough', so we omit the by-line.)
+          const lastEntry = log.length ? log[log.length - 1] : null;
+          if (lastEntry && lastEntry.timestamp) {
+            const when = new Date(lastEntry.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            movers = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Last touched ' + esc(when) + '</div>';
+          }
+        }
+      } catch (_) { /* audit log may be absent — fine */ }
+      return '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + setMeta + '</span></div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:2px"><span style="color:var(--text-muted)">Baseline</span> ' + fmtD(baseStart) + ' → ' + fmtD(baseEnd) + ' · ' + baseSize + ' SP</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Current</span> ' + fmtD(liveStart) + ' → ' + fmtD(liveEnd) + ' · ' + liveSize + ' SP</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' · ' + targetBit + ' · ' + sizeBit + '</div>' +
+        movers +
+      '</div>';
+    };
+
     const buildTooltip = (type, el) => {
       if (type === 'seg') {
         const parentBar = el.closest('.gantt-bar');
@@ -16037,7 +16120,7 @@ const Gantt = {
           (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
           (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' +
-          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildProjectSummary(p);
+          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildPlanVsActual(p) + buildProjectSummary(p);
       }
       // Phase-specific tooltip — fired when hovering a detailed sub-row bar. Shows just the
       // hovered phase in full detail plus a compact header identifying the parent project.
@@ -16139,6 +16222,16 @@ const Gantt = {
           '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + verb + '</div>' +
           '<div class="gantt-tooltip-row">' + esc(secondary ? secondary.name : '?') + '</div>';
       }
+      if (type === 'baseline') {
+        const id = el.dataset.id;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        if (!p) return '';
+        const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
+          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
+        const block = buildPlanVsActual(p);
+        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline</div>';
+        return projHeader + block;
+      }
       return '';
     };
 
@@ -16158,6 +16251,12 @@ const Gantt = {
       } else if (type === 'phase') {
         const id = el.dataset.id;
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (label) label.classList.add('gantt-label-active');
+      } else if (type === 'baseline') {
+        const id = el.dataset.id;
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (bar) bar.classList.add('gantt-bar-highlight');
         if (label) label.classList.add('gantt-label-active');
       } else if (type === 'dep') {
         el.classList.add('gantt-dep-active');
@@ -16187,6 +16286,12 @@ const Gantt = {
       } else if (type === 'phase') {
         const id = el.dataset.id;
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (label) label.classList.remove('gantt-label-active');
+      } else if (type === 'baseline') {
+        const id = el.dataset.id;
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (bar) bar.classList.remove('gantt-bar-highlight');
         if (label) label.classList.remove('gantt-label-active');
       } else if (type === 'dep') {
         const svg = el.ownerSVGElement || el.closest('svg');
@@ -16263,6 +16368,7 @@ const Gantt = {
     };
     attachTo(scroll);
     attachTo(document.getElementById('ganttLabels'));
+    self._buildTooltipForTest = buildTooltip;
   },
 
   init() {
@@ -16783,8 +16889,7 @@ const Gantt = {
           if (startSp) bStart = startSp.start_date;
           if (endSp) bEnd = endSp.end_date;
         }
-        // Fallback: legacy project.baseline_start/end (pre-D2.3 data).
-        // Prefer the named baseline's project-level dates (D2.4); legacy fields are a final fallback.
+        // Fallback: per-project dates inside the active named baseline (D2.4).
         if (!bStart || !bEnd) {
           const ab = this._activeBaseline();
           const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
@@ -16793,27 +16898,23 @@ const Gantt = {
             bEnd = node.target_date;
           }
         }
+        // Final fallback: legacy project.baseline_start/end (pre-D2.3).
         if (!bStart || !bEnd) { bStart = p.baseline_start; bEnd = p.baseline_end; }
         if (bStart && bEnd) {
           const bx1 = Math.max(0, dateToX(bStart));
           const bx2 = Math.max(bx1 + 4, dateToX(bEnd));
-          baselineHtml = '<div class="gantt-bar-baseline" data-baseline-project="' + Dashboard.esc(p.id) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px;background:' + color + '"></div>';
-          // Baseline → current connector: arrow from baseline end to current end when slipped.
-          if (p.target_date && p.target_date !== bEnd) {
-            const cx2 = bx2;
-            const tx2 = Math.max(cx2 + 4, dateToX(p.target_date));
-            const dir = tx2 > cx2 ? 1 : -1;
-            const left = Math.min(cx2, tx2);
-            const width = Math.max(8, Math.abs(tx2 - cx2));
-            const arrowColor = dir > 0 ? 'var(--status-red)' : 'var(--status-green)';
-            const headPts = dir > 0
-              ? width + ',7 ' + (width - 6) + ',3 ' + (width - 6) + ',11'
-              : '0,7 6,3 6,11';
-            baselineHtml += '<svg class="baseline-arrow" style="position:absolute;left:' + left + 'px;top:50%;width:' + width + 'px;height:14px;pointer-events:none;overflow:visible" aria-hidden="true">' +
-              '<line x1="0" y1="7" x2="' + width + '" y2="7" stroke="' + arrowColor + '" stroke-width="1.6" stroke-dasharray="3,2"/>' +
-              '<polygon points="' + headPts + '" fill="' + arrowColor + '"/>' +
-              '<title>Baseline ' + Dashboard.esc(bEnd) + ' → current ' + Dashboard.esc(p.target_date) + '</title>' +
-            '</svg>';
+          // Bracket sits above the bar, spanning the baseline's original start → end.
+          baselineHtml += '<div class="gantt-baseline-bracket gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" role="img" aria-label="Baseline ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"><div class="gantt-baseline-spine"></div></div>';
+          // Delta pill — quantify the slip / early / on-plan state vs current target_date.
+          if (p.target_date) {
+            const targetDelta = Math.round((new Date(p.target_date) - new Date(bEnd)) / 86400000);
+            let pillCls, pillText;
+            if (targetDelta > 0)      { pillCls = 'slip';   pillText = '+' + targetDelta + 'd'; }
+            else if (targetDelta < 0) { pillCls = 'early';  pillText = '−' + Math.abs(targetDelta) + 'd'; }
+            else                      { pillCls = 'onplan'; pillText = 'on plan'; }
+            const pillX = Math.min(totalWidth - 50, Math.max(x2, bx2) + 4);
+            const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
+            baselineHtml += '<div class="gantt-delta-pill ' + pillCls + '" style="left:' + pillX + 'px" title="' + Dashboard.esc(tipText) + '">' + pillText + '</div>';
           }
         }
       }
@@ -16824,37 +16925,38 @@ const Gantt = {
       // Each icon: single instantly-readable metaphor, one strong fill colour, matching dark stroke.
       // Colour semantics are role-coded (not status-coded — RAG owns status). Every one is documented
       // in the Gantt legend (see Gantt.renderLegend).
-      //   DEADLINE → violet calendar-warning ("hard stop"; non-red so it doesn't clash with RAG).
-      //   LAUNCH   → amber rocket ("go live!"), warm, distinct from RAG green.
-      //   UAT      → cyan document + checkmark ("signed off, ready to hand over").
+      //   DEADLINE → black-outlined calendar-warning. Shape (calendar + "!" mark) carries meaning;
+      //              colour is reserved for RAG / customer chips so milestones never compete with status.
+      //   LAUNCH   → black-outlined rocket. Same token-driven black-on-white as the other glyphs.
+      //   UAT      → black-outlined document + check. "Signed off, ready to hand over" — shape-only differentiation.
       let milestoneHtml = '';
       const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
       const msWrap = (klass, x, type, date, inner, tabIdx) =>
         '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:50%;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
 
-      // Deadline — calendar with an exclamation. Violet fill (NOT red) so it never reads as RAG Red.
+      // Deadline — calendar with an exclamation. Black-on-white so shape carries meaning, not colour.
       // Fill/stroke wired via CSS custom properties so the icon flips with the theme.
       const msDeadline = (x, type, date) => msWrap('gantt-ms-deadline', x, type, date,
         '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<rect x="2" y="3" width="12" height="11" rx="1.5" style="fill:var(--gantt-fy-marker);stroke:var(--gantt-milestone-stroke);stroke-width:1.2"/>' +
-          '<line x1="2" y1="6.5" x2="14" y2="6.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1"/>' +
-          '<line x1="5" y1="1.5" x2="5" y2="4.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
-          '<line x1="11" y1="1.5" x2="11" y2="4.5" style="stroke:var(--gantt-milestone-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
-          '<line x1="8" y1="8.5" x2="8" y2="11" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
-          '<circle cx="8" cy="12.5" r="0.9" fill="#fff"/>' +
+          '<rect x="2" y="3" width="12" height="11" rx="1.5" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2"/>' +
+          '<line x1="2" y1="6.5" x2="14" y2="6.5" style="stroke:var(--gantt-ms-stroke);stroke-width:1"/>' +
+          '<line x1="5" y1="1.5" x2="5" y2="4.5" style="stroke:var(--gantt-ms-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
+          '<line x1="11" y1="1.5" x2="11" y2="4.5" style="stroke:var(--gantt-ms-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
+          '<line x1="8" y1="8.5" x2="8" y2="11" style="stroke:var(--gantt-ms-stroke);stroke-width:1.5" stroke-linecap="round"/>' +
+          '<circle cx="8" cy="12.5" r="0.9" style="fill:var(--gantt-ms-stroke)"/>' +
         '</svg>');
-      // Launch — rocket. Amber fill with a darker stroke; distinct from RAG green and from red deadline.
+      // Launch — rocket. Black-on-white so shape carries meaning, not colour.
       const msLaunch = (x, type, date) => msWrap('gantt-ms-launch', x, type, date,
         '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/>' +
-          '<circle cx="8" cy="7" r="1.2" fill="#b45309"/>' +
-          '<path d="M5 11 L3 14 M11 11 L13 14" stroke="#b45309" stroke-width="1.2" stroke-linecap="round" fill="none"/>' +
+          '<path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linejoin="round"/>' +
+          '<circle cx="8" cy="7" r="1.2" style="fill:var(--gantt-ms-stroke)"/>' +
+          '<path d="M5 11 L3 14 M11 11 L13 14" style="stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linecap="round" fill="none"/>' +
         '</svg>');
-      // UAT release — document with a checkmark. "Approved, handover ready."
+      // UAT release — document with a checkmark. Black-on-white so shape carries meaning, not colour.
       const msUat = (x, type, date) => msWrap('gantt-ms-uat', x, type, date,
         '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
-          '<rect x="3" y="2" width="10" height="12" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1.2"/>' +
-          '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<rect x="3" y="2" width="10" height="12" rx="1" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2"/>' +
+          '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>');
 
       if (p.hard_deadline) milestoneHtml += msDeadline(dateToX(p.hard_deadline), 'Hard Deadline', p.hard_deadline);
@@ -16864,8 +16966,8 @@ const Gantt = {
         if (ds.uat_release_date) milestoneHtml += msUat(dateToX(ds.uat_release_date), 'DT UAT Release', ds.uat_release_date);
       }
       // External-dependency gates: one diamond per external blocker with a known expected_date.
-      // Colour-coded violet (matches the "external" pill in the detail panel) so the reader can tell
-      // at a glance that this is a non-project gate rather than a hard deadline.
+      // Same token-driven black-on-white treatment as the other milestone glyphs — shape (diamond)
+      // alone differentiates this from a hard deadline; colour is reserved for RAG and customer chips.
       (p.dependencies || []).forEach(d => {
         if (!d || d.kind !== 'external' || (d.type || 'blocked_by') !== 'blocked_by') return;
         if (!d.expected_date) return;
@@ -16873,7 +16975,7 @@ const Gantt = {
         const info = Dashboard.esc(JSON.stringify({ type: 'External dependency', date: d.expected_date, project: p.name }));
         const tip = Dashboard.esc(d.label + ' · expected ' + d.expected_date + (d.notes ? ' · ' + d.notes : ''));
         milestoneHtml += '<span class="gantt-ms gantt-ms-external gantt-hoverable" data-hover-type="milestone" data-info=\'' + info + '\' tabindex="0" role="img" aria-label="External dependency: ' + tip + '" title="External: ' + tip + '" style="position:absolute;top:50%;left:' + (gx - 7) + 'px;z-index:3;cursor:pointer;width:14px;height:14px">' +
-          '<svg width="14" height="14" viewBox="0 0 14 14" focusable="false"><path d="M7 1 L13 7 L7 13 L1 7 Z" fill="var(--accent-violet)" stroke="#5b21b6" stroke-width="1.2" stroke-linejoin="round"/><path d="M7 4 L7 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" fill="#fff"/></svg>' +
+          '<svg width="14" height="14" viewBox="0 0 14 14" focusable="false"><path d="M7 1 L13 7 L7 13 L1 7 Z" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linejoin="round"/><path d="M7 4 L7 8" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" style="fill:var(--gantt-ms-stroke)"/></svg>' +
         '</span>';
       });
 
@@ -18386,7 +18488,7 @@ const Walkthrough = {
     const openRisks = (project.risks_register || []).filter(r => (r.status || 'open') === 'open');
     host.innerHTML =
       '<div class="wt-cust-h"><span class="ttl">Project narrative</span></div>' +
-      '<p class="wt-cust-sub">Feeds: customer · forum · sponsor packs</p>' +
+      '<p class="wt-cust-sub">Feeds: customer · meeting · sponsor packs</p>' +
       '<div class="wt-cust-section"><div class="lbl">Headline <span class="for">→ pack</span></div>' +
         '<textarea class="wt-cust-input" data-narrative-field="headline" onchange="Walkthrough._narrativeHeadlineChange(this.value)" placeholder="One line for the pack">' + esc(n.headline || '') + '</textarea>' +
       '</div>' +
@@ -18403,7 +18505,7 @@ const Walkthrough = {
       '<div class="wt-cust-section"><div class="lbl">Customer-visible risks</div>' +
         (openRisks.length ? openRisks.map((r, i) => riskTag(r, (project.risks_register || []).indexOf(r))).join('') : '<div style="font-size:11px;color:#a78bfa">No open risks.</div>') +
       '</div>' +
-      '<div class="wt-cust-gen" onclick="Walkthrough._openPackPicker()"><strong>Open pack</strong><br><span style="font-size:9.5px">Customer · Forum · Sponsor</span></div>';
+      '<div class="wt-cust-gen" onclick="Walkthrough._openPackPicker()"><strong>Open pack</strong><br><span style="font-size:9.5px">Customer · Meeting · Sponsor</span></div>';
   },
 
   _narrativeHeadlineChange(val) {
@@ -18446,7 +18548,7 @@ const Walkthrough = {
   },
 
   _openPackPicker() {
-    const choice = (typeof prompt === 'function') ? prompt('Open pack — type one of:\n  customer\n  forum\n  sponsor', 'customer') : null;
+    const choice = (typeof prompt === 'function') ? prompt('Open pack — type one of:\n  customer\n  meeting\n  sponsor', 'customer') : null;
     if (!choice) return;
     const c = String(choice).trim().toLowerCase();
     if (c === 'customer') {
@@ -18456,7 +18558,7 @@ const Walkthrough = {
       else if (Report && typeof Report.buildProjectPackDoc === 'function' && typeof Report._openPrintWindow === 'function') {
         Report._openPrintWindow(Report.buildProjectPackDoc(this.activeProjectId));
       }
-    } else if (c === 'forum') {
+    } else if (c === 'meeting') {
       const project = App.data.projects.find(p => p.id === this.activeProjectId);
       const fname = project && project.governance_forum;
       const forum = (App.data.governance_forums || []).find(f => f.name === fname);
@@ -18464,7 +18566,7 @@ const Walkthrough = {
         const builder = (Report && typeof Report.buildForumPackDoc === 'function') ? Report.buildForumPackDoc.bind(Report) : (typeof Governance !== 'undefined' ? Governance.buildAgendaDoc.bind(Governance) : null);
         if (builder && typeof Report._openPrintWindow === 'function') Report._openPrintWindow(builder(forum.id || forum.name));
       } else {
-        App.toast('No governance forum linked to this project', 'warn');
+        App.toast('No governance meeting linked to this project', 'warn');
       }
     }
   },
@@ -25386,7 +25488,7 @@ const Governance = {
             (_narrativeBlock ? '<div style="margin-top:4px">' + _narrativeBlock + '</div>' : '') +
             '</li>';
         }).join('') + '</ul>'
-      : '<p>No projects linked to this forum.</p>';
+      : '<p>No projects linked to this meeting.</p>';
     const actions = forum.actions || [];
     const openActions = actions.filter(a => a.status !== 'Done');
     const actionsHtml = openActions.length
@@ -25406,9 +25508,9 @@ const Governance = {
     return (typeof Report !== 'undefined' && Report.buildDoc)
       ? Report.buildDoc({
           customer: linkedProjects[0] ? linkedProjects[0].customer : '',
-          title: 'Forum Agenda — ' + forum.name,
+          title: 'Meeting Agenda — ' + forum.name,
           subtitle: forum.next_date ? ('Next meeting ' + forum.next_date) : 'Pre-read',
-          reportType: 'Forum Agenda',
+          reportType: 'Meeting Agenda',
           sections: [
             { id: 'fa-projects', title: 'Linked projects', html: projectsHtml },
             { id: 'fa-actions',  title: 'Open actions',   html: actionsHtml },
@@ -25416,14 +25518,14 @@ const Governance = {
           ],
           includeAppendix: false
         })
-      : ('<html><body><h1>Forum Agenda — ' + esc(forum.name) + '</h1><h2>Linked projects</h2>' + projectsHtml + '<h2>Open actions</h2>' + actionsHtml + '<h2>Escalated risks</h2>' + risksHtml + '</body></html>');
+      : ('<html><body><h1>Meeting Agenda — ' + esc(forum.name) + '</h1><h2>Linked projects</h2>' + projectsHtml + '<h2>Open actions</h2>' + actionsHtml + '<h2>Escalated risks</h2>' + risksHtml + '</body></html>');
   },
 
   exportForumAgenda(forumId) {
     const doc = this.buildAgendaDoc(forumId);
-    if (!doc) { App.toast('Forum not found', 'error'); return; }
+    if (!doc) { App.toast('Meeting not found', 'error'); return; }
     if (typeof Report !== 'undefined' && Report.open) Report.open(doc);
-    App.toast('Forum agenda opened — use Print > Save as PDF', 'success');
+    App.toast('Meeting agenda opened — use Print > Save as PDF', 'success');
   },
 
   activeTab: 'forums',
@@ -25466,8 +25568,8 @@ const Governance = {
       packBtn.title = customer ? 'Branded portfolio pack for ' + customer : 'Select a customer to enable this export';
     }
 
-    // Add Forum button
-    let addBtnHtml = '<div style="margin-bottom:10px"><button class="btn btn-add btn-sm" onclick="Governance.openForumModal(null)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Forum</button></div>';
+    // Add Meeting button
+    let addBtnHtml = '<div style="margin-bottom:10px"><button class="btn btn-add btn-sm" onclick="Governance.openForumModal(null)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Meeting</button></div>';
 
     if (!forums.length) {
       document.getElementById('govForumsContent').innerHTML = addBtnHtml + '<div style="padding:40px;text-align:center;color:var(--text-muted)">No governance forums for ' + Dashboard.esc(customer || 'any customer') + '</div>';
@@ -25518,7 +25620,7 @@ const Governance = {
             '</div>' +
           '</div>';
         }).join('') :
-        '<div class="forum-no-projects">No projects are mapped to this forum yet. Open a project and set its <em>Governance Forum</em> to include it here.</div>';
+        '<div class="forum-no-projects">No projects are mapped to this meeting yet. Open a project and set its <em>Governance Meeting</em> to include it here.</div>';
 
       return '<div class="forum-card">' +
         '<div class="forum-header" onclick="Governance.toggle(' + idx + ')" role="button" tabindex="0" aria-expanded="false" aria-controls="forumBody' + idx + '" id="forumHeader' + idx + '" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Governance.toggle(' + idx + ')}">' +
@@ -25527,8 +25629,8 @@ const Governance = {
           '<span class="forum-cadence">' + (f.cadence || '') + '</span>' +
           '<span class="forum-next">' + nextLabel + '</span>' +
           '<span class="forum-count">' + forumProjects.length + ' projects</span>' +
-          '<button class="forum-edit-btn" onclick="event.stopPropagation();Governance.openForumModal(' + realIdx + ')" title="Edit forum" aria-label="Edit forum ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
-          '<button class="forum-delete-btn" onclick="event.stopPropagation();Governance.deleteForum(' + realIdx + ')" title="Delete forum" aria-label="Delete forum ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>' +
+          '<button class="forum-edit-btn" onclick="event.stopPropagation();Governance.openForumModal(' + realIdx + ')" title="Edit meeting" aria-label="Edit meeting ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
+          '<button class="forum-delete-btn" onclick="event.stopPropagation();Governance.deleteForum(' + realIdx + ')" title="Delete meeting" aria-label="Delete meeting ' + Dashboard.esc(f.name) + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>' +
           '<svg class="forum-toggle forum-chevron-icon" id="forumToggle' + idx + '" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>' +
         '</div>' +
         '<div class="forum-body" id="forumBody' + idx + '">' + projectRows +
@@ -25603,7 +25705,7 @@ const Governance = {
     const forum = (App.data.governance_forums || [])[forumIdx];
     if (!forum) return;
     if (!forum.actions) forum.actions = [];
-    App.pushUndo('Add forum action');
+    App.pushUndo('Add meeting action');
     forum.actions.push({ description: '', owner: '', due_date: '', status: 'Open', created_date: new Date().toISOString().split('T')[0] });
     App.markDirty();
     App.saveToLocalStorage();
@@ -25613,7 +25715,7 @@ const Governance = {
   removeAction(forumIdx, actionIdx) {
     const forum = (App.data.governance_forums || [])[forumIdx];
     if (!forum || !forum.actions) return;
-    App.pushUndo('Remove forum action');
+    App.pushUndo('Remove meeting action');
     forum.actions.splice(actionIdx, 1);
     App.markDirty();
     App.saveToLocalStorage();
@@ -25814,7 +25916,7 @@ const Governance = {
     const clean = state.rows
       .map(r => ({ name: (r.name || '').trim(), role: (r.role || 'Contributor').trim() }))
       .filter(r => r.name);
-    App.pushUndo('Edit forum roster');
+    App.pushUndo('Edit meeting roster');
     forum.roster = clean;
     App.logChange(null, 'forum_roster', 'forum:' + forum.name, clean.length + ' members', 'user');
     App.markDirty();
@@ -26004,7 +26106,7 @@ const Governance = {
             '<input type="text" id="mwAdHocAttendees" oninput="Governance._updateAdHoc(this.value)" value="' + esc(w.present.filter(n => !w.roster.includes(n)).join(', ')) + '" style="margin-top:4px;width:100%;padding:6px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px" placeholder="e.g. External reviewer">' +
           '</label>';
       } else {
-        html = '<div style="background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;margin-bottom:10px">No roster is set for this forum. Enter attendees as free text \u2014 or <a href="javascript:Governance._openRosterFromWizard()" style="color:var(--accent-blue)">set a roster first</a>.</div>' +
+        html = '<div style="background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;margin-bottom:10px">No roster is set for this meeting. Enter attendees as free text \u2014 or <a href="javascript:Governance._openRosterFromWizard()" style="color:var(--accent-blue)">set a roster first</a>.</div>' +
           '<label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px">Present (comma-separated)' +
             '<input type="text" id="mwPresentList" oninput="Governance._updateFreeTextAttendance()" value="' + esc(w.present.join(', ')) + '" style="margin-top:4px;width:100%;padding:6px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px">' +
           '</label>' +
@@ -26023,16 +26125,16 @@ const Governance = {
           '<input type="text" id="mwChairCustom" oninput="Governance._meetingWizard.chair = this.value; Governance._saveMeetingDraft();" value="' + esc(!candidates.includes(w.chair) ? w.chair : '') + '" style="margin-top:4px;width:100%;padding:6px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px" placeholder="Full name">' +
         '</label>';
     } else if (step.id === 'agenda') {
-      html = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">The agenda is auto-generated from the forum\u2019s current state. Edit if you need to.</div>' +
+      html = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">The agenda is auto-generated from the meeting\u2019s current state. Edit if you need to.</div>' +
         '<textarea id="mwAgenda" rows="10" oninput="Governance._meetingWizard.agenda = this.value; Governance._saveMeetingDraft();" style="width:100%;padding:8px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px;font-family:var(--font-mono,monospace);line-height:1.6">' + esc(w.agenda) + '</textarea>' +
         '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Context: ' + w.projectCount + ' projects \u00B7 ' + w.overdueCount + ' overdue action(s) \u00B7 ' + w.escalatedRiskCount + ' escalated risk(s) \u00B7 ' + w.proposedDecisionCount + ' decision(s) pending.</div>';
     } else if (step.id === 'notes') {
-      html = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Meeting notes (free text). You can edit these later from the forum card.</div>' +
+      html = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Meeting notes (free text). You can edit these later from the meeting card.</div>' +
         '<textarea id="mwNotes" rows="10" oninput="Governance._meetingWizard.notes = this.value; Governance._saveMeetingDraft();" style="width:100%;padding:8px 10px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:12px;line-height:1.6" placeholder="Key discussion, decisions, and owners...">' + esc(w.notes) + '</textarea>';
     } else if (step.id === 'confirm') {
       html = '<div style="font-size:12px;margin-bottom:10px">Review before saving.</div>' +
         '<div style="font-size:12px;line-height:1.8;border:1px solid var(--border-dim);border-radius:var(--radius-sm);padding:10px 12px">' +
-          '<div><strong>Forum:</strong> ' + esc(w.forumName) + '</div>' +
+          '<div><strong>Meeting:</strong> ' + esc(w.forumName) + '</div>' +
           '<div><strong>Date:</strong> ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div>' +
           '<div><strong>Chair:</strong> ' + (w.chair ? esc(w.chair) : '<span style="color:var(--status-red)">not set</span>') + '</div>' +
           '<div><strong>Present:</strong> ' + (w.present.length ? esc(w.present.join(', ')) : '<span style="color:var(--text-muted)">(none)</span>') + '</div>' +
@@ -26264,7 +26366,7 @@ const Governance = {
     const addressesIssue = parseRef(addressesIssueRaw);
 
     if (!forum.decisions) forum.decisions = [];
-    App.pushUndo('Add forum decision');
+    App.pushUndo('Add meeting decision');
     const decision = { date: date, text: text.trim(), linkedProjects: linkedProjects, recordedBy: recordedBy.trim(), created_at: new Date().toISOString(), state: 'Proposed', state_history: [{ state: 'Proposed', at: new Date().toISOString(), by: recordedBy.trim() || 'user' }] };
     if (resolvesRisk) decision.resolves_risk = resolvesRisk;
     if (addressesIssue) decision.addresses_issue = addressesIssue;
@@ -26306,7 +26408,7 @@ const Governance = {
     if (!forum || !forum.decisions) return;
     const d = forum.decisions[decIdx];
     if (d && d.state === 'Approved') { App.toast('Approved decisions are locked and cannot be removed', 'error'); return; }
-    App.pushUndo('Remove forum decision');
+    App.pushUndo('Remove meeting decision');
     if (d) App.logChange(null, 'decision_removed', 'forum:' + forum.name + ':' + (d.text || '').substring(0, 60), '', 'user');
     forum.decisions.splice(decIdx, 1);
     App.markDirty();
@@ -26323,12 +26425,12 @@ const Governance = {
     const forum = isEdit ? (App.data.governance_forums || [])[idx] : null;
     const esc = Dashboard.esc;
 
-    document.getElementById('forumModalTitle').textContent = isEdit ? 'Edit Forum' : 'Add Forum';
+    document.getElementById('forumModalTitle').textContent = isEdit ? 'Edit Meeting' : 'Add Meeting';
 
     const fields = document.getElementById('forumModalFields');
     fields.innerHTML =
       '<div><div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Name</div>' +
-        '<input type="text" id="forumFieldName" class="field-input" style="width:100%" value="' + esc(forum ? forum.name : '') + '" placeholder="Forum name"></div>' +
+        '<input type="text" id="forumFieldName" class="field-input" style="width:100%" value="' + esc(forum ? forum.name : '') + '" placeholder="Meeting name"></div>' +
       '<div><div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px">Customer</div>' +
         '<select id="forumFieldCustomer" class="field-input" style="width:100%">' +
           App.getCustomers().map(function(c) { return '<option value="' + c + '"' + ((forum ? forum.customer : App.activeCustomer) === c ? ' selected' : '') + '>' + Dashboard.esc(c) + '</option>'; }).join('') +
@@ -26357,7 +26459,7 @@ const Governance = {
 
   saveForum() {
     const name = (document.getElementById('forumFieldName').value || '').trim();
-    if (!name) { App.toast('Forum name is required', 'error'); return; }
+    if (!name) { App.toast('Meeting name is required', 'error'); return; }
 
     const customer = document.getElementById('forumFieldCustomer').value;
     const cadence = document.getElementById('forumFieldCadence').value;
@@ -26369,17 +26471,17 @@ const Governance = {
     const isEdit = this._editForumIdx !== null && this._editForumIdx !== undefined;
 
     if (isEdit) {
-      App.pushUndo('Edit forum');
+      App.pushUndo('Edit meeting');
       const forum = App.data.governance_forums[this._editForumIdx];
-      if (!forum) { App.toast('Forum not found', 'error'); return; }
+      if (!forum) { App.toast('Meeting not found', 'error'); return; }
       forum.name = name;
       forum.customer = customer;
       forum.cadence = cadence;
       forum.next_date = nextDate;
       forum.description = description;
-      App.toast('Forum updated', 'success');
+      App.toast('Meeting updated', 'success');
     } else {
-      App.pushUndo('Add forum');
+      App.pushUndo('Add meeting');
       App.data.governance_forums.push({
         name: name,
         customer: customer,
@@ -26389,7 +26491,7 @@ const Governance = {
         actions: [],
         decisions: []
       });
-      App.toast('Forum added', 'success');
+      App.toast('Meeting added', 'success');
     }
 
     App.markDirty();
@@ -26403,13 +26505,13 @@ const Governance = {
     const forums = App.data.governance_forums || [];
     if (!forums[idx]) return;
     const name = forums[idx].name;
-    if (!await App.confirm({ title: 'Delete forum "' + name + '"?', body: 'Minutes, actions and decisions logged on this forum will be lost with it. This cannot be undone.', confirmLabel: 'Delete forum', danger: true })) return;
-    App.pushUndo('Delete forum');
+    if (!await App.confirm({ title: 'Delete meeting "' + name + '"?', body: 'Minutes, actions and decisions logged on this meeting will be lost with it. This cannot be undone.', confirmLabel: 'Delete meeting', danger: true })) return;
+    App.pushUndo('Delete meeting');
     forums.splice(idx, 1);
     App.markDirty();
     App.saveToLocalStorage();
     document.getElementById('navBadgeForums').textContent = forums.length;
-    App.toast('Forum "' + name + '" deleted', 'success');
+    App.toast('Meeting "' + name + '" deleted', 'success');
     this.render();
   },
 
@@ -26560,7 +26662,7 @@ const Governance = {
     const forums = App.data.governance_forums || [];
     const f = forums[forumIdx];
     if (!f) return;
-    Progress.start('Building Briefing Pack', { msg: 'Gathering forum data…', indeterminate: true, cancelable: false });
+    Progress.start('Building Briefing Pack', { msg: 'Gathering meeting data…', indeterminate: true, cancelable: false });
     const esc = Dashboard.esc;
     const projects = App.data.projects.filter(p => p.governance_forum === f.name);
     const ragDot = Report._ragDot.bind(Report);
@@ -26740,7 +26842,7 @@ const Governance = {
     const doc = Report.buildDoc({
       customer: f.customer || '',
       title: f.name + ' — Briefing Pack',
-      subtitle: 'Governance Forum · ' + (f.cadence || 'Ad-hoc') + ' · ' + projects.length + ' project' + (projects.length === 1 ? '' : 's'),
+      subtitle: 'Governance Meeting · ' + (f.cadence || 'Ad-hoc') + ' · ' + projects.length + ' project' + (projects.length === 1 ? '' : 's'),
       reportType: 'Briefing Pack',
       sections,
       includeAppendix: true
@@ -27259,7 +27361,7 @@ const Report = {
         '<dt>Risk Score</dt><dd>Impact (1–5) × Probability (1–5). Severe risks score ≥ 15.</dd>' +
         '<dt>Velocity</dt><dd>Points delivered per sprint, used to forecast completion.</dd>' +
         '<dt>Hardening Week</dt><dd>Week 5 of the 5-week sprint cycle, reserved for stabilisation, UAT, and release activities.</dd>' +
-        '<dt>Governance Forum</dt><dd>A recurring meeting where portfolio decisions, escalations, and approvals are recorded.</dd>' +
+        '<dt>Governance Meeting</dt><dd>A recurring meeting where portfolio decisions, escalations, and approvals are recorded.</dd>' +
       '</dl>' +
       '<h2>Report Metadata</h2>' +
       '<table><tr><th>Property</th><th>Value</th></tr>' +
@@ -27554,7 +27656,7 @@ const Report = {
     // Section 5: Governance & Decisions
     const forums = (App.data.governance_forums || []).filter(f => f.customer === customer);
     if (forums.length) {
-      let g = '<table><tr><th>Forum</th><th>Cadence</th><th>Next</th><th>Open actions</th><th>Overdue</th></tr>';
+      let g = '<table><tr><th>Meeting</th><th>Cadence</th><th>Next</th><th>Open actions</th><th>Overdue</th></tr>';
       const todayIso = new Date().toISOString().split('T')[0];
       forums.forEach(f => {
         const openA = (f.actions || []).filter(a => a.status !== 'Done').length;
@@ -27574,7 +27676,7 @@ const Report = {
         recentDecisions.push(Object.assign({ forum: f.name }, d));
       }));
       if (recentDecisions.length) {
-        g += '<h3>Recent Decisions</h3><table><tr><th>Date</th><th>Forum</th><th>Decision</th><th>By</th></tr>';
+        g += '<h3>Recent Decisions</h3><table><tr><th>Date</th><th>Meeting</th><th>Decision</th><th>By</th></tr>';
         recentDecisions.sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 10).forEach(d => {
           g += '<tr><td>' + esc(d.date || '') + '</td><td>' + esc(d.forum) + '</td><td>' + esc(d.text || '') + '</td><td>' + esc(d.recordedBy || '') + '</td></tr>';
         });
@@ -27586,7 +27688,7 @@ const Report = {
     const doc = this.buildDoc({
       customer,
       title: customer + ' Portfolio Pack',
-      subtitle: active.length + ' active · ' + all.length + ' total projects · ' + (forums.length || 0) + ' governance forums',
+      subtitle: active.length + ' active · ' + all.length + ' total projects · ' + (forums.length || 0) + ' governance meetings',
       reportType: 'Portfolio Pack',
       sections,
       includeAppendix: true
@@ -27928,8 +28030,8 @@ const Onboarding = {
       content: '<ul><li>See team workload by sprint with colour-coded utilisation bars per skill.</li><li>Manage team members: click a member card to edit their skills, hours, and holidays.</li><li>Sprint overrides let you adjust capacity for specific sprints (e.g., reduced availability).</li></ul>'
     },
     governance: {
-      title: 'Governance Forums View',
-      content: '<ul><li>View governance forums filtered by customer, sorted by next meeting date.</li><li>Expand a forum to see which projects report into it, and their RAG status.</li><li>Add, edit, or delete forums using the buttons on each card header.</li><li>Track actions per forum with owners and due dates.</li><li>Switch to the Risks tab for a cross-portfolio risk dashboard.</li></ul>'
+      title: 'Governance Meetings View',
+      content: '<ul><li>View governance meetings filtered by customer, sorted by next meeting date.</li><li>Expand a meeting to see which projects report into it, and their RAG status.</li><li>Add, edit, or delete meetings using the buttons on each card header.</li><li>Track actions per meeting with owners and due dates.</li><li>Switch to the Risks tab for a cross-portfolio risk dashboard.</li></ul>'
     },
     config: {
       title: 'System Settings',
