@@ -15828,9 +15828,13 @@ const Gantt = {
       let earliest = null, latest = null;
       splits.forEach(sp => {
         const spr = sprintMap[sp.sprint];
-        if (!spr) return;
-        if (!earliest || spr.start_date < earliest) earliest = spr.start_date;
-        if (!latest   || spr.end_date   > latest)   latest   = spr.end_date;
+        // Per-split work-window overrides take precedence over the sprint span (matches
+        // the existing Detailed-mode rendering logic in Gantt.render).
+        const start = sp.work_start_date || (spr && spr.start_date);
+        const end   = sp.work_end_date   || (spr && spr.end_date);
+        if (!start || !end) return;
+        if (!earliest || start < earliest) earliest = start;
+        if (!latest   || end   > latest)   latest   = end;
       });
       if (!earliest || !latest) return null;
       const days = Math.round((new Date(latest) - new Date(earliest)) / 86400000) + 1;

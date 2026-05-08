@@ -114,4 +114,34 @@ describe('Gantt._phaseSpans', () => {
     expect(r.expansion).toBeGreaterThan(0);
     app.teardown();
   });
+
+  it('honours per-split work_start_date / work_end_date overrides', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(3);
+    const proj = makeProject({ name: 'Atlas', start_date: '2026-01-05', target_date: '2026-02-09', size_engineering: 5 });
+    proj.size_total = 5;
+    // Actual split nominally lives in sprint 0, but its work window is constrained to a narrower range.
+    proj.skill_splits = { size_engineering: [
+      { sprint: sprints[0].sprint_id, points: 5, status: 'in_progress',
+        work_start_date: '2026-01-08', work_end_date: '2026-01-10' }
+    ] };
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    const baseline = {
+      id: 'b_test', name: 'Test', customer: 'Acme Industries',
+      created_at: '2026-01-01T00:00:00.000Z',
+      snapshot: { [proj.id]: {
+        start_date: '2026-01-05', target_date: '2026-01-26', size_total: 5,
+        skill_splits: { size_engineering: [{ sprint: sprints[0].sprint_id, points: 5 }] }
+      } }
+    };
+    const r = app.Gantt._phaseSpans(proj, baseline, 'size_engineering');
+    expect(r).not.toBe(null);
+    // Actual span should be the work window, NOT the sprint span.
+    expect(r.actual.startDate).toBe('2026-01-08');
+    expect(r.actual.endDate).toBe('2026-01-10');
+    // Days = 3 (8th, 9th, 10th inclusive)
+    expect(r.actual.days).toBe(3);
+    app.teardown();
+  });
 });
