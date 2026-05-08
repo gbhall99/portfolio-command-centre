@@ -15763,6 +15763,56 @@ const Gantt = {
     App.toast('Baseline "' + name + '" captured across ' + count + ' ' + customer + ' projects', 'success');
   },
 
+  // Format a day-slip count into business-friendly text. Days ≤ 6 stay in days; ≥ 7
+  // become weeks (whole-week shorthand when divisible, "+Xw Yd" otherwise). Used by the
+  // delta pill, per-phase tags, and the hover tooltips.
+  _formatSlip(days) {
+    if (!days || days === 0) return 'on plan';
+    const abs = Math.abs(days);
+    const sign = days > 0 ? '+' : '−'; // U+2212 minus, matching the existing pattern
+    if (abs <= 6) return sign + abs + 'd';
+    const weeks = Math.floor(abs / 7);
+    const rem = abs % 7;
+    if (rem === 0) return sign + weeks + 'w';
+    return sign + weeks + 'w ' + rem + 'd';
+  },
+
+  // Map of audit-log field names to user-facing labels. Anything not in the map falls
+  // back to title-cased words via _humaniseField.
+  _FIELD_LABELS: {
+    size_total:                 'Total scope',
+    size_requirements:          'Requirements scope',
+    size_engineering:           'Data Engineering scope',
+    size_data_engineering:      'Data Engineering scope',
+    size_data_science:          'Data Science scope',
+    size_tableau:               'Tableau scope',
+    size_uat_adoption:          'UAT scope',
+    target_date:                'Target date',
+    start_date:                 'Start date',
+    hard_deadline:              'Hard deadline',
+    rag_schedule:               'Schedule RAG',
+    rag_resourcing:             'Resourcing RAG',
+    rag_scope:                  'Scope RAG',
+    status:                     'Status',
+    manager:                    'Manager',
+    priority:                   'Priority',
+    business_value:             'Business value',
+    time_criticality:           'Time criticality',
+    risk_reduction_opportunity: 'Risk reduction opportunity',
+    moscow:                     'MoSCoW priority',
+    skill_splits:               'Sprint allocation',
+    delivery_config:            'Delivery configuration',
+    governance_forum:           'Meeting',
+    customer:                   'Customer',
+    category:                   'Category'
+  },
+
+  _humaniseField(field) {
+    if (!field) return '';
+    if (this._FIELD_LABELS[field]) return this._FIELD_LABELS[field];
+    return String(field).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  },
+
   // Compute a project's baseline span (earliest → latest sprint in the snapshot).
   // Returns { startSprint, endSprint } or null if the baseline has no data for this project.
   _projectBaselineSpan(projectId) {
