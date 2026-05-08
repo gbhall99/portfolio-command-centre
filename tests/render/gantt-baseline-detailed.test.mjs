@@ -86,4 +86,32 @@ describe('Gantt detailed-mode culprit attribution', () => {
     expect(html).not.toMatch(/gantt-phase-tag/);
     app.teardown();
   });
+
+  it('overview skill segments align with detailed phase sub-rows by x-position', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(4);
+    const proj = makeProject({ name: 'Atlas', start_date: '2026-01-05', target_date: '2026-02-09', size_engineering: 12 });
+    proj.size_total = 12;
+    proj.skill_splits = { size_engineering: [
+      { sprint: sprints[0].sprint_id, points: 5, status: 'in_progress' },
+      { sprint: sprints[1].sprint_id, points: 7, status: 'in_progress' }
+    ] };
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.window.document.getElementById('ganttDetailed').checked = true;
+    app.Gantt.render();
+    const html = app.window.document.getElementById('ganttRows').innerHTML;
+    // Overview segment for size_engineering
+    const segMatch = html.match(/data-hover-type="seg"[^>]*data-skill-key="size_engineering"[^>]*style="[^"]*left:(\d+)px;width:(\d+)px/);
+    // Detailed sub-row phase bar for size_engineering
+    const phaseMatch = html.match(/data-hover-type="phase"[^>]*data-skill-key="size_engineering"[^>]*style="[^"]*left:(\d+)px;width:(\d+)px/);
+    expect(segMatch, 'overview segment found').toBeTruthy();
+    expect(phaseMatch, 'detailed phase bar found').toBeTruthy();
+    // The overview segment's left is RELATIVE to the bar's x1; the phase bar's left is ABSOLUTE.
+    // We can check widths match (within 2 px tolerance for rounding).
+    const segW = parseInt(segMatch[2], 10);
+    const phaseW = parseInt(phaseMatch[2], 10);
+    expect(Math.abs(segW - phaseW)).toBeLessThanOrEqual(2);
+    app.teardown();
+  });
 });

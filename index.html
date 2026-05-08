@@ -17128,18 +17128,66 @@ const Gantt = {
       const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
       const psm = Solver.PHASE_SKILL_MAP;
       const skills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : Sprint.SKILLS.map(sk => sk.key);
+      // Hoisted from the detailed-mode block so overview segments and detailed sub-rows
+      // share the same time-based positioning. Each skill's x-range comes from its
+      // skill_splits + computeSplitWindow (sprint-aware proration). This keeps overview
+      // stripe segments visually aligned with the per-phase bars below in detailed mode.
+      const sprintLookup = {};
+      (App.data.sprints || []).forEach(s => { sprintLookup[s.sprint_id] = s; });
+      const skToPhaseNum = {};
+      skills.forEach((skKey, i) => { skToPhaseNum[skKey] = i; });
+      const perSprintOffsets = {};
+      skills.forEach(skKey => {
+        const arr = (p.skill_splits && p.skill_splits[skKey]) || [];
+        arr.forEach(sp => {
+          if (!sp.sprint || !sprintLookup[sp.sprint]) return;
+          const bucket = perSprintOffsets[sp.sprint] || (perSprintOffsets[sp.sprint] = { total: 0, byPhase: {} });
+          bucket.total += (sp.points || 0);
+          bucket.byPhase[skKey] = (bucket.byPhase[skKey] || 0) + (sp.points || 0);
+        });
+      });
+      const computeSplitWindow = (sp, skKey) => {
+        const spr = sprintLookup[sp.sprint];
+        if (!spr) return null;
+        const sprStart = dateToX(spr.start_date);
+        const sprEnd = dateToX(spr.end_date);
+        const sprWidth = Math.max(1, sprEnd - sprStart);
+        if (sp.work_start_date && sp.work_end_date) {
+          return { start: dateToX(sp.work_start_date), end: dateToX(sp.work_end_date) };
+        }
+        const bucket = perSprintOffsets[sp.sprint];
+        if (!bucket || bucket.total <= 0) return { start: sprStart, end: sprEnd };
+        const thisPhaseIdx = skToPhaseNum[skKey];
+        let pointsBefore = 0;
+        Object.keys(bucket.byPhase).forEach(otherSk => {
+          if (skToPhaseNum[otherSk] < thisPhaseIdx) pointsBefore += bucket.byPhase[otherSk];
+        });
+        const thisPts = sp.points || 0;
+        const beforeFrac = pointsBefore / bucket.total;
+        const thisFrac = thisPts / bucket.total;
+        return {
+          start: sprStart + beforeFrac * sprWidth,
+          end: sprStart + (beforeFrac + thisFrac) * sprWidth
+        };
+      };
+
       let segmentsHtml = '';
       // H10: executive mode collapses bars — no per-skill segments so the timeline reads as a
       // single status colour per project with milestones overlaid. Keeps the chart one-page and
       // scannable for executive briefings.
       if (!isExecutive && total > 0 && w > 20) {
-        let offset = 0;
         skills.forEach(sk => {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
-          const segW = Math.max(2, Math.round((pts / total) * w));
-          segmentsHtml += '<div class="gantt-seg gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + offset + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
-          offset += segW;
+          const splits = (p.skill_splits && p.skill_splits[sk]) || [];
+          if (!splits.length) return; // No scheduled splits = no time range = no segment in overview
+          const windows = splits.map(sp => computeSplitWindow(sp, sk)).filter(Boolean);
+          if (!windows.length) return;
+          const segX1 = Math.min(...windows.map(win => win.start));
+          const segX2 = Math.max(...windows.map(win => win.end));
+          const segLeft = Math.round(segX1 - x1);
+          const segW = Math.max(2, Math.round(segX2 - segX1));
+          segmentsHtml += '<div class="gantt-seg gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
         });
       }
 
@@ -17367,58 +17415,13 @@ const Gantt = {
 
       // Detailed sub-rows per phase
       if (isDetailed) {
-        const activeSkills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : skills;
-
         // Issue 4: narrow each phase bar to its actual work window within each sprint.
-        // Approach: for every sprint this project has work in, allocate the sprint's calendar
-        // proportionally across phases by points, ordered by phase_order. A phase with 3 pts in
-        // a 20-day sprint containing 8 total project pts occupies 3/8 of the sprint — starting
-        // after earlier phases' slices. Preserves cross-sprint stretches (a phase that spans
-        // two sprints still renders from first-slice-start to last-slice-end).
-        // Explicit work_start_date / work_end_date on a split override the derivation.
-        const skToPhaseNum = {};
-        activeSkills.forEach((skKey, i) => { skToPhaseNum[skKey] = i; });
-        const sprintLookup = {};
-        (App.data.sprints || []).forEach(s => { sprintLookup[s.sprint_id] = s; });
-        // Pre-index: sprintId → { totalPts, cumulativePointsByPhase (offset before each phase) }
-        const perSprintOffsets = {};
-        activeSkills.forEach(skKey => {
-          const arr = (p.skill_splits && p.skill_splits[skKey]) || [];
-          arr.forEach(sp => {
-            if (!sp.sprint || !sprintLookup[sp.sprint]) return;
-            const bucket = perSprintOffsets[sp.sprint] || (perSprintOffsets[sp.sprint] = { total: 0, byPhase: {} });
-            bucket.total += (sp.points || 0);
-            bucket.byPhase[skKey] = (bucket.byPhase[skKey] || 0) + (sp.points || 0);
-          });
-        });
-        // Work-window helper — returns { start, end } in px for a given split.
-        const computeSplitWindow = (sp, skKey) => {
-          const spr = sprintLookup[sp.sprint];
-          if (!spr) return null;
-          const sprStart = dateToX(spr.start_date);
-          const sprEnd = dateToX(spr.end_date);
-          const sprWidth = Math.max(1, sprEnd - sprStart);
-          if (sp.work_start_date && sp.work_end_date) {
-            return { start: dateToX(sp.work_start_date), end: dateToX(sp.work_end_date) };
-          }
-          const bucket = perSprintOffsets[sp.sprint];
-          if (!bucket || bucket.total <= 0) return { start: sprStart, end: sprEnd };
-          const thisPhaseIdx = skToPhaseNum[skKey];
-          let pointsBefore = 0;
-          Object.keys(bucket.byPhase).forEach(otherSk => {
-            if (skToPhaseNum[otherSk] < thisPhaseIdx) pointsBefore += bucket.byPhase[otherSk];
-          });
-          const thisPts = sp.points || 0;
-          const beforeFrac = pointsBefore / bucket.total;
-          const thisFrac = thisPts / bucket.total;
-          return {
-            start: sprStart + beforeFrac * sprWidth,
-            end: sprStart + (beforeFrac + thisFrac) * sprWidth
-          };
-        };
+        // sprintLookup, skToPhaseNum, perSprintOffsets, and computeSplitWindow are hoisted
+        // above the segments block so overview stripe segments share the same time-based
+        // positioning as the detailed phase sub-rows here.
 
         let prevEnd = x1;
-        activeSkills.forEach(sk => {
+        skills.forEach(sk => {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
           const c = skillColors[sk] || '#94a3b8';
