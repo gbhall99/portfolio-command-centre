@@ -33,6 +33,16 @@ describe('Gantt._formatSlip', () => {
     expect(app.Gantt._formatSlip(-10)).toBe('−1w 3d');
     app.teardown();
   });
+
+  it('returns "on plan" for non-finite numbers', async () => {
+    const app = await loadApp();
+    expect(app.Gantt._formatSlip(NaN)).toBe('on plan');
+    expect(app.Gantt._formatSlip(Infinity)).toBe('on plan');
+    expect(app.Gantt._formatSlip(-Infinity)).toBe('on plan');
+    expect(app.Gantt._formatSlip(undefined)).toBe('on plan');
+    expect(app.Gantt._formatSlip(null)).toBe('on plan');
+    app.teardown();
+  });
 });
 
 describe('Gantt._humaniseField', () => {
@@ -69,6 +79,15 @@ describe('Gantt._humaniseField', () => {
     const app = await loadApp();
     expect(app.Gantt._humaniseField('')).toBe('');
     expect(app.Gantt._humaniseField(null)).toBe('');
+    app.teardown();
+  });
+
+  it('works when called as a detached callback', async () => {
+    const app = await loadApp();
+    const detached = app.Gantt._humaniseField;
+    expect(detached('target_date')).toBe('Target date');
+    expect(detached('made_up_field')).toBe('Made Up Field');
+    expect(['size_engineering', 'manager'].map(detached)).toEqual(['Data Engineering scope', 'Manager']);
     app.teardown();
   });
 });
