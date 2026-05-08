@@ -15813,6 +15813,39 @@ const Gantt = {
     return String(field).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   },
 
+  // Compute baseline span vs actual span for a single phase (skill) of a project.
+  // Returns { baseline:{startDate,endDate,days}, actual:{startDate,endDate,days}, shift, expansion }
+  // or null when the baseline doesn't contain this project / this skill.
+  _phaseSpans(project, baseline, skillKey) {
+    if (!project || !baseline || !baseline.snapshot) return null;
+    const node = baseline.snapshot[project.id];
+    if (!node) return null;
+    const sprints = (App.data && App.data.sprints) || [];
+    const sprintMap = {};
+    sprints.forEach(s => { sprintMap[s.sprint_id] = s; });
+    const spanOf = (splits) => {
+      if (!Array.isArray(splits) || !splits.length) return null;
+      let earliest = null, latest = null;
+      splits.forEach(sp => {
+        const spr = sprintMap[sp.sprint];
+        if (!spr) return;
+        if (!earliest || spr.start_date < earliest) earliest = spr.start_date;
+        if (!latest   || spr.end_date   > latest)   latest   = spr.end_date;
+      });
+      if (!earliest || !latest) return null;
+      const days = Math.round((new Date(latest) - new Date(earliest)) / 86400000) + 1;
+      return { startDate: earliest, endDate: latest, days };
+    };
+    const baseSplits = (node.skill_splits || {})[skillKey];
+    const liveSplits = (project.skill_splits || {})[skillKey];
+    const baseline_ = spanOf(baseSplits);
+    const actual    = spanOf(liveSplits);
+    if (!baseline_ || !actual) return null;
+    const shift     = Math.round((new Date(actual.startDate) - new Date(baseline_.startDate)) / 86400000);
+    const expansion = actual.days - baseline_.days;
+    return { baseline: baseline_, actual, shift, expansion };
+  },
+
   // Compute a project's baseline span (earliest → latest sprint in the snapshot).
   // Returns { startSprint, endSprint } or null if the baseline has no data for this project.
   _projectBaselineSpan(projectId) {

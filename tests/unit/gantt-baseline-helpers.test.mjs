@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
+import { makeProject, makeSprintSequence, makeMember, makeDataset, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('Gantt._formatSlip', () => {
   it('formats day slips for ±1 to ±6', async () => {
@@ -68,6 +69,49 @@ describe('Gantt._humaniseField', () => {
     const app = await loadApp();
     expect(app.Gantt._humaniseField('')).toBe('');
     expect(app.Gantt._humaniseField(null)).toBe('');
+    app.teardown();
+  });
+});
+
+describe('Gantt._phaseSpans', () => {
+  it('returns null when project has no entry in the active baseline snapshot', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(3);
+    const proj = makeProject({ name: 'Atlas', start_date: '2026-01-05', target_date: '2026-02-09', size_engineering: 5 });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    expect(app.Gantt._phaseSpans(proj, null, 'size_engineering')).toBe(null);
+    app.teardown();
+  });
+
+  it('computes baseline / actual / shift / expansion from a named-baseline snapshot', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(3);
+    const proj = makeProject({ name: 'Atlas', start_date: '2026-01-05', target_date: '2026-02-09', size_engineering: 12 });
+    proj.size_total = 12;
+    proj.skill_splits = { size_engineering: [
+      { sprint: sprints[0].sprint_id, points: 5, status: 'complete' },
+      { sprint: sprints[1].sprint_id, points: 7, status: 'in_progress' }
+    ] };
+    const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    const baseline = {
+      id: 'b_test', name: 'Test', customer: 'Acme Industries',
+      created_at: '2026-01-01T00:00:00.000Z',
+      snapshot: { [proj.id]: {
+        start_date: '2026-01-05', target_date: '2026-01-26', size_total: 5,
+        skill_splits: { size_engineering: [{ sprint: sprints[0].sprint_id, points: 5 }] }
+      } }
+    };
+    const r = app.Gantt._phaseSpans(proj, baseline, 'size_engineering');
+    expect(r).not.toBe(null);
+    expect(r.baseline.startDate).toBe(sprints[0].start_date);
+    expect(r.baseline.endDate).toBe(sprints[0].end_date);
+    expect(r.actual.startDate).toBe(sprints[0].start_date);
+    expect(r.actual.endDate).toBe(sprints[1].end_date);
+    expect(r.shift).toBe(0);
+    expect(r.expansion).toBeGreaterThan(0);
     app.teardown();
   });
 });
