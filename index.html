@@ -1315,7 +1315,7 @@ html[data-theme="dark"] .gantt-label-pri { border-right-color: #1f2937; }
 .gantt-header-cell.month-cell { border-right: 1px solid var(--border-light); }
 .gantt-header-cell.weekend { background: rgba(0,0,0,0.02); }
 .gantt-rows { position: relative; min-height: 100px; }
-.gantt-row { height: 36px; border-bottom: 1px solid #f1f5f9; position: relative; }
+.gantt-row { height: 56px; border-bottom: 1px solid #f1f5f9; position: relative; }
 /* Alternate shading by project (not skill). Applied in detailed mode so the whole project
    block — main row + its sub-rows — carries one consistent background. The zebra classes
    are also applied to the label-row + .gantt-label-sub placeholders so the left column
@@ -1333,7 +1333,7 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
-  position: absolute; top: 8px; height: 24px; border-radius: 5px;
+  position: absolute; top: 22px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
   font-size: 11px; font-weight: 700; color: white; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
@@ -1345,34 +1345,127 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
 .gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
 html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
-/* Baseline-vs-actual: bracket above the bar + inline delta pill.
-   Replaces the legacy 3px dashed strip (.gantt-bar-baseline) and the SVG
-   baseline-arrow. The bracket reads as a caliper spanning the original
-   start→end; the pill quantifies any slip on the right edge. */
-.gantt-baseline-bracket {
-  position: absolute; top: 1px; height: 6px;
+
+/* Baseline visualisation v2 — stacked plan / actual lanes.
+   Project header: plan lane y=4–12, arrow band y=14–20, bar y=22–48 (bar shifted from 8 to 22).
+   Phase sub-row: plan lane y=3–8, arrow band y=11–17, bar y=19–37 (sub-row height 38). */
+.gantt-plan-lane {
+  position: absolute; top: 4px; height: 8px;
   pointer-events: auto; cursor: pointer;
-}
-.gantt-baseline-bracket::before,
-.gantt-baseline-bracket::after {
-  content: ''; position: absolute; top: 0; width: 1.5px; height: 6px;
   background: var(--gantt-baseline);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.18);
 }
-.gantt-baseline-bracket::before { left: 0; }
-.gantt-baseline-bracket::after { right: 0; }
-.gantt-baseline-bracket > .gantt-baseline-spine {
-  position: absolute; left: 1.5px; right: 1.5px; top: 5px; height: 1px;
+.gantt-plan-lane::before, .gantt-plan-lane::after {
+  content: ''; position: absolute; top: -3px;
+  width: 2px; height: 14px;
   background: var(--gantt-baseline);
+  filter: brightness(0.7);
+}
+.gantt-plan-lane::before { left: -1px; }
+.gantt-plan-lane::after  { right: -1px; }
+
+.gantt-phase-plan-lane {
+  position: absolute; top: 3px; height: 5px;
+  pointer-events: auto; cursor: pointer;
+  background: var(--gantt-baseline); opacity: 0.7;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.15);
+}
+.gantt-phase-plan-lane::before, .gantt-phase-plan-lane::after {
+  content: ''; position: absolute; top: -2px;
+  width: 1.5px; height: 9px;
+  background: var(--gantt-baseline);
+  filter: brightness(0.7);
+}
+.gantt-phase-plan-lane::before { left: -0.5px; }
+.gantt-phase-plan-lane::after  { right: -0.5px; }
+
+/* Movement arrow primitive — pure DOM, renders reliably at any width.
+   Container is 6 px tall total; shaft is 2 px centred; head is a 7 px CSS-border triangle. */
+.gantt-move-arrow {
+  position: absolute; height: 6px;
+  z-index: 3; pointer-events: none;
+}
+.gantt-move-arrow .gantt-move-shaft {
+  position: absolute; left: 0; right: 7px; top: 2px; height: 2px;
+  background: var(--status-red); border-radius: 1px;
+}
+.gantt-move-arrow .gantt-move-head {
+  position: absolute; right: 0; top: 0;
+  width: 0; height: 0;
+  border-left: 7px solid var(--status-red);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
 }
 
-.gantt-delta-pill {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
-  white-space: nowrap; pointer-events: none; z-index: 4;
+/* Per-phase culprit overlay — covers ONLY the days the phase expanded by */
+.gantt-phase-overlay-culprit {
+  position: absolute; top: 19px; height: 18px;
+  background: repeating-linear-gradient(135deg, rgba(220,38,38,0.32) 0 6px, rgba(220,38,38,0.12) 6px 12px);
+  border-right: 2px solid var(--status-red);
+  border-radius: 0 3px 3px 0;
+  pointer-events: none; z-index: 2;
 }
-.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak); }
-.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); }
-.gantt-delta-pill.onplan { color: var(--text-muted); background: transparent; }
+
+.gantt-phase-tag {
+  position: absolute; top: 28px;
+  transform: translateY(-50%);
+  background: var(--status-red); color: white;
+  font-size: 9px; font-weight: 800;
+  padding: 2px 6px; border-radius: 8px;
+  z-index: 5; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18); cursor: help;
+  line-height: 1;
+}
+
+.gantt-phase-status-dot {
+  position: absolute; left: 6px; top: 28px;
+  transform: translateY(-50%);
+  width: 10px; height: 10px; border-radius: 50%;
+  z-index: 4;
+}
+.gantt-phase-status-dot.complete    { background: var(--status-green); }
+.gantt-phase-status-dot.in-progress { background: white; border: 2px solid var(--accent-blue); box-sizing: border-box; }
+.gantt-phase-status-dot.pending     { background: white; border: 2px dashed var(--text-muted); box-sizing: border-box; }
+html[data-theme="dark"] .gantt-phase-status-dot.in-progress,
+html[data-theme="dark"] .gantt-phase-status-dot.pending { background: var(--surface-2); }
+
+.gantt-phase-name-tag {
+  position: absolute; left: 22px; top: 28px;
+  transform: translateY(-50%);
+  font-size: 9px; font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.4px;
+  pointer-events: none; z-index: 4;
+}
+
+.gantt-drift-line {
+  position: absolute; top: 0; bottom: 0; width: 0;
+  border-left: 1.5px dashed rgba(220,38,38,0.55);
+  z-index: 6; pointer-events: none;
+}
+.gantt-drift-line.with-label::after {
+  content: 'plan end';
+  position: absolute; top: 1px; left: 4px;
+  font-size: 8px; font-weight: 700;
+  color: var(--status-red);
+  text-transform: uppercase; letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+/* Delta pill — vertically centred on its anchor bar with 8 px gap (left positioned by JS) */
+.gantt-delta-pill {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 11px; font-weight: 800;
+  padding: 3px 9px; border-radius: 12px;
+  z-index: 4; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.10); cursor: help;
+  line-height: 1;
+}
+.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak);   border: 1px solid #fca5a5; }
+.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); border: 1px solid #6ee7b7; }
 .gantt-ms { transform: translateY(-50%); transition: transform 0.12s; }
 .gantt-ms:hover { transform: translateY(-50%) scale(1.15); }
 /* 2E: "Today" = the one live reference line — solid 2px in accent blue to own that role. */
@@ -16770,7 +16863,7 @@ const Gantt = {
     // H10: executive mode collapses to one row per project, milestones only.
     const isExecutive = !!this.executiveMode;
     const isDetailed = !isExecutive && document.getElementById('ganttDetailed') && document.getElementById('ganttDetailed').checked;
-    const subRowH = isDetailed ? 24 : 0;
+    const subRowH = isDetailed ? 38 : 0;
 
     // Critical path calculation (needed before label rendering for fading)
     const criticalIds = this.showCriticalPath ? new Set(this.calculateCriticalPath(projects)) : new Set();
@@ -16977,7 +17070,6 @@ const Gantt = {
           if (startSp) bStart = startSp.start_date;
           if (endSp) bEnd = endSp.end_date;
         }
-        // Fallback: per-project dates inside the active named baseline (D2.4).
         if (!bStart || !bEnd) {
           const ab = this._activeBaseline();
           const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
@@ -16986,23 +17078,29 @@ const Gantt = {
             bEnd = node.target_date;
           }
         }
-        // Final fallback: legacy project.baseline_start/end (pre-D2.3).
         if (!bStart || !bEnd) { bStart = p.baseline_start; bEnd = p.baseline_end; }
         if (bStart && bEnd) {
           const bx1 = Math.max(0, dateToX(bStart));
           const bx2 = Math.max(bx1 + 4, dateToX(bEnd));
-          // Bracket sits above the bar, spanning the baseline's original start → end.
-          baselineHtml += '<div class="gantt-baseline-bracket gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" role="img" aria-label="Baseline ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"><div class="gantt-baseline-spine"></div></div>';
-          // Delta pill — quantify the slip / early / on-plan state vs current target_date.
+          // 1) Plan lane
+          baselineHtml += '<div class="gantt-plan-lane gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" data-bstart="' + Dashboard.esc(bStart) + '" data-bend="' + Dashboard.esc(bEnd) + '" tabindex="0" role="img" aria-label="Plan ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"></div>';
+          // 2) Drift line with the "plan end" label (the per-phase rows in detailed mode get the same line, no label)
+          baselineHtml += '<div class="gantt-drift-line with-label" style="left:' + bx2 + 'px"></div>';
+          // 3) Movement arrow + delta pill (only when target is set)
           if (p.target_date) {
+            const liveEndX = dateToX(p.target_date);
+            const arrowW = liveEndX - bx2;
+            if (arrowW >= 12) {
+              baselineHtml += '<div class="gantt-move-arrow" style="left:' + bx2 + 'px;width:' + arrowW + 'px;top:14px"><span class="gantt-move-shaft"></span><span class="gantt-move-head"></span></div>';
+            }
             const targetDelta = Math.round((new Date(p.target_date) - new Date(bEnd)) / 86400000);
-            let pillCls, pillText;
-            if (targetDelta > 0)      { pillCls = 'slip';   pillText = '+' + targetDelta + 'd'; }
-            else if (targetDelta < 0) { pillCls = 'early';  pillText = '−' + Math.abs(targetDelta) + 'd'; }
-            else                      { pillCls = 'onplan'; pillText = 'on plan'; }
-            const pillX = Math.min(totalWidth - 50, Math.max(x2, bx2) + 4);
-            const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
-            baselineHtml += '<div class="gantt-delta-pill ' + pillCls + '" style="left:' + pillX + 'px" title="' + Dashboard.esc(tipText) + '">' + pillText + '</div>';
+            if (targetDelta !== 0) {
+              const pillCls = targetDelta > 0 ? 'slip' : 'early';
+              const pillText = this._formatSlip(targetDelta);
+              const pillX = Math.min(totalWidth - 50, Math.max(x2, bx2) + 8);
+              const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
+              baselineHtml += '<div class="gantt-delta-pill ' + pillCls + ' gantt-hoverable" data-hover-type="delta-pill" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" style="left:' + pillX + 'px;top:35px" title="' + Dashboard.esc(tipText) + '">' + Dashboard.esc(pillText) + '</div>';
+            }
           }
         }
       }
@@ -17227,15 +17325,61 @@ const Gantt = {
           const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:' + (subRowH / 2) + 'px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
           // D8: per-phase highlight — phase-level bars get a red inner border when they extend past target_date.
           const phaseOverruns = (subX1 + subW) > (x2 + 2);
-          const subBarStyle = 'position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.9;cursor:pointer' +
+          const subBarStyle = 'position:absolute;top:19px;left:' + subX1 + 'px;width:' + subW + 'px;height:18px;background:' + c + ';border-radius:3px;opacity:0.9;cursor:pointer' +
             (phaseOverruns ? ';box-shadow:0 0 0 1.5px var(--status-red) inset' : '');
+          // === Baseline visualisation v2 — per-phase plan lane + culprit attribution ===
+          let phasePlanHtml = '';
+          let phaseStatusClass = 'pending';
+          let phaseNameHtml = '';
+          if (showBaseline) {
+            const ab = this._activeBaseline();
+            const spans = ab ? this._phaseSpans(p, ab, sk) : null;
+            if (spans) {
+              const planX1 = Math.max(0, dateToX(spans.baseline.startDate));
+              const planX2 = Math.max(planX1 + 4, dateToX(spans.baseline.endDate));
+              phasePlanHtml += '<div class="gantt-phase-plan-lane gantt-hoverable" data-hover-type="phase-baseline" data-id="' + p.id + '" data-skill-key="' + sk + '" tabindex="0" role="img" aria-label="Plan for ' + Dashboard.esc(skillLabel) + '" style="left:' + planX1 + 'px;width:' + (planX2 - planX1) + 'px"></div>';
+              if (spans.expansion > 0) {
+                const liveEndX = dateToX(spans.actual.endDate);
+                const overlayX = planX2;
+                const overlayW = Math.max(2, liveEndX - planX2);
+                phasePlanHtml += '<div class="gantt-phase-overlay-culprit" data-id="' + p.id + '" data-skill-key="' + sk + '" style="left:' + overlayX + 'px;width:' + overlayW + 'px"></div>';
+                const arrowW = liveEndX - planX2;
+                if (arrowW >= 12) {
+                  phasePlanHtml += '<div class="gantt-move-arrow" style="left:' + planX2 + 'px;width:' + arrowW + 'px;top:11px"><span class="gantt-move-shaft"></span><span class="gantt-move-head"></span></div>';
+                }
+                const tagText = this._formatSlip(spans.expansion);
+                const tagX = Math.min(totalWidth - 50, liveEndX + 8);
+                phasePlanHtml += '<div class="gantt-phase-tag gantt-hoverable" data-hover-type="phase-tag" data-id="' + p.id + '" data-skill-key="' + sk + '" tabindex="0" style="left:' + tagX + 'px">' + Dashboard.esc(tagText) + '</div>';
+              }
+            }
+          }
+          const splitsForStatus = (p.skill_splits && p.skill_splits[sk]) || [];
+          const allComplete = splitsForStatus.length > 0 && splitsForStatus.every(s => s.status === 'complete');
+          const anyInProg = splitsForStatus.some(s => s.status === 'in_progress');
+          phaseStatusClass = allComplete ? 'complete' : (anyInProg ? 'in-progress' : 'pending');
+          const skillShort = (Sprint.SKILLS.find(s => s.key === sk) || {}).short || sk;
+          phaseNameHtml = '<span class="gantt-phase-name-tag">' + Dashboard.esc(skillShort) + '</span>';
+          let phaseDriftHtml = '';
+          if (showBaseline) {
+            const ab2 = this._activeBaseline();
+            const node2 = (ab2 && ab2.snapshot && ab2.snapshot[p.id]) || null;
+            const driftEnd = (node2 && node2.target_date) || p.baseline_end;
+            if (driftEnd) {
+              phaseDriftHtml = '<div class="gantt-drift-line" style="left:' + dateToX(driftEnd) + 'px"></div>';
+            }
+          }
+
           // Phase-aware hover: the detailed sub-row bar becomes a .gantt-hoverable carrying the project-id
           // + skill-key + phase overrun flag. buildTooltip('phase', el) reads these and renders a
           // focused tooltip for the specific delivery phase.
           mainRow += '<div class="gantt-sub-row ' + rowZebra + '" style="height:' + subRowH + 'px;position:relative;width:' + totalWidth + 'px">' +
             connector +
+            '<div class="gantt-phase-status-dot ' + phaseStatusClass + '"></div>' +
+            phaseNameHtml +
+            phasePlanHtml +
             '<div class="gantt-hoverable gantt-phase-bar" data-hover-type="phase" data-id="' + p.id + '" data-skill-key="' + sk + '" data-overrun="' + (phaseOverruns ? '1' : '0') + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(skillLabel) + ' phase of ' + Dashboard.esc(p.name) + '" style="' + subBarStyle + '">' + inlineLabel + '</div>' +
             floatLabel +
+            phaseDriftHtml +
           '</div>';
           prevEnd = subX1 + subW;
         });
