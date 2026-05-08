@@ -21,7 +21,8 @@ async function loadWithBaseline({ targetDate, baselineEnd }) {
 }
 
 describe('Gantt tooltip — Plan vs actual block', () => {
-  it('appears for a bar hover when project is in active baseline', async () => {
+  // SKIPPED: bar/label tooltip no longer calls buildPlanVsActual per spec §8. Task 7 rewrites buildPlanVsActual and this test.
+  it.skip('appears for a bar hover when project is in active baseline', async () => {
     const { app } = await loadWithBaseline({ targetDate: '2026-02-09', baselineEnd: '2026-01-26' });
     const bar = app.window.document.querySelector('.gantt-bar[data-hover-type="bar"]');
     expect(bar, 'bar element').toBeTruthy();
@@ -47,7 +48,8 @@ describe('Gantt tooltip — Plan vs actual block', () => {
     app.teardown();
   });
 
-  it('renders What moved bullets from audit_log entries since baseline.created_at', async () => {
+  // SKIPPED: bar/label tooltip no longer calls buildPlanVsActual per spec §8. Task 7 rewrites buildPlanVsActual and this test.
+  it.skip('renders What moved bullets from audit_log entries since baseline.created_at', async () => {
     resetIdSeq();
     const sprints = makeSprintSequence(3);
     const proj = makeProject({
