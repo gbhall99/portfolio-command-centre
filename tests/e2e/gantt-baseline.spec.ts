@@ -1,7 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { openAppWithData } from './helpers';
 
-test('Gantt baseline bracket: hover surfaces Plan vs actual', async ({ page }) => {
+// SKIPPED: this test asserts the old bracket DOM (.gantt-baseline-bracket) and tooltip
+// content from PR #15. Task 8 of the v2 plan rewrites this test to hover the new
+// .gantt-delta-pill and assert "Slip contributors" once Tasks 6+7 add the hover
+// handlers that produce that content. Re-enabled by Task 8.
+test.skip('Gantt baseline bracket: hover surfaces Plan vs actual', async ({ page }) => {
   await openAppWithData(page);
 
   // Navigate to roadmap.
