@@ -16204,29 +16204,48 @@ const Gantt = {
       '</div>';
     };
 
-    // Plan-vs-actual narrative — appended to bar/label/baseline tooltips when an active
-    // baseline contains this project. Returns '' otherwise so the existing tooltip stays
-    // unchanged.
+    // Build the Plan-vs-actual block — three sections: Plan vs actual, Slip contributors, What moved.
+    // Used by the delta-pill tooltip (project pill) only. Returns '' when the project has no
+    // baseline data.
     const buildPlanVsActual = (proj) => {
       if (!proj) return '';
       const ab = self._activeBaseline ? self._activeBaseline() : null;
       const node = (ab && ab.snapshot && ab.snapshot[proj.id]) || null;
-      // Fallback: legacy project.baseline_start/end (pre-D2.3) when no named baseline matches.
-      const baseStart  = (node && node.start_date)  || proj.baseline_start;
-      const baseEnd    = (node && node.target_date) || proj.baseline_end;
-      const baseSize   = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
-      const liveStart  = proj.start_date;
-      const liveEnd    = proj.target_date;
-      const liveSize   = proj.size_total || 0;
+      const baseStart = (node && node.start_date)  || proj.baseline_start;
+      const baseEnd   = (node && node.target_date) || proj.baseline_end;
+      const baseSize  = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
+      const liveStart = proj.start_date;
+      const liveEnd   = proj.target_date;
+      const liveSize  = proj.size_total || 0;
       if (!baseStart || !baseEnd || !liveStart || !liveEnd) return '';
       const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
-      const startDelta = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
-      const targetDelta = Math.round((new Date(liveEnd) - new Date(baseEnd)) / 86400000);
-      const sizeDelta = liveSize - baseSize;
-      const startBit = startDelta === 0 ? 'start unchanged' : (startDelta > 0 ? '+' + startDelta + 'd on start' : startDelta + 'd on start');
-      const targetBit = targetDelta === 0 ? 'target unchanged' : (targetDelta > 0 ? '+' + targetDelta + 'd on target' : targetDelta + 'd on target');
-      const sizeBit = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? '+' + sizeDelta + ' SP' : sizeDelta + ' SP');
-      const setMeta = (ab && ab.created_at) ? 'set ' + new Date(ab.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (ab.created_by ? ' by ' + esc(ab.created_by) : '') : '';
+      const startDelta  = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
+      const targetDelta = Math.round((new Date(liveEnd)   - new Date(baseEnd))   / 86400000);
+      const sizeDelta   = liveSize - baseSize;
+      const startBit  = startDelta === 0 ? 'Start unchanged' : ('Start ' + Gantt._formatSlip(startDelta));
+      const targetBit = targetDelta === 0 ? 'target unchanged' : ('target ' + Gantt._formatSlip(targetDelta));
+      const sizeBit   = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? 'scope +' + sizeDelta + ' SP' : 'scope ' + sizeDelta + ' SP');
+
+      // Slip contributors — phases that grew (expansion > 0) sorted by expansion desc.
+      let contribsHtml = '';
+      if (ab) {
+        const skills = (typeof Sprint !== 'undefined' && Sprint.SKILLS) ? Sprint.SKILLS : [];
+        const rows = skills.map(skMeta => {
+          const spans = Gantt._phaseSpans(proj, ab, skMeta.key);
+          if (!spans || spans.expansion <= 0) return null;
+          return { skill: skMeta, spans };
+        }).filter(Boolean);
+        rows.sort((a, b) => b.spans.expansion - a.spans.expansion);
+        if (rows.length) {
+          contribsHtml = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">Slip contributors</div>' +
+            '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' +
+            rows.map(r => '<li><strong>' + esc(r.skill.label) + '</strong> grew ' + r.spans.baseline.days + ' days &rarr; ' + r.spans.actual.days + ' days <span style="display:inline-block;background:var(--tint-red-weak);color:var(--status-red);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px">' + esc(Gantt._formatSlip(r.spans.expansion)) + '</span></li>').join('') +
+            '</ul></div>';
+        }
+      }
+
+      // What moved — humanised audit log
       let movers = '';
       try {
         const sinceTs = (ab && ab.created_at) || '';
@@ -16237,29 +16256,27 @@ const Gantt = {
           const e = log[i];
           if (!e.field || seen.has(e.field)) continue;
           seen.add(e.field);
-          bullets.push('<li>' + esc(e.field) + ': ' + esc(String(e.oldValue || '')) + ' → ' + esc(String(e.newValue || '')) + '</li>');
+          bullets.push('<li><strong>' + esc(Gantt._humaniseField(e.field)) + '</strong>: ' + esc(String(e.oldValue || '')) + ' &rarr; ' + esc(String(e.newValue || '')) + '</li>');
         }
         if (bullets.length) {
-          movers = '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">What moved</div>' +
-                   '<ul style="margin:2px 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul>';
-        } else {
-          // Audit log has no qualifying entries — fall back to the most recent touch on this
-          // project so the user still has a "what / when" anchor. (Audit entries don't store a
-          // person's name; `source` is a category like 'user' / 'walkthrough', so we omit the by-line.)
-          const lastEntry = log.length ? log[log.length - 1] : null;
-          if (lastEntry && lastEntry.timestamp) {
-            const when = new Date(lastEntry.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-            movers = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Last touched ' + esc(when) + '</div>';
+          movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">What moved</div>' +
+            '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul></div>';
+        } else if (log.length) {
+          const last = log[log.length - 1];
+          if (last && last.timestamp) {
+            const when = new Date(last.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light);font-size:11px;color:var(--text-muted)">Last touched ' + esc(when) + '</div>';
           }
         }
-      } catch (_) { /* audit log may be absent — fine */ }
+      } catch (_) { /* audit log absent — fine */ }
+
       return '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
-        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + setMeta + '</span></div>' +
-        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:2px"><span style="color:var(--text-muted)">Baseline</span> ' + fmtD(baseStart) + ' → ' + fmtD(baseEnd) + ' · ' + baseSize + ' SP</div>' +
-        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Current</span> ' + fmtD(liveStart) + ' → ' + fmtD(liveEnd) + ' · ' + liveSize + ' SP</div>' +
-        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' · ' + targetBit + ' · ' + sizeBit + '</div>' +
-        movers +
-      '</div>';
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">Plan vs actual</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Originally planned</span> ' + fmtD(baseStart) + ' &rarr; ' + fmtD(baseEnd) + ' &middot; ' + baseSize + ' SP</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Now</span> ' + fmtD(liveStart) + ' &rarr; ' + fmtD(liveEnd) + ' &middot; ' + liveSize + ' SP</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' &middot; ' + targetBit + ' &middot; ' + sizeBit + '</div>' +
+        '</div>' + contribsHtml + movers;
     };
 
     const buildTooltip = (type, el) => {
@@ -16403,15 +16420,82 @@ const Gantt = {
           '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + verb + '</div>' +
           '<div class="gantt-tooltip-row">' + esc(secondary ? secondary.name : '?') + '</div>';
       }
-      if (type === 'baseline') {
+      if (type === 'baseline' || type === 'phase-baseline') {
         const id = el.dataset.id;
         const p = id ? App.data.projects.find(pr => pr.id === id) : null;
         if (!p) return '';
-        const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
-          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
-        const block = buildPlanVsActual(p);
-        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline</div>';
-        return projHeader + block;
+        const sk = el.dataset.skillKey || null;
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        if (sk && ab) {
+          const spans = Gantt._phaseSpans(p, ab, sk);
+          if (!spans) return '';
+          const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+          const skillMeta = (Sprint.SKILLS.find(s => s.key === sk) || {});
+          return '<div style="font-size:11px;font-weight:700;color:var(--text-dark)">' + esc(skillMeta.label || sk) + ' plan</div>' +
+                 '<div style="font-size:11px;color:var(--text-dark-secondary)">Originally planned ' + esc(fmtD(spans.baseline.startDate)) + ' &rarr; ' + esc(fmtD(spans.baseline.endDate)) + ' &middot; ' + spans.baseline.days + ' days</div>';
+        }
+        const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
+        const baseStart = (node && node.start_date)  || p.baseline_start;
+        const baseEnd   = (node && node.target_date) || p.baseline_end;
+        if (!baseStart || !baseEnd) return '';
+        const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const days = Math.round((new Date(baseEnd) - new Date(baseStart)) / 86400000) + 1;
+        return '<div style="font-size:11px;font-weight:700;color:var(--text-dark)">' + esc(p.name) + ' plan</div>' +
+               '<div style="font-size:11px;color:var(--text-dark-secondary)">Originally planned ' + esc(fmtD(baseStart)) + ' &rarr; ' + esc(fmtD(baseEnd)) + ' &middot; ' + days + ' days</div>';
+      }
+      if (type === 'delta-pill') {
+        const id = el.dataset.id;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        if (!p) return '';
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
+        const baseEnd = (node && node.target_date) || p.baseline_end;
+        if (!baseEnd || !p.target_date) return '';
+        const targetDelta = Math.round((new Date(p.target_date) - new Date(baseEnd)) / 86400000);
+        const slipText = Gantt._formatSlip(targetDelta);
+        const projHeader = '<div class="gantt-tooltip-title">' + esc(p.name) + ' slip <span style="font-size:10px;color:var(--text-muted);font-weight:400">' + esc(slipText) + ' on target</span></div>';
+        return projHeader + buildPlanVsActual(p);
+      }
+      if (type === 'phase-tag') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        if (!p || !sk || !ab) return '';
+        const spans = Gantt._phaseSpans(p, ab, sk);
+        if (!spans) return '';
+        const skillMeta = (Sprint.SKILLS.find(s => s.key === sk) || {});
+        const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const shiftText = spans.shift === 0 ? 'Start unchanged' : ('Started ' + Gantt._formatSlip(spans.shift) + ' from plan');
+        const expandText = spans.expansion > 0 ? 'expanded by <strong style="color:var(--status-red)">' + esc(Gantt._formatSlip(spans.expansion)) + '</strong>' : 'no expansion';
+        const node = (ab.snapshot || {})[p.id] || null;
+        const baseEnd = (node && node.target_date) || p.baseline_end;
+        const projectSlip = baseEnd && p.target_date ? Math.round((new Date(p.target_date) - new Date(baseEnd)) / 86400000) : 0;
+        let contributorBanner = '';
+        if (spans.expansion > 0) {
+          const allRows = (Sprint.SKILLS || []).map(m => Gantt._phaseSpans(p, ab, m.key)).filter(s => s && s.expansion > 0);
+          const isLargest = allRows.length && allRows.every(r => r.expansion <= spans.expansion);
+          if (isLargest && projectSlip !== 0) {
+            contributorBanner = '<div style="margin-top:6px;padding:4px 8px;background:var(--tint-red-weak);color:var(--status-red);border-radius:4px;font-size:11px;font-weight:600">Largest contributor to project slip (' + esc(Gantt._formatSlip(projectSlip)) + ' total)</div>';
+          }
+        }
+        let movers = '';
+        try {
+          const sinceTs = ab.created_at || '';
+          const skLabel = Gantt._humaniseField(sk);
+          const log = (App.data.audit_log || []).filter(e => e.projectId === p.id && (!sinceTs || (e.timestamp || '') >= sinceTs) && (e.field === sk || e.field === 'skill_splits' || Gantt._humaniseField(e.field) === skLabel));
+          const bullets = log.slice(-3).reverse().map(e => '<li><strong>' + esc(Gantt._humaniseField(e.field)) + '</strong>: ' + esc(String(e.oldValue || '')) + ' &rarr; ' + esc(String(e.newValue || '')) + '</li>');
+          if (bullets.length) {
+            movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+              '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">What moved here</div>' +
+              '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul></div>';
+          }
+        } catch (_) { /* fine */ }
+        return '<div class="gantt-tooltip-title">' + esc(skillMeta.label || sk) + ' contribution</div>' +
+          '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Originally planned</span> ' + esc(fmtD(spans.baseline.startDate)) + ' &rarr; ' + esc(fmtD(spans.baseline.endDate)) + ' &middot; ' + spans.baseline.days + ' days</div>' +
+          '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Now</span> ' + esc(fmtD(spans.actual.startDate)) + ' &rarr; ' + esc(fmtD(spans.actual.endDate)) + ' &middot; ' + spans.actual.days + ' days</div>' +
+          '<div style="margin-top:6px;font-size:11px">' + esc(shiftText) + '; ' + expandText + '.</div>' +
+          contributorBanner + movers;
       }
       return '';
     };
