@@ -8947,6 +8947,54 @@ const Personas = {
     if (App._save) App._save();
     return true;
   },
+
+  // ----- Holdings helpers -----
+  addHolding(personaId, holding) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const metric = Metrics.byId(holding.metric_id);
+    if (!metric) return null;
+    const filter = holding.filter || {};
+    const dims = metric.dimensions || [];
+    const filterKeys = Object.keys(filter);
+    if (filterKeys.some(k => dims.indexOf(k) < 0)) return null;
+    const rec = {
+      filter: {}, targets: [], notes: '',
+      ...holding,
+      id: holding.id || ('HLD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+    };
+    if (!Array.isArray(persona.metric_holdings)) persona.metric_holdings = [];
+    persona.metric_holdings.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  updateHolding(personaId, holdingId, patch) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const h = (persona.metric_holdings || []).find(x => x.id === holdingId);
+    if (!h) return null;
+    if (patch.filter) {
+      const metric = Metrics.byId(h.metric_id);
+      if (metric) {
+        const dims = metric.dimensions || [];
+        if (Object.keys(patch.filter).some(k => dims.indexOf(k) < 0)) return null;
+      }
+    }
+    Object.assign(h, patch);
+    if (App._save) App._save();
+    return h;
+  },
+
+  removeHolding(personaId, holdingId) {
+    const persona = this.byId(personaId);
+    if (!persona || !Array.isArray(persona.metric_holdings)) return false;
+    const idx = persona.metric_holdings.findIndex(x => x.id === holdingId);
+    if (idx < 0) return false;
+    persona.metric_holdings.splice(idx, 1);
+    if (App._save) App._save();
+    return true;
+  },
 };
 
 /* ============================================================
