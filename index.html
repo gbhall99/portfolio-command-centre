@@ -8995,6 +8995,33 @@ const Personas = {
     if (App._save) App._save();
     return true;
   },
+
+  rollup(personaId) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const holdings = Array.isArray(persona.metric_holdings) ? persona.metric_holdings : [];
+    const held_metrics = holdings.map(h => Metrics.byId(h.metric_id)).filter(Boolean);
+    const contributing_objectives_ids = new Set();
+    held_metrics.forEach(m => (m.objective_ids || []).forEach(oid => contributing_objectives_ids.add(oid)));
+    const contributing_objectives = [...contributing_objectives_ids]
+      .map(id => Objectives.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === persona.customer);
+    const supporting_projects = projects.filter(p => {
+      const viaMetric  = (p.metric_ids  || []).some(mid => held_metrics.some(m => m.id === mid));
+      const viaPersona = (p.persona_ids || []).includes(personaId);
+      return viaMetric || viaPersona;
+    });
+    const descendants = this.descendants(personaId);
+    const raci_appearances = { accountable: [], responsible: [], consulted: [], informed: [] };
+    Metrics.list().forEach(m => {
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (m.raci && Array.isArray(m.raci[role]) && m.raci[role].includes(personaId)) {
+          raci_appearances[role].push(m);
+        }
+      });
+    });
+    return { descendants, holdings, held_metrics, contributing_objectives, supporting_projects, raci_appearances };
+  },
 };
 
 /* ============================================================
@@ -9046,6 +9073,28 @@ const Objectives = {
     });
     if (App._save) App._save();
     return true;
+  },
+
+  rollup(objectiveId) {
+    const obj = this.byId(objectiveId);
+    if (!obj) return null;
+    const measuring_metrics = Metrics.list().filter(m => (m.objective_ids || []).includes(objectiveId));
+    const personaSet = new Set();
+    Personas.list().forEach(p => {
+      const holds = (p.metric_holdings || []).some(h => measuring_metrics.some(m => m.id === h.metric_id));
+      if (holds) personaSet.add(p.id);
+    });
+    const contributing_personas = [...personaSet].map(id => Personas.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === obj.customer);
+    const delivering_projects = projects.filter(p =>
+      (p.metric_ids || []).some(mid => measuring_metrics.some(m => m.id === mid))
+    );
+    return {
+      measuring_metrics,
+      contributing_personas,
+      delivering_projects,
+      metric_count: measuring_metrics.length,
+    };
   },
 };
 
@@ -9156,6 +9205,38 @@ const Metrics = {
     });
     if (App._save) App._save();
     return true;
+  },
+
+  rollup(metricId) {
+    const metric = this.byId(metricId);
+    if (!metric) return null;
+    const holders = [];
+    Personas.list().forEach(p => {
+      (p.metric_holdings || []).filter(h => h.metric_id === metricId)
+        .forEach(h => holders.push({ persona: p, holding: h }));
+    });
+    const served_objectives = (metric.objective_ids || [])
+      .map(id => Objectives.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === metric.customer);
+    const delivering_projects = projects.filter(p => (p.metric_ids || []).includes(metricId));
+    const raci_personas = { accountable: [], responsible: [], consulted: [], informed: [] };
+    if (metric.raci) {
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        (metric.raci[role] || []).forEach(pid => {
+          const p = Personas.byId(pid);
+          if (p) raci_personas[role].push(p);
+        });
+      });
+    }
+    const has_targets_anywhere = holders.some(h => Array.isArray(h.holding.targets) && h.holding.targets.length > 0);
+    return {
+      holders,
+      holder_count: holders.length,
+      served_objectives,
+      delivering_projects,
+      raci_personas,
+      has_targets_anywhere,
+    };
   },
 };
 
