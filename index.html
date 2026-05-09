@@ -3813,6 +3813,48 @@ const App = {
     // rewrite every skill_splits reference. Guarded by meta.sprintLabelMigration so it never
     // re-runs and therefore never clobbers deliberate manual edits.
     try { this._migrateSprintLabelYears(data); } catch (_e) { /* diagnostic only */ }
+
+    // Always-run: Strategy entities (personas/objectives/metrics) — additive.
+    if (!Array.isArray(data.personas))      data.personas      = [];
+    if (!Array.isArray(data.objectives))    data.objectives    = [];
+    if (!Array.isArray(data.metrics))       data.metrics       = [];
+    if (!Array.isArray(data.metric_groups)) data.metric_groups = [];
+
+    // Default metric_groups per customer if none defined for that customer
+    const DEFAULT_METRIC_GROUPS = [
+      { id: 'customer',    name: 'Customer',    swatch: '#66d9e8' },
+      { id: 'operations',  name: 'Operations',  swatch: '#8fb4ff' },
+      { id: 'performance', name: 'Performance', swatch: '#c89dde' },
+    ];
+    (data.customers || []).forEach(c => {
+      const has = data.metric_groups.some(g => g.customer === c.name);
+      if (!has) {
+        DEFAULT_METRIC_GROUPS.forEach(g => {
+          data.metric_groups.push({ ...g, customer: c.name });
+        });
+      }
+    });
+
+    // Seed metric_holdings on personas if missing
+    data.personas.forEach(p => {
+      if (!Array.isArray(p.metric_holdings)) p.metric_holdings = [];
+      if (!Array.isArray(p.business_questions)) p.business_questions = [];
+    });
+
+    // Seed metric.dimensions / objective_ids / raci / actuals if missing
+    data.metrics.forEach(m => {
+      if (!Array.isArray(m.dimensions))    m.dimensions    = [];
+      if (!Array.isArray(m.objective_ids)) m.objective_ids = [];
+      if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
+      if (!Array.isArray(m.actuals)) m.actuals = [];
+    });
+
+    // Project additions
+    (data.projects || []).forEach(p => {
+      if (!Array.isArray(p.metric_ids))  p.metric_ids  = [];
+      if (!Array.isArray(p.persona_ids)) p.persona_ids = [];
+    });
+
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
     return data;
