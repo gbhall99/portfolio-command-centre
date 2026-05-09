@@ -9145,6 +9145,57 @@ const Objectives = {
     return true;
   },
 
+  renderSettingsTab() {
+    const objs = this.list();
+    if (!objs.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No objectives yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Objectives._showAddForm()">+ Add the first</button></div>';
+    }
+    const rows = objs.map(o => {
+      const start = (o.time_horizon && o.time_horizon.start_date)  || '';
+      const end   = (o.time_horizon && o.time_horizon.target_date) || '';
+      return '<tr data-objective-id="' + Dashboard.esc(o.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(o.name) + '</strong></td>'
+           +   '<td><span class="status-pill status-' + Dashboard.esc(o.status) + '" style="font-size:10px;padding:2px 6px;border-radius:10px;background:#eef;color:var(--text-dark)">' + Dashboard.esc(o.status) + '</span></td>'
+           +   '<td>' + Dashboard.esc(start) + (start || end ? ' → ' : '') + Dashboard.esc(end) + '</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Objectives._edit(\'' + o.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Objectives._remove(\'' + o.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="objectives-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Status</th>'
+         + '<th style="text-align:left;padding:6px">Window</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Objectives._showAddForm()">+ Add objective</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Objective name:');
+    if (!name) return;
+    const desc = prompt('Description (optional):') || '';
+    this.add({ name: name.trim(), description: desc.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const o = this.byId(id);
+    if (!o) return;
+    const name = prompt('Objective name:', o.name);
+    if (name === null) return;
+    const desc = prompt('Description:', o.description || '');
+    if (desc === null) return;
+    const status = prompt('Status (active/achieved/abandoned):', o.status || 'active');
+    if (status === null) return;
+    this.update(id, { name: name.trim(), description: desc.trim(), status: status.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this objective?')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
   rollup(objectiveId) {
     const obj = this.byId(objectiveId);
     if (!obj) return null;
