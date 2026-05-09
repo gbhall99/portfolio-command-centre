@@ -9047,6 +9047,71 @@ const MetricGroups = {
 };
 
 /* ============================================================
+   Metrics — strategy entity (CRUD on definitions)
+   ============================================================ */
+const Metrics = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.metrics)) return [];
+    return App.data.metrics.filter(m => m.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return (App.data.metrics || []).find(m => m.id === id) || null;
+  },
+
+  add(metric) {
+    if (!App.data.metrics) App.data.metrics = [];
+    const cust = metric.customer || App.activeCustomer;
+    const groups = (App.data.metric_groups || []).filter(g => g.customer === cust);
+    const defaultGroup = groups.find(g => g.id === 'performance') || groups[0];
+    const groupId = metric.group_id || (defaultGroup && defaultGroup.id);
+    if (!groupId || !groups.some(g => g.id === groupId)) return null;
+    const rec = {
+      definition: '', pseudo_logic: '', unit: '', direction: 'higher_is_better',
+      source: '', status: 'draft', dimensions: [], objective_ids: [],
+      raci: { accountable: [], responsible: [], consulted: [], informed: [] },
+      actuals: [], notes: '',
+      ...metric,
+      customer: cust, group_id: groupId,
+    };
+    if (!rec.id) rec.id = 'MET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    App.data.metrics.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const m = this.byId(id);
+    if (!m) return null;
+    if (patch.group_id && patch.group_id !== m.group_id) {
+      const groups = (App.data.metric_groups || []).filter(g => g.customer === m.customer);
+      if (!groups.some(g => g.id === patch.group_id)) return null;
+    }
+    Object.assign(m, patch);
+    if (App._save) App._save();
+    return m;
+  },
+
+  remove(id) {
+    const idx = (App.data.metrics || []).findIndex(m => m.id === id);
+    if (idx < 0) return false;
+    App.data.metrics.splice(idx, 1);
+    (App.data.personas || []).forEach(p => {
+      if (Array.isArray(p.metric_holdings)) {
+        p.metric_holdings = p.metric_holdings.filter(h => h.metric_id !== id);
+      }
+    });
+    (App.data.projects || []).forEach(pr => {
+      if (Array.isArray(pr.metric_ids)) {
+        pr.metric_ids = pr.metric_ids.filter(mid => mid !== id);
+      }
+    });
+    if (App._save) App._save();
+    return true;
+  },
+};
+
+/* ============================================================
    Progress — long-operation overlay
    ============================================================ */
 const Progress = {
