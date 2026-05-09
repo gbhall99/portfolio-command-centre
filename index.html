@@ -9002,6 +9002,51 @@ const Objectives = {
 };
 
 /* ============================================================
+   MetricGroups — grouping for metric definitions
+   ============================================================ */
+const MetricGroups = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.metric_groups)) return [];
+    return App.data.metric_groups.filter(g => g.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return this.list().find(g => g.id === id) || null;
+  },
+
+  add(group) {
+    if (!App.data.metric_groups) App.data.metric_groups = [];
+    const cust = group.customer || App.activeCustomer;
+    const exists = App.data.metric_groups.some(g => g.customer === cust && g.id === group.id);
+    if (exists) return null;
+    const rec = { swatch: '#888', ...group, customer: cust };
+    App.data.metric_groups.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const g = this.byId(id);
+    if (!g) return null;
+    if (patch.id && patch.id !== id) return null; // id is immutable
+    Object.assign(g, patch);
+    if (App._save) App._save();
+    return g;
+  },
+
+  remove(id) {
+    const cust = App.activeCustomer;
+    const idx = (App.data.metric_groups || []).findIndex(g => g.customer === cust && g.id === id);
+    if (idx < 0) return false;
+    const inUse = (App.data.metrics || []).some(m => m.customer === cust && m.group_id === id);
+    if (inUse) return false;
+    App.data.metric_groups.splice(idx, 1);
+    if (App._save) App._save();
+    return true;
+  },
+};
+
+/* ============================================================
    Progress — long-operation overlay
    ============================================================ */
 const Progress = {
