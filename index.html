@@ -9328,6 +9328,79 @@ const Metrics = {
     return true;
   },
 
+  renderSettingsTab() {
+    const metrics = this.list();
+    const groups  = MetricGroups.list();
+    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    if (!metrics.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No metrics yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Metrics._showAddForm()">+ Add the first</button>'
+           + ' <button class="btn btn-outline btn-sm" onclick="MetricGroups._openConfig()" style="margin-left:8px">edit groups…</button></div>';
+    }
+    const rows = metrics.map(m => {
+      const dims = (m.dimensions || []).join(', ') || '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+      return '<tr data-metric-id="' + Dashboard.esc(m.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(m.name) + '</strong></td>'
+           +   '<td><span class="group-tag" style="border-left:3px solid ' + groupSwatch(m.group_id) + ';padding-left:4px;font-size:11px">'
+           +     Dashboard.esc(groupName(m.group_id)) + '</span></td>'
+           +   '<td>' + dims + '</td>'
+           +   '<td><span class="status-pill status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:2px 6px;border-radius:10px;background:#eef">' + Dashboard.esc(m.status) + '</span></td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Metrics._edit(\'' + m.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Metrics._remove(\'' + m.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="metrics-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Group</th>'
+         + '<th style="text-align:left;padding:6px">Dimensions</th><th style="text-align:left;padding:6px">Status</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Metrics._showAddForm()">+ Add metric</button>'
+         + ' <button class="btn btn-outline btn-sm" onclick="MetricGroups._openConfig()" style="margin-left:8px">edit groups…</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Metric name:');
+    if (!name) return;
+    const def = prompt('Definition (optional):') || '';
+    const groups = MetricGroups.list().map(g => g.id).join(', ');
+    const groupId = prompt('Group id (' + groups + '):', 'performance') || 'performance';
+    const dims = prompt('Dimensions (comma-separated, optional):', '') || '';
+    const dimensions = dims.split(',').map(d => d.trim()).filter(Boolean);
+    this.add({ name: name.trim(), definition: def.trim(), group_id: groupId.trim(), dimensions });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const m = this.byId(id);
+    if (!m) return;
+    const name = prompt('Metric name:', m.name);
+    if (name === null) return;
+    const def = prompt('Definition:', m.definition || '');
+    if (def === null) return;
+    const pseudo = prompt('Pseudo-logic:', m.pseudo_logic || '');
+    if (pseudo === null) return;
+    const groups = MetricGroups.list().map(g => g.id).join(', ');
+    const groupId = prompt('Group id (' + groups + '):', m.group_id);
+    if (groupId === null) return;
+    const dims = prompt('Dimensions (comma-separated):', (m.dimensions || []).join(','));
+    if (dims === null) return;
+    const status = prompt('Status (live/draft/deprecated):', m.status);
+    if (status === null) return;
+    this.update(id, {
+      name: name.trim(), definition: def.trim(), pseudo_logic: pseudo.trim(),
+      group_id: groupId.trim(),
+      dimensions: dims.split(',').map(d => d.trim()).filter(Boolean),
+      status: status.trim(),
+    });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this metric? Holdings on personas will be deleted.')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
   rollup(metricId) {
     const metric = this.byId(metricId);
     if (!metric) return null;
