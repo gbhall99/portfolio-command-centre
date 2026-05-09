@@ -35,3 +35,17 @@ describe('migration: strategy arrays', () => {
     app.teardown();
   });
 });
+
+describe('migration: project additions', () => {
+  it('seeds metric_ids and persona_ids on existing projects', async () => {
+    const data = makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      projects: [{ id: 'PR1', customer: 'Acme Industries', name: 'Old project', status: 'In Progress', delivery_config: { phase_order: ['Data Engineering'] } }],
+    });
+    const app = await loadApp(data);
+    const p = app.App.data.projects.find(x => x.id === 'PR1');
+    expect(Array.isArray(p.metric_ids)).toBe(true);
+    expect(Array.isArray(p.persona_ids)).toBe(true);
+    app.teardown();
+  });
+});

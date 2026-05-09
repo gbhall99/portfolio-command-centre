@@ -10201,6 +10201,12 @@ const Dashboard = {
       { id: 'category', group: 'Identity', label: 'Category', width: 100, sortable: true,
         render: (p) => Dashboard.esc(p.category || ''),
         edit: { type: 'text', field: 'category' } },
+      { id: 'personas', group: 'Identity', label: 'Personas', width: 160,
+        render: (p) => Dashboard._renderPersonaChips(p),
+        edit: { type: 'multi-select', field: 'persona_ids', source: 'personas' } },
+      { id: 'metrics', group: 'Identity', label: 'Metrics', width: 180,
+        render: (p) => Dashboard._renderMetricChips(p),
+        edit: { type: 'multi-select', field: 'metric_ids', source: 'metrics' } },
       { id: 'manager', group: 'Identity', label: 'Manager', width: 130, sortable: true, cellClass: 'manager-cell',
         render: (p) => Dashboard.esc(p.manager || '—'),
         edit: { type: 'text', field: 'manager' } },
@@ -11198,6 +11204,39 @@ const Dashboard = {
       ).join('');
       cell.innerHTML = '<select class="quick-edit-input">' + opts + '</select>';
       editor = cell.querySelector('select');
+    } else if (edit.type === 'multi-select') {
+      // Mirrors 'select' branch but multi. Source is 'personas' or 'metrics'; ids/labels are
+      // app-internal (escaped via Dashboard.esc per project convention).
+      const source = edit.source;
+      let items = [];
+      if (source === 'personas' && typeof Personas !== 'undefined') items = Personas.list().map(p => ({ id: p.id, label: p.name }));
+      else if (source === 'metrics' && typeof Metrics !== 'undefined') items = Metrics.list().map(m => ({ id: m.id, label: m.name }));
+      const selected = new Set(Array.isArray(originalValue) ? originalValue : []);
+      const opts = items.map(it =>
+        '<option value="' + Dashboard.esc(it.id) + '"' + (selected.has(it.id) ? ' selected' : '') + '>' + Dashboard.esc(it.label) + '</option>'
+      ).join('');
+      const sizeAttr = Math.min(8, Math.max(3, items.length || 3));
+      const html = '<select multiple size="' + sizeAttr + '" class="quick-edit-input quick-edit-multi">' + opts + '</select>';
+      cell.innerHTML = html;
+      editor = cell.querySelector('select');
+      if (editor) {
+        const commitMulti = () => {
+          const next = Array.from(editor.selectedOptions).map(o => o.value);
+          const cur = Array.isArray(originalValue) ? originalValue : [];
+          const same = next.length === cur.length && next.every((v, i) => v === cur[i]);
+          if (same) { cancel(); return; }
+          App.updateProject(projectId, dataField, next);
+          reRender();
+          delete cell.dataset.editing;
+        };
+        editor.addEventListener('blur', commitMulti);
+        editor.addEventListener('keydown', e => {
+          if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+          else if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
+        });
+        try { editor.focus(); } catch (_) {}
+        return;
+      }
     } else {
       cell.innerHTML = '<input type="text" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
       editor = cell.querySelector('input');
@@ -12495,6 +12534,28 @@ const Dashboard = {
       App.toast('Filters restored from link', 'info');
       return true;
     } catch (e) { return false; }
+  },
+
+  _renderPersonaChips(project) {
+    const ids = project.persona_ids || [];
+    if (!ids.length) return '<span class="muted">—</span>';
+    return ids.map(id => {
+      const p = (typeof Personas !== 'undefined') ? Personas.byId(id) : null;
+      if (!p) return '';
+      return '<span class="chip-sm">' + Dashboard.esc(p.name) + '</span>';
+    }).join(' ');
+  },
+  _renderMetricChips(project) {
+    const ids = project.metric_ids || [];
+    if (!ids.length) return '<span class="muted">—</span>';
+    return ids.map(id => {
+      const m = (typeof Metrics !== 'undefined') ? Metrics.byId(id) : null;
+      if (!m) return '';
+      const grp = (typeof MetricGroups !== 'undefined') ? MetricGroups.byId(m.group_id) : null;
+      const swatch = grp ? grp.swatch : '#888';
+      return '<span class="chip-sm" style="border-left: 2px solid ' + swatch + '">'
+           + Dashboard.esc(m.name) + '</span>';
+    }).join(' ');
   },
 
   esc(str) {
