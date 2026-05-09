@@ -8950,6 +8950,58 @@ const Personas = {
 };
 
 /* ============================================================
+   Objectives — strategy entity (CRUD)
+   ============================================================ */
+const Objectives = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.objectives)) return [];
+    return App.data.objectives.filter(o => o.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return (App.data.objectives || []).find(o => o.id === id) || null;
+  },
+
+  add(objective) {
+    if (!App.data.objectives) App.data.objectives = [];
+    const rec = {
+      status: 'active',
+      time_horizon: { start_date: null, target_date: null },
+      description: '',
+      notes: '',
+      ...objective,
+      customer: objective.customer || App.activeCustomer,
+    };
+    if (!rec.id) rec.id = 'OBJ-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    if (!rec.time_horizon) rec.time_horizon = { start_date: null, target_date: null };
+    App.data.objectives.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const o = this.byId(id);
+    if (!o) return null;
+    Object.assign(o, patch);
+    if (App._save) App._save();
+    return o;
+  },
+
+  remove(id) {
+    const idx = (App.data.objectives || []).findIndex(o => o.id === id);
+    if (idx < 0) return false;
+    App.data.objectives.splice(idx, 1);
+    (App.data.metrics || []).forEach(m => {
+      if (Array.isArray(m.objective_ids)) {
+        m.objective_ids = m.objective_ids.filter(oid => oid !== id);
+      }
+    });
+    if (App._save) App._save();
+    return true;
+  },
+};
+
+/* ============================================================
    Progress — long-operation overlay
    ============================================================ */
 const Progress = {
