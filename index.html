@@ -8859,6 +8859,97 @@ const Validator = {
 };
 
 /* ============================================================
+   Personas — strategy entity (CRUD + hierarchy)
+   ============================================================ */
+const Personas = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.personas)) return [];
+    const cust = App.activeCustomer;
+    return App.data.personas.filter(p => p.customer === cust);
+  },
+
+  byId(id) {
+    return (App.data.personas || []).find(p => p.id === id) || null;
+  },
+
+  descendants(personaId) {
+    const all = this.list();
+    const out = [];
+    const seen = new Set();
+    const walk = (id) => {
+      const children = all.filter(p => p.parent_persona_id === id);
+      children.forEach(c => {
+        if (seen.has(c.id)) return;
+        seen.add(c.id);
+        out.push(c);
+        walk(c.id);
+      });
+    };
+    walk(personaId);
+    return out;
+  },
+
+  ancestors(personaId) {
+    const all = this.list();
+    const out = [];
+    let cur = this.byId(personaId);
+    const seen = new Set();
+    while (cur && cur.parent_persona_id && !seen.has(cur.parent_persona_id)) {
+      seen.add(cur.parent_persona_id);
+      const parent = all.find(p => p.id === cur.parent_persona_id);
+      if (!parent) break;
+      out.push(parent);
+      cur = parent;
+    }
+    return out;
+  },
+
+  // Returns true if assigning `parentId` as the parent of `personaId` is valid (no cycle, not self).
+  cycleCheck(personaId, parentId) {
+    if (!parentId) return true;
+    if (personaId === parentId) return false;
+    const seen = new Set();
+    let cur = this.byId(parentId);
+    while (cur && cur.parent_persona_id && !seen.has(cur.parent_persona_id)) {
+      if (cur.parent_persona_id === personaId) return false;
+      seen.add(cur.parent_persona_id);
+      cur = this.byId(cur.parent_persona_id);
+    }
+    return true;
+  },
+
+  add(persona) {
+    if (!App.data.personas) App.data.personas = [];
+    const rec = { ...persona, customer: persona.customer || App.activeCustomer };
+    if (!rec.id) rec.id = 'PER-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    if (!Array.isArray(rec.metric_holdings)) rec.metric_holdings = [];
+    if (!Array.isArray(rec.business_questions)) rec.business_questions = [];
+    App.data.personas.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const p = this.byId(id);
+    if (!p) return null;
+    Object.assign(p, patch);
+    if (App._save) App._save();
+    return p;
+  },
+
+  remove(id) {
+    const idx = (App.data.personas || []).findIndex(p => p.id === id);
+    if (idx < 0) return false;
+    App.data.personas.splice(idx, 1);
+    (App.data.personas || []).forEach(p => {
+      if (p.parent_persona_id === id) p.parent_persona_id = null;
+    });
+    if (App._save) App._save();
+    return true;
+  },
+};
+
+/* ============================================================
    Progress — long-operation overlay
    ============================================================ */
 const Progress = {
