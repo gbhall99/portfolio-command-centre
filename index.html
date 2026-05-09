@@ -1291,7 +1291,7 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .gantt-labels-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.12s; }
 .gantt-labels-resizer:hover::after, .gantt-labels-resizer.dragging::after { background: var(--accent-blue); }
 body.gantt-labels-dragging { cursor: col-resize; user-select: none; }
-.gantt-label-row { height: 36px; display: flex; align-items: stretch; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
+.gantt-label-row { height: 56px; display: flex; align-items: stretch; padding: 0 12px; border-bottom: 1px solid #f1f5f9; gap: 6px; cursor: pointer; }
 .gantt-label-row:hover { background: var(--surface-hover); }
 .gantt-label-row .label-rag { display: inline-flex; gap: 3px; flex-shrink: 0; margin-right: 6px; }
 .gantt-label-row .label-rag .rag-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -1315,7 +1315,7 @@ html[data-theme="dark"] .gantt-label-pri { border-right-color: #1f2937; }
 .gantt-header-cell.month-cell { border-right: 1px solid var(--border-light); }
 .gantt-header-cell.weekend { background: rgba(0,0,0,0.02); }
 .gantt-rows { position: relative; min-height: 100px; }
-.gantt-row { height: 36px; border-bottom: 1px solid #f1f5f9; position: relative; }
+.gantt-row { height: 56px; border-bottom: 1px solid #f1f5f9; position: relative; }
 /* Alternate shading by project (not skill). Applied in detailed mode so the whole project
    block — main row + its sub-rows — carries one consistent background. The zebra classes
    are also applied to the label-row + .gantt-label-sub placeholders so the left column
@@ -1333,7 +1333,7 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-row-bg { position: absolute; inset: 0; }
 .gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
 .gantt-bar {
-  position: absolute; top: 8px; height: 24px; border-radius: 5px;
+  position: absolute; top: 22px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
   font-size: 11px; font-weight: 700; color: white; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
@@ -1345,34 +1345,127 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
 .gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
 html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
-/* Baseline-vs-actual: bracket above the bar + inline delta pill.
-   Replaces the legacy 3px dashed strip (.gantt-bar-baseline) and the SVG
-   baseline-arrow. The bracket reads as a caliper spanning the original
-   start→end; the pill quantifies any slip on the right edge. */
-.gantt-baseline-bracket {
-  position: absolute; top: 1px; height: 6px;
+
+/* Baseline visualisation v2 — stacked plan / actual lanes.
+   Project header: plan lane y=4–12, arrow band y=14–20, bar y=22–48 (bar shifted from 8 to 22).
+   Phase sub-row: plan lane y=3–8, arrow band y=11–17, bar y=19–37 (sub-row height 38). */
+.gantt-plan-lane {
+  position: absolute; top: 4px; height: 8px;
   pointer-events: auto; cursor: pointer;
-}
-.gantt-baseline-bracket::before,
-.gantt-baseline-bracket::after {
-  content: ''; position: absolute; top: 0; width: 1.5px; height: 6px;
   background: var(--gantt-baseline);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.18);
 }
-.gantt-baseline-bracket::before { left: 0; }
-.gantt-baseline-bracket::after { right: 0; }
-.gantt-baseline-bracket > .gantt-baseline-spine {
-  position: absolute; left: 1.5px; right: 1.5px; top: 5px; height: 1px;
+.gantt-plan-lane::before, .gantt-plan-lane::after {
+  content: ''; position: absolute; top: -3px;
+  width: 2px; height: 14px;
   background: var(--gantt-baseline);
+  filter: brightness(0.7);
+}
+.gantt-plan-lane::before { left: -1px; }
+.gantt-plan-lane::after  { right: -1px; }
+
+.gantt-phase-plan-lane {
+  position: absolute; top: 3px; height: 5px;
+  pointer-events: auto; cursor: pointer;
+  background: var(--gantt-baseline); opacity: 0.7;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.15);
+}
+.gantt-phase-plan-lane::before, .gantt-phase-plan-lane::after {
+  content: ''; position: absolute; top: -2px;
+  width: 1.5px; height: 9px;
+  background: var(--gantt-baseline);
+  filter: brightness(0.7);
+}
+.gantt-phase-plan-lane::before { left: -0.5px; }
+.gantt-phase-plan-lane::after  { right: -0.5px; }
+
+/* Movement arrow primitive — pure DOM, renders reliably at any width.
+   Container is 6 px tall total; shaft is 2 px centred; head is a 7 px CSS-border triangle. */
+.gantt-move-arrow {
+  position: absolute; height: 6px;
+  z-index: 3; pointer-events: none;
+}
+.gantt-move-arrow .gantt-move-shaft {
+  position: absolute; left: 0; right: 7px; top: 2px; height: 2px;
+  background: var(--status-red); border-radius: 1px;
+}
+.gantt-move-arrow .gantt-move-head {
+  position: absolute; right: 0; top: 0;
+  width: 0; height: 0;
+  border-left: 7px solid var(--status-red);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
 }
 
-.gantt-delta-pill {
-  position: absolute; top: 50%; transform: translateY(-50%);
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
-  white-space: nowrap; pointer-events: none; z-index: 4;
+/* Per-phase culprit overlay — covers ONLY the days the phase expanded by */
+.gantt-phase-overlay-culprit {
+  position: absolute; top: 19px; height: 18px;
+  background: repeating-linear-gradient(135deg, rgba(220,38,38,0.32) 0 6px, rgba(220,38,38,0.12) 6px 12px);
+  border-right: 2px solid var(--status-red);
+  border-radius: 0 3px 3px 0;
+  pointer-events: none; z-index: 2;
 }
-.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak); }
-.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); }
-.gantt-delta-pill.onplan { color: var(--text-muted); background: transparent; }
+
+.gantt-phase-tag {
+  position: absolute; top: 28px;
+  transform: translateY(-50%);
+  background: var(--status-red); color: white;
+  font-size: 9px; font-weight: 800;
+  padding: 2px 6px; border-radius: 8px;
+  z-index: 5; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18); cursor: help;
+  line-height: 1;
+}
+
+.gantt-phase-status-dot {
+  position: absolute; left: 6px; top: 28px;
+  transform: translateY(-50%);
+  width: 10px; height: 10px; border-radius: 50%;
+  z-index: 4;
+}
+.gantt-phase-status-dot.complete    { background: var(--status-green); }
+.gantt-phase-status-dot.in-progress { background: white; border: 2px solid var(--accent-blue); box-sizing: border-box; }
+.gantt-phase-status-dot.pending     { background: white; border: 2px dashed var(--text-muted); box-sizing: border-box; }
+html[data-theme="dark"] .gantt-phase-status-dot.in-progress,
+html[data-theme="dark"] .gantt-phase-status-dot.pending { background: var(--surface-2); }
+
+.gantt-phase-name-tag {
+  position: absolute; left: 22px; top: 28px;
+  transform: translateY(-50%);
+  font-size: 9px; font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.4px;
+  pointer-events: none; z-index: 4;
+}
+
+.gantt-drift-line {
+  position: absolute; top: 0; bottom: 0; width: 0;
+  border-left: 1.5px dashed rgba(220,38,38,0.55);
+  z-index: 6; pointer-events: none;
+}
+.gantt-drift-line.with-label::after {
+  content: 'plan end';
+  position: absolute; top: 1px; left: 4px;
+  font-size: 8px; font-weight: 700;
+  color: var(--status-red);
+  text-transform: uppercase; letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+/* Delta pill — vertically centred on its anchor bar with 8 px gap (left positioned by JS) */
+.gantt-delta-pill {
+  position: absolute;
+  transform: translateY(-50%);
+  font-size: 11px; font-weight: 800;
+  padding: 3px 9px; border-radius: 12px;
+  z-index: 4; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.10); cursor: help;
+  line-height: 1;
+}
+.gantt-delta-pill.slip   { color: var(--status-red);   background: var(--tint-red-weak);   border: 1px solid #fca5a5; }
+.gantt-delta-pill.early  { color: var(--status-green); background: var(--tint-green-weak); border: 1px solid #6ee7b7; }
 .gantt-ms { transform: translateY(-50%); transition: transform 0.12s; }
 .gantt-ms:hover { transform: translateY(-50%) scale(1.15); }
 /* 2E: "Today" = the one live reference line — solid 2px in accent blue to own that role. */
@@ -15763,6 +15856,94 @@ const Gantt = {
     App.toast('Baseline "' + name + '" captured across ' + count + ' ' + customer + ' projects', 'success');
   },
 
+  // Format a day-slip count into business-friendly text. Days ≤ 6 stay in days; ≥ 7
+  // become weeks (whole-week shorthand when divisible, "+Xw Yd" otherwise). Used by the
+  // delta pill, per-phase tags, and the hover tooltips.
+  _formatSlip(days) {
+    if (!days || !isFinite(days)) return 'on plan';
+    const abs = Math.abs(days);
+    const sign = days > 0 ? '+' : '−'; // U+2212 minus, matching the existing pattern
+    if (abs <= 6) return sign + abs + 'd';
+    const weeks = Math.floor(abs / 7);
+    const rem = abs % 7;
+    if (rem === 0) return sign + weeks + 'w';
+    return sign + weeks + 'w ' + rem + 'd';
+  },
+
+  // Map of audit-log field names to user-facing labels. Anything not in the map falls
+  // back to title-cased words via _humaniseField.
+  _FIELD_LABELS: {
+    size_total:                 'Total scope',
+    size_requirements:          'Requirements scope',
+    size_engineering:           'Data Engineering scope',
+    size_data_engineering:      'Data Engineering scope',
+    size_data_science:          'Data Science scope',
+    size_tableau:               'Tableau scope',
+    size_uat_adoption:          'UAT scope',
+    target_date:                'Target date',
+    start_date:                 'Start date',
+    hard_deadline:              'Hard deadline',
+    rag_schedule:               'Schedule RAG',
+    rag_resourcing:             'Resourcing RAG',
+    rag_scope:                  'Scope RAG',
+    status:                     'Status',
+    manager:                    'Manager',
+    priority:                   'Priority',
+    business_value:             'Business value',
+    time_criticality:           'Time criticality',
+    risk_reduction_opportunity: 'Risk reduction opportunity',
+    moscow:                     'MoSCoW priority',
+    skill_splits:               'Sprint allocation',
+    delivery_config:            'Delivery configuration',
+    governance_forum:           'Meeting',
+    customer:                   'Customer',
+    category:                   'Category'
+  },
+
+  _humaniseField(field) {
+    if (!field) return '';
+    // Reference Gantt directly so the helper is safe to pass as a callback (e.g. arr.map(Gantt._humaniseField)).
+    if (Gantt._FIELD_LABELS[field]) return Gantt._FIELD_LABELS[field];
+    return String(field).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  },
+
+  // Compute baseline span vs actual span for a single phase (skill) of a project.
+  // Returns { baseline:{startDate,endDate,days}, actual:{startDate,endDate,days}, shift, expansion }
+  // or null when the baseline doesn't contain this project / this skill.
+  _phaseSpans(project, baseline, skillKey) {
+    if (!project || !baseline || !baseline.snapshot) return null;
+    const node = baseline.snapshot[project.id];
+    if (!node) return null;
+    const sprints = (App.data && App.data.sprints) || [];
+    const sprintMap = {};
+    sprints.forEach(s => { sprintMap[s.sprint_id] = s; });
+    const spanOf = (splits) => {
+      if (!Array.isArray(splits) || !splits.length) return null;
+      let earliest = null, latest = null;
+      splits.forEach(sp => {
+        const spr = sprintMap[sp.sprint];
+        // Per-split work-window overrides take precedence over the sprint span (matches
+        // the existing Detailed-mode rendering logic in Gantt.render).
+        const start = sp.work_start_date || (spr && spr.start_date);
+        const end   = sp.work_end_date   || (spr && spr.end_date);
+        if (!start || !end) return;
+        if (!earliest || start < earliest) earliest = start;
+        if (!latest   || end   > latest)   latest   = end;
+      });
+      if (!earliest || !latest) return null;
+      const days = Math.round((new Date(latest) - new Date(earliest)) / 86400000) + 1;
+      return { startDate: earliest, endDate: latest, days };
+    };
+    const baseSplits = (node.skill_splits || {})[skillKey];
+    const liveSplits = (project.skill_splits || {})[skillKey];
+    const baseline_ = spanOf(baseSplits);
+    const actual    = spanOf(liveSplits);
+    if (!baseline_ || !actual) return null;
+    const shift     = Math.round((new Date(actual.startDate) - new Date(baseline_.startDate)) / 86400000);
+    const expansion = actual.days - baseline_.days;
+    return { baseline: baseline_, actual, shift, expansion };
+  },
+
   // Compute a project's baseline span (earliest → latest sprint in the snapshot).
   // Returns { startSprint, endSprint } or null if the baseline has no data for this project.
   _projectBaselineSpan(projectId) {
@@ -16023,29 +16204,48 @@ const Gantt = {
       '</div>';
     };
 
-    // Plan-vs-actual narrative — appended to bar/label/baseline tooltips when an active
-    // baseline contains this project. Returns '' otherwise so the existing tooltip stays
-    // unchanged.
+    // Build the Plan-vs-actual block — three sections: Plan vs actual, Slip contributors, What moved.
+    // Used by the delta-pill tooltip (project pill) only. Returns '' when the project has no
+    // baseline data.
     const buildPlanVsActual = (proj) => {
       if (!proj) return '';
       const ab = self._activeBaseline ? self._activeBaseline() : null;
       const node = (ab && ab.snapshot && ab.snapshot[proj.id]) || null;
-      // Fallback: legacy project.baseline_start/end (pre-D2.3) when no named baseline matches.
-      const baseStart  = (node && node.start_date)  || proj.baseline_start;
-      const baseEnd    = (node && node.target_date) || proj.baseline_end;
-      const baseSize   = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
-      const liveStart  = proj.start_date;
-      const liveEnd    = proj.target_date;
-      const liveSize   = proj.size_total || 0;
+      const baseStart = (node && node.start_date)  || proj.baseline_start;
+      const baseEnd   = (node && node.target_date) || proj.baseline_end;
+      const baseSize  = (node && node.size_total != null) ? node.size_total : (proj.size_total || 0);
+      const liveStart = proj.start_date;
+      const liveEnd   = proj.target_date;
+      const liveSize  = proj.size_total || 0;
       if (!baseStart || !baseEnd || !liveStart || !liveEnd) return '';
       const fmtD = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
-      const startDelta = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
-      const targetDelta = Math.round((new Date(liveEnd) - new Date(baseEnd)) / 86400000);
-      const sizeDelta = liveSize - baseSize;
-      const startBit = startDelta === 0 ? 'start unchanged' : (startDelta > 0 ? '+' + startDelta + 'd on start' : startDelta + 'd on start');
-      const targetBit = targetDelta === 0 ? 'target unchanged' : (targetDelta > 0 ? '+' + targetDelta + 'd on target' : targetDelta + 'd on target');
-      const sizeBit = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? '+' + sizeDelta + ' SP' : sizeDelta + ' SP');
-      const setMeta = (ab && ab.created_at) ? 'set ' + new Date(ab.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (ab.created_by ? ' by ' + esc(ab.created_by) : '') : '';
+      const startDelta  = Math.round((new Date(liveStart) - new Date(baseStart)) / 86400000);
+      const targetDelta = Math.round((new Date(liveEnd)   - new Date(baseEnd))   / 86400000);
+      const sizeDelta   = liveSize - baseSize;
+      const startBit  = startDelta === 0 ? 'Start unchanged' : ('Start ' + Gantt._formatSlip(startDelta));
+      const targetBit = targetDelta === 0 ? 'target unchanged' : ('target ' + Gantt._formatSlip(targetDelta));
+      const sizeBit   = sizeDelta === 0 ? 'scope unchanged' : (sizeDelta > 0 ? 'scope +' + sizeDelta + ' SP' : 'scope ' + sizeDelta + ' SP');
+
+      // Slip contributors — phases that grew (expansion > 0) sorted by expansion desc.
+      let contribsHtml = '';
+      if (ab) {
+        const skills = (typeof Sprint !== 'undefined' && Sprint.SKILLS) ? Sprint.SKILLS : [];
+        const rows = skills.map(skMeta => {
+          const spans = Gantt._phaseSpans(proj, ab, skMeta.key);
+          if (!spans || spans.expansion <= 0) return null;
+          return { skill: skMeta, spans };
+        }).filter(Boolean);
+        rows.sort((a, b) => b.spans.expansion - a.spans.expansion);
+        if (rows.length) {
+          contribsHtml = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">Slip contributors</div>' +
+            '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' +
+            rows.map(r => '<li><strong>' + esc(r.skill.label) + '</strong> grew ' + r.spans.baseline.days + ' days &rarr; ' + r.spans.actual.days + ' days <span style="display:inline-block;background:var(--tint-red-weak);color:var(--status-red);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px">' + esc(Gantt._formatSlip(r.spans.expansion)) + '</span></li>').join('') +
+            '</ul></div>';
+        }
+      }
+
+      // What moved — humanised audit log
       let movers = '';
       try {
         const sinceTs = (ab && ab.created_at) || '';
@@ -16056,29 +16256,27 @@ const Gantt = {
           const e = log[i];
           if (!e.field || seen.has(e.field)) continue;
           seen.add(e.field);
-          bullets.push('<li>' + esc(e.field) + ': ' + esc(String(e.oldValue || '')) + ' → ' + esc(String(e.newValue || '')) + '</li>');
+          bullets.push('<li><strong>' + esc(Gantt._humaniseField(e.field)) + '</strong>: ' + esc(String(e.oldValue || '')) + ' &rarr; ' + esc(String(e.newValue || '')) + '</li>');
         }
         if (bullets.length) {
-          movers = '<div style="font-size:10px;color:var(--text-muted);margin-top:4px">What moved</div>' +
-                   '<ul style="margin:2px 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul>';
-        } else {
-          // Audit log has no qualifying entries — fall back to the most recent touch on this
-          // project so the user still has a "what / when" anchor. (Audit entries don't store a
-          // person's name; `source` is a category like 'user' / 'walkthrough', so we omit the by-line.)
-          const lastEntry = log.length ? log[log.length - 1] : null;
-          if (lastEntry && lastEntry.timestamp) {
-            const when = new Date(lastEntry.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-            movers = '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Last touched ' + esc(when) + '</div>';
+          movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+            '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">What moved</div>' +
+            '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul></div>';
+        } else if (log.length) {
+          const last = log[log.length - 1];
+          if (last && last.timestamp) {
+            const when = new Date(last.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light);font-size:11px;color:var(--text-muted)">Last touched ' + esc(when) + '</div>';
           }
         }
-      } catch (_) { /* audit log may be absent — fine */ }
+      } catch (_) { /* audit log absent — fine */ }
+
       return '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
-        '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px"><span>Plan vs actual</span><span style="font-weight:400;text-transform:none;letter-spacing:0">' + setMeta + '</span></div>' +
-        '<div style="font-size:11px;color:var(--text-dark-secondary);margin-top:2px"><span style="color:var(--text-muted)">Baseline</span> ' + fmtD(baseStart) + ' → ' + fmtD(baseEnd) + ' · ' + baseSize + ' SP</div>' +
-        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Current</span> ' + fmtD(liveStart) + ' → ' + fmtD(liveEnd) + ' · ' + liveSize + ' SP</div>' +
-        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' · ' + targetBit + ' · ' + sizeBit + '</div>' +
-        movers +
-      '</div>';
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">Plan vs actual</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Originally planned</span> ' + fmtD(baseStart) + ' &rarr; ' + fmtD(baseEnd) + ' &middot; ' + baseSize + ' SP</div>' +
+        '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Now</span> ' + fmtD(liveStart) + ' &rarr; ' + fmtD(liveEnd) + ' &middot; ' + liveSize + ' SP</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + startBit + ' &middot; ' + targetBit + ' &middot; ' + sizeBit + '</div>' +
+        '</div>' + contribsHtml + movers;
     };
 
     const buildTooltip = (type, el) => {
@@ -16120,7 +16318,7 @@ const Gantt = {
           (p.manager ? ' <span style="color:var(--text-muted)">\u00B7 ' + esc(p.manager) + '</span>' : '') +
           (sprintRange ? ' <span style="color:var(--text-muted)">\u00B7 ' + sprintRange + '</span>' : '') + '</div>' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + (p.size_total || 0) + ' total pts</div>' +
-          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildPlanVsActual(p) + buildProjectSummary(p);
+          buildAssigneeLine(p, null) + buildPhaseBreakdown(p) + buildProjectSummary(p);
       }
       // Phase-specific tooltip — fired when hovering a detailed sub-row bar. Shows just the
       // hovered phase in full detail plus a compact header identifying the parent project.
@@ -16222,15 +16420,82 @@ const Gantt = {
           '<div class="gantt-tooltip-row" style="color:var(--text-muted)">' + verb + '</div>' +
           '<div class="gantt-tooltip-row">' + esc(secondary ? secondary.name : '?') + '</div>';
       }
-      if (type === 'baseline') {
+      if (type === 'baseline' || type === 'phase-baseline') {
         const id = el.dataset.id;
         const p = id ? App.data.projects.find(pr => pr.id === id) : null;
         if (!p) return '';
-        const projHeader = '<div style="font-size:11px;font-weight:600;color:var(--text-dark-secondary);margin-bottom:3px">' + esc(p.name) +
-          ' <span style="font-size:9px;padding:1px 4px;border-radius:3px;background:' + App.customerColor(p.customer) + '20;color:' + App.customerColor(p.customer) + '">' + esc(p.customer) + '</span></div>';
-        const block = buildPlanVsActual(p);
-        if (!block) return projHeader + '<div style="font-size:11px;color:var(--text-muted)">Project not in active baseline</div>';
-        return projHeader + block;
+        const sk = el.dataset.skillKey || null;
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        if (sk && ab) {
+          const spans = Gantt._phaseSpans(p, ab, sk);
+          if (!spans) return '';
+          const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+          const skillMeta = (Sprint.SKILLS.find(s => s.key === sk) || {});
+          return '<div style="font-size:11px;font-weight:700;color:var(--text-dark)">' + esc(skillMeta.label || sk) + ' plan</div>' +
+                 '<div style="font-size:11px;color:var(--text-dark-secondary)">Originally planned ' + esc(fmtD(spans.baseline.startDate)) + ' &rarr; ' + esc(fmtD(spans.baseline.endDate)) + ' &middot; ' + spans.baseline.days + ' days</div>';
+        }
+        const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
+        const baseStart = (node && node.start_date)  || p.baseline_start;
+        const baseEnd   = (node && node.target_date) || p.baseline_end;
+        if (!baseStart || !baseEnd) return '';
+        const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const days = Math.round((new Date(baseEnd) - new Date(baseStart)) / 86400000) + 1;
+        return '<div style="font-size:11px;font-weight:700;color:var(--text-dark)">' + esc(p.name) + ' plan</div>' +
+               '<div style="font-size:11px;color:var(--text-dark-secondary)">Originally planned ' + esc(fmtD(baseStart)) + ' &rarr; ' + esc(fmtD(baseEnd)) + ' &middot; ' + days + ' days</div>';
+      }
+      if (type === 'delta-pill') {
+        const id = el.dataset.id;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        if (!p) return '';
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
+        const baseEnd = (node && node.target_date) || p.baseline_end;
+        if (!baseEnd || !p.target_date) return '';
+        const targetDelta = Math.round((new Date(p.target_date) - new Date(baseEnd)) / 86400000);
+        const slipText = Gantt._formatSlip(targetDelta);
+        const projHeader = '<div class="gantt-tooltip-title">' + esc(p.name) + ' slip <span style="font-size:10px;color:var(--text-muted);font-weight:400">' + esc(slipText) + ' on target</span></div>';
+        return projHeader + buildPlanVsActual(p);
+      }
+      if (type === 'phase-tag') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const p = id ? App.data.projects.find(pr => pr.id === id) : null;
+        const ab = self._activeBaseline ? self._activeBaseline() : null;
+        if (!p || !sk || !ab) return '';
+        const spans = Gantt._phaseSpans(p, ab, sk);
+        if (!spans) return '';
+        const skillMeta = (Sprint.SKILLS.find(s => s.key === sk) || {});
+        const fmtD = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const shiftText = spans.shift === 0 ? 'Start unchanged' : ('Started ' + Gantt._formatSlip(spans.shift) + ' from plan');
+        const expandText = spans.expansion > 0 ? 'expanded by <strong style="color:var(--status-red)">' + esc(Gantt._formatSlip(spans.expansion)) + '</strong>' : 'no expansion';
+        const node = (ab.snapshot || {})[p.id] || null;
+        const baseEnd = (node && node.target_date) || p.baseline_end;
+        const projectSlip = baseEnd && p.target_date ? Math.round((new Date(p.target_date) - new Date(baseEnd)) / 86400000) : 0;
+        let contributorBanner = '';
+        if (spans.expansion > 0) {
+          const allRows = (Sprint.SKILLS || []).map(m => Gantt._phaseSpans(p, ab, m.key)).filter(s => s && s.expansion > 0);
+          const isLargest = allRows.length && allRows.every(r => r.expansion <= spans.expansion);
+          if (isLargest && projectSlip !== 0) {
+            contributorBanner = '<div style="margin-top:6px;padding:4px 8px;background:var(--tint-red-weak);color:var(--status-red);border-radius:4px;font-size:11px;font-weight:600">Largest contributor to project slip (' + esc(Gantt._formatSlip(projectSlip)) + ' total)</div>';
+          }
+        }
+        let movers = '';
+        try {
+          const sinceTs = ab.created_at || '';
+          const skLabel = Gantt._humaniseField(sk);
+          const log = (App.data.audit_log || []).filter(e => e.projectId === p.id && (!sinceTs || (e.timestamp || '') >= sinceTs) && (e.field === sk || e.field === 'skill_splits' || Gantt._humaniseField(e.field) === skLabel));
+          const bullets = log.slice(-3).reverse().map(e => '<li><strong>' + esc(Gantt._humaniseField(e.field)) + '</strong>: ' + esc(String(e.oldValue || '')) + ' &rarr; ' + esc(String(e.newValue || '')) + '</li>');
+          if (bullets.length) {
+            movers = '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border-light)">' +
+              '<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px">What moved here</div>' +
+              '<ul style="margin:0 0 0 14px;padding:0;font-size:11px;color:var(--text-dark-secondary)">' + bullets.join('') + '</ul></div>';
+          }
+        } catch (_) { /* fine */ }
+        return '<div class="gantt-tooltip-title">' + esc(skillMeta.label || sk) + ' contribution</div>' +
+          '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Originally planned</span> ' + esc(fmtD(spans.baseline.startDate)) + ' &rarr; ' + esc(fmtD(spans.baseline.endDate)) + ' &middot; ' + spans.baseline.days + ' days</div>' +
+          '<div style="font-size:11px;color:var(--text-dark-secondary)"><span style="color:var(--text-muted)">Now</span> ' + esc(fmtD(spans.actual.startDate)) + ' &rarr; ' + esc(fmtD(spans.actual.endDate)) + ' &middot; ' + spans.actual.days + ' days</div>' +
+          '<div style="margin-top:6px;font-size:11px">' + esc(shiftText) + '; ' + expandText + '.</div>' +
+          contributorBanner + movers;
       }
       return '';
     };
@@ -16253,6 +16518,24 @@ const Gantt = {
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
         if (label) label.classList.add('gantt-label-active');
       } else if (type === 'baseline') {
+        const id = el.dataset.id;
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (bar) bar.classList.add('gantt-bar-highlight');
+        if (label) label.classList.add('gantt-label-active');
+      } else if (type === 'phase-baseline') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const phaseBar = scroll.querySelector('.gantt-phase-bar[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (phaseBar) phaseBar.classList.add('gantt-hovered');
+      } else if (type === 'phase-tag') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const phaseBar = scroll.querySelector('.gantt-phase-bar[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (phaseBar) phaseBar.classList.add('gantt-hovered');
+        const overlay = scroll.querySelector('.gantt-phase-overlay-culprit[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (overlay) overlay.classList.add('gantt-hovered');
+      } else if (type === 'delta-pill') {
         const id = el.dataset.id;
         const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
@@ -16288,6 +16571,24 @@ const Gantt = {
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
         if (label) label.classList.remove('gantt-label-active');
       } else if (type === 'baseline') {
+        const id = el.dataset.id;
+        const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
+        const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
+        if (bar) bar.classList.remove('gantt-bar-highlight');
+        if (label) label.classList.remove('gantt-label-active');
+      } else if (type === 'phase-baseline') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const phaseBar = scroll.querySelector('.gantt-phase-bar[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (phaseBar) phaseBar.classList.remove('gantt-hovered');
+      } else if (type === 'phase-tag') {
+        const id = el.dataset.id;
+        const sk = el.dataset.skillKey;
+        const phaseBar = scroll.querySelector('.gantt-phase-bar[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (phaseBar) phaseBar.classList.remove('gantt-hovered');
+        const overlay = scroll.querySelector('.gantt-phase-overlay-culprit[data-id="' + id + '"][data-skill-key="' + sk + '"]');
+        if (overlay) overlay.classList.remove('gantt-hovered');
+      } else if (type === 'delta-pill') {
         const id = el.dataset.id;
         const bar = scroll.querySelector('.gantt-bar[data-id="' + id + '"]');
         const label = document.querySelector('.gantt-label-row[data-id="' + id + '"]');
@@ -16682,7 +16983,7 @@ const Gantt = {
     // H10: executive mode collapses to one row per project, milestones only.
     const isExecutive = !!this.executiveMode;
     const isDetailed = !isExecutive && document.getElementById('ganttDetailed') && document.getElementById('ganttDetailed').checked;
-    const subRowH = isDetailed ? 24 : 0;
+    const subRowH = isDetailed ? 38 : 0;
 
     // Critical path calculation (needed before label rendering for fading)
     const criticalIds = this.showCriticalPath ? new Set(this.calculateCriticalPath(projects)) : new Set();
@@ -16827,18 +17128,66 @@ const Gantt = {
       const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
       const psm = Solver.PHASE_SKILL_MAP;
       const skills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : Sprint.SKILLS.map(sk => sk.key);
+      // Hoisted from the detailed-mode block so overview segments and detailed sub-rows
+      // share the same time-based positioning. Each skill's x-range comes from its
+      // skill_splits + computeSplitWindow (sprint-aware proration). This keeps overview
+      // stripe segments visually aligned with the per-phase bars below in detailed mode.
+      const sprintLookup = {};
+      (App.data.sprints || []).forEach(s => { sprintLookup[s.sprint_id] = s; });
+      const skToPhaseNum = {};
+      skills.forEach((skKey, i) => { skToPhaseNum[skKey] = i; });
+      const perSprintOffsets = {};
+      skills.forEach(skKey => {
+        const arr = (p.skill_splits && p.skill_splits[skKey]) || [];
+        arr.forEach(sp => {
+          if (!sp.sprint || !sprintLookup[sp.sprint]) return;
+          const bucket = perSprintOffsets[sp.sprint] || (perSprintOffsets[sp.sprint] = { total: 0, byPhase: {} });
+          bucket.total += (sp.points || 0);
+          bucket.byPhase[skKey] = (bucket.byPhase[skKey] || 0) + (sp.points || 0);
+        });
+      });
+      const computeSplitWindow = (sp, skKey) => {
+        const spr = sprintLookup[sp.sprint];
+        if (!spr) return null;
+        const sprStart = dateToX(spr.start_date);
+        const sprEnd = dateToX(spr.end_date);
+        const sprWidth = Math.max(1, sprEnd - sprStart);
+        if (sp.work_start_date && sp.work_end_date) {
+          return { start: dateToX(sp.work_start_date), end: dateToX(sp.work_end_date) };
+        }
+        const bucket = perSprintOffsets[sp.sprint];
+        if (!bucket || bucket.total <= 0) return { start: sprStart, end: sprEnd };
+        const thisPhaseIdx = skToPhaseNum[skKey];
+        let pointsBefore = 0;
+        Object.keys(bucket.byPhase).forEach(otherSk => {
+          if (skToPhaseNum[otherSk] < thisPhaseIdx) pointsBefore += bucket.byPhase[otherSk];
+        });
+        const thisPts = sp.points || 0;
+        const beforeFrac = pointsBefore / bucket.total;
+        const thisFrac = thisPts / bucket.total;
+        return {
+          start: sprStart + beforeFrac * sprWidth,
+          end: sprStart + (beforeFrac + thisFrac) * sprWidth
+        };
+      };
+
       let segmentsHtml = '';
       // H10: executive mode collapses bars — no per-skill segments so the timeline reads as a
       // single status colour per project with milestones overlaid. Keeps the chart one-page and
       // scannable for executive briefings.
       if (!isExecutive && total > 0 && w > 20) {
-        let offset = 0;
         skills.forEach(sk => {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
-          const segW = Math.max(2, Math.round((pts / total) * w));
-          segmentsHtml += '<div class="gantt-seg gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + offset + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
-          offset += segW;
+          const splits = (p.skill_splits && p.skill_splits[sk]) || [];
+          if (!splits.length) return; // No scheduled splits = no time range = no segment in overview
+          const windows = splits.map(sp => computeSplitWindow(sp, sk)).filter(Boolean);
+          if (!windows.length) return;
+          const segX1 = Math.min(...windows.map(win => win.start));
+          const segX2 = Math.max(...windows.map(win => win.end));
+          const segLeft = Math.round(segX1 - x1);
+          const segW = Math.max(2, Math.round(segX2 - segX1));
+          segmentsHtml += '<div class="gantt-seg gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
         });
       }
 
@@ -16889,7 +17238,6 @@ const Gantt = {
           if (startSp) bStart = startSp.start_date;
           if (endSp) bEnd = endSp.end_date;
         }
-        // Fallback: per-project dates inside the active named baseline (D2.4).
         if (!bStart || !bEnd) {
           const ab = this._activeBaseline();
           const node = (ab && ab.snapshot && ab.snapshot[p.id]) || null;
@@ -16898,23 +17246,29 @@ const Gantt = {
             bEnd = node.target_date;
           }
         }
-        // Final fallback: legacy project.baseline_start/end (pre-D2.3).
         if (!bStart || !bEnd) { bStart = p.baseline_start; bEnd = p.baseline_end; }
         if (bStart && bEnd) {
           const bx1 = Math.max(0, dateToX(bStart));
           const bx2 = Math.max(bx1 + 4, dateToX(bEnd));
-          // Bracket sits above the bar, spanning the baseline's original start → end.
-          baselineHtml += '<div class="gantt-baseline-bracket gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" role="img" aria-label="Baseline ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"><div class="gantt-baseline-spine"></div></div>';
-          // Delta pill — quantify the slip / early / on-plan state vs current target_date.
+          // 1) Plan lane
+          baselineHtml += '<div class="gantt-plan-lane gantt-hoverable" data-hover-type="baseline" data-id="' + Dashboard.esc(p.id) + '" data-bstart="' + Dashboard.esc(bStart) + '" data-bend="' + Dashboard.esc(bEnd) + '" tabindex="0" role="img" aria-label="Plan ' + Dashboard.esc(bStart) + ' to ' + Dashboard.esc(bEnd) + '" style="left:' + bx1 + 'px;width:' + (bx2 - bx1) + 'px"></div>';
+          // 2) Drift line with the "plan end" label (the per-phase rows in detailed mode get the same line, no label)
+          baselineHtml += '<div class="gantt-drift-line with-label" style="left:' + bx2 + 'px"></div>';
+          // 3) Movement arrow + delta pill (only when target is set)
           if (p.target_date) {
+            const liveEndX = dateToX(p.target_date);
+            const arrowW = liveEndX - bx2;
+            if (arrowW >= 12) {
+              baselineHtml += '<div class="gantt-move-arrow" style="left:' + bx2 + 'px;width:' + arrowW + 'px;top:14px"><span class="gantt-move-shaft"></span><span class="gantt-move-head"></span></div>';
+            }
             const targetDelta = Math.round((new Date(p.target_date) - new Date(bEnd)) / 86400000);
-            let pillCls, pillText;
-            if (targetDelta > 0)      { pillCls = 'slip';   pillText = '+' + targetDelta + 'd'; }
-            else if (targetDelta < 0) { pillCls = 'early';  pillText = '−' + Math.abs(targetDelta) + 'd'; }
-            else                      { pillCls = 'onplan'; pillText = 'on plan'; }
-            const pillX = Math.min(totalWidth - 50, Math.max(x2, bx2) + 4);
-            const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
-            baselineHtml += '<div class="gantt-delta-pill ' + pillCls + '" style="left:' + pillX + 'px" title="' + Dashboard.esc(tipText) + '">' + pillText + '</div>';
+            if (targetDelta !== 0) {
+              const pillCls = targetDelta > 0 ? 'slip' : 'early';
+              const pillText = this._formatSlip(targetDelta);
+              const pillX = Math.min(totalWidth - 50, Math.max(x2, bx2) + 8);
+              const tipText = 'Baseline ' + bStart + ' → ' + bEnd + ' · current ' + p.target_date + ' (' + pillText + ')';
+              baselineHtml += '<div class="gantt-delta-pill ' + pillCls + ' gantt-hoverable" data-hover-type="delta-pill" data-id="' + Dashboard.esc(p.id) + '" tabindex="0" style="left:' + pillX + 'px;top:35px" title="' + Dashboard.esc(tipText) + '">' + Dashboard.esc(pillText) + '</div>';
+            }
           }
         }
       }
@@ -16932,12 +17286,12 @@ const Gantt = {
       let milestoneHtml = '';
       const msInfo = (type, date, project) => Dashboard.esc(JSON.stringify({ type, date, project }));
       const msWrap = (klass, x, type, date, inner, tabIdx) =>
-        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:50%;left:' + (x-8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' + inner + '</span>';
+        '<span class="gantt-ms gantt-hoverable ' + klass + '" data-hover-type="milestone" data-info=\'' + msInfo(type, date, p.name) + '\' tabindex="' + (tabIdx == null ? 0 : tabIdx) + '" role="img" aria-label="' + Dashboard.esc(type) + (date ? ' ' + Dashboard.esc(date) : '') + '" style="position:absolute;top:34px;left:' + (x-9) + 'px;z-index:3;cursor:pointer;width:18px;height:18px">' + inner + '</span>';
 
       // Deadline — calendar with an exclamation. Black-on-white so shape carries meaning, not colour.
       // Fill/stroke wired via CSS custom properties so the icon flips with the theme.
       const msDeadline = (x, type, date) => msWrap('gantt-ms-deadline', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+        '<svg width="18" height="18" viewBox="0 0 16 16" focusable="false">' +
           '<rect x="2" y="3" width="12" height="11" rx="1.5" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2"/>' +
           '<line x1="2" y1="6.5" x2="14" y2="6.5" style="stroke:var(--gantt-ms-stroke);stroke-width:1"/>' +
           '<line x1="5" y1="1.5" x2="5" y2="4.5" style="stroke:var(--gantt-ms-stroke);stroke-width:1.3" stroke-linecap="round"/>' +
@@ -16947,14 +17301,14 @@ const Gantt = {
         '</svg>');
       // Launch — rocket. Black-on-white so shape carries meaning, not colour.
       const msLaunch = (x, type, date) => msWrap('gantt-ms-launch', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+        '<svg width="18" height="18" viewBox="0 0 16 16" focusable="false">' +
           '<path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linejoin="round"/>' +
           '<circle cx="8" cy="7" r="1.2" style="fill:var(--gantt-ms-stroke)"/>' +
           '<path d="M5 11 L3 14 M11 11 L13 14" style="stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linecap="round" fill="none"/>' +
         '</svg>');
       // UAT release — document with a checkmark. Black-on-white so shape carries meaning, not colour.
       const msUat = (x, type, date) => msWrap('gantt-ms-uat', x, type, date,
-        '<svg width="16" height="16" viewBox="0 0 16 16" focusable="false">' +
+        '<svg width="18" height="18" viewBox="0 0 16 16" focusable="false">' +
           '<rect x="3" y="2" width="10" height="12" rx="1" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2"/>' +
           '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>');
@@ -16974,8 +17328,8 @@ const Gantt = {
         const gx = dateToX(d.expected_date);
         const info = Dashboard.esc(JSON.stringify({ type: 'External dependency', date: d.expected_date, project: p.name }));
         const tip = Dashboard.esc(d.label + ' · expected ' + d.expected_date + (d.notes ? ' · ' + d.notes : ''));
-        milestoneHtml += '<span class="gantt-ms gantt-ms-external gantt-hoverable" data-hover-type="milestone" data-info=\'' + info + '\' tabindex="0" role="img" aria-label="External dependency: ' + tip + '" title="External: ' + tip + '" style="position:absolute;top:50%;left:' + (gx - 7) + 'px;z-index:3;cursor:pointer;width:14px;height:14px">' +
-          '<svg width="14" height="14" viewBox="0 0 14 14" focusable="false"><path d="M7 1 L13 7 L7 13 L1 7 Z" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linejoin="round"/><path d="M7 4 L7 8" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" style="fill:var(--gantt-ms-stroke)"/></svg>' +
+        milestoneHtml += '<span class="gantt-ms gantt-ms-external gantt-hoverable" data-hover-type="milestone" data-info=\'' + info + '\' tabindex="0" role="img" aria-label="External dependency: ' + tip + '" title="External: ' + tip + '" style="position:absolute;top:34px;left:' + (gx - 8) + 'px;z-index:3;cursor:pointer;width:16px;height:16px">' +
+          '<svg width="16" height="16" viewBox="0 0 14 14" focusable="false"><path d="M7 1 L13 7 L7 13 L1 7 Z" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2" stroke-linejoin="round"/><path d="M7 4 L7 8" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" style="fill:var(--gantt-ms-stroke)"/></svg>' +
         '</span>';
       });
 
@@ -17061,58 +17415,13 @@ const Gantt = {
 
       // Detailed sub-rows per phase
       if (isDetailed) {
-        const activeSkills = phaseOrder.length ? phaseOrder.map(ph => psm[ph]).filter(Boolean) : skills;
-
         // Issue 4: narrow each phase bar to its actual work window within each sprint.
-        // Approach: for every sprint this project has work in, allocate the sprint's calendar
-        // proportionally across phases by points, ordered by phase_order. A phase with 3 pts in
-        // a 20-day sprint containing 8 total project pts occupies 3/8 of the sprint — starting
-        // after earlier phases' slices. Preserves cross-sprint stretches (a phase that spans
-        // two sprints still renders from first-slice-start to last-slice-end).
-        // Explicit work_start_date / work_end_date on a split override the derivation.
-        const skToPhaseNum = {};
-        activeSkills.forEach((skKey, i) => { skToPhaseNum[skKey] = i; });
-        const sprintLookup = {};
-        (App.data.sprints || []).forEach(s => { sprintLookup[s.sprint_id] = s; });
-        // Pre-index: sprintId → { totalPts, cumulativePointsByPhase (offset before each phase) }
-        const perSprintOffsets = {};
-        activeSkills.forEach(skKey => {
-          const arr = (p.skill_splits && p.skill_splits[skKey]) || [];
-          arr.forEach(sp => {
-            if (!sp.sprint || !sprintLookup[sp.sprint]) return;
-            const bucket = perSprintOffsets[sp.sprint] || (perSprintOffsets[sp.sprint] = { total: 0, byPhase: {} });
-            bucket.total += (sp.points || 0);
-            bucket.byPhase[skKey] = (bucket.byPhase[skKey] || 0) + (sp.points || 0);
-          });
-        });
-        // Work-window helper — returns { start, end } in px for a given split.
-        const computeSplitWindow = (sp, skKey) => {
-          const spr = sprintLookup[sp.sprint];
-          if (!spr) return null;
-          const sprStart = dateToX(spr.start_date);
-          const sprEnd = dateToX(spr.end_date);
-          const sprWidth = Math.max(1, sprEnd - sprStart);
-          if (sp.work_start_date && sp.work_end_date) {
-            return { start: dateToX(sp.work_start_date), end: dateToX(sp.work_end_date) };
-          }
-          const bucket = perSprintOffsets[sp.sprint];
-          if (!bucket || bucket.total <= 0) return { start: sprStart, end: sprEnd };
-          const thisPhaseIdx = skToPhaseNum[skKey];
-          let pointsBefore = 0;
-          Object.keys(bucket.byPhase).forEach(otherSk => {
-            if (skToPhaseNum[otherSk] < thisPhaseIdx) pointsBefore += bucket.byPhase[otherSk];
-          });
-          const thisPts = sp.points || 0;
-          const beforeFrac = pointsBefore / bucket.total;
-          const thisFrac = thisPts / bucket.total;
-          return {
-            start: sprStart + beforeFrac * sprWidth,
-            end: sprStart + (beforeFrac + thisFrac) * sprWidth
-          };
-        };
+        // sprintLookup, skToPhaseNum, perSprintOffsets, and computeSplitWindow are hoisted
+        // above the segments block so overview stripe segments share the same time-based
+        // positioning as the detailed phase sub-rows here.
 
         let prevEnd = x1;
-        activeSkills.forEach(sk => {
+        skills.forEach(sk => {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
           const c = skillColors[sk] || '#94a3b8';
@@ -17129,25 +17438,72 @@ const Gantt = {
             }
           }
           const subW = Math.max(4, subX2 - subX1);
-          // Only show the label inline if the bar is wide enough to fit it
-          const inlineLabel = subW > 90
-            ? '<span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:600;color:#fff;white-space:nowrap;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.25)">' + Dashboard.esc(skillLabel) + ' · ' + pts + 'pts</span>'
-            : (subW > 40 ? '<span style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.25)">' + pts + '</span>' : '');
-          // Floating label to the right for narrow bars
-          const floatLabel = subW <= 90 ? '<span style="position:absolute;left:' + (subX2 + 6) + 'px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:600;color:' + c + ';white-space:nowrap;pointer-events:none">' + Dashboard.esc(skillLabel) + (subW <= 40 ? ' · ' + pts + 'pts' : '') + '</span>' : '';
+          // Inside the bar: only the points number, only when there's enough room (≥ 36 px fits "12pts").
+          // Skill name always lives OUTSIDE the bar via floatLabel — never clipped, never spilled.
+          const inlineLabel = subW > 36
+            ? '<span style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#fff;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.25)">' + pts + 'pts</span>'
+            : '';
+          // Floating label to the right of every bar — skill name (always) + points (only when bar is too small for inline pts).
+          const floatLabel = '<span style="position:absolute;left:' + (subX2 + 6) + 'px;top:28px;transform:translateY(-50%);font-size:10px;font-weight:600;color:' + c + ';white-space:nowrap;pointer-events:none">' + Dashboard.esc(skillLabel) + (subW <= 36 ? ' · ' + pts + 'pts' : '') + '</span>';
           // Connector line from previous phase end to this phase start
-          const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:' + (subRowH / 2) + 'px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
+          const connector = prevEnd < subX1 ? '<svg style="position:absolute;top:28px;left:' + prevEnd + 'px;width:' + (subX1 - prevEnd) + 'px;height:1px;overflow:visible"><line x1="0" y1="0" x2="' + (subX1 - prevEnd) + '" y2="0" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 2" opacity="0.4"/></svg>' : '';
           // D8: per-phase highlight — phase-level bars get a red inner border when they extend past target_date.
           const phaseOverruns = (subX1 + subW) > (x2 + 2);
-          const subBarStyle = 'position:absolute;top:3px;left:' + subX1 + 'px;width:' + subW + 'px;height:' + (subRowH - 6) + 'px;background:' + c + ';border-radius:3px;opacity:0.9;cursor:pointer' +
+          const subBarStyle = 'position:absolute;top:19px;left:' + subX1 + 'px;width:' + subW + 'px;height:18px;background:' + c + ';border-radius:3px;opacity:0.9;cursor:pointer;overflow:hidden' +
             (phaseOverruns ? ';box-shadow:0 0 0 1.5px var(--status-red) inset' : '');
+          // === Baseline visualisation v2 — per-phase plan lane + culprit attribution ===
+          let phasePlanHtml = '';
+          let phaseStatusClass = 'pending';
+          let phaseNameHtml = '';
+          if (showBaseline) {
+            const ab = this._activeBaseline();
+            const spans = ab ? this._phaseSpans(p, ab, sk) : null;
+            if (spans) {
+              const planX1 = Math.max(0, dateToX(spans.baseline.startDate));
+              const planX2 = Math.max(planX1 + 4, dateToX(spans.baseline.endDate));
+              phasePlanHtml += '<div class="gantt-phase-plan-lane gantt-hoverable" data-hover-type="phase-baseline" data-id="' + p.id + '" data-skill-key="' + sk + '" tabindex="0" role="img" aria-label="Plan for ' + Dashboard.esc(skillLabel) + '" style="left:' + planX1 + 'px;width:' + (planX2 - planX1) + 'px"></div>';
+              if (spans.expansion > 0) {
+                const liveEndX = dateToX(spans.actual.endDate);
+                const overlayX = planX2;
+                const overlayW = Math.max(2, liveEndX - planX2);
+                phasePlanHtml += '<div class="gantt-phase-overlay-culprit" data-id="' + p.id + '" data-skill-key="' + sk + '" style="left:' + overlayX + 'px;width:' + overlayW + 'px"></div>';
+                const arrowW = liveEndX - planX2;
+                if (arrowW >= 12) {
+                  phasePlanHtml += '<div class="gantt-move-arrow" style="left:' + planX2 + 'px;width:' + arrowW + 'px;top:11px"><span class="gantt-move-shaft"></span><span class="gantt-move-head"></span></div>';
+                }
+                const tagText = this._formatSlip(spans.expansion);
+                const tagX = Math.min(totalWidth - 50, liveEndX + 8);
+                phasePlanHtml += '<div class="gantt-phase-tag gantt-hoverable" data-hover-type="phase-tag" data-id="' + p.id + '" data-skill-key="' + sk + '" tabindex="0" style="left:' + tagX + 'px">' + Dashboard.esc(tagText) + '</div>';
+              }
+            }
+          }
+          const splitsForStatus = (p.skill_splits && p.skill_splits[sk]) || [];
+          const allComplete = splitsForStatus.length > 0 && splitsForStatus.every(s => s.status === 'complete');
+          const anyInProg = splitsForStatus.some(s => s.status === 'in_progress');
+          phaseStatusClass = allComplete ? 'complete' : (anyInProg ? 'in-progress' : 'pending');
+          const skillShort = (Sprint.SKILLS.find(s => s.key === sk) || {}).short || sk;
+          phaseNameHtml = '<span class="gantt-phase-name-tag">' + Dashboard.esc(skillShort) + '</span>';
+          let phaseDriftHtml = '';
+          if (showBaseline) {
+            const ab2 = this._activeBaseline();
+            const node2 = (ab2 && ab2.snapshot && ab2.snapshot[p.id]) || null;
+            const driftEnd = (node2 && node2.target_date) || p.baseline_end;
+            if (driftEnd) {
+              phaseDriftHtml = '<div class="gantt-drift-line" style="left:' + dateToX(driftEnd) + 'px"></div>';
+            }
+          }
+
           // Phase-aware hover: the detailed sub-row bar becomes a .gantt-hoverable carrying the project-id
           // + skill-key + phase overrun flag. buildTooltip('phase', el) reads these and renders a
           // focused tooltip for the specific delivery phase.
           mainRow += '<div class="gantt-sub-row ' + rowZebra + '" style="height:' + subRowH + 'px;position:relative;width:' + totalWidth + 'px">' +
             connector +
+            '<div class="gantt-phase-status-dot ' + phaseStatusClass + '"></div>' +
+            phaseNameHtml +
+            phasePlanHtml +
             '<div class="gantt-hoverable gantt-phase-bar" data-hover-type="phase" data-id="' + p.id + '" data-skill-key="' + sk + '" data-overrun="' + (phaseOverruns ? '1' : '0') + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(skillLabel) + ' phase of ' + Dashboard.esc(p.name) + '" style="' + subBarStyle + '">' + inlineLabel + '</div>' +
             floatLabel +
+            phaseDriftHtml +
           '</div>';
           prevEnd = subX1 + subW;
         });
