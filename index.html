@@ -6514,6 +6514,18 @@ const App = {
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
       summary: () => 'Theme & thresholds',
       render: () => (App._renderDisplayThresholdsCard ? App._renderDisplayThresholdsCard() : '') + (App._renderBrandingCard ? App._renderBrandingCard() : '') },
+    { id: 'personas', label: 'Personas',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="17" cy="7" r="3"/></svg>',
+      summary: () => (typeof Personas !== 'undefined' ? Personas.list().length : 0) + ' personas',
+      render: () => (typeof Personas !== 'undefined') ? Personas.renderSettingsTab() : '' },
+    { id: 'objectives', label: 'Objectives',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+      summary: () => (typeof Objectives !== 'undefined' ? Objectives.list().length : 0) + ' objectives',
+      render: () => (typeof Objectives !== 'undefined') ? Objectives.renderSettingsTab() : '' },
+    { id: 'metrics', label: 'Metrics',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+      summary: () => (typeof Metrics !== 'undefined' ? Metrics.list().length : 0) + ' metrics',
+      render: () => (typeof Metrics !== 'undefined') ? Metrics.renderSettingsTab() : '' },
     { id: 'data', label: 'Data',
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
       summary: () => 'Export · import · backups',
@@ -8994,6 +9006,64 @@ const Personas = {
     persona.metric_holdings.splice(idx, 1);
     if (App._save) App._save();
     return true;
+  },
+
+  renderSettingsTab() {
+    const personas = this.list();
+    if (!personas.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No personas yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Personas._showAddForm()">+ Add the first</button></div>';
+    }
+    const rows = personas.map(p => {
+      const parent = p.parent_persona_id ? this.byId(p.parent_persona_id) : null;
+      return '<tr data-persona-id="' + Dashboard.esc(p.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(p.name) + '</strong></td>'
+           +   '<td>' + Dashboard.esc(p.role_title || '') + '</td>'
+           +   '<td>' + (parent ? Dashboard.esc(parent.name) : '<span class="muted" style="color:var(--text-muted);font-style:italic">top of org</span>') + '</td>'
+           +   '<td>' + (p.metric_holdings || []).length + ' held</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Personas._edit(\'' + p.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Personas._remove(\'' + p.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="personas-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Role</th>'
+         + '<th style="text-align:left;padding:6px">Parent</th><th style="text-align:left;padding:6px">Holdings</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Personas._showAddForm()">+ Add persona</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Persona name:');
+    if (!name) return;
+    const role = prompt('Role title (optional):') || '';
+    this.add({ name: name.trim(), role_title: role.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const p = this.byId(id);
+    if (!p) return;
+    const name = prompt('Persona name:', p.name);
+    if (name === null) return;
+    const role = prompt('Role title:', p.role_title || '');
+    if (role === null) return;
+    const parents = this.list().filter(x => x.id !== id && this.cycleCheck(id, x.id))
+      .map(x => x.id + ' — ' + x.name).join('\n');
+    const parentInput = prompt('Parent persona id (blank for none):\n\nValid options:\n' + parents, p.parent_persona_id || '');
+    if (parentInput === null) return;
+    const newParent = parentInput.trim() || null;
+    if (newParent && !this.cycleCheck(id, newParent)) {
+      alert('Cannot set that parent — would create a cycle.');
+      return;
+    }
+    this.update(id, { name: name.trim(), role_title: role.trim(), parent_persona_id: newParent });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this persona?')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
   },
 
   rollup(personaId) {
