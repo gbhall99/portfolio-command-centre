@@ -9904,6 +9904,210 @@ const Personas = {
 };
 
 /* ============================================================
+   Person — per-individual entity (CRUD + RACI seeding + override resolution)
+   ============================================================
+   Per the 2026-05 Person rework: Persona stays as the role-level template
+   (definition, holdings, RACI defaults). Person is one human in that role
+   for one customer; carries identity (email/dept/region) and an optional
+   target_overrides[] for per-person target variation.
+   ID prefix `PRSN-` distinguishes from Persona ids (`P-*`).
+   ============================================================ */
+const Person = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.people)) return [];
+    return App.data.people.filter(p => p.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return (App.data && Array.isArray(App.data.people))
+      ? (App.data.people.find(p => p.id === id) || null)
+      : null;
+  },
+
+  byPersonaId(personaId) {
+    return this.list().filter(p => p.persona_id === personaId);
+  },
+
+  // Tier helpers — depth in the manager tree. Heads = manager_id null,
+  // Leaders = manager points at a head. Used by the RACI matrix tier filter.
+  managerDepth(personId) {
+    const seen = new Set();
+    let cur = this.byId(personId);
+    let depth = 0;
+    while (cur && cur.manager_id && !seen.has(cur.manager_id)) {
+      seen.add(cur.manager_id);
+      cur = this.byId(cur.manager_id);
+      if (!cur) break;
+      depth += 1;
+    }
+    return depth;
+  },
+
+  reports(personId) {
+    return this.list().filter(p => p.manager_id === personId);
+  },
+
+  // ----- CRUD -----
+  add(person) {
+    if (!App.data.people) App.data.people = [];
+    const rec = {
+      active: true,
+      target_overrides: [],
+      role_title: '', department: '', region: '', email: '',
+      manager_id: null, persona_id: null, notes: '',
+      ...person,
+      customer: person.customer || App.activeCustomer,
+    };
+    if (!rec.id) rec.id = 'PRSN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    App.data.people.push(rec);
+    // Seed RACI: copy persona.raci_defaults entries onto every metric for this person.
+    if (rec.persona_id) this._seedRaciFromDefaults(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const p = this.byId(id);
+    if (!p) return null;
+    const personaChanged = ('persona_id' in patch) && patch.persona_id !== p.persona_id;
+    Object.assign(p, patch);
+    if (personaChanged) this._seedRaciFromDefaults(p);
+    if (App._save) App._save();
+    return p;
+  },
+
+  remove(id) {
+    const idx = (App.data.people || []).findIndex(p => p.id === id);
+    if (idx < 0) return false;
+    App.data.people.splice(idx, 1);
+    // Clear RACI references to this person from every metric.
+    (App.data.metrics || []).forEach(m => {
+      if (!m.raci) return;
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (Array.isArray(m.raci[role])) m.raci[role] = m.raci[role].filter(x => x !== id);
+      });
+    });
+    // Clear manager_id pointers from any direct reports.
+    (App.data.people || []).forEach(p => {
+      if (p.manager_id === id) p.manager_id = null;
+    });
+    if (App._save) App._save();
+    return true;
+  },
+
+  // ----- Holdings inheritance -----
+  // For a person, return the persona's holdings with target_overrides applied.
+  // Each returned holding is a shallow clone with `targets` replaced when an
+  // override matches (metric_id + same filter shape). Adds `_overridden` flag
+  // so callers can highlight overridden rows.
+  effectiveHoldings(person) {
+    if (!person) return [];
+    const persona = person.persona_id
+      ? (App.data.personas || []).find(p => p.id === person.persona_id)
+      : null;
+    if (!persona) return [];
+    const holdings = Array.isArray(persona.metric_holdings) ? persona.metric_holdings : [];
+    const overrides = Array.isArray(person.target_overrides) ? person.target_overrides : [];
+    return holdings.map(h => {
+      const ov = overrides.find(o =>
+        o.metric_id === h.metric_id && this._sameFilter(o.filter || {}, h.filter || {}));
+      if (!ov) return { ...h, _overridden: false };
+      return { ...h, targets: Array.isArray(ov.targets) ? ov.targets.slice() : [], _overridden: true };
+    });
+  },
+
+  _sameFilter(a, b) {
+    const ak = Object.keys(a).sort();
+    const bk = Object.keys(b).sort();
+    if (ak.length !== bk.length) return false;
+    return ak.every((k, i) => k === bk[i] && String(a[k]) === String(b[k]));
+  },
+
+  setTargetOverride(personId, metricId, filter, targets) {
+    const person = this.byId(personId);
+    if (!person) return null;
+    if (!Array.isArray(person.target_overrides)) person.target_overrides = [];
+    const i = person.target_overrides.findIndex(o =>
+      o.metric_id === metricId && this._sameFilter(o.filter || {}, filter || {}));
+    const rec = { metric_id: metricId, filter: filter || {}, targets: Array.isArray(targets) ? targets : [] };
+    if (i < 0) person.target_overrides.push(rec); else person.target_overrides[i] = rec;
+    if (App._save) App._save();
+    return rec;
+  },
+
+  clearTargetOverride(personId, metricId, filter) {
+    const person = this.byId(personId);
+    if (!person || !Array.isArray(person.target_overrides)) return false;
+    const i = person.target_overrides.findIndex(o =>
+      o.metric_id === metricId && this._sameFilter(o.filter || {}, filter || {}));
+    if (i < 0) return false;
+    person.target_overrides.splice(i, 1);
+    if (App._save) App._save();
+    return true;
+  },
+
+  // ----- RACI helpers -----
+  _seedRaciFromDefaults(person) {
+    if (!person || !person.persona_id) return;
+    const personaId = person.persona_id;
+    (App.data.metrics || []).forEach(m => {
+      if (m.customer !== person.customer) return;
+      if (!m.raci_defaults) return;
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (!Array.isArray(m.raci_defaults[role])) return;
+        if (!m.raci_defaults[role].includes(personaId)) return;
+        if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
+        if (!Array.isArray(m.raci[role])) m.raci[role] = [];
+        if (!m.raci[role].includes(person.id)) m.raci[role].push(person.id);
+      });
+    });
+  },
+
+  // RACI rollups for a person — which metrics they have R/A/C/I on.
+  raciAppearances(personId) {
+    const out = { accountable: [], responsible: [], consulted: [], informed: [] };
+    (App.data.metrics || []).forEach(m => {
+      if (!m.raci) return;
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (Array.isArray(m.raci[role]) && m.raci[role].includes(personId)) {
+          out[role].push(m);
+        }
+      });
+    });
+    return out;
+  },
+
+  // ----- Filters / library helpers -----
+  applyFilters(filters) {
+    let list = this.list();
+    filters = filters || {};
+    if (filters.search) {
+      const q = String(filters.search).toLowerCase();
+      list = list.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.role_title || '').toLowerCase().includes(q) ||
+        (p.email || '').toLowerCase().includes(q) ||
+        (p.department || '').toLowerCase().includes(q) ||
+        (p.region || '').toLowerCase().includes(q));
+    }
+    if (filters.department) list = list.filter(p => p.department === filters.department);
+    if (filters.region)     list = list.filter(p => p.region === filters.region);
+    if (filters.persona_id) list = list.filter(p => p.persona_id === filters.persona_id);
+    if (filters.active === 'active')   list = list.filter(p => p.active !== false);
+    if (filters.active === 'inactive') list = list.filter(p => p.active === false);
+    return list;
+  },
+
+  // Distinct values for filter dropdowns.
+  departments() {
+    return [...new Set(this.list().map(p => p.department).filter(Boolean))].sort();
+  },
+  regions() {
+    return [...new Set(this.list().map(p => p.region).filter(Boolean))].sort();
+  },
+};
+
+/* ============================================================
    Objectives — strategy entity (CRUD)
    ============================================================ */
 const Objectives = {
@@ -10216,6 +10420,7 @@ const Metrics = {
       definition: '', pseudo_logic: '', unit: '', direction: 'higher_is_better',
       source: '', status: 'draft', dimensions: [], objective_ids: [],
       raci: { accountable: [], responsible: [], consulted: [], informed: [] },
+      raci_defaults: { accountable: [], responsible: [], consulted: [], informed: [] },
       actuals: [], notes: '',
       ...metric,
       customer: cust, group_id: groupId,
@@ -10341,24 +10546,58 @@ const Metrics = {
       .map(id => Objectives.byId(id)).filter(Boolean);
     const projects = (App.data.projects || []).filter(p => p.customer === metric.customer);
     const delivering_projects = projects.filter(p => (p.metric_ids || []).includes(metricId));
+
+    // raci_personas — derived from raci_defaults (persona-keyed, role-level template).
     const raci_personas = { accountable: [], responsible: [], consulted: [], informed: [] };
-    if (metric.raci) {
+    if (metric.raci_defaults) {
       ['accountable','responsible','consulted','informed'].forEach(role => {
-        (metric.raci[role] || []).forEach(pid => {
+        (metric.raci_defaults[role] || []).forEach(pid => {
           const p = Personas.byId(pid);
           if (p) raci_personas[role].push(p);
         });
       });
     }
-    const has_targets_anywhere = holders.some(h => Array.isArray(h.holding.targets) && h.holding.targets.length > 0);
+    // raci_people — derived from raci (person-keyed, individual-level).
+    const raci_people = { accountable: [], responsible: [], consulted: [], informed: [] };
+    if (metric.raci && typeof Person !== 'undefined') {
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        (metric.raci[role] || []).forEach(pid => {
+          const p = Person.byId(pid);
+          if (p) raci_people[role].push(p);
+        });
+      });
+    }
+    const personaIds = new Set(holders.map(h => h.persona.id));
+    const personCount = (typeof Person !== 'undefined') ? Person.list().filter(prn =>
+      ['accountable','responsible','consulted','informed'].some(r =>
+        Array.isArray(metric.raci && metric.raci[r]) && metric.raci[r].includes(prn.id))
+    ).length : 0;
+    const targetCount = holders.filter(h => Array.isArray(h.holding.targets) && h.holding.targets.length > 0).length;
+    const has_targets_anywhere = targetCount > 0;
     return {
       holders,
       holder_count: holders.length,
       served_objectives,
       delivering_projects,
       raci_personas,
+      raci_people,
+      persona_count: personaIds.size,
+      person_count: personCount,
+      target_count: targetCount,
       has_targets_anywhere,
     };
+  },
+
+  // Returns the RACI letter(s) a Person has on a given metric, e.g. 'A' or 'CR'.
+  // Empty string if none.
+  raciFor(metric, personId) {
+    if (!metric || !metric.raci) return '';
+    let out = '';
+    if ((metric.raci.accountable || []).includes(personId)) out += 'A';
+    if ((metric.raci.responsible || []).includes(personId)) out += 'R';
+    if ((metric.raci.consulted   || []).includes(personId)) out += 'C';
+    if ((metric.raci.informed    || []).includes(personId)) out += 'I';
+    return out;
   },
 
   renderRaciPopover(metricId) {

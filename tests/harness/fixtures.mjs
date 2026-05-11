@@ -148,8 +148,27 @@ export function makeMetric(overrides = {}) {
     dimensions: [],
     objective_ids: [],
     raci: { accountable: [], responsible: [], consulted: [], informed: [] },
+    raci_defaults: { accountable: [], responsible: [], consulted: [], informed: [] },
     actuals: [],
     notes: '',
+    ...overrides,
+  };
+}
+
+export function makePerson(overrides = {}) {
+  return {
+    id: nextId('PRSN'),
+    customer: 'Acme Industries',
+    name: 'Test Person',
+    email: '',
+    role_title: '',
+    department: '',
+    region: '',
+    manager_id: null,
+    active: true,
+    persona_id: null,
+    notes: '',
+    target_overrides: [],
     ...overrides,
   };
 }
