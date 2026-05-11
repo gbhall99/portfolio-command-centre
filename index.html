@@ -2542,6 +2542,10 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
         <span>Backlog</span>
       </div>
+      <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
+        Strategy
+      </div>
       <div class="nav-item active" data-view="dashboard" onclick="App.navigate('dashboard')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         Projects <span class="nav-badge" id="navBadgeTotal">0</span>
@@ -2652,6 +2656,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
       </div>
       <div id="backlogTabBody"></div>
     </div>
+    <div class="view" id="viewStrategy"></div>
     <div class="view" id="viewDashboard">
       <div class="dashboard-container">
         <!-- Exec Summary narrative -->
@@ -3402,6 +3407,7 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.render();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     else if (this.currentView === 'config') this.renderConfig();
   },
 
@@ -4331,6 +4337,7 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     else if (this.currentView === 'config') this.renderConfig();
 
     var total = report.updatedProjects + report.addedProjects + report.updatedMembers + report.addedMembers +
@@ -6086,6 +6093,7 @@ const App = {
     if (viewName === 'backlog' && this.data) Dashboard.renderBacklogTab(this.activeCustomer);
     if (viewName === 'governance' && this.data) Governance.render();
     if (viewName === 'activity' && this.data) AuditPanel.render();
+    if (viewName === 'strategy' && this.data && typeof Strategy !== 'undefined') Strategy.mount();
     if (viewName === 'config') this.renderConfig();
     this.updateViewTitlebar();
   },
@@ -6094,7 +6102,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Meetings', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Meetings', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -6133,6 +6141,7 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     // Summary cards depend on active customer
     if (typeof Dashboard !== 'undefined') Dashboard.renderSummaryCards && Dashboard.renderSummaryCards();
     this.updateViewTitlebar();
@@ -9092,6 +9101,8 @@ const Personas = {
     });
     return { descendants, holdings, held_metrics, contributing_objectives, supporting_projects, raci_appearances };
   },
+
+  renderInventoryTab() { return '<!-- TODO: Personas inventory -->'; },
 };
 
 /* ============================================================
@@ -9217,6 +9228,8 @@ const Objectives = {
       metric_count: measuring_metrics.length,
     };
   },
+
+  renderInventoryTab() { return '<!-- TODO: Objectives inventory -->'; },
 };
 
 /* ============================================================
@@ -9508,6 +9521,55 @@ const Metrics = {
       raci_personas,
       has_targets_anywhere,
     };
+  },
+
+  renderInventoryTab() { return '<!-- TODO: Metrics inventory -->'; },
+};
+
+/* ============================================================
+   Strategy — top-level view (Personas / Objectives / Metrics)
+   ============================================================ */
+const Strategy = {
+  TABS: [
+    { id: 'personas',   label: 'Personas'   },
+    { id: 'objectives', label: 'Objectives' },
+    { id: 'metrics',    label: 'Metrics'    },
+  ],
+
+  tabs() { return this.TABS.slice(); },
+
+  activeTab() {
+    return (App.uiStateGet ? (App.uiStateGet('strategy.tab') || 'personas') : 'personas');
+  },
+
+  setActiveTab(id) {
+    if (App.uiStateSet) App.uiStateSet('strategy.tab', id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  render() {
+    const active = this.activeTab();
+    const tabs = this.TABS.map(t =>
+      '<button class="tab' + (t.id === active ? ' active' : '') + '" '
+      + 'onclick="Strategy.setActiveTab(\'' + t.id + '\')">' + Dashboard.esc(t.label) + '</button>'
+    ).join('');
+    let body = '';
+    if      (active === 'personas')   body = this._renderPersonas();
+    else if (active === 'objectives') body = this._renderObjectives();
+    else if (active === 'metrics')    body = this._renderMetrics();
+    return '<div class="strategy-view">'
+         +   '<div class="strategy-tabs">' + tabs + '</div>'
+         +   '<div class="strategy-body">' + body + '</div>'
+         + '</div>';
+  },
+
+  _renderPersonas()   { return Personas.renderInventoryTab(); },
+  _renderObjectives() { return Objectives.renderInventoryTab(); },
+  _renderMetrics()    { return Metrics.renderInventoryTab(); },
+
+  mount() {
+    const container = document.getElementById('viewStrategy');
+    if (container) container.innerHTML = this.render();
   },
 };
 
