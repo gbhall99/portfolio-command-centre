@@ -756,25 +756,6 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .strategy-table tbody tr.is-selected { background: var(--surface-inset); box-shadow: inset 3px 0 0 var(--accent-blue); }
 .strategy-table tbody td.is-edit-hover { outline: 1px dashed var(--accent-blue); outline-offset: -2px; }
 
-/* Personas tab */
-.strategy-personas { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.personas-toolbar { background: var(--surface-2); }
-.personas-toolbar input[type="search"], .personas-toolbar select { background: var(--surface); color: var(--text-dark); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); padding: 3px 6px; font-size: var(--fs-sm); }
-.personas-toolbar label { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dark-secondary); font-weight: 500; }
-.strategy-personas .strategy-row { background: var(--surface); transition: background 0.12s; }
-.strategy-personas .strategy-row:hover { background: var(--surface-hover); }
-.strategy-personas .strategy-row .persona-meta strong { color: var(--text-dark); font-size: var(--fs-base); }
-.strategy-personas .strategy-row .persona-meta .role { color: var(--text-muted); }
-.strategy-personas .persona-chips { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
-.strategy-row .row-toggle { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 0; background: transparent; cursor: pointer; color: var(--text-muted); border-radius: var(--radius-sm); flex-shrink: 0; margin-right: 4px; padding: 0; }
-.strategy-row .row-toggle:hover { background: var(--surface-hover); color: var(--text-dark); }
-.strategy-row .row-toggle svg { width: 12px; height: 12px; transition: transform 0.12s; display: block; }
-.strategy-row .row-toggle.collapsed svg { transform: rotate(-90deg); }
-.strategy-row .row-toggle-spacer { display: inline-block; width: 16px; margin-right: 4px; flex-shrink: 0; }
-.personas-toolbar .tree-controls { display: inline-flex; gap: 6px; margin-left: auto; }
-.personas-toolbar .tree-controls button { font-size: var(--fs-xs); padding: 4px 8px; border: 1px solid var(--border-dim); background: var(--surface); color: var(--text-dark-secondary); border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; }
-.personas-toolbar .tree-controls button:hover { background: var(--surface-hover); border-color: var(--border-strong); }
-
 /* Chips, swatches, tags shared by personas + metric library */
 .chip { background: var(--surface-2); color: var(--text-dark); border-color: var(--border-dim) !important; transition: border-color 0.12s, background 0.12s; }
 .chip:hover { border-color: var(--border-strong) !important; background: var(--surface-hover); }
@@ -784,22 +765,7 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .raci-badge { background: var(--tint-amber-weak) !important; color: var(--text-dark) !important; border: 1px solid var(--border-dim) !important; transition: background 0.12s; }
 .raci-badge:hover { background: var(--surface-hover) !important; }
 
-/* Objectives tab */
-.strategy-objectives { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--surface); }
-.strategy-row.obj { background: var(--surface); transition: background 0.12s; }
-.strategy-row.obj:hover { background: var(--surface-hover); }
-.strategy-row.obj.obj-active    .accent { background: var(--accent-blue) !important; }
-.strategy-row.obj.obj-achieved  .accent { background: var(--status-green) !important; }
-.strategy-row.obj.obj-paused    .accent { background: var(--status-amber) !important; }
-.strategy-row.obj.obj-abandoned .accent { background: var(--text-faint) !important; }
-.strategy-row.obj.obj-abandoned { opacity: 0.6; }
-.strategy-row.obj .body { display: flex; flex-direction: column; gap: 2px; }
-.strategy-row.obj .title { color: var(--text-dark); }
-.strategy-row.obj .desc { color: var(--text-dark-secondary); line-height: 1.4; }
-.strategy-row.obj .meta { color: var(--text-muted); }
-.strategy-row.obj .caps { color: var(--text-muted); font-weight: 600; }
-.strategy-row.obj .status-text { text-transform: capitalize; }
-.strategy-row.obj .chips { display: flex; flex-wrap: wrap; gap: 2px; }
+/* Shared chip used across the Strategy section + project detail panel */
 .obj-chip { display: inline-block; font-size: var(--fs-sm); padding: 2px 8px; border-radius: 12px; background: var(--surface-2); color: var(--text-dark); border: 1px solid var(--border-dim); margin-right: 4px; margin-bottom: 3px; }
 
 /* Metrics tab — two-pane layout */
@@ -9404,39 +9370,6 @@ const Personas = {
         (h.targets || []).some(t => t.period === filters.targetPeriod)));
     }
     return list;
-  },
-
-  _renderToolbar(filters) {
-    const dims = new Set();
-    Metrics.list().forEach(m => (m.dimensions || []).forEach(d => dims.add(d)));
-    const periods = new Set();
-    this.list().forEach(p => (p.metric_holdings || []).forEach(h => (h.targets || []).forEach(t => periods.add(t.period))));
-    const personas = this.list();
-    const personaOpts = personas.map(p => '<option value="' + Dashboard.esc(p.id) + '"' + (filters.raciInvolved === p.id ? ' selected' : '') + '>' + Dashboard.esc(p.name) + '</option>').join('');
-    const dimOpts    = [...dims].map(d => '<option value="' + Dashboard.esc(d) + '"' + (filters.dimension === d ? ' selected' : '') + '>' + Dashboard.esc(d) + '</option>').join('');
-    const periodOpts = [...periods].sort().map(p => '<option value="' + Dashboard.esc(p) + '"' + (filters.targetPeriod === p ? ' selected' : '') + '>' + Dashboard.esc(p) + '</option>').join('');
-    const sval = (k, v) => filters[k] === v ? ' selected' : '';
-    return '<div class="personas-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:11px">'
-         +   '<input type="search" placeholder="Search personas…" value="' + Dashboard.esc(filters.search || '') + '" oninput="Personas._setFilter(\'search\', this.value)" style="padding:3px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">'
-         +   '<label>Status <select onchange="Personas._setFilter(\'status\', this.value)" style="font-size:11px">'
-         +     '<option value="all"' + sval('status', 'all') + '>All</option>'
-         +     '<option value="live"' + sval('status', 'live') + '>Live</option>'
-         +     '<option value="draft"' + sval('status', 'draft') + '>Draft</option>'
-         +   '</select></label>'
-         +   '<label>RACI involves <select onchange="Personas._setFilter(\'raciInvolved\', this.value || null)" style="font-size:11px">'
-         +     '<option value="">—</option>' + personaOpts
-         +   '</select></label>'
-         +   '<label>Dimension <select onchange="Personas._setFilter(\'dimension\', this.value || null)" style="font-size:11px">'
-         +     '<option value="">—</option>' + dimOpts
-         +   '</select></label>'
-         +   '<label>Target period <select onchange="Personas._setFilter(\'targetPeriod\', this.value || null)" style="font-size:11px">'
-         +     '<option value="">—</option>' + periodOpts
-         +   '</select></label>'
-         +   '<div class="tree-controls">'
-         +     '<button type="button" onclick="Personas._setAllCollapsed(false)" title="Expand every persona subtree" aria-label="Expand all personas">Expand all</button>'
-         +     '<button type="button" onclick="Personas._setAllCollapsed(true)" title="Collapse every persona subtree" aria-label="Collapse all personas">Collapse all</button>'
-         +   '</div>'
-         + '</div>';
   },
 
   _COLLAPSED_KEY: 'strategy.personas.collapsed',
