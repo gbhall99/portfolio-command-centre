@@ -10144,6 +10144,414 @@ const Person = {
   regions() {
     return [...new Set(this.list().map(p => p.region).filter(Boolean))].sort();
   },
+
+  // ----- Settings tab -----
+  renderSettingsTab() {
+    const people = this.list();
+    if (!people.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No people yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Person._addPrompt()">+ Add the first</button></div>';
+    }
+    const personaName = (id) => { const p = id ? Personas.byId(id) : null; return p ? p.name : ''; };
+    const rows = people.map(prn => {
+      const dim = prn.active === false ? ' style="opacity:0.55"' : '';
+      return '<tr data-person-id="' + Dashboard.esc(prn.id) + '"' + dim + '>'
+           +   '<td style="padding:6px"><strong>' + Dashboard.esc(prn.name) + '</strong></td>'
+           +   '<td style="padding:6px;font-size:11px">' + Dashboard.esc(prn.role_title || '') + '</td>'
+           +   '<td style="padding:6px;font-size:11px">' + Dashboard.esc(prn.department || '') + '</td>'
+           +   '<td style="padding:6px;font-size:11px">' + Dashboard.esc(prn.region || '') + '</td>'
+           +   '<td style="padding:6px;font-size:11px">' + Dashboard.esc(personaName(prn.persona_id)) + '</td>'
+           +   '<td style="padding:6px;font-size:11px">' + (prn.active === false ? 'Inactive' : 'Active') + '</td>'
+           +   '<td style="padding:6px;text-align:right">'
+           +     '<button class="btn btn-ghost btn-sm" onclick="Person._openDetail(\'' + Dashboard.esc(prn.id) + '\')">edit</button>'
+           +     ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Person._removePrompt(\'' + Dashboard.esc(prn.id) + '\')">remove</button>'
+           +   '</td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="people-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Role</th>'
+         + '<th style="text-align:left;padding:6px">Department</th><th style="text-align:left;padding:6px">Region</th>'
+         + '<th style="text-align:left;padding:6px">Persona</th><th style="text-align:left;padding:6px">Active</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Person._addPrompt()">+ Add person</button>';
+  },
+
+  _addPrompt() {
+    const name = prompt('Person name:');
+    if (!name) return;
+    const role = prompt('Role title (optional):') || '';
+    const personas = Personas.list();
+    let persona_id = null;
+    if (personas.length) {
+      const list = personas.map((p, i) => (i + 1) + ') ' + p.name + ' [' + p.id + ']').join('\n');
+      const sel = prompt('Pick a persona (id, number, or blank):\n' + list);
+      if (sel) {
+        let pp = personas.find(x => x.id === sel.trim());
+        if (!pp) { const idx = parseInt(sel.trim(), 10); if (!isNaN(idx) && idx >= 1 && idx <= personas.length) pp = personas[idx - 1]; }
+        if (pp) persona_id = pp.id;
+      }
+    }
+    this.add({ name: name.trim(), role_title: role.trim(), persona_id });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _addPromptForPersona(personaId) {
+    const name = prompt('Person name:');
+    if (!name) return;
+    const role = prompt('Role title (optional):') || '';
+    this.add({ name: name.trim(), role_title: role.trim(), persona_id: personaId });
+    if (typeof Personas !== 'undefined') Personas._refreshDetailModal && Personas._refreshDetailModal(personaId);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _removePrompt(id) {
+    if (typeof confirm === 'function' && !confirm('Remove this person? RACI references will be cleared.')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // ----- Strategy → People tab -----
+  renderInventoryTab() {
+    const filters = (App.uiStateGet ? App.uiStateGet('strategy.people.filters') : null) || {};
+    const toolbar = this._renderToolbar(filters);
+    const list = this.applyFilters(filters);
+    if (!list.length) {
+      return toolbar + '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No people match the current filters.</div>';
+    }
+    const personaName = (id) => { const p = id ? Personas.byId(id) : null; return p ? p.name : ''; };
+    const managerName = (id) => { const p = id ? this.byId(id) : null; return p ? p.name : ''; };
+    const esc = Dashboard.esc;
+    const rows = list.map(prn => {
+      const dim = prn.active === false ? ' style="opacity:0.55"' : '';
+      return '<tr data-person-id="' + esc(prn.id) + '"' + dim
+           +   ' onclick="Person._openDetail(\'' + esc(prn.id) + '\')" style="cursor:pointer">'
+           +   '<td style="padding:8px 12px"><strong>' + esc(prn.name) + '</strong>'
+           +     '<div style="font-size:11px;color:var(--text-muted)">' + esc(prn.email || '') + '</div></td>'
+           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.role_title || '') + '</td>'
+           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.department || '') + '</td>'
+           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.region || '') + '</td>'
+           +   '<td style="padding:8px 12px;font-size:12px">' + esc(personaName(prn.persona_id)) + '</td>'
+           +   '<td style="padding:8px 12px;font-size:12px">' + esc(managerName(prn.manager_id)) + '</td>'
+           +   '<td style="padding:8px 12px;font-size:11px">' + (prn.active === false ? 'Inactive' : 'Active') + '</td>'
+           + '</tr>';
+    }).join('');
+    return '<div class="strategy-people">'
+         +   toolbar
+         +   '<table class="people-table" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light);background:var(--surface-2)">'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Name</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Role</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Department</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Region</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Persona</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Manager</th>'
+         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Active</th>'
+         +   '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '</div>';
+  },
+
+  _renderToolbar(filters) {
+    const esc = Dashboard.esc;
+    const depts = this.departments();
+    const regs  = this.regions();
+    const personas = Personas.list();
+    const sval = (k, v) => (filters[k] === v ? ' selected' : '');
+    const opt = (val, label, sel) => '<option value="' + esc(val) + '"' + (sel ? ' selected' : '') + '>' + esc(label) + '</option>';
+    return '<div class="people-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:11px">'
+         +   '<input type="search" placeholder="Search people…" value="' + esc(filters.search || '') + '" oninput="Person._setFilter(\'search\', this.value)" style="padding:3px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">'
+         +   '<label>Department <select onchange="Person._setFilter(\'department\', this.value || null)" style="font-size:11px">'
+         +     opt('', '—', !filters.department)
+         +     depts.map(d => opt(d, d, filters.department === d)).join('')
+         +   '</select></label>'
+         +   '<label>Region <select onchange="Person._setFilter(\'region\', this.value || null)" style="font-size:11px">'
+         +     opt('', '—', !filters.region)
+         +     regs.map(r => opt(r, r, filters.region === r)).join('')
+         +   '</select></label>'
+         +   '<label>Persona <select onchange="Person._setFilter(\'persona_id\', this.value || null)" style="font-size:11px">'
+         +     opt('', '—', !filters.persona_id)
+         +     personas.map(p => opt(p.id, p.name, filters.persona_id === p.id)).join('')
+         +   '</select></label>'
+         +   '<label>Status <select onchange="Person._setFilter(\'active\', this.value || null)" style="font-size:11px">'
+         +     opt('', 'All', !filters.active)
+         +     opt('active', 'Active only', filters.active === 'active')
+         +     opt('inactive', 'Inactive only', filters.active === 'inactive')
+         +   '</select></label>'
+         +   '<button class="btn btn-outline btn-sm" onclick="Person._addPrompt()">+ New person</button>'
+         + '</div>';
+  },
+
+  _setFilter(key, value) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.people.filters') : null) || {};
+    if (value === null || value === undefined || value === '') delete cur[key]; else cur[key] = value;
+    if (App.uiStateSet) App.uiStateSet('strategy.people.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // ----- Detail modal -----
+  renderDetailBody(personId) {
+    const prn = this.byId(personId);
+    if (!prn) return '<div class="empty" style="padding:16px;color:var(--text-muted)">Person not found</div>';
+    const esc = Dashboard.esc;
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;margin-bottom:4px';
+    const sectionStyle = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-light)';
+    const persona = prn.persona_id ? Personas.byId(prn.persona_id) : null;
+
+    // Identity fields
+    const txt = (key, label, type) => {
+      type = type || 'text';
+      const val = prn[key] == null ? '' : String(prn[key]);
+      return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(label)
+           +   '<input type="' + type + '" class="field-input" data-person-field="' + key + '" value="' + esc(val) + '" '
+           +     'style="display:block;margin-top:4px;width:100%">'
+           + '</label>';
+    };
+    const checkbox = (key, label) => {
+      const checked = prn[key] === false ? '' : ' checked';
+      return '<label class="field-label" style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'
+           +   '<input type="checkbox" data-person-field="' + key + '"' + checked + '> ' + esc(label)
+           + '</label>';
+    };
+    const managerOpts = ['<option value="">— no manager —</option>']
+      .concat(this.list().filter(x => x.id !== personId).map(x =>
+        '<option value="' + esc(x.id) + '"' + (prn.manager_id === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'))
+      .join('');
+    const personaOpts = ['<option value="">— no persona —</option>']
+      .concat(Personas.list().map(p =>
+        '<option value="' + esc(p.id) + '"' + (prn.persona_id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>'))
+      .join('');
+
+    // Inherited from persona — read-only.
+    const inheritedField = (label, val) => '<div style="margin-bottom:6px"><div style="' + caps + '">' + esc(label) + '</div>'
+      + '<div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap">' + (val ? esc(val) : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>') + '</div></div>';
+    const inherited = persona
+      ? '<div class="from-persona" style="font-size:11px;color:var(--text-muted);margin-bottom:6px">from persona: <strong>' + esc(persona.name) + '</strong></div>'
+        + inheritedField('Definition', persona.definition || '')
+        + inheritedField('Goals', persona.goals || '')
+        + inheritedField('Pain points', persona.pain_points || '')
+        + inheritedField('Information needs', persona.information_needs || '')
+        + inheritedField('Stakeholders', persona.stakeholders || '')
+        + inheritedField('Communication', persona.communication_prefs || '')
+        + (Array.isArray(persona.business_questions) && persona.business_questions.length
+            ? '<div style="margin-bottom:6px"><div style="' + caps + '">Business questions</div>'
+              + '<ul style="margin:0;padding-left:18px;font-size:12px">'
+              + persona.business_questions.map(q => '<li>' + esc(q) + '</li>').join('') + '</ul></div>'
+            : '')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">No persona linked. Pick one in Identity above to inherit role-level definition.</span>';
+
+    // Held metrics — derived via Person.effectiveHoldings.
+    const groups = MetricGroups.list();
+    const groupSwatch = (gid) => { const g = groups.find(x => x.id === gid); return g ? g.swatch : '#888'; };
+    const eff = this.effectiveHoldings(prn);
+    const holdRows = eff.length
+      ? eff.map(h => {
+          const m = Metrics.byId(h.metric_id);
+          if (!m) return '';
+          const filterEntries = Object.entries(h.filter || {});
+          const filterStr = filterEntries.length
+            ? filterEntries.map(([k, v]) => esc(k) + ': ' + esc(String(v))).join(', ')
+            : '<span class="muted" style="color:var(--text-muted);font-style:italic">all</span>';
+          const targetsStr = Array.isArray(h.targets) && h.targets.length
+            ? h.targets.map(t => esc(String(t.period)) + '=' + esc(String(t.value))).join(' · ')
+            : '<span class="muted" style="color:var(--text-muted);font-style:italic">no target</span>';
+          const ovBadge = h._overridden
+            ? ' <span class="ov-badge" style="font-size:10px;padding:1px 5px;border-radius:8px;background:var(--accent-violet);color:white">override</span>'
+              + ' <button class="btn btn-ghost btn-sm" style="margin-left:4px" onclick="Person._clearOverride(\'' + esc(personId) + '\',\'' + esc(m.id) + '\',' + JSON.stringify(JSON.stringify(h.filter || {})) + ')">reset</button>'
+            : '';
+          return '<tr data-metric-id="' + esc(m.id) + '">'
+               +   '<td style="padding:6px"><span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + ';margin-right:6px"></span><strong>' + esc(m.name) + '</strong></td>'
+               +   '<td style="padding:6px;font-size:11px">' + filterStr + '</td>'
+               +   '<td style="padding:6px;font-size:11px">' + targetsStr + ovBadge + '</td>'
+               +   '<td style="padding:6px;text-align:right">'
+               +     '<button class="btn btn-ghost btn-sm" onclick="Person._editTargetOverride(\'' + esc(personId) + '\',\'' + esc(m.id) + '\',' + JSON.stringify(JSON.stringify(h.filter || {})) + ')">edit target</button>'
+               +   '</td>'
+               + '</tr>';
+        }).join('')
+      : '<tr><td colspan="4" style="padding:6px"><span class="muted" style="color:var(--text-muted);font-style:italic">No held metrics. Holdings come from this person\'s persona.</span></td></tr>';
+
+    // RACI appearances — grouped by letter, click metric → metric library.
+    const ra = this.raciAppearances(personId);
+    const raciSection = (() => {
+      const parts = [];
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        const list = ra[role] || [];
+        if (!list.length) return;
+        const letter = role[0].toUpperCase();
+        const chips = list.map(m => '<a href="#" onclick="event.preventDefault();Metrics._jumpToLibrary(\'' + esc(m.id) + '\');Person._closeDetailModal()" '
+          + 'style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border-dim);margin:2px;text-decoration:none;color:var(--text-dark)">'
+          + esc(m.name) + '</a>').join(' ');
+        parts.push('<div style="margin:4px 0;display:flex;align-items:flex-start;gap:8px">'
+          + '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;flex-shrink:0;margin-top:2px;color:white">' + letter + '</span>'
+          + '<div style="flex:1">' + chips + '</div></div>');
+      });
+      return parts.length ? parts.join('') : '<span class="muted" style="color:var(--text-muted);font-style:italic">No RACI assignments.</span>';
+    })();
+
+    return '<div class="person-modal-body">'
+      // Section 1 — Identity
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Identity</div>'
+      +   txt('name', 'Name')
+      +   txt('email', 'Email', 'email')
+      +   txt('role_title', 'Role title')
+      +   txt('department', 'Department')
+      +   txt('region', 'Region')
+      +   '<label class="field-label" style="display:block;margin-bottom:8px">Manager'
+      +     '<select class="field-input" data-person-field="manager_id" style="display:block;margin-top:4px;width:100%">' + managerOpts + '</select>'
+      +   '</label>'
+      +   '<label class="field-label" style="display:block;margin-bottom:8px">Persona'
+      +     '<select class="field-input" data-person-field="persona_id" style="display:block;margin-top:4px;width:100%">' + personaOpts + '</select>'
+      +   '</label>'
+      +   checkbox('active', 'Active')
+      + '</div>'
+      // Section 2 — Inherited from persona
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Inherited from persona</div>'
+      +   inherited
+      + '</div>'
+      // Section 3 — Held metrics (derived from persona, with target overrides)
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Held metrics</div>'
+      +   '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Metric</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Filter</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Target</th>'
+      +     '<th></th>'
+      +   '</tr></thead><tbody>' + holdRows + '</tbody></table>'
+      + '</div>'
+      // Section 4 — RACI
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">RACI assignments</div>'
+      +   raciSection
+      + '</div>'
+      // Section 5 — Notes
+      + '<div class="sec" style="margin-bottom:8px">'
+      +   '<div style="' + caps + '">Notes</div>'
+      +   '<textarea class="field-input" data-person-field="notes" rows="3" style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(prn.notes || '') + '</textarea>'
+      + '</div>'
+      + '</div>';
+  },
+
+  _openDetail(id) {
+    const prn = this.byId(id);
+    if (!prn) return;
+    if (typeof document === 'undefined') return;
+    this._closeDetailModal();
+    const esc = Dashboard.esc;
+    const overlay = document.createElement('div');
+    overlay.className = 'split-modal-overlay';
+    overlay.id = 'personDetailOverlay';
+    overlay.style.display = 'block';
+    overlay.style.zIndex = '9000';
+    overlay.addEventListener('click', () => this._closeDetailModal());
+    const modal = document.createElement('div');
+    modal.className = 'split-modal person-detail-modal';
+    modal.id = 'personDetailModal';
+    modal.style.display = 'block';
+    modal.style.width = '640px';
+    modal.style.maxWidth = 'calc(100vw - 32px)';
+    modal.style.maxHeight = 'calc(100vh - 48px)';
+    modal.style.zIndex = '9001';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'personDetailTitle');
+    modal.addEventListener('click', (e) => e.stopPropagation());
+    const html =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<h3 id="personDetailTitle" style="margin:0;font-size:16px">Person &middot; ' + esc(prn.name) + '</h3>'
+      +   '<button type="button" class="btn btn-ghost btn-sm" aria-label="Close" onclick="Person._closeDetailModal()">&times;</button>'
+      + '</div>'
+      + this.renderDetailBody(id)
+      + '<div class="split-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">'
+      +   '<button type="button" class="btn btn-outline btn-sm" onclick="Person._closeDetailModal()">Cancel</button>'
+      +   '<button type="button" class="btn btn-primary btn-sm" onclick="Person._saveDetailModal(\'' + esc(id) + '\')">Save</button>'
+      + '</div>';
+    modal.innerHTML = html;
+    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
+    this._detailEscHandler = (e) => { if (e.key === 'Escape') this._closeDetailModal(); };
+    document.addEventListener('keydown', this._detailEscHandler);
+  },
+
+  _closeDetailModal() {
+    if (typeof document === 'undefined') return;
+    ['personDetailOverlay', 'personDetailModal'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+    if (this._detailEscHandler) {
+      document.removeEventListener('keydown', this._detailEscHandler);
+      this._detailEscHandler = null;
+    }
+  },
+
+  _refreshDetailModal(id) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('personDetailModal');
+    if (!modal) return;
+    const esc = Dashboard.esc;
+    const prn = this.byId(id);
+    if (!prn) return;
+    const html =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<h3 id="personDetailTitle" style="margin:0;font-size:16px">Person &middot; ' + esc(prn.name) + '</h3>'
+      +   '<button type="button" class="btn btn-ghost btn-sm" aria-label="Close" onclick="Person._closeDetailModal()">&times;</button>'
+      + '</div>'
+      + this.renderDetailBody(id)
+      + '<div class="split-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">'
+      +   '<button type="button" class="btn btn-outline btn-sm" onclick="Person._closeDetailModal()">Cancel</button>'
+      +   '<button type="button" class="btn btn-primary btn-sm" onclick="Person._saveDetailModal(\'' + esc(id) + '\')">Save</button>'
+      + '</div>';
+    modal.innerHTML = html;
+  },
+
+  _saveDetailModal(personId) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('personDetailModal');
+    if (!modal) return;
+    const patch = {};
+    modal.querySelectorAll('[data-person-field]').forEach(el => {
+      const key = el.getAttribute('data-person-field');
+      if (key === 'active') {
+        patch[key] = !!el.checked;
+      } else if (key === 'manager_id' || key === 'persona_id') {
+        patch[key] = el.value || null;
+      } else {
+        patch[key] = (el.value == null ? '' : String(el.value));
+      }
+    });
+    this.update(personId, patch);
+    this._closeDetailModal();
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // Target override — open a prompt to set a per-Person target for one
+  // (metric, filter) pair. Filter is passed as the JSON-stringified shape
+  // matching the persona holding so we round-trip cleanly.
+  _editTargetOverride(personId, metricId, filterJson) {
+    const prn = this.byId(personId);
+    if (!prn) return;
+    const filter = (() => { try { return JSON.parse(filterJson || '{}'); } catch (_e) { return {}; } })();
+    const eff = this.effectiveHoldings(prn).find(h =>
+      h.metric_id === metricId && this._sameFilter(h.filter || {}, filter));
+    const cur = eff && Array.isArray(eff.targets)
+      ? eff.targets.map(t => t.period + '=' + t.value + ':' + (t.period_type || 'annual')).join(', ')
+      : '';
+    const txt = prompt('Targets for this person ("period=value:period_type, …"):', cur);
+    if (txt === null) return;
+    const targets = [];
+    txt.split(',').map(s => s.trim()).filter(Boolean).forEach(spec => {
+      const [periodPart, ptype] = spec.split(':').map(s => (s || '').trim());
+      const [period, value] = (periodPart || '').split('=').map(s => (s || '').trim());
+      if (period && value) targets.push({ period, value: parseFloat(value), period_type: ptype || 'annual' });
+    });
+    this.setTargetOverride(personId, metricId, filter, targets);
+    this._refreshDetailModal(personId);
+  },
+
+  _clearOverride(personId, metricId, filterJson) {
+    const filter = (() => { try { return JSON.parse(filterJson || '{}'); } catch (_e) { return {}; } })();
+    this.clearTargetOverride(personId, metricId, filter);
+    this._refreshDetailModal(personId);
+  },
 };
 
 /* ============================================================
