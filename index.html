@@ -10262,72 +10262,136 @@ const Person = {
   },
 
   // ----- Strategy → People tab -----
+  COLUMNS: [
+    { id: 'name', label: 'Name', width: 200, alwaysOn: true, sortable: true,
+      render: (p) => '<strong>' + Dashboard.esc(p.name) + '</strong>'
+                   + (p.email ? '<div style="font-size:11px;color:var(--text-muted)">' + Dashboard.esc(p.email) + '</div>' : ''),
+      edit: { type: 'text', field: 'name' } },
+    { id: 'role_title', label: 'Role', width: 160, alwaysOn: true, sortable: true,
+      render: (p) => Dashboard.esc(p.role_title || '—'),
+      edit: { type: 'text', field: 'role_title' } },
+    { id: 'persona_id', label: 'Persona', width: 160, alwaysOn: true, sortable: true,
+      render: (p) => {
+        if (!p.persona_id) return '<span style="color:var(--text-muted)">—</span>';
+        const persona = Personas.byId(p.persona_id);
+        if (!persona) return '<span style="color:var(--text-muted)">unknown</span>';
+        return '<span class="chip" style="cursor:pointer" onclick="event.stopPropagation();Strategy.setActiveTab(\'personas\');setTimeout(()=>Personas._openDetail(\''
+             + Dashboard.esc(p.persona_id) + '\'),50)">' + Dashboard.esc(persona.name) + '</span>';
+      },
+      edit: {
+        type: 'select', field: 'persona_id',
+        options: () => [{ value: '', label: '—' }].concat(Personas.list().map(p => ({ value: p.id, label: p.name })))
+      } },
+    { id: 'department', label: 'Department', width: 130, alwaysOn: true, sortable: true,
+      render: (p) => Dashboard.esc(p.department || '—'),
+      edit: { type: 'text', field: 'department' } },
+    { id: 'region', label: 'Region', width: 110, sortable: true,
+      render: (p) => Dashboard.esc(p.region || '—'),
+      edit: { type: 'text', field: 'region' } },
+    { id: 'manager_id', label: 'Manager', width: 160, sortable: true,
+      render: (p) => {
+        if (!p.manager_id) return '<span style="color:var(--text-muted)">—</span>';
+        const mgr = Person.byId(p.manager_id);
+        if (!mgr) return '<span style="color:var(--text-muted)">unknown</span>';
+        return '<span class="chip" style="cursor:pointer" onclick="event.stopPropagation();Person._openDetail(\''
+             + Dashboard.esc(p.manager_id) + '\')">' + Dashboard.esc(mgr.name) + '</span>';
+      },
+      edit: {
+        type: 'select', field: 'manager_id',
+        options: (entity) => [{ value: '', label: '—' }].concat(
+          Person.list().filter(x => x.id !== (entity && entity.id)).map(p => ({ value: p.id, label: p.name }))
+        )
+      } },
+    { id: 'active', label: 'Active', width: 80, alwaysOn: true, sortable: true,
+      render: (p) => p.active === false
+        ? '<span style="color:var(--text-muted)">Inactive</span>'
+        : '<span style="color:var(--status-green)">Active</span>',
+      edit: {
+        type: 'select', field: 'active',
+        options: () => [{ value: 'true', label: 'Active' }, { value: 'false', label: 'Inactive' }]
+      } },
+    { id: 'target_overrides_count', label: 'Overrides', width: 90,
+      render: (p) => {
+        const n = Array.isArray(p.target_overrides) ? p.target_overrides.length : 0;
+        return n ? '<span class="chip">' + n + '</span>' : '<span style="color:var(--text-muted)">—</span>';
+      } },
+  ],
+
   renderInventoryTab() {
     const filters = (App.uiStateGet ? App.uiStateGet('strategy.people.filters') : null) || {};
-    const toolbar = this._renderToolbar(filters);
     const list = this.applyFilters(filters);
+    const header = Strategy._renderTabHeader({
+      title: 'People',
+      subtitle: 'Named individuals filling persona roles. Targets can be overridden per person; RACI cascades from their persona.',
+      action: '<button class="btn btn-outline btn-sm" onclick="Person._addPrompt()">+ New person</button>',
+    });
+    const toolbar = this._renderUnifiedToolbar(filters);
     if (!list.length) {
-      return toolbar + '<div class="empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No people match the current filters.</div>';
+      return header + toolbar + '<div class="strategy-empty">No people match the current filters.</div>';
     }
-    const personaName = (id) => { const p = id ? Personas.byId(id) : null; return p ? p.name : ''; };
-    const managerName = (id) => { const p = id ? this.byId(id) : null; return p ? p.name : ''; };
-    const esc = Dashboard.esc;
-    const rows = list.map(prn => {
-      const dim = prn.active === false ? ' style="opacity:0.55"' : '';
-      return '<tr data-person-id="' + esc(prn.id) + '"' + dim
-           +   ' onclick="Person._openDetail(\'' + esc(prn.id) + '\')" style="cursor:pointer">'
-           +   '<td style="padding:8px 12px"><strong>' + esc(prn.name) + '</strong>'
-           +     '<div style="font-size:11px;color:var(--text-muted)">' + esc(prn.email || '') + '</div></td>'
-           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.role_title || '') + '</td>'
-           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.department || '') + '</td>'
-           +   '<td style="padding:8px 12px;font-size:12px">' + esc(prn.region || '') + '</td>'
-           +   '<td style="padding:8px 12px;font-size:12px">' + esc(personaName(prn.persona_id)) + '</td>'
-           +   '<td style="padding:8px 12px;font-size:12px">' + esc(managerName(prn.manager_id)) + '</td>'
-           +   '<td style="padding:8px 12px;font-size:11px">' + (prn.active === false ? 'Inactive' : 'Active') + '</td>'
-           + '</tr>';
-    }).join('');
-    return '<div class="strategy-people">'
-         +   toolbar
-         +   '<table class="people-table" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light);background:var(--surface-2)">'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Name</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Role</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Department</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Region</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Persona</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Manager</th>'
-         +     '<th style="text-align:left;padding:8px 12px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Active</th>'
-         +   '</tr></thead><tbody>' + rows + '</tbody></table>'
-         + '</div>';
+    const visibleColumns = this._visibleColumns();
+    const table = Strategy._renderTable({
+      source: 'strategy.people',
+      columns: visibleColumns,
+      rows: list,
+      rowId: (e) => e.id,
+      emptyMessage: 'No people match the current filters.',
+    });
+    return header + toolbar + table;
   },
 
-  _renderToolbar(filters) {
-    const esc = Dashboard.esc;
+  _visibleColumns() {
+    const prefs = this._getColumnPrefs();
+    const visibleSet = new Set(prefs.visible);
+    return this.COLUMNS.filter(c => c.alwaysOn || visibleSet.has(c.id));
+  },
+
+  _getColumnPrefs() {
+    const saved = (App.uiStateGet ? App.uiStateGet('strategy.people.columns') : null);
+    if (saved && Array.isArray(saved.visible)) return saved;
+    return { visible: this.COLUMNS.filter(c => c.alwaysOn || c.alwaysOn !== false && !c.hideFromPicker).map(c => c.id) };
+  },
+
+  _setColumnVisible(id, v) {
+    const prefs = this._getColumnPrefs();
+    const set = new Set(prefs.visible);
+    if (v) set.add(id); else set.delete(id);
+    const next = { visible: Array.from(set) };
+    if (App.uiStateSet) App.uiStateSet('strategy.people.columns', next);
+  },
+
+  _resetColumns() {
+    if (App.uiStateSet) App.uiStateSet('strategy.people.columns', null);
+  },
+
+  _renderUnifiedToolbar(filters) {
     const depts = this.departments();
-    const regs  = this.regions();
+    const regs = this.regions();
     const personas = Personas.list();
-    const sval = (k, v) => (filters[k] === v ? ' selected' : '');
-    const opt = (val, label, sel) => '<option value="' + esc(val) + '"' + (sel ? ' selected' : '') + '>' + esc(label) + '</option>';
-    return '<div class="people-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:11px">'
-         +   '<input type="search" placeholder="Search people…" value="' + esc(filters.search || '') + '" oninput="Person._setFilter(\'search\', this.value)" style="padding:3px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">'
-         +   '<label>Department <select onchange="Person._setFilter(\'department\', this.value || null)" style="font-size:11px">'
-         +     opt('', '—', !filters.department)
-         +     depts.map(d => opt(d, d, filters.department === d)).join('')
-         +   '</select></label>'
-         +   '<label>Region <select onchange="Person._setFilter(\'region\', this.value || null)" style="font-size:11px">'
-         +     opt('', '—', !filters.region)
-         +     regs.map(r => opt(r, r, filters.region === r)).join('')
-         +   '</select></label>'
-         +   '<label>Persona <select onchange="Person._setFilter(\'persona_id\', this.value || null)" style="font-size:11px">'
-         +     opt('', '—', !filters.persona_id)
-         +     personas.map(p => opt(p.id, p.name, filters.persona_id === p.id)).join('')
-         +   '</select></label>'
-         +   '<label>Status <select onchange="Person._setFilter(\'active\', this.value || null)" style="font-size:11px">'
-         +     opt('', 'All', !filters.active)
-         +     opt('active', 'Active only', filters.active === 'active')
-         +     opt('inactive', 'Inactive only', filters.active === 'inactive')
-         +   '</select></label>'
-         +   '<button class="btn btn-outline btn-sm" onclick="Person._addPrompt()">+ New person</button>'
-         + '</div>';
+    const filtersSpec = [
+      { label: 'Department', onChange: "Person._setFilter('department', this.value || null)",
+        options: [{ value: '', label: 'All', selected: !filters.department }].concat(
+          depts.map(d => ({ value: d, label: d, selected: filters.department === d }))) },
+      { label: 'Region', onChange: "Person._setFilter('region', this.value || null)",
+        options: [{ value: '', label: 'All', selected: !filters.region }].concat(
+          regs.map(r => ({ value: r, label: r, selected: filters.region === r }))) },
+      { label: 'Persona', onChange: "Person._setFilter('persona_id', this.value || null)",
+        options: [{ value: '', label: 'All', selected: !filters.persona_id }].concat(
+          personas.map(p => ({ value: p.id, label: p.name, selected: filters.persona_id === p.id }))) },
+      { label: 'Status', onChange: "Person._setFilter('active', this.value || null)",
+        options: [
+          { value: '', label: 'All', selected: !filters.active },
+          { value: 'active', label: 'Active only', selected: filters.active === 'active' },
+          { value: 'inactive', label: 'Inactive only', selected: filters.active === 'inactive' },
+        ] },
+    ];
+    return Strategy._renderToolbar({
+      searchPlaceholder: 'Search people…',
+      searchValue: filters.search || '',
+      onSearch: "Person._setFilter('search', this.value)",
+      filters: filtersSpec,
+      actions: '<button class="btn btn-outline btn-sm" onclick="ColumnPicker.toggle(this, \'strategy.people\')" title="Columns">Columns</button>',
+    });
   },
 
   _setFilter(key, value) {
@@ -12006,6 +12070,34 @@ const Strategy = {
   },
 };
 
+// Strategy table sources + ColumnPicker sources are registered at DOMContentLoaded
+// (in the bottom-of-file init block) so all entity modules and ColumnPicker exist
+// by the time we touch them. See Strategy._registerSources below for the impl.
+Strategy._registerSources = function () {
+  if (typeof Person !== 'undefined' && Person.COLUMNS) {
+    Strategy.registerTable('strategy.people', {
+      byId: (id) => Person.byId(id),
+      columns: () => Person.COLUMNS,
+      update: (id, field, value) => {
+        const patch = {};
+        if (field === 'active') patch[field] = (value === 'true' || value === true);
+        else if (field === 'persona_id' || field === 'manager_id') patch[field] = value || null;
+        else patch[field] = value;
+        return Person.update(id, patch);
+      },
+      onRowClick: (id) => Person._openDetail(id),
+    });
+    ColumnPicker.register('strategy.people', {
+      columns: () => Person.COLUMNS,
+      getPrefs: () => Person._getColumnPrefs(),
+      setVisible: (id, v) => Person._setColumnVisible(id, v),
+      reset: () => Person._resetColumns(),
+      onChange: () => { if (App.renderActiveView) App.renderActiveView(); },
+      groupOrder: [],
+    });
+  }
+};
+
 /* ============================================================
    Progress — long-operation overlay
    ============================================================ */
@@ -12880,6 +12972,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const r = e && e.reason;
     showError((r && r.message) || String(r || 'Unhandled promise rejection'), '', 0, 0, r);
   });
+
+  // Register Strategy table sources after all modules are declared.
+  try { if (typeof Strategy !== 'undefined' && Strategy._registerSources) Strategy._registerSources(); } catch (_e) {}
 
   App.init();
 

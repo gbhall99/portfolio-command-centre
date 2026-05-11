@@ -15,7 +15,8 @@ describe('Strategy — People tab', () => {
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Person.renderInventoryTab();
 
-    expect(out).toContain('people-toolbar');
+    expect(out).toContain('strategy-toolbar');
+    expect(out).toContain('strategy-table');
     expect(out).toContain('Sarah Chen');
     expect(out).toContain('Priya Shah');
     expect(out).toContain('Finance Mgr');
