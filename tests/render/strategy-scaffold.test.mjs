@@ -3,13 +3,13 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset } from '../harness/fixtures.mjs';
 
 describe('Strategy view scaffold', () => {
-  it('exposes four tabs: Personas, People, Objectives, Metrics', async () => {
+  it('exposes four tabs: Objectives, Personas, People, Metrics', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
     }));
     app.App.activeCustomer = 'Acme Industries';
     const tabs = app.Strategy.tabs();
-    expect(tabs.map(t => t.id)).toEqual(['personas', 'people', 'objectives', 'metrics']);
+    expect(tabs.map(t => t.id)).toEqual(['objectives', 'personas', 'people', 'metrics']);
     app.teardown();
   });
 

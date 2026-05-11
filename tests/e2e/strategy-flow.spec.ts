@@ -44,10 +44,10 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
 
   expect(seedResult.ok).toBeTruthy();
 
-  // Navigate to Strategy view — Personas tab (default)
+  // Navigate to Strategy view — Objectives is the default tab; click Personas to verify it renders.
   await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toHaveClass(/active/);
-  // Strategy renders the active tab; default is 'personas'.
+  await page.click('.strategy-tabs button:has-text("Personas")');
   await expect(page.locator('#viewStrategy .strategy-personas').first()).toContainText('E2E Sarah Chen');
   await expect(page.locator('#viewStrategy .strategy-personas').first()).toContainText('E2E Total opex');
 
