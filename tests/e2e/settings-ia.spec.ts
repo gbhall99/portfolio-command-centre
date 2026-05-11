@@ -6,7 +6,7 @@ test('Settings shows the tile dashboard by default', async ({ page }) => {
   await page.evaluate(() => (window as any).App.navigate('config'));
   await expect(page.locator('#configBody .config-tile-grid')).toBeVisible();
   const tiles = page.locator('#configBody .config-tile');
-  await expect(tiles).toHaveCount(11);
+  await expect(tiles).toHaveCount(12);
 });
 
 test('Clicking the Customers tile opens the customers detail panel', async ({ page }) => {
