@@ -3275,7 +3275,7 @@ const App = {
     'In Progress': ['priority', 'target_date', 'manager'],
     'At Risk':     ['priority', 'target_date', 'manager']
   },
-  SCHEMA_VERSION: '1.1',
+  SCHEMA_VERSION: '1.2',
   storageAvailable: true,
   undoStack: [],
   redoStack: [],
@@ -3981,11 +3981,12 @@ const App = {
     // re-runs and therefore never clobbers deliberate manual edits.
     try { this._migrateSprintLabelYears(data); } catch (_e) { /* diagnostic only */ }
 
-    // Always-run: Strategy entities (personas/objectives/metrics) — additive.
+    // Always-run: Strategy entities (personas/objectives/metrics/people) — additive.
     if (!Array.isArray(data.personas))      data.personas      = [];
     if (!Array.isArray(data.objectives))    data.objectives    = [];
     if (!Array.isArray(data.metrics))       data.metrics       = [];
     if (!Array.isArray(data.metric_groups)) data.metric_groups = [];
+    if (!Array.isArray(data.people))        data.people        = [];
 
     // Default metric_groups per customer if none defined for that customer
     const DEFAULT_METRIC_GROUPS = [
@@ -4002,24 +4003,73 @@ const App = {
       }
     });
 
-    // Seed metric_holdings on personas if missing, plus the rich-definition fields
-    // added in the Strategy v2 work (goals / pain_points / decisions / information_needs
-    // / tools / stakeholders / communication_prefs). All are optional free-text and
-    // default to '' so the detail modal always has something to render against.
-    const PERSONA_STRING_FIELDS = ['goals', 'pain_points', 'decisions',
-      'information_needs', 'tools', 'stakeholders', 'communication_prefs'];
+    // Persona slim-down (2026-05 Person rework): drop fields that have moved to
+    // either Person (per-individual identity) or have been deprecated outright.
+    // Holdings stay on persona; per-Person target variation lives on Person.target_overrides.
+    const PERSONA_STRING_FIELDS = ['goals', 'pain_points',
+      'information_needs', 'stakeholders', 'communication_prefs'];
     data.personas.forEach(p => {
       if (!Array.isArray(p.metric_holdings)) p.metric_holdings = [];
       if (!Array.isArray(p.business_questions)) p.business_questions = [];
       PERSONA_STRING_FIELDS.forEach(k => { if (typeof p[k] !== 'string') p[k] = ''; });
+      // Remove fields that no longer live on Persona
+      if ('tools' in p) delete p.tools;
+      if ('decisions' in p) delete p.decisions;
+      if ('decisions_owned' in p) delete p.decisions_owned;
     });
 
-    // Seed metric.dimensions / objective_ids / raci / actuals if missing
+    // Person re-anchor of RACI (2026-05): existing metric.raci is keyed by persona_id.
+    // Move those entries verbatim to metric.raci_defaults (still keyed by persona_id);
+    // metric.raci is now keyed by person_id and starts empty unless already keyed
+    // by person_id in this dataset.
     data.metrics.forEach(m => {
       if (!Array.isArray(m.dimensions))    m.dimensions    = [];
       if (!Array.isArray(m.objective_ids)) m.objective_ids = [];
       if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
       if (!Array.isArray(m.actuals)) m.actuals = [];
+
+      // RACI re-anchor: detect if raci is keyed by persona_id (legacy data) and move
+      // it to raci_defaults. This is one-shot and idempotent: once raci_defaults is
+      // present, we leave raci alone (it is already person-keyed).
+      const personaIds = new Set((data.personas || []).map(p => p.id));
+      const personIds  = new Set((data.people  || []).map(p => p.id));
+      if (!m.raci_defaults) {
+        // If any raci role array contains an id that exists as a persona but not a person,
+        // assume the whole map is persona-keyed and migrate it into raci_defaults.
+        const allIds = []
+          .concat(m.raci.accountable || [], m.raci.responsible || [], m.raci.consulted || [], m.raci.informed || []);
+        const looksPersonaKeyed = allIds.length > 0 && allIds.every(id => personaIds.has(id));
+        if (looksPersonaKeyed) {
+          m.raci_defaults = {
+            accountable: (m.raci.accountable || []).slice(),
+            responsible: (m.raci.responsible || []).slice(),
+            consulted:   (m.raci.consulted   || []).slice(),
+            informed:    (m.raci.informed    || []).slice(),
+          };
+          m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
+        } else {
+          m.raci_defaults = { accountable: [], responsible: [], consulted: [], informed: [] };
+        }
+      }
+      // Ensure shape is complete on raci_defaults
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (!Array.isArray(m.raci_defaults[role])) m.raci_defaults[role] = [];
+        if (!Array.isArray(m.raci[role])) m.raci[role] = [];
+      });
+    });
+
+    // Person record shape: ensure target_overrides + active flag defaults.
+    data.people.forEach(person => {
+      if (!person) return;
+      if (typeof person.active !== 'boolean') person.active = true;
+      if (!Array.isArray(person.target_overrides)) person.target_overrides = [];
+      if (typeof person.notes !== 'string') person.notes = '';
+      if (typeof person.role_title !== 'string') person.role_title = '';
+      if (typeof person.department !== 'string') person.department = '';
+      if (typeof person.region !== 'string') person.region = '';
+      if (typeof person.email !== 'string') person.email = '';
+      if (!('manager_id' in person)) person.manager_id = null;
+      if (!('persona_id' in person)) person.persona_id = null;
     });
 
     // Project additions
