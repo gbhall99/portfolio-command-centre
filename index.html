@@ -14111,6 +14111,66 @@ const DetailPanel = {
     if (App._save) App._save();
   },
 
+  renderStrategySection(project) {
+    const linkedMetrics = (project.metric_ids || []).map(id => Metrics.byId(id)).filter(Boolean);
+
+    // Derived objectives: union of linkedMetrics' objective_ids
+    const objIdSet = new Set();
+    linkedMetrics.forEach(m => (m.objective_ids || []).forEach(id => objIdSet.add(id)));
+    const derivedObjectives = [...objIdSet].map(id => ({
+      obj: Objectives.byId(id),
+      viaMetricNames: linkedMetrics.filter(m => (m.objective_ids || []).includes(id)).map(m => m.name)
+    })).filter(x => x.obj);
+
+    // Derived personas: from holders of linkedMetrics, plus explicit persona_ids
+    const personaMap = new Map(); // id → { persona, viaLabels: [] }
+    Personas.list().forEach(p => {
+      (p.metric_holdings || []).forEach(h => {
+        const m = linkedMetrics.find(mm => mm.id === h.metric_id);
+        if (!m) return;
+        const filterText = Object.entries(h.filter || {}).map(([k,v]) => k + ': ' + v).join(', ');
+        const label = m.name + (filterText ? ' · ' + filterText : '');
+        if (!personaMap.has(p.id)) personaMap.set(p.id, { persona: p, viaLabels: [] });
+        personaMap.get(p.id).viaLabels.push(label);
+      });
+    });
+    (project.persona_ids || []).forEach(pid => {
+      const p = Personas.byId(pid);
+      if (!p) return;
+      if (!personaMap.has(pid)) personaMap.set(pid, { persona: p, viaLabels: [] });
+    });
+
+    const chipBase = 'display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:#eef2f7;margin-right:4px;margin-bottom:3px';
+    const muted = 'color:var(--text-muted);font-style:italic';
+    const flag = 'color:var(--text-muted);font-size:10px;font-weight:400;margin-left:4px';
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;display:inline-block;width:90px';
+
+    const metricChips = linkedMetrics.length
+      ? linkedMetrics.map(m => '<span class="chip" style="' + chipBase + '">' + Dashboard.esc(m.name) + '</span>').join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    const objectiveChips = derivedObjectives.length
+      ? derivedObjectives.map(({ obj, viaMetricNames }) =>
+          '<span class="obj-chip" style="' + chipBase + '">' + Dashboard.esc(obj.name)
+          + ' <span class="derived-flag" style="' + flag + '">via ' + Dashboard.esc(viaMetricNames.join(', ')) + '</span></span>'
+        ).join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    const personaChips = personaMap.size
+      ? [...personaMap.values()].map(({ persona, viaLabels }) =>
+          '<span class="persona-chip" style="' + chipBase + '">' + Dashboard.esc(persona.name)
+          + (viaLabels.length ? ' <span class="derived-flag" style="' + flag + '">via ' + Dashboard.esc(viaLabels.join(' / ')) + '</span>' : '')
+          + '</span>'
+        ).join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    return '<div class="strategy-section">'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Metrics</span>'    + metricChips    + '</div>'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Objectives</span>' + objectiveChips + '</div>'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Personas</span>'   + personaChips   + '</div>'
+         + '</div>';
+  },
+
   // Issue 9: three-tab redesign — Setup (once-off), Health (weekly review),
   // Delivery (daily ops). Default tab = Health, the most common reason to open.
   activeTab: 'health',
@@ -14694,6 +14754,12 @@ const DetailPanel = {
       '</div>'
     );
     // Completion date moved to Delivery > Dates as a read-only badge (Project Details Overhaul, T8).
+    healthSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Strategy</div>' +
+        this.renderStrategySection(p) +
+      '</div>'
+    );
     healthSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Notes</div>' +
