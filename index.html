@@ -11815,6 +11815,138 @@ const Strategy = {
     return html;
   },
 
+  _tableSources: {},
+  registerTable(key, source) { this._tableSources[key] = source; },
+
+  _openQuickEdit(cell, field, entityId, sourceKey) {
+    if (!cell || !field || !entityId || !sourceKey) return;
+    const src = this._tableSources[sourceKey];
+    if (!src) return;
+    const entity = src.byId(entityId);
+    if (!entity) return;
+    if (cell.dataset.editing === '1') return;
+    const col = (src.columns() || []).find(c => c.id === field);
+    const edit = col && col.edit;
+    if (!edit || edit.type === 'derived') return;
+    const dataField = edit.field || field;
+    const originalValue = entity[dataField];
+    const originalHtmlSnapshot = cell.innerHTML;
+    cell.dataset.editing = '1';
+
+    const cancel = () => { cell.innerHTML = originalHtmlSnapshot; delete cell.dataset.editing; };
+    const reRender = () => {
+      try { if (App.renderActiveView) App.renderActiveView(); } catch (_) {}
+    };
+
+    const parsers = {
+      number: (raw) => {
+        const s = String(raw == null ? '' : raw).trim();
+        if (s === '') return null;
+        if (!/^-?\d+(\.\d+)?$/.test(s)) return undefined;
+        return Number(s);
+      },
+      date: (raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+        const t = Date.parse(s);
+        return Number.isFinite(t) ? s : undefined;
+      },
+      text: (raw) => String(raw == null ? '' : raw).trim(),
+      textarea: (raw) => String(raw == null ? '' : raw),
+      select: (raw) => String(raw == null ? '' : raw),
+    };
+
+    const commit = (raw) => {
+      const parser = parsers[edit.type] || parsers.text;
+      const next = parser(raw);
+      if (next === undefined) {
+        App.toast('Invalid ' + edit.type + ' value', 'warn');
+        cancel();
+        return;
+      }
+      if (next === originalValue) { cancel(); return; }
+      try { src.update(entityId, dataField, next); }
+      catch (e) { console.error('[strategy quick-edit]', e); App.toast('Save failed', 'warn'); cancel(); return; }
+      reRender();
+      delete cell.dataset.editing;
+    };
+
+    let editor;
+    if (edit.type === 'number') {
+      cell.innerHTML = '<input type="number" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      editor = cell.querySelector('input');
+    } else if (edit.type === 'date') {
+      const v = originalValue ? String(originalValue).slice(0, 10) : '';
+      cell.innerHTML = '<input type="date" class="quick-edit-input" value="' + Dashboard.esc(v) + '">';
+      editor = cell.querySelector('input');
+    } else if (edit.type === 'select') {
+      const options = (typeof edit.options === 'function') ? edit.options(entity) : (edit.options || []);
+      const opts = options.map(o => {
+        const val = (o && o.value != null) ? o.value : o;
+        const lbl = (o && o.label != null) ? o.label : o;
+        const selAttr = (String(val) === String(originalValue == null ? '' : originalValue)) ? ' selected' : '';
+        return '<option value="' + Dashboard.esc(String(val)) + '"' + selAttr + '>' + Dashboard.esc(String(lbl)) + '</option>';
+      }).join('');
+      cell.innerHTML = '<select class="quick-edit-input">' + opts + '</select>';
+      editor = cell.querySelector('select');
+    } else if (edit.type === 'textarea') {
+      cell.innerHTML = '<textarea class="quick-edit-input" rows="2">' + Dashboard.esc(originalValue || '') + '</textarea>';
+      editor = cell.querySelector('textarea');
+    } else {
+      cell.innerHTML = '<input type="text" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
+      editor = cell.querySelector('input');
+    }
+
+    if (!editor) { cancel(); return; }
+    editor.focus();
+    if (editor.select) editor.select();
+    const onBlur = () => commit(editor.value);
+    const onKey = (e) => {
+      if (e.key === 'Enter' && edit.type !== 'textarea') { e.preventDefault(); editor.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    };
+    editor.addEventListener('blur', onBlur, { once: true });
+    editor.addEventListener('keydown', onKey);
+    if (edit.type === 'select') {
+      editor.addEventListener('change', () => editor.blur());
+    }
+  },
+
+  _attachTableHandlers(rootEl) {
+    if (!rootEl) return;
+    rootEl.querySelectorAll('table.strategy-table tbody tr[data-id]').forEach(row => {
+      if (row.dataset.handlersBound === '1') return;
+      row.dataset.handlersBound = '1';
+      let clickTimer = null;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('a, button, [onclick]')) return;
+        const editCell = e.target.closest('td[data-quick-edit]');
+        if (editCell && row.contains(editCell)) {
+          // Wait briefly to see if this becomes a dblclick on an editable cell.
+          if (clickTimer) clearTimeout(clickTimer);
+          clickTimer = setTimeout(() => {
+            const source = row.dataset.source;
+            const src = Strategy._tableSources[source];
+            if (src && src.onRowClick) src.onRowClick(row.dataset.id);
+          }, 240);
+          return;
+        }
+        const source = row.dataset.source;
+        const src = Strategy._tableSources[source];
+        if (src && src.onRowClick) src.onRowClick(row.dataset.id);
+      });
+      row.addEventListener('dblclick', (e) => {
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+        const editCell = e.target.closest('td[data-quick-edit]');
+        if (!editCell) return;
+        e.stopPropagation();
+        const source = row.dataset.source;
+        Strategy._openQuickEdit(editCell, editCell.dataset.quickEdit, row.dataset.id, source);
+      });
+    });
+  },
+
   _renderTable(spec) {
     const s = spec || {};
     const cols = (s.columns || []).filter(c => c.visible !== false);
@@ -11867,7 +11999,10 @@ const Strategy = {
 
   mount() {
     const container = document.getElementById('viewStrategy');
-    if (container) container.innerHTML = this.render();
+    if (container) {
+      container.innerHTML = this.render();
+      this._attachTableHandlers(container);
+    }
   },
 };
 
@@ -15258,20 +15393,38 @@ const Dashboard = {
 const ColumnPicker = {
   isOpen: false,
   el: null,
+  _activeSource: 'dashboard',
 
-  toggle(triggerBtn) {
-    if (this.isOpen) { this.close(); return; }
-    this.open(triggerBtn);
+  _sources: {
+    dashboard: {
+      columns: () => Dashboard.COLUMNS,
+      getPrefs: () => Dashboard._getColumnPrefs(),
+      setVisible: (id, v) => Dashboard.setColumnVisible(id, v),
+      reset: () => Dashboard.resetColumns(),
+      onChange: () => { Dashboard.renderHeader(); Dashboard.renderTable(Dashboard.filteredProjects); },
+      groupOrder: ['Identity', 'Dates', 'Estimates', 'Sprints', 'Risks', 'Remaining work'],
+    },
   },
 
-  open(triggerBtn) {
+  register(key, source) { this._sources[key] = source; },
+
+  toggle(triggerBtn, sourceKey) {
+    if (this.isOpen) { this.close(); return; }
+    this.open(triggerBtn, sourceKey);
+  },
+
+  open(triggerBtn, sourceKey) {
     if (this.isOpen) return;
-    const cols = Dashboard.COLUMNS.filter(c => !c.hideFromPicker);
-    const prefs = Dashboard._getColumnPrefs();
+    const key = sourceKey || 'dashboard';
+    const src = this._sources[key] || this._sources.dashboard;
+    this._activeSource = key;
+    const cols = src.columns().filter(c => !c.hideFromPicker);
+    const prefs = src.getPrefs() || { visible: cols.map(c => c.id) };
     const visibleSet = new Set(prefs.visible);
     const groups = {};
-    cols.forEach(c => { (groups[c.group] = groups[c.group] || []).push(c); });
-    const groupOrder = ['Identity', 'Dates', 'Estimates', 'Sprints', 'Risks', 'Remaining work'];
+    cols.forEach(c => { (groups[c.group || 'Columns'] = groups[c.group || 'Columns'] || []).push(c); });
+    const groupOrder = (src.groupOrder || []).slice();
+    Object.keys(groups).forEach(g => { if (!groupOrder.includes(g)) groupOrder.push(g); });
     const html = '<div class="col-picker-popover" role="dialog" aria-label="Columns">' +
       '<div class="col-picker-header">Columns<button class="col-picker-reset" onclick="ColumnPicker.reset()">Reset</button></div>' +
       '<div class="col-picker-body">' +
@@ -15285,6 +15438,7 @@ const ColumnPicker = {
           '</div>'
         ).join('') +
       '</div></div>';
+    const _src_for_handlers = src;
     const wrap = document.createElement('div');
     wrap.innerHTML = html;
     this.el = wrap.firstChild;
@@ -15296,9 +15450,8 @@ const ColumnPicker = {
     }
     this.el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', () => {
-        Dashboard.setColumnVisible(cb.dataset.colId, cb.checked);
-        Dashboard.renderHeader();
-        Dashboard.renderTable(Dashboard.filteredProjects);
+        _src_for_handlers.setVisible(cb.dataset.colId, cb.checked);
+        _src_for_handlers.onChange();
       });
     });
     setTimeout(() => document.addEventListener('click', this._onAway, true), 0);
@@ -15322,9 +15475,9 @@ const ColumnPicker = {
   },
 
   reset() {
-    Dashboard.resetColumns();
-    Dashboard.renderHeader();
-    Dashboard.renderTable(Dashboard.filteredProjects);
+    const src = this._sources[this._activeSource] || this._sources.dashboard;
+    src.reset();
+    src.onChange();
     this.close();
   }
 };
