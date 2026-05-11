@@ -9800,7 +9800,137 @@ const Metrics = {
     if (App.renderActiveView) App.renderActiveView();
   },
 
-  renderDetailPane(id) { return '<!-- detail TODO Task 19 -->'; },
+  renderDetailPane(id) {
+    const m = this.byId(id);
+    if (!m) return '<div class="empty" style="padding:16px;color:var(--text-muted)">Metric not found</div>';
+    const r = this.rollup(id);
+    const groups = MetricGroups.list();
+    const grp = groups.find(g => g.id === m.group_id);
+    const grpHtml = grp
+      ? '<span class="group-tag" style="border-left: 3px solid ' + grp.swatch + '; padding-left: 4px;">' + Dashboard.esc(grp.name) + '</span>'
+      : '';
+
+    const dimsHtml = (m.dimensions || []).length
+      ? (m.dimensions || []).map(d => '<span class="dim-tag" style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#f0f3f8;color:#444;margin-right:3px">' + Dashboard.esc(d) + '</span>').join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+
+    const objHtml = r.served_objectives.length
+      ? r.served_objectives.map(o => '<span class="obj-chip" style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:#eef2f7;margin-right:4px">' + Dashboard.esc(o.name) + '</span>').join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+
+    const raciRow = (letter, persona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:3px 0">'
+      +   '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#eef;color:#334;font-size:10px;font-weight:700">' + letter + '</span>'
+      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(persona.name) + '</span>'
+      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span>'
+      + '</div>';
+    let raciHtml = '';
+    r.raci_personas.accountable.forEach(p => raciHtml += raciRow('A', p));
+    r.raci_personas.responsible.forEach(p => raciHtml += raciRow('R', p));
+    r.raci_personas.consulted.forEach(p => raciHtml += raciRow('C', p));
+    r.raci_personas.informed.forEach(p => raciHtml += raciRow('I', p));
+    if (!raciHtml) raciHtml = '<span class="muted" style="color:var(--text-muted);font-style:italic">no RACI assigned</span>';
+
+    const cascadeRow = ({ persona, holding }) => {
+      const filterEntries = Object.entries(holding.filter || {});
+      const filterCell = filterEntries.length
+        ? '<span class="filter-tag" style="font-size:10px;padding:1px 5px;border-radius:8px;background:#eef;color:#334">' + Dashboard.esc(filterEntries.map(([k,v]) => k + ': ' + v).join(', ')) + '</span>'
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic">all (' + ((m.dimensions || [])[0] || 'unfiltered') + ')</span>';
+      const targetCell = (holding.targets || []).length
+        ? holding.targets.map(t => Dashboard.esc(t.period) + ' £' + Dashboard.esc(String(t.value))).join(' &nbsp; ')
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic">no target</span>';
+      return '<tr><td style="padding:6px"><strong>' + Dashboard.esc(persona.name) + '</strong>'
+           +    ' <span class="role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span></td>'
+           +    '<td style="padding:6px">' + filterCell + '</td>'
+           +    '<td style="padding:6px">' + targetCell + '</td>'
+           +    '<td style="padding:6px"><button class="btn btn-ghost btn-sm" onclick="Metrics._editHolding(\'' + Dashboard.esc(persona.id) + '\',\'' + Dashboard.esc(holding.id) + '\')">edit</button></td>'
+           + '</tr>';
+    };
+    const cascadeBody = r.holders.length
+      ? r.holders.map(cascadeRow).join('')
+      : '<tr><td colspan="4" style="padding:6px" class="muted"><span style="color:var(--text-muted);font-style:italic">No holders yet — assign this metric to a persona.</span></td></tr>';
+
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;margin-bottom:4px';
+
+    return '<div class="metric-detail">'
+         +   '<div class="hdr" style="margin-bottom:14px">'
+         +     '<h2 style="font-size:18px;margin:0 0 6px">' + Dashboard.esc(m.name) + '</h2>'
+         +     '<div class="hdr-meta" style="font-size:11px;display:flex;align-items:center;gap:8px">' + grpHtml
+         +       ' <span class="status status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:1px 6px;border-radius:10px;background:#eef;color:#334">' + Dashboard.esc(m.status) + '</span>'
+         +     '</div>'
+         +   '</div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Definition</div><div>' + Dashboard.esc(m.definition || '') + '</div></div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Pseudo-logic</div><pre class="pseudo" style="font-family:monospace;font-size:11px;background:#f7f8fa;padding:8px;border-radius:var(--radius-sm);overflow-x:auto">' + Dashboard.esc(m.pseudo_logic || '') + '</pre></div>'
+         +   '<div class="sec grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">'
+         +     '<div>'
+         +       '<div class="caps" style="' + caps + '">Source</div><div>' + Dashboard.esc(m.source || '') + '</div>'
+         +       '<div class="caps" style="' + caps + ';margin-top:12px">Dimensions</div><div>' + dimsHtml + '</div>'
+         +       '<div class="caps" style="' + caps + ';margin-top:12px">Linked objectives</div><div>' + objHtml + '</div>'
+         +     '</div>'
+         +     '<div>'
+         +       '<div class="caps" style="' + caps + '">RACI · definition</div>' + raciHtml
+         +     '</div>'
+         +   '</div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Cascade · ' + r.holder_count + ' holders</div>'
+         +     '<table class="cascade-table" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         +       '<th style="text-align:left;padding:6px">Persona &amp; role</th><th style="text-align:left;padding:6px">Filter</th><th style="text-align:left;padding:6px">Target</th><th></th>'
+         +     '</tr></thead><tbody>' + cascadeBody + '</tbody></table>'
+         +     '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Metrics._addHolderPrompt(\'' + Dashboard.esc(id) + '\')">+ assign to another persona</button>'
+         +   '</div>'
+         + '</div>';
+  },
+
+  _editHolding(personaId, holdingId) {
+    const persona = Personas.byId(personaId);
+    if (!persona) return;
+    const holding = (persona.metric_holdings || []).find(h => h.id === holdingId);
+    if (!holding) return;
+    const filterStr = Object.entries(holding.filter || {}).map(([k,v]) => k + '=' + v).join(', ');
+    const newFilter = prompt('Filter ("key=value, key=value"):', filterStr);
+    if (newFilter === null) return;
+    const filter = {};
+    newFilter.split(',').forEach(pair => {
+      const [k, v] = pair.split('=').map(s => (s || '').trim());
+      if (k && v) filter[k] = v;
+    });
+    const targetsStr = (holding.targets || []).map(t => t.period + '=' + t.value + ':' + (t.period_type || 'annual')).join(', ');
+    const newTargets = prompt('Targets ("period=value:period_type, …"):', targetsStr);
+    if (newTargets === null) return;
+    const targets = [];
+    newTargets.split(',').map(s => s.trim()).filter(Boolean).forEach(spec => {
+      const [periodPart, ptype] = spec.split(':').map(s => (s || '').trim());
+      const [period, value] = (periodPart || '').split('=').map(s => (s || '').trim());
+      if (period && value) targets.push({ period, value: parseFloat(value), period_type: ptype || 'annual' });
+    });
+    Personas.updateHolding(personaId, holdingId, { filter, targets });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _addHolderPrompt(metricId) {
+    const personas = Personas.list();
+    if (!personas.length) { alert('No personas defined yet.'); return; }
+    const list = personas.map((p, i) => (i + 1) + ') ' + p.name + ' [' + p.id + ']').join('\n');
+    const sel = prompt('Pick a persona (id or number):\n' + list);
+    if (!sel) return;
+    let persona = personas.find(p => p.id === sel.trim());
+    if (!persona) {
+      const idx = parseInt(sel.trim(), 10);
+      if (!isNaN(idx) && idx >= 1 && idx <= personas.length) persona = personas[idx - 1];
+    }
+    if (!persona) { alert('Persona not found.'); return; }
+    const m = this.byId(metricId);
+    let filter = {};
+    if (m && (m.dimensions || []).length) {
+      const filterText = prompt('Filter (optional, "key=value, key=value"):', '');
+      if (filterText) {
+        filterText.split(',').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => (s || '').trim());
+          if (k && v) filter[k] = v;
+        });
+      }
+    }
+    Personas.addHolding(persona.id, { metric_id: metricId, filter, targets: [] });
+    if (App.renderActiveView) App.renderActiveView();
+  },
 };
 
 /* ============================================================
