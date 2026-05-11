@@ -9295,10 +9295,13 @@ const Personas = {
       return viaMetric || viaPersona;
     });
     const descendants = this.descendants(personaId);
+    // raci_appearances on a Persona reads from raci_defaults (persona-keyed,
+    // role-level template). Per-Person RACI lives on metric.raci (person-keyed)
+    // and is queried via Person.raciAppearances.
     const raci_appearances = { accountable: [], responsible: [], consulted: [], informed: [] };
     Metrics.list().forEach(m => {
       ['accountable','responsible','consulted','informed'].forEach(role => {
-        if (m.raci && Array.isArray(m.raci[role]) && m.raci[role].includes(personaId)) {
+        if (m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(personaId)) {
           raci_appearances[role].push(m);
         }
       });
@@ -9534,18 +9537,19 @@ const Personas = {
   // Field declarations live in one place so the modal body, save handler, and
   // tests stay in sync. `multiline: true` renders a textarea, otherwise a
   // single-line input. `kind: 'parent_picker'` renders the parent persona <select>.
+  // Note (2026-05 Person rework): tools, decisions, and the holdings display
+  // section have moved off the Persona modal. Holdings still live in the
+  // persona's data; per-Person variation is on Person.target_overrides.
   _DETAIL_FIELDS: {
     name:                { label: 'Name',                  multiline: false },
     role_title:          { label: 'Role title',            multiline: false },
     parent_persona_id:   { label: 'Parent persona',        kind: 'parent_picker' },
     definition:          { label: 'Definition',            multiline: true },
     key_responsibilities:{ label: 'Key responsibilities',  multiline: true },
-    decisions:           { label: 'Decisions owned',       multiline: true },
     stakeholders:        { label: 'Stakeholders',          multiline: true },
     goals:               { label: 'Goals',                 multiline: true },
     pain_points:         { label: 'Pain points',           multiline: true },
     information_needs:   { label: 'Information needs',     multiline: true },
-    tools:               { label: 'Tools',                 multiline: true },
     communication_prefs: { label: 'Communication preferences', multiline: false },
     notes:               { label: 'Notes',                 multiline: true },
   },
@@ -9585,35 +9589,52 @@ const Personas = {
            + '</label>';
     };
 
-    // Held metrics — read-only summary list pulled from rollup, with edit/remove
-    // buttons that re-use the existing prompt-based handlers.
-    const groups = MetricGroups.list();
-    const groupName = (gid) => { const g = groups.find(x => x.id === gid); return g ? g.name : gid; };
-    const groupSwatch = (gid) => { const g = groups.find(x => x.id === gid); return g ? g.swatch : '#888'; };
-    const holdings = Array.isArray(p.metric_holdings) ? p.metric_holdings : [];
-    const holdingsRows = holdings.length
-      ? holdings.map(h => {
-          const m = Metrics.byId(h.metric_id);
-          if (!m) return '';
-          const filterEntries = Object.entries(h.filter || {});
-          const filterStr = filterEntries.length
-            ? filterEntries.map(([k, v]) => esc(k) + ': ' + esc(String(v))).join(', ')
-            : '<span class="muted" style="color:var(--text-muted);font-style:italic">no filter</span>';
-          const targetsStr = Array.isArray(h.targets) && h.targets.length
-            ? h.targets.map(t => esc(String(t.period)) + '=' + esc(String(t.value))).join(' · ')
-            : '<span class="muted" style="color:var(--text-muted);font-style:italic">no target</span>';
-          return '<tr data-holding-id="' + esc(h.id) + '">'
-               +   '<td style="padding:6px"><span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + ';margin-right:6px"></span><strong>' + esc(m.name) + '</strong>'
-               +     ' <span class="muted" style="color:var(--text-muted);font-size:11px">' + esc(groupName(m.group_id)) + '</span></td>'
-               +   '<td style="padding:6px;font-size:11px">' + filterStr + '</td>'
-               +   '<td style="padding:6px;font-size:11px">' + targetsStr + '</td>'
-               +   '<td style="padding:6px;text-align:right">'
-               +     '<button class="btn btn-ghost btn-sm" onclick="Metrics._editHolding(\'' + esc(personaId) + '\',\'' + esc(h.id) + '\')">edit</button>'
-               +     ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Personas._removeHoldingFromModal(\'' + esc(personaId) + '\',\'' + esc(h.id) + '\')">remove</button>'
-               +   '</td>'
+    // Roster — list of People who hold this persona role for the active customer.
+    // Row click → opens the Person modal. Inactive count shown with a Show/Hide toggle.
+    const allPeople = (typeof Person !== 'undefined') ? Person.byPersonaId(personaId) : [];
+    const showInactive = (App.uiStateGet && App.uiStateGet('persona.modal.roster.showInactive.' + personaId)) === true;
+    const visiblePeople = allPeople.filter(prn => showInactive ? true : prn.active !== false);
+    const inactiveCount = allPeople.filter(prn => prn.active === false).length;
+    const rosterRows = visiblePeople.length
+      ? visiblePeople.map(prn => {
+          const cls = (prn.active === false) ? ' style="opacity:0.55"' : '';
+          return '<tr data-person-id="' + esc(prn.id) + '"' + cls
+               +   ' onclick="Person._openDetail(\'' + esc(prn.id) + '\')" style="cursor:pointer">'
+               +   '<td style="padding:6px"><strong>' + esc(prn.name) + '</strong></td>'
+               +   '<td style="padding:6px;font-size:11px">' + esc(prn.role_title || '') + '</td>'
+               +   '<td style="padding:6px;font-size:11px">' + esc(prn.department || '') + '</td>'
+               +   '<td style="padding:6px;font-size:11px">' + esc(prn.region || '') + '</td>'
                + '</tr>';
         }).join('')
-      : '<tr><td colspan="4" style="padding:6px"><span class="muted" style="color:var(--text-muted);font-style:italic">No metrics held yet.</span></td></tr>';
+      : '<tr><td colspan="4" style="padding:6px"><span class="muted" style="color:var(--text-muted);font-style:italic">No people assigned to this persona yet.</span></td></tr>';
+    const inactiveToggle = inactiveCount > 0
+      ? '<button type="button" class="btn btn-ghost btn-sm" onclick="Personas._toggleShowInactive(\'' + esc(personaId) + '\')" style="margin-left:8px">' + (showInactive ? 'Hide' : 'Show') + ' ' + inactiveCount + ' inactive</button>'
+      : '';
+
+    // RACI defaults — persona-level template that seeds new People on this persona.
+    // Reads from metric.raci_defaults (persona-keyed).
+    const raciDefaultsAppearances = (() => {
+      const out = { accountable: [], responsible: [], consulted: [], informed: [] };
+      Metrics.list().forEach(m => {
+        ['accountable','responsible','consulted','informed'].forEach(role => {
+          if (m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(personaId)) {
+            out[role].push(m);
+          }
+        });
+      });
+      return out;
+    })();
+    const raciDefaultsHtml = (() => {
+      const parts = [];
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        const list = raciDefaultsAppearances[role] || [];
+        if (!list.length) return;
+        const letter = role[0].toUpperCase();
+        parts.push('<div style="margin:4px 0"><span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;margin-right:6px">' + letter + '</span>'
+          + list.map(m => esc(m.name)).join(', ') + '</div>');
+      });
+      return parts.length ? parts.join('') : '<span class="muted" style="color:var(--text-muted);font-style:italic">no defaults</span>';
+    })();
 
     // Business questions — managed list of strings.
     const bq = Array.isArray(p.business_questions) ? p.business_questions : [];
@@ -9647,6 +9668,10 @@ const Personas = {
     })();
 
     // Build the body.
+    // Note (2026-05 Person rework): tools, decisions, and the Held-metrics display
+    // sections were removed. Holdings still live on the persona (they are the
+    // role-level template); to view who holds what, open a Person modal from the
+    // Roster below.
     return '<div class="persona-modal-body">'
       // Section 1 — Identity
       + '<div class="sec" style="' + sectionStyle + '">'
@@ -9656,11 +9681,10 @@ const Personas = {
       +   fieldHtml('parent_persona_id')
       +   fieldHtml('definition')
       + '</div>'
-      // Section 2 — Responsibilities & decisions
+      // Section 2 — Responsibilities
       + '<div class="sec" style="' + sectionStyle + '">'
-      +   '<div style="' + caps + '">Responsibilities &amp; decisions</div>'
+      +   '<div style="' + caps + '">Responsibilities</div>'
       +   fieldHtml('key_responsibilities')
-      +   fieldHtml('decisions')
       +   fieldHtml('stakeholders')
       + '</div>'
       // Section 3 — Goals & pain points
@@ -9677,21 +9701,27 @@ const Personas = {
       +   '<div class="bq-list">' + bqHtml + '</div>'
       +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="Personas._addBusinessQuestion(\'' + esc(personaId) + '\')">+ add question</button>'
       + '</div>'
-      // Section 5 — Tools & communication
+      // Section 5 — Communication
       + '<div class="sec" style="' + sectionStyle + '">'
-      +   '<div style="' + caps + '">Tools &amp; communication</div>'
-      +   fieldHtml('tools')
+      +   '<div style="' + caps + '">Communication</div>'
       +   fieldHtml('communication_prefs')
       + '</div>'
-      // Section 6 — Held metrics
+      // Section 6 — Roster
+      + '<div class="sec roster-section" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Roster &middot; ' + visiblePeople.length + ' active' + inactiveToggle + '</div>'
+      +   '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Name</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Role</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Department</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Region</th>'
+      +   '</tr></thead><tbody>' + rosterRows + '</tbody></table>'
+      +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Person._addPromptForPersona(\'' + esc(personaId) + '\')">+ add person to this persona</button>'
+      + '</div>'
+      // Section 7 — RACI defaults (template for new people of this persona)
       + '<div class="sec" style="' + sectionStyle + '">'
-      +   '<div style="' + caps + '">Held metrics</div>'
-      +   '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
-      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Metric</th>'
-      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Filter</th>'
-      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Targets</th>'
-      +     '<th></th></tr></thead><tbody>' + holdingsRows + '</tbody></table>'
-      +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Personas._addHoldingPrompt(\'' + esc(personaId) + '\')">+ assign metric</button>'
+      +   '<div style="' + caps + '">RACI defaults</div>'
+      +   '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Metrics where this persona role is by default — seeds RACI when a new person joins.</div>'
+      +   raciDefaultsHtml
       + '</div>'
       // Section 7 — Derived (collapsed by default)
       + '<details class="sec" style="' + sectionStyle + '">'
@@ -9824,6 +9854,15 @@ const Personas = {
     if (typeof confirm === 'function' && !confirm('Remove this metric holding?')) return;
     this._collectModalDraft(personaId);
     this.removeHolding(personaId, holdingId);
+    this._refreshDetailModal(personaId);
+  },
+
+  // Roster section — toggle whether inactive People show in the persona modal.
+  _toggleShowInactive(personaId) {
+    const key = 'persona.modal.roster.showInactive.' + personaId;
+    const cur = (App.uiStateGet && App.uiStateGet(key)) === true;
+    if (App.uiStateSet) App.uiStateSet(key, cur ? null : true);
+    this._collectModalDraft(personaId);
     this._refreshDetailModal(personaId);
   },
 
