@@ -26,5 +26,5 @@ test('navigation through all six views', async ({ page }) => {
   // Settings — tile dashboard is the default landing (post-IA-redesign).
   await page.click('.nav-item[data-view="config"]');
   await expect(page.locator('#configBody .config-tile-grid')).toBeVisible();
-  await expect(page.locator('#configBody .config-tile')).toHaveCount(8);
+  await expect(page.locator('#configBody .config-tile')).toHaveCount(11);
 });
