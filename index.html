@@ -740,6 +740,14 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .strategy-personas .strategy-row .persona-meta strong { color: var(--text-dark); font-size: var(--fs-base); }
 .strategy-personas .strategy-row .persona-meta .role { color: var(--text-muted); }
 .strategy-personas .persona-chips { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+.strategy-row .row-toggle { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border: 0; background: transparent; cursor: pointer; color: var(--text-muted); border-radius: var(--radius-sm); flex-shrink: 0; margin-right: 4px; padding: 0; }
+.strategy-row .row-toggle:hover { background: var(--surface-hover); color: var(--text-dark); }
+.strategy-row .row-toggle svg { width: 12px; height: 12px; transition: transform 0.12s; display: block; }
+.strategy-row .row-toggle.collapsed svg { transform: rotate(-90deg); }
+.strategy-row .row-toggle-spacer { display: inline-block; width: 16px; margin-right: 4px; flex-shrink: 0; }
+.personas-toolbar .tree-controls { display: inline-flex; gap: 6px; margin-left: auto; }
+.personas-toolbar .tree-controls button { font-size: var(--fs-xs); padding: 4px 8px; border: 1px solid var(--border-dim); background: var(--surface); color: var(--text-dark-secondary); border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; }
+.personas-toolbar .tree-controls button:hover { background: var(--surface-hover); border-color: var(--border-strong); }
 
 /* Chips, swatches, tags shared by personas + metric library */
 .chip { background: var(--surface-2); color: var(--text-dark); border-color: var(--border-dim) !important; transition: border-color 0.12s, background 0.12s; }
@@ -9286,7 +9294,53 @@ const Personas = {
          +   '<label>Target period <select onchange="Personas._setFilter(\'targetPeriod\', this.value || null)" style="font-size:11px">'
          +     '<option value="">—</option>' + periodOpts
          +   '</select></label>'
+         +   '<div class="tree-controls">'
+         +     '<button type="button" onclick="Personas._setAllCollapsed(false)" title="Expand every persona subtree" aria-label="Expand all personas">Expand all</button>'
+         +     '<button type="button" onclick="Personas._setAllCollapsed(true)" title="Collapse every persona subtree" aria-label="Collapse all personas">Collapse all</button>'
+         +   '</div>'
          + '</div>';
+  },
+
+  _COLLAPSED_KEY: 'strategy.personas.collapsed',
+
+  _loadCollapsed() {
+    const arr = (App.uiStateGet ? App.uiStateGet(this._COLLAPSED_KEY) : null) || [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  },
+
+  _saveCollapsed(set) {
+    if (!App.uiStateSet) return;
+    const arr = [...set];
+    App.uiStateSet(this._COLLAPSED_KEY, arr.length ? arr : null);
+  },
+
+  _isCollapsed(personaId) {
+    return this._loadCollapsed().has(personaId);
+  },
+
+  _toggleCollapsed(personaId) {
+    const set = this._loadCollapsed();
+    if (set.has(personaId)) set.delete(personaId);
+    else set.add(personaId);
+    this._saveCollapsed(set);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _setAllCollapsed(collapsed) {
+    if (collapsed) {
+      const all = this.list();
+      const parents = new Set();
+      all.forEach(p => { if (p.parent_persona_id) parents.add(p.parent_persona_id); });
+      // Restrict to ids actually in this customer set (safety: parents referenced
+      // by children whose parent isn't in the customer scope are skipped above
+      // because we only add parent_persona_id values present on listed children).
+      const validIds = new Set(all.map(p => p.id));
+      const collapseSet = new Set([...parents].filter(id => validIds.has(id)));
+      this._saveCollapsed(collapseSet);
+    } else {
+      this._saveCollapsed(new Set());
+    }
+    if (App.renderActiveView) App.renderActiveView();
   },
 
   _setFilter(key, value) {
@@ -9296,24 +9350,55 @@ const Personas = {
     if (App.renderActiveView) App.renderActiveView();
   },
 
+  // True when any user-facing filter is active. While filtering we ignore the
+  // collapsed state and render a flat list of matched rows, so users can find
+  // what they searched for without it being hidden under a folded ancestor.
+  _hasActiveFilters(filters) {
+    if (!filters) return false;
+    if (filters.search && String(filters.search).trim()) return true;
+    if (filters.status && filters.status !== 'all') return true;
+    if (filters.raciInvolved) return true;
+    if (filters.dimension) return true;
+    if (filters.targetPeriod) return true;
+    return false;
+  },
+
   renderInventoryTab() {
     const filters = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
     const toolbar = this._renderToolbar(filters);
     const personas = this.applyFilters(filters);
     const groups = MetricGroups.list();
     const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    const filtering = this._hasActiveFilters(filters);
+    const collapsedSet = filtering ? new Set() : this._loadCollapsed();
 
-    // Order: roots first, then sorted depth-first traversal
-    const roots = personas.filter(p => !p.parent_persona_id);
+    // Build a parent -> children index over the personas in scope.
+    const idSet = new Set(personas.map(p => p.id));
+    const childrenByParent = new Map();
+    personas.forEach(p => {
+      const pid = (p.parent_persona_id && idSet.has(p.parent_persona_id)) ? p.parent_persona_id : null;
+      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+      childrenByParent.get(pid).push(p);
+    });
+    const hasChildren = (id) => (childrenByParent.get(id) || []).length > 0;
+
+    // Order: depth-first traversal. When filtering we render flat (depth = 0,
+    // no nesting). When not filtering we honour the collapsed set and skip
+    // descendants of any collapsed ancestor.
     const ordered = [];
-    const visit = (p, depth) => {
-      ordered.push({ p, depth });
-      personas.filter(c => c.parent_persona_id === p.id).forEach(c => visit(c, depth + 1));
-    };
-    roots.forEach(r => visit(r, 0));
-    // Append any orphan personas whose parent isn't in this customer set
-    personas.filter(p => p.parent_persona_id && !personas.some(q => q.id === p.parent_persona_id))
-      .forEach(p => { if (!ordered.find(o => o.p.id === p.id)) visit(p, 0); });
+    if (filtering) {
+      personas.forEach(p => ordered.push({ p, depth: 0 }));
+    } else {
+      const roots = childrenByParent.get(null) || [];
+      const visit = (p, depth) => {
+        ordered.push({ p, depth });
+        if (collapsedSet.has(p.id)) return;
+        (childrenByParent.get(p.id) || []).forEach(c => visit(c, depth + 1));
+      };
+      roots.forEach(r => visit(r, 0));
+    }
+
+    const chevronSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
 
     const rowHtml = ({ p, depth }) => {
       const indentPx = depth * 18;
@@ -9343,11 +9428,31 @@ const Personas = {
           }).join(' ')
         : '<span class="muted" style="color:var(--text-muted);font-style:italic;font-size:11px">No metrics</span> '
           + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._addHoldingPrompt(\'' + Dashboard.esc(p.id) + '\')">+ add</button>';
+      // While filtering we hide the toggle entirely (rendering is flat).
+      let togglePart = '';
+      if (!filtering) {
+        if (hasChildren(p.id)) {
+          const isCollapsed = collapsedSet.has(p.id);
+          const cls = 'row-toggle' + (isCollapsed ? ' collapsed' : '');
+          const label = isCollapsed ? 'Expand subtree' : 'Collapse subtree';
+          togglePart = '<button type="button" class="' + cls + '" '
+            + 'onclick="event.stopPropagation();Personas._toggleCollapsed(\'' + Dashboard.esc(p.id) + '\')" '
+            + 'aria-expanded="' + (isCollapsed ? 'false' : 'true') + '" '
+            + 'aria-label="' + label + '" title="' + label + '">'
+            + chevronSvg
+            + '</button>';
+        } else {
+          togglePart = '<span class="row-toggle-spacer" aria-hidden="true"></span>';
+        }
+      }
       return '<div class="strategy-row" data-persona-id="' + Dashboard.esc(p.id) + '" '
            +   'style="padding:6px 12px 6px ' + (12 + indentPx) + 'px;border-bottom:1px solid var(--border-light);cursor:pointer" '
            +   'onclick="Personas._openDetail(\'' + Dashboard.esc(p.id) + '\')">'
-           +   '<div class="persona-meta" style="margin-bottom:4px"><strong>' + Dashboard.esc(p.name) + '</strong>'
-           +     ' <span class="role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(p.role_title || '') + '</span></div>'
+           +   '<div class="persona-meta" style="margin-bottom:4px;display:flex;align-items:center">'
+           +     togglePart
+           +     '<strong>' + Dashboard.esc(p.name) + '</strong>'
+           +     ' <span class="role" style="color:var(--text-muted);font-size:11px;margin-left:6px">' + Dashboard.esc(p.role_title || '') + '</span>'
+           +   '</div>'
            +   '<div class="persona-chips">' + chipsHtml + '</div>'
            + '</div>';
     };
