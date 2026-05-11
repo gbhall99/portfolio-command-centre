@@ -11062,6 +11062,11 @@ const Metrics = {
       + '</div>';
     let html = '<div class="raci-popover" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:240px">'
              + '<div class="title" style="font-weight:700;margin-bottom:6px;font-size:12px">' + Dashboard.esc(m.name) + ' · RACI</div>';
+    // People-level RACI is the live anchor; persona defaults shown after as template.
+    r.raci_people.accountable.forEach(p => html += row('A', p));
+    r.raci_people.responsible.forEach(p => html += row('R', p));
+    r.raci_people.consulted.forEach(p => html += row('C', p));
+    r.raci_people.informed.forEach(p => html += row('I', p));
     r.raci_personas.accountable.forEach(p => html += row('A', p));
     r.raci_personas.responsible.forEach(p => html += row('R', p));
     r.raci_personas.consulted.forEach(p => html += row('C', p));
@@ -11094,30 +11099,102 @@ const Metrics = {
     const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
     const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
     const selectedId = (App.uiStateGet ? App.uiStateGet('strategy.metric.selected') : null) || (metrics[0] && metrics[0].id);
+    const sort = (App.uiStateGet ? App.uiStateGet('strategy.metric.sort') : null) || { by: 'name', dir: 'asc' };
+    const esc = Dashboard.esc;
 
-    const rowHtml = (m) => {
+    // Compute per-row enrichment up front (rollup once per metric).
+    const enriched = metrics.map(m => {
       const r = this.rollup(m.id);
-      const isSel = (m.id === selectedId);
-      const dims = (m.dimensions || []).map(d => '<span class="dim-tag" style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#f0f3f8;color:#444;margin-right:3px">' + Dashboard.esc(d) + '</span>').join(' ');
-      return '<div class="metric-row' + (isSel ? ' selected' : '') + '" '
-           +   'data-metric-id="' + Dashboard.esc(m.id) + '" '
-           +   'onclick="Metrics._select(\'' + Dashboard.esc(m.id) + '\')" '
-           +   'style="display:flex;align-items:stretch;border-bottom:1px solid var(--border-light);cursor:pointer;background:' + (isSel ? 'var(--bg-tertiary)' : 'transparent') + '">'
-           +   '<span class="accent" style="width:4px;background:' + groupSwatch(m.group_id) + '"></span>'
-           +   '<div class="body" style="flex:1;padding:8px 12px">'
-           +     '<div class="top" style="display:flex;align-items:center;gap:8px">'
-           +       '<span class="name" style="font-weight:600;font-size:13px">' + Dashboard.esc(m.name) + '</span>'
-           +       '<span class="status status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:1px 6px;border-radius:10px;background:#eef;color:#334">' + Dashboard.esc(m.status) + '</span>'
-           +     '</div>'
-           +     '<div class="desc" style="font-size:11px;color:var(--text-muted);margin:2px 0">' + Dashboard.esc(m.definition || '') + '</div>'
-           +     '<div class="meta" style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--text-secondary);align-items:center">'
-           +       '<span class="group-tag" style="border-left:3px solid ' + groupSwatch(m.group_id) + ';padding-left:4px">' + Dashboard.esc(groupName(m.group_id)) + '</span>'
-           +       '<span>' + r.holder_count + ' holders</span>'
-           +       dims
-           +     '</div>'
-           +   '</div>'
-           + '</div>';
+      const owner = (r.raci_people.accountable[0]
+        || (r.raci_personas.accountable[0] && { name: r.raci_personas.accountable[0].name + ' (persona)' })
+        || null);
+      return {
+        m,
+        ownerName: owner ? owner.name : '',
+        groupName: groupName(m.group_id),
+        personaCount: r.persona_count || 0,
+        personCount: r.person_count || 0,
+        targetCount: r.target_count || 0,
+      };
+    });
+
+    // Sort.
+    const cmp = (a, b) => {
+      const av = (() => {
+        if (sort.by === 'name')    return a.m.name || '';
+        if (sort.by === 'group')   return a.groupName || '';
+        if (sort.by === 'owner')   return a.ownerName || '';
+        if (sort.by === 'personas')return a.personaCount;
+        if (sort.by === 'people')  return a.personCount;
+        if (sort.by === 'targets') return a.targetCount;
+        if (sort.by === 'status')  return a.m.status || '';
+        if (sort.by === 'updated') return a.m.updated_at || '';
+        return a.m.name || '';
+      })();
+      const bv = (() => {
+        if (sort.by === 'name')    return b.m.name || '';
+        if (sort.by === 'group')   return b.groupName || '';
+        if (sort.by === 'owner')   return b.ownerName || '';
+        if (sort.by === 'personas')return b.personaCount;
+        if (sort.by === 'people')  return b.personCount;
+        if (sort.by === 'targets') return b.targetCount;
+        if (sort.by === 'status')  return b.m.status || '';
+        if (sort.by === 'updated') return b.m.updated_at || '';
+        return b.m.name || '';
+      })();
+      let r = 0;
+      if (typeof av === 'number' && typeof bv === 'number') r = av - bv;
+      else r = String(av).localeCompare(String(bv));
+      return sort.dir === 'desc' ? -r : r;
     };
+    enriched.sort(cmp);
+
+    // Header — clickable for sort.
+    const sortChevron = (key) => {
+      if (sort.by !== key) return '<span style="color:var(--text-faint);margin-left:3px">↕</span>';
+      return '<span style="margin-left:3px">' + (sort.dir === 'asc' ? '▲' : '▼') + '</span>';
+    };
+    const th = (key, label, alignRight) => '<th onclick="Metrics._toggleSort(\'' + key + '\')" '
+      + 'style="text-align:' + (alignRight ? 'right' : 'left') + ';padding:8px 10px;font-size:11px;color:var(--text-muted);'
+      + 'text-transform:uppercase;letter-spacing:0.4px;cursor:pointer;border-bottom:2px solid var(--border-light);background:var(--surface-2)">'
+      + esc(label) + sortChevron(key) + '</th>';
+
+    const rowHtml = ({ m, ownerName, groupName, personaCount, personCount, targetCount }) => {
+      const isSel = (m.id === selectedId);
+      const updated = m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—';
+      const statusColor = m.status === 'live' ? '#5fc995' : (m.status === 'draft' ? '#cfa850' : '#888');
+      return '<tr class="metric-row' + (isSel ? ' selected' : '') + '" '
+           +   'data-metric-id="' + esc(m.id) + '" '
+           +   'onclick="Metrics._select(\'' + esc(m.id) + '\')" '
+           +   'style="cursor:pointer;border-bottom:1px solid var(--border-light);background:' + (isSel ? 'var(--bg-tertiary)' : 'transparent') + '">'
+           +   '<td style="padding:8px 10px"><span class="accent" style="display:inline-block;width:4px;height:14px;background:' + groupSwatch(m.group_id) + ';margin-right:8px;vertical-align:middle;border-radius:2px"></span>'
+           +     '<strong>' + esc(m.name) + '</strong></td>'
+           +   '<td style="padding:8px 10px;font-size:12px">' + esc(groupName) + '</td>'
+           +   '<td style="padding:8px 10px;font-size:12px">' + (ownerName ? esc(ownerName) : '<span class="muted" style="color:var(--text-muted);font-style:italic">—</span>') + '</td>'
+           +   '<td style="padding:8px 10px;font-size:12px;text-align:right">' + personaCount + '</td>'
+           +   '<td style="padding:8px 10px;font-size:12px;text-align:right">' + personCount + '</td>'
+           +   '<td style="padding:8px 10px;font-size:12px;text-align:right">' + targetCount + '</td>'
+           +   '<td style="padding:8px 10px;font-size:11px"><span style="display:inline-flex;align-items:center;gap:4px">'
+           +     '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + statusColor + '"></span>'
+           +     esc(m.status || '') + '</span></td>'
+           +   '<td style="padding:8px 10px;font-size:11px;color:var(--text-muted)">' + updated + '</td>'
+           + '</tr>';
+    };
+
+    const tableHead = '<thead><tr>'
+      + th('name',     'Name')
+      + th('group',    'Group')
+      + th('owner',    'Owner (Accountable)')
+      + th('personas', '# Personas', true)
+      + th('people',   '# People',   true)
+      + th('targets',  'Targets',    true)
+      + th('status',   'Status')
+      + th('updated',  'Updated')
+      + '</tr></thead>';
+
+    const tableBody = enriched.length
+      ? '<tbody>' + enriched.map(rowHtml).join('') + '</tbody>'
+      : '<tbody><tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No metrics defined yet for this customer.</td></tr></tbody>';
 
     const detail = selectedId
       ? this.renderDetailPane(selectedId)
@@ -11125,9 +11202,22 @@ const Metrics = {
 
     return toggle
          + '<div class="strategy-metrics" style="display:flex;height:100%;min-height:400px">'
-         +   '<div class="library-pane" style="flex:0 0 360px;border-right:1px solid var(--border-light);overflow-y:auto">' + metrics.map(rowHtml).join('') + '</div>'
-         +   '<div class="detail-pane" style="flex:1;overflow-y:auto;padding:16px">'  + detail + '</div>'
+         +   '<div class="library-pane" style="flex:1;border-right:1px solid var(--border-light);overflow:auto">'
+         +     '<table class="metric-library-table" style="width:100%;border-collapse:collapse;font-size:13px">'
+         +       tableHead + tableBody
+         +     '</table>'
+         +   '</div>'
+         +   '<div class="detail-pane" style="flex:0 0 480px;overflow-y:auto;padding:16px">' + detail + '</div>'
          + '</div>';
+  },
+
+  _toggleSort(key) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.metric.sort') : null) || { by: 'name', dir: 'asc' };
+    const next = (cur.by === key)
+      ? { by: key, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
+      : { by: key, dir: 'asc' };
+    if (App.uiStateSet) App.uiStateSet('strategy.metric.sort', next);
+    if (App.renderActiveView) App.renderActiveView();
   },
 
   _renderViewToggle(active) {
@@ -11147,94 +11237,103 @@ const Metrics = {
     if (App.renderActiveView) App.renderActiveView();
   },
 
-  // RACI matrix — rows = personas (org-tree order), columns = metrics (group, name).
-  // Cell shows every RACI letter the persona holds on that metric (could be 0..4).
+  // RACI matrix — rows = metrics, columns = People (axis swap, 2026-05).
+  // Tier filter (Heads / Heads + Leaders / All), Department filter, drill-in
+  // by metric or person.
   renderRaciMatrix() {
-    const personas = Personas.list();
-    const metrics  = this.list().slice().sort((a, b) =>
-      ((a.group_id || '') + (a.name || '')).localeCompare((b.group_id || '') + (b.name || '')));
-    const groups  = MetricGroups.list();
-    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
     const esc = Dashboard.esc;
+    const filters = (App.uiStateGet ? App.uiStateGet('strategy.matrix.filters') : null) || {};
+    const tier = filters.tier || 'leaders';   // 'heads' | 'leaders' | 'all'
+    const departments = Array.isArray(filters.departments) ? filters.departments : [];
+    const drillMetricId = filters.drillMetric || null;
+    const drillPersonId = filters.drillPerson || null;
 
-    if (!personas.length || !metrics.length) {
-      const why = !personas.length && !metrics.length ? 'No personas or metrics defined yet.'
-                : !personas.length ? 'No personas defined yet.' : 'No metrics defined yet.';
-      return '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+    const allPeople = (typeof Person !== 'undefined') ? Person.list() : [];
+    const metrics = this.list().slice().sort((a, b) =>
+      ((a.group_id || '') + (a.name || '')).localeCompare((b.group_id || '') + (b.name || '')));
+    const groups = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+
+    if (!allPeople.length || !metrics.length) {
+      const why = !allPeople.length && !metrics.length ? 'No people or metrics defined yet.'
+                : !allPeople.length ? 'No people defined yet — add some in Strategy → People or Settings → People.'
+                : 'No metrics defined yet.';
+      return this._matrixToolbar(filters)
+           + '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
            +   '<div style="margin-bottom:8px">' + esc(why) + '</div>'
            +   '<button class="btn btn-outline btn-sm" onclick="Metrics._setView(\'library\')">Back to Library</button>'
            + '</div>';
     }
 
-    // Order personas by org-tree depth so siblings group naturally.
-    const byId = new Map(personas.map(p => [p.id, p]));
-    const idSet = new Set(personas.map(p => p.id));
-    const childrenByParent = new Map();
-    personas.forEach(p => {
-      const pid = (p.parent_persona_id && idSet.has(p.parent_persona_id)) ? p.parent_persona_id : null;
-      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
-      childrenByParent.get(pid).push(p);
-    });
-    const ordered = [];
-    const visit = (p, depth) => {
-      ordered.push({ p, depth });
-      (childrenByParent.get(p.id) || []).forEach(c => visit(c, depth + 1));
-    };
-    (childrenByParent.get(null) || []).forEach(r => visit(r, 0));
-    // Safety net for any persona not reachable from a root (e.g. orphaned chain).
-    if (ordered.length < personas.length) {
-      personas.forEach(p => { if (!ordered.some(o => o.p.id === p.id)) ordered.push({ p, depth: 0 }); });
+    // ---- Drill-in modes ----
+    if (drillMetricId) {
+      const m = this.byId(drillMetricId);
+      if (m) return this._matrixToolbar(filters) + this._renderMatrixMetricDrill(m);
+    }
+    if (drillPersonId) {
+      const prn = (typeof Person !== 'undefined') ? Person.byId(drillPersonId) : null;
+      if (prn) return this._matrixToolbar(filters) + this._renderMatrixPersonDrill(prn);
     }
 
-    // Build header cells (sticky top + sticky-left corner).
+    // ---- Default tiered view ----
+    // Tier filter: depth ≤ 0 (Heads), ≤ 1 (Heads + Leaders), or all.
+    const tierMax = tier === 'heads' ? 0 : tier === 'all' ? Infinity : 1;
+    let people = allPeople.filter(prn => prn.active !== false && Person.managerDepth(prn.id) <= tierMax);
+    if (departments.length) people = people.filter(prn => departments.includes(prn.department));
+
+    // Filter metrics: only those where at least one visible person has any RACI.
+    const visibleMetrics = metrics.filter(m =>
+      people.some(prn => this.raciFor(m, prn.id))
+    );
+
+    if (!people.length) {
+      return this._matrixToolbar(filters)
+           + '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+           +   'No people match the current filters. Try widening the tier or clearing departments.'
+           + '</div>';
+    }
+
+    // Build header (sticky-left corner + person column heads).
     const cornerStyle = 'position:sticky;left:0;top:0;z-index:3;background:var(--surface-2);'
                       + 'border-right:1px solid var(--border-light);border-bottom:1px solid var(--border-light);'
-                      + 'min-width:200px;padding:8px;text-align:left;font-size:11px;color:var(--text-muted);'
+                      + 'min-width:240px;padding:8px;text-align:left;font-size:11px;color:var(--text-muted);'
                       + 'text-transform:uppercase;letter-spacing:0.4px;font-weight:600';
-    let head = '<thead><tr><th class="raci-corner" style="' + cornerStyle + '">Persona / Metric</th>';
-    metrics.forEach(m => {
-      head += '<th class="raci-col-head" data-metric-id="' + esc(m.id) + '" '
-            + 'onclick="Metrics._jumpToLibrary(\'' + esc(m.id) + '\')" '
+    let head = '<thead><tr><th class="raci-corner" style="' + cornerStyle + '">Metric / Person</th>';
+    people.forEach(prn => {
+      head += '<th class="raci-col-head" data-person-id="' + esc(prn.id) + '" '
+            + 'onclick="Metrics._setMatrixDrill(\'person\', \'' + esc(prn.id) + '\')" '
             + 'style="position:sticky;top:0;z-index:2;background:var(--surface-2);border-bottom:1px solid var(--border-light);'
             + 'border-right:1px solid var(--border-light);padding:6px 4px;cursor:pointer;'
-            + 'min-width:90px;max-width:140px;vertical-align:bottom;font-weight:600;font-size:11px;color:var(--text-dark)" '
-            + 'title="' + esc(m.name) + '">'
-            + '<div style="display:flex;align-items:center;justify-content:center;gap:4px">'
-            +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + '"></span>'
-            + '</div>'
+            + 'min-width:100px;max-width:160px;vertical-align:bottom;font-weight:600;font-size:11px;color:var(--text-dark)" '
+            + 'title="' + esc(prn.name) + (prn.role_title ? ' — ' + esc(prn.role_title) : '') + '">'
             + '<div class="raci-col-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">'
-            +   esc(m.name)
+            +   esc(prn.name)
             + '</div>'
+            + '<div style="font-size:10px;color:var(--text-muted);font-weight:400;text-align:center;margin-top:2px">' + esc(prn.role_title || '') + '</div>'
             + '</th>';
     });
     head += '</tr></thead>';
 
-    // Body rows.
+    // Body — one row per metric.
     let body = '<tbody>';
-    ordered.forEach(({ p, depth }) => {
-      body += '<tr data-persona-id="' + esc(p.id) + '">';
-      body += '<th class="raci-row-head" data-persona-id="' + esc(p.id) + '" '
-            + 'onclick="Personas._openDetail(\'' + esc(p.id) + '\')" '
+    visibleMetrics.forEach(m => {
+      body += '<tr data-metric-id="' + esc(m.id) + '">';
+      body += '<th class="raci-row-head" data-metric-id="' + esc(m.id) + '" '
+            + 'onclick="Metrics._setMatrixDrill(\'metric\', \'' + esc(m.id) + '\')" '
             + 'style="position:sticky;left:0;z-index:1;background:var(--surface);border-right:1px solid var(--border-light);'
-            + 'border-bottom:1px solid var(--border-light);padding:6px 8px 6px ' + (8 + depth * 14) + 'px;'
-            + 'text-align:left;cursor:pointer;font-weight:600;font-size:12px;color:var(--text-dark);min-width:200px">'
-            +   esc(p.name)
-            +   '<span class="role" style="color:var(--text-muted);font-weight:400;font-size:11px;margin-left:6px">' + esc(p.role_title || '') + '</span>'
+            + 'border-bottom:1px solid var(--border-light);padding:6px 8px;'
+            + 'text-align:left;cursor:pointer;font-weight:600;font-size:12px;color:var(--text-dark);min-width:240px">'
+            +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + ';margin-right:6px"></span>'
+            +   esc(m.name)
             + '</th>';
-      metrics.forEach(m => {
-        const letters = [];
-        if (m.raci) {
-          if ((m.raci.accountable || []).includes(p.id)) letters.push('A');
-          if ((m.raci.responsible || []).includes(p.id)) letters.push('R');
-          if ((m.raci.consulted   || []).includes(p.id)) letters.push('C');
-          if ((m.raci.informed    || []).includes(p.id)) letters.push('I');
-        }
-        const inner = letters.length
-          ? letters.map(L => '<span class="raci-letter raci-' + L + '" '
+      people.forEach(prn => {
+        const letters = this.raciFor(m, prn.id);
+        const inner = letters
+          ? letters.split('').map(L => '<span class="raci-letter raci-' + L + '" '
               + 'style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;'
               + 'font-size:10px;font-weight:700;color:white">' + L + '</span>').join(' ')
           : '<span class="raci-empty" style="color:var(--text-faint)">·</span>';
-        body += '<td class="raci-cell" data-persona-id="' + esc(p.id) + '" data-metric-id="' + esc(m.id) + '" '
+        body += '<td class="raci-cell" data-person-id="' + esc(prn.id) + '" data-metric-id="' + esc(m.id) + '" '
               + 'onclick="Metrics._jumpToLibrary(\'' + esc(m.id) + '\')" '
               + 'style="border-right:1px solid var(--border-light);border-bottom:1px solid var(--border-light);'
               + 'padding:6px 4px;text-align:center;cursor:pointer;background:var(--surface)">'
@@ -11243,11 +11342,173 @@ const Metrics = {
       });
       body += '</tr>';
     });
+    if (!visibleMetrics.length) {
+      body += '<tr><td colspan="' + (people.length + 1) + '" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+        + 'No metrics have RACI on the visible people. Try changing the tier filter.</td></tr>';
+    }
     body += '</tbody>';
 
-    // The wrapping <div> establishes the scroll container; sticky headers stay
-    // pinned to it. table-layout:auto so column widths adapt to metric name length.
-    return '<div class="raci-matrix" style="overflow:auto;max-height:calc(100vh - 220px);background:var(--surface)">'
+    return this._matrixToolbar(filters)
+         + '<div class="raci-matrix" style="overflow:auto;max-height:calc(100vh - 260px);background:var(--surface)">'
+         +   '<table class="raci-matrix-table" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%">'
+         +     head + body
+         +   '</table>'
+         + '</div>';
+  },
+
+  _matrixToolbar(filters) {
+    const esc = Dashboard.esc;
+    filters = filters || {};
+    const tier = filters.tier || 'leaders';
+    const departments = Array.isArray(filters.departments) ? filters.departments : [];
+    const drilling = !!(filters.drillMetric || filters.drillPerson);
+    const allDepts = (typeof Person !== 'undefined') ? Person.departments() : [];
+    const tierBtn = (id, label) => '<button type="button" class="btn btn-sm ' + (tier === id ? 'btn-primary' : 'btn-outline') + '" '
+      + 'onclick="Metrics._setMatrixTier(\'' + id + '\')" aria-pressed="' + (tier === id ? 'true' : 'false') + '">' + esc(label) + '</button>';
+    const deptOpts = allDepts.map(d =>
+      '<option value="' + esc(d) + '"' + (departments.includes(d) ? ' selected' : '') + '>' + esc(d) + '</option>').join('');
+    const drillBack = drilling
+      ? '<button type="button" class="btn btn-outline btn-sm" onclick="Metrics._clearMatrixDrill()" style="margin-left:auto">← Back to matrix</button>'
+      : '';
+    return '<div class="matrix-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--surface-2);font-size:11px">'
+         +   '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin-right:4px">Tier:</span>'
+         +   tierBtn('heads',   'Heads')
+         +   tierBtn('leaders', 'Heads + Leaders')
+         +   tierBtn('all',     'All')
+         +   '<label style="margin-left:12px">Department <select multiple onchange="Metrics._setMatrixDepartments(this)" style="font-size:11px;min-width:140px;height:60px">' + deptOpts + '</select></label>'
+         +   drillBack
+         + '</div>';
+  },
+
+  _setMatrixTier(tier) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.matrix.filters') : null) || {};
+    cur.tier = tier;
+    if (App.uiStateSet) App.uiStateSet('strategy.matrix.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _setMatrixDepartments(sel) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.matrix.filters') : null) || {};
+    cur.departments = Array.from(sel.selectedOptions).map(o => o.value).filter(Boolean);
+    if (App.uiStateSet) App.uiStateSet('strategy.matrix.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _setMatrixDrill(kind, id) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.matrix.filters') : null) || {};
+    if (kind === 'metric') { cur.drillMetric = id; delete cur.drillPerson; }
+    else if (kind === 'person') { cur.drillPerson = id; delete cur.drillMetric; }
+    if (App.uiStateSet) App.uiStateSet('strategy.matrix.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _clearMatrixDrill() {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.matrix.filters') : null) || {};
+    delete cur.drillMetric;
+    delete cur.drillPerson;
+    if (App.uiStateSet) App.uiStateSet('strategy.matrix.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // Metric drill — single metric row, columns = ALL persons with RACI on it,
+  // grouped by department.
+  _renderMatrixMetricDrill(metric) {
+    const esc = Dashboard.esc;
+    const allPeople = (typeof Person !== 'undefined') ? Person.list() : [];
+    const owners = allPeople.filter(prn => this.raciFor(metric, prn.id));
+    if (!owners.length) {
+      return '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+        + '<div style="margin-bottom:8px">No people have RACI on <strong>' + esc(metric.name) + '</strong>.</div>'
+        + '</div>';
+    }
+    // Group by department.
+    const byDept = new Map();
+    owners.forEach(prn => {
+      const k = prn.department || '—';
+      if (!byDept.has(k)) byDept.set(k, []);
+      byDept.get(k).push(prn);
+    });
+    const deptOrdered = [...byDept.keys()].sort();
+    const cols = [];
+    deptOrdered.forEach(d => byDept.get(d).forEach(prn => cols.push({ prn, dept: d })));
+    const groups = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+
+    let head = '<thead><tr><th style="position:sticky;left:0;background:var(--surface-2);padding:8px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-light);min-width:200px">Metric</th>';
+    let groupRow = '<tr><th style="position:sticky;left:0;background:var(--surface-2);padding:6px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border-light)"></th>';
+    let lastDept = null;
+    cols.forEach(({ prn, dept }) => {
+      const sameDept = (dept === lastDept);
+      head += '<th onclick="Metrics._setMatrixDrill(\'person\', \'' + esc(prn.id) + '\')" '
+        + 'style="background:var(--surface-2);padding:6px 4px;cursor:pointer;font-size:11px;border-bottom:1px solid var(--border-light);border-right:1px solid var(--border-light);min-width:100px">'
+        + '<div style="text-align:center">' + esc(prn.name) + '</div>'
+        + '<div style="text-align:center;font-size:10px;color:var(--text-muted);font-weight:400">' + esc(prn.role_title || '') + '</div>'
+        + '</th>';
+      groupRow += '<th style="background:var(--surface-2);padding:2px 4px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border-light);text-align:center">'
+        + (sameDept ? '' : esc(dept)) + '</th>';
+      lastDept = dept;
+    });
+    head += '</tr>' + groupRow + '</tr></thead>';
+
+    let body = '<tbody><tr><th style="position:sticky;left:0;background:var(--surface);padding:6px 8px;font-weight:600;font-size:12px;border-bottom:1px solid var(--border-light);border-right:1px solid var(--border-light)">'
+      + '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(metric.group_id) + ';margin-right:6px"></span>'
+      + esc(metric.name) + '</th>';
+    cols.forEach(({ prn }) => {
+      const letters = this.raciFor(metric, prn.id);
+      const inner = letters
+        ? letters.split('').map(L => '<span class="raci-letter raci-' + L + '" '
+            + 'style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;'
+            + 'font-size:10px;font-weight:700;color:white">' + L + '</span>').join(' ')
+        : '<span class="raci-empty" style="color:var(--text-faint)">·</span>';
+      body += '<td onclick="Metrics._jumpToLibrary(\'' + esc(metric.id) + '\')" style="cursor:pointer;text-align:center;padding:6px 4px;border-bottom:1px solid var(--border-light);border-right:1px solid var(--border-light);background:var(--surface)">'
+        + inner + '</td>';
+    });
+    body += '</tr></tbody>';
+
+    return '<div class="raci-matrix matrix-drill-metric" style="overflow:auto;max-height:calc(100vh - 260px);background:var(--surface)">'
+         +   '<table class="raci-matrix-table" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%">'
+         +     head + body
+         +   '</table>'
+         + '</div>';
+  },
+
+  // Person drill — single person column, rows = all metrics they have RACI on.
+  _renderMatrixPersonDrill(person) {
+    const esc = Dashboard.esc;
+    const ra = (typeof Person !== 'undefined') ? Person.raciAppearances(person.id) : { accountable:[], responsible:[], consulted:[], informed:[] };
+    const all = [];
+    const seen = new Set();
+    ['accountable','responsible','consulted','informed'].forEach(role => {
+      (ra[role] || []).forEach(m => { if (!seen.has(m.id)) { seen.add(m.id); all.push(m); } });
+    });
+    if (!all.length) {
+      return '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+        + '<div style="margin-bottom:8px"><strong>' + esc(person.name) + '</strong> has no RACI assignments.</div>'
+        + '</div>';
+    }
+    const groups = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    const head = '<thead><tr>'
+      + '<th style="position:sticky;left:0;background:var(--surface-2);padding:8px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-light);min-width:240px">Metric</th>'
+      + '<th style="background:var(--surface-2);padding:8px;font-size:11px;border-bottom:1px solid var(--border-light)">'
+      + '<div style="text-align:center">' + esc(person.name) + '</div>'
+      + '<div style="text-align:center;font-size:10px;color:var(--text-muted);font-weight:400">' + esc(person.role_title || '') + '</div>'
+      + '</th></tr></thead>';
+    let body = '<tbody>';
+    all.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(m => {
+      const letters = this.raciFor(m, person.id);
+      const inner = letters.split('').map(L => '<span class="raci-letter raci-' + L + '" '
+          + 'style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;'
+          + 'font-size:10px;font-weight:700;color:white">' + L + '</span>').join(' ');
+      body += '<tr><th onclick="Metrics._setMatrixDrill(\'metric\', \'' + esc(m.id) + '\')" '
+        + 'style="position:sticky;left:0;background:var(--surface);padding:6px 8px;text-align:left;cursor:pointer;font-weight:600;font-size:12px;border-bottom:1px solid var(--border-light);border-right:1px solid var(--border-light)">'
+        + '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + ';margin-right:6px"></span>'
+        + esc(m.name) + '</th>'
+        + '<td onclick="Metrics._jumpToLibrary(\'' + esc(m.id) + '\')" style="cursor:pointer;text-align:center;padding:6px 4px;border-bottom:1px solid var(--border-light)">'
+        + inner + '</td></tr>';
+    });
+    body += '</tbody>';
+    return '<div class="raci-matrix matrix-drill-person" style="overflow:auto;max-height:calc(100vh - 260px);background:var(--surface)">'
          +   '<table class="raci-matrix-table" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%">'
          +     head + body
          +   '</table>'
@@ -11299,16 +11560,25 @@ const Metrics = {
       ? r.served_objectives.map(o => '<span class="obj-chip" style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:#eef2f7;margin-right:4px">' + Dashboard.esc(o.name) + '</span>').join(' ')
       : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
 
-    const raciRow = (letter, persona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:3px 0">'
+    const raciRow = (letter, who, isPersona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:3px 0">'
       +   '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#eef;color:#334;font-size:10px;font-weight:700">' + letter + '</span>'
-      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(persona.name) + '</span>'
-      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span>'
+      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(who.name) + '</span>'
+      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(who.role_title || '') + (isPersona ? ' (persona)' : '') + '</span>'
       + '</div>';
+    // Person-level RACI (the live anchor) first, then persona-level defaults if non-empty.
+    let peopleRaciHtml = '';
+    r.raci_people.accountable.forEach(p => peopleRaciHtml += raciRow('A', p, false));
+    r.raci_people.responsible.forEach(p => peopleRaciHtml += raciRow('R', p, false));
+    r.raci_people.consulted.forEach(p => peopleRaciHtml += raciRow('C', p, false));
+    r.raci_people.informed.forEach(p => peopleRaciHtml += raciRow('I', p, false));
+    let defaultsRaciHtml = '';
+    r.raci_personas.accountable.forEach(p => defaultsRaciHtml += raciRow('A', p, true));
+    r.raci_personas.responsible.forEach(p => defaultsRaciHtml += raciRow('R', p, true));
+    r.raci_personas.consulted.forEach(p => defaultsRaciHtml += raciRow('C', p, true));
+    r.raci_personas.informed.forEach(p => defaultsRaciHtml += raciRow('I', p, true));
     let raciHtml = '';
-    r.raci_personas.accountable.forEach(p => raciHtml += raciRow('A', p));
-    r.raci_personas.responsible.forEach(p => raciHtml += raciRow('R', p));
-    r.raci_personas.consulted.forEach(p => raciHtml += raciRow('C', p));
-    r.raci_personas.informed.forEach(p => raciHtml += raciRow('I', p));
+    if (peopleRaciHtml) raciHtml += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin:4px 0 4px">Assigned (people)</div>' + peopleRaciHtml;
+    if (defaultsRaciHtml) raciHtml += '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;margin:8px 0 4px">Persona defaults</div>' + defaultsRaciHtml;
     if (!raciHtml) raciHtml = '<span class="muted" style="color:var(--text-muted);font-style:italic">no RACI assigned</span>';
 
     const cascadeRow = ({ persona, holding }) => {
