@@ -9102,7 +9102,97 @@ const Personas = {
     return { descendants, holdings, held_metrics, contributing_objectives, supporting_projects, raci_appearances };
   },
 
-  renderInventoryTab() { return '<!-- TODO: Personas inventory -->'; },
+  renderInventoryTab() {
+    const personas = this.list();
+    const groups = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+
+    // Order: roots first, then sorted depth-first traversal
+    const roots = personas.filter(p => !p.parent_persona_id);
+    const ordered = [];
+    const visit = (p, depth) => {
+      ordered.push({ p, depth });
+      personas.filter(c => c.parent_persona_id === p.id).forEach(c => visit(c, depth + 1));
+    };
+    roots.forEach(r => visit(r, 0));
+    // Append any orphan personas whose parent isn't in this customer set
+    personas.filter(p => p.parent_persona_id && !personas.some(q => q.id === p.parent_persona_id))
+      .forEach(p => { if (!ordered.find(o => o.p.id === p.id)) visit(p, 0); });
+
+    const rowHtml = ({ p, depth }) => {
+      const indentPx = depth * 18;
+      const holdings = p.metric_holdings || [];
+      const chipsHtml = holdings.length
+        ? holdings.map(h => {
+            const m = Metrics.byId(h.metric_id);
+            if (!m) return '';
+            const dot = m.status === 'live' ? '#5fc995' : '#6a7488';
+            const swatch = groupSwatch(m.group_id);
+            const filterEntries = Object.entries(h.filter || {});
+            const filterTag = filterEntries.length
+              ? '<span class="filter-tag" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#eef;color:#334">' + Dashboard.esc(filterEntries.map(([k,v]) => k + ': ' + v).join(', ')) + '</span>'
+              : '';
+            const raciCount = ['responsible','consulted','informed']
+              .reduce((n, role) => n + ((m.raci && m.raci[role] && m.raci[role].length) || 0), 0);
+            const raciBadge = raciCount > 0
+              ? '<button class="raci-badge" data-metric-id="' + Dashboard.esc(m.id) + '" onclick="event.stopPropagation();Metrics._showRaciPopover(\'' + Dashboard.esc(m.id) + '\',event)" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#fef3c7;color:#7c5e00;border:0;cursor:pointer">+' + raciCount + '</button>'
+              : '';
+            return '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
+                 +   '<span class="chip-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dot + '"></span>'
+                 +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + swatch + '"></span>'
+                 +   Dashboard.esc(m.name)
+                 +   filterTag
+                 +   raciBadge
+                 + '</span>';
+          }).join(' ')
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic;font-size:11px">No metrics</span> '
+          + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._addHoldingPrompt(\'' + Dashboard.esc(p.id) + '\')">+ add</button>';
+      return '<div class="strategy-row" data-persona-id="' + Dashboard.esc(p.id) + '" '
+           +   'style="padding:6px 12px 6px ' + (12 + indentPx) + 'px;border-bottom:1px solid var(--border-light);cursor:pointer" '
+           +   'onclick="Personas._openDetail(\'' + Dashboard.esc(p.id) + '\')">'
+           +   '<div class="persona-meta" style="margin-bottom:4px"><strong>' + Dashboard.esc(p.name) + '</strong>'
+           +     ' <span class="role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(p.role_title || '') + '</span></div>'
+           +   '<div class="persona-chips">' + chipsHtml + '</div>'
+           + '</div>';
+    };
+
+    return '<div class="strategy-personas">'
+         +   ordered.map(rowHtml).join('')
+         + '</div>';
+  },
+
+  _openDetail(id) {
+    // TODO: open detail panel for the persona
+    console.log('open persona detail', id);
+  },
+
+  _addHoldingPrompt(personaId) {
+    const p = this.byId(personaId);
+    if (!p) return;
+    const metrics = Metrics.list();
+    if (!metrics.length) { alert('No metrics defined yet for this customer.'); return; }
+    const list = metrics.map((m, i) => (i + 1) + ') ' + m.name + ' [' + m.id + ']').join('\n');
+    const sel = prompt('Pick a metric (id or number):\n' + list);
+    if (!sel) return;
+    let metric = metrics.find(m => m.id === sel.trim());
+    if (!metric) {
+      const idx = parseInt(sel.trim(), 10);
+      if (!isNaN(idx) && idx >= 1 && idx <= metrics.length) metric = metrics[idx - 1];
+    }
+    if (!metric) { alert('Metric not found.'); return; }
+    let filter = {};
+    if ((metric.dimensions || []).length) {
+      const filterText = prompt('Filter (optional, "key=value, key=value"):', '');
+      if (filterText) {
+        filterText.split(',').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => (s || '').trim());
+          if (k && v) filter[k] = v;
+        });
+      }
+    }
+    this.addHolding(personaId, { metric_id: metric.id, filter, targets: [] });
+    if (App.renderActiveView) App.renderActiveView();
+  },
 };
 
 /* ============================================================
