@@ -19,7 +19,10 @@ describe('Strategy — Personas inventory', () => {
     expect(out).toContain('Sarah Chen');
     expect(out).toContain('Diane Yuen');
     expect(out).toContain('Revenue');
-    expect(out).toContain('region: North');
+    // Tabular layout: filter dimensions are surfaced via the toolbar Dimension
+    // dropdown rather than per-row tags.
+    expect(out).toContain('strategy-table');
+    expect(out).toContain('strategy-toolbar');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-personas.html');
     app.teardown();
   });

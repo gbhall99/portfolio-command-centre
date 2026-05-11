@@ -45,25 +45,26 @@ describe('Personas module', () => {
       personas: [a, b],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    expect(app.Personas.cycleCheck('P1', 'P1')).toBe(false);   // self-parent rejected
-    expect(app.Personas.cycleCheck('P1', 'P2')).toBe(false);   // would create cycle (P1→P2→P1)
-    expect(app.Personas.cycleCheck('P2', 'P1')).toBe(true);    // valid (P2's parent stays P1)
+    expect(app.Personas.cycleCheck('P1', 'P1')).toBe(false);
+    expect(app.Personas.cycleCheck('P1', 'P2')).toBe(false);
+    expect(app.Personas.cycleCheck('P2', 'P1')).toBe(true);
     app.teardown();
   });
 });
 
-describe('Personas hierarchy collapse', () => {
-  // Helper: extract just the rendered persona row IDs (ignoring the toolbar
-  // which always lists every persona in its filter <select>s).
+describe('Personas — tabular inventory', () => {
+  // After the 2026-05 tabular rework, the Personas tab is a flat schema-driven
+  // table sorted by name / role / parent-hierarchy. Tree collapse is gone; the
+  // data model (parent_persona_id) is unchanged and drives the Parent column.
   const extractRowIds = (html) => {
     const ids = [];
-    const re = /<div class="strategy-row"[^>]*data-persona-id="([^"]+)"/g;
+    const re = /<tr class="strategy-row-tr[^"]*"[^>]*data-id="([^"]+)"/g;
     let m;
     while ((m = re.exec(html)) !== null) ids.push(m[1]);
     return ids;
   };
 
-  it('descendants of a collapsed ancestor are hidden in renderInventoryTab', async () => {
+  it('renders every persona as a flat table row', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO', parent_persona_id: null });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -73,21 +74,12 @@ describe('Personas hierarchy collapse', () => {
       personas: [ceo, cfo, finM],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    // Default: all expanded
-    let html = app.Personas.renderInventoryTab();
-    expect(extractRowIds(html)).toEqual(['P1', 'P2', 'P3']);
-    // Collapse the CEO
-    app.Personas._toggleCollapsed('P1');
-    html = app.Personas.renderInventoryTab();
-    expect(extractRowIds(html)).toEqual(['P1']);
-    // Re-expand
-    app.Personas._toggleCollapsed('P1');
-    html = app.Personas.renderInventoryTab();
-    expect(extractRowIds(html)).toEqual(['P1', 'P2', 'P3']);
+    const html = app.Personas.renderInventoryTab();
+    expect(extractRowIds(html).sort()).toEqual(['P1', 'P2', 'P3']);
     app.teardown();
   });
 
-  it('_setAllCollapsed(true) hides every descendant of every parent', async () => {
+  it('search filter narrows the visible rows', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO' });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -96,32 +88,12 @@ describe('Personas hierarchy collapse', () => {
       personas: [ceo, cfo],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    app.Personas._setAllCollapsed(true);
-    expect(extractRowIds(app.Personas.renderInventoryTab())).toEqual(['P1']);
-    app.Personas._setAllCollapsed(false);
-    expect(extractRowIds(app.Personas.renderInventoryTab())).toEqual(['P1', 'P2']);
-    app.teardown();
-  });
-
-  it('a search filter forces a flat render (collapse ignored)', async () => {
-    resetIdSeq();
-    const ceo = makePersona({ id: 'P1', name: 'CEO' });
-    const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
-    const app = await loadApp(makeDataset({
-      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      personas: [ceo, cfo],
-    }));
-    app.App.activeCustomer = 'Acme Industries';
-    app.Personas._toggleCollapsed('P1');  // collapsed
-    // Sanity: without a filter, CFO is hidden by the collapse.
-    expect(extractRowIds(app.Personas.renderInventoryTab())).toEqual(['P1']);
-    // Apply a search filter — collapse is ignored, CEO doesn't match.
     app.App.uiStateSet('strategy.personas.filters', { search: 'CFO' });
     expect(extractRowIds(app.Personas.renderInventoryTab())).toEqual(['P2']);
     app.teardown();
   });
 
-  it('persists the collapsed set to App.uiState', async () => {
+  it('parent_persona_id data is preserved and _depthOf reflects hierarchy', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO' });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -130,29 +102,21 @@ describe('Personas hierarchy collapse', () => {
       personas: [ceo, cfo],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    expect(app.App.uiStateGet('strategy.personas.collapsed')).toBeNull();
-    app.Personas._toggleCollapsed('P1');
-    expect(app.App.uiStateGet('strategy.personas.collapsed')).toEqual(['P1']);
-    expect(app.Personas._isCollapsed('P1')).toBe(true);
-    expect(app.Personas._isCollapsed('P2')).toBe(false);
-    app.Personas._toggleCollapsed('P1');
-    expect(app.App.uiStateGet('strategy.personas.collapsed')).toBeNull();
+    expect(app.Personas.byId('P2').parent_persona_id).toBe('P1');
+    expect(app.Personas._depthOf('P2')).toBe(1);
+    expect(app.Personas._depthOf('P1')).toBe(0);
     app.teardown();
   });
 });
 
 describe('Personas rich definition fields', () => {
-  // After the 2026-05 Person rework: tools and decisions have been removed
-  // from the persona schema; the rest stay as the role-level template.
   const NEW_FIELDS_STR = ['goals', 'pain_points', 'information_needs', 'stakeholders', 'communication_prefs'];
 
   it('migration seeds the new string fields and business_questions array on legacy personas', async () => {
-    // Build a dataset with a persona that has none of the new fields.
     const legacy = {
       id: 'P-LEGACY', customer: 'Acme Industries', name: 'Old', role_title: '',
       definition: '', key_responsibilities: '', parent_persona_id: null,
       metric_holdings: [], notes: '',
-      // Deliberately omit business_questions and all new fields.
     };
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
@@ -165,7 +129,6 @@ describe('Personas rich definition fields', () => {
     });
     expect(Array.isArray(p.business_questions)).toBe(true);
     expect(p.business_questions).toHaveLength(0);
-    // tools and decisions are dropped, not seeded.
     expect('tools' in p).toBe(false);
     expect('decisions' in p).toBe(false);
     app.teardown();
@@ -183,7 +146,6 @@ describe('Personas rich definition fields', () => {
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       personas: [populated],
     }));
-    // Re-run migration; it should be a no-op for populated fields.
     app.App.migrateSchema(app.App.data);
     app.App.activeCustomer = 'Acme Industries';
     const p = app.Personas.byId('P-POP');

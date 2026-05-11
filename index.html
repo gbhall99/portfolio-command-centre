@@ -9227,6 +9227,14 @@ const Personas = {
     return rec;
   },
 
+  _addPrompt() {
+    const name = (typeof prompt === 'function') ? prompt('Persona name:') : null;
+    if (!name || !name.trim()) return;
+    const role = (typeof prompt === 'function') ? (prompt('Role title (optional):') || '') : '';
+    this.add({ name: name.trim(), role_title: role.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
   update(id, patch) {
     const p = this.byId(id);
     if (!p) return null;
@@ -9493,104 +9501,175 @@ const Personas = {
     return false;
   },
 
+  COLUMNS: [
+    { id: 'name', label: 'Persona', width: 240, alwaysOn: true, sortable: true,
+      render: (p) => {
+        const depth = Personas._depthOf(p.id);
+        const indent = depth > 0 ? ('<span style="color:var(--text-muted);margin-right:6px">' + '└─ '.repeat(1) + '</span>') : '';
+        const padLeft = depth > 0 ? 'padding-left:' + (depth * 12) + 'px;' : '';
+        return '<span style="' + padLeft + 'display:inline-flex;align-items:center"><strong>' + indent + Dashboard.esc(p.name) + '</strong></span>';
+      },
+      edit: { type: 'text', field: 'name' } },
+    { id: 'role_title', label: 'Role', width: 180, alwaysOn: true, sortable: true,
+      render: (p) => Dashboard.esc(p.role_title || '—'),
+      edit: { type: 'text', field: 'role_title' } },
+    { id: 'parent_persona_id', label: 'Parent', width: 160, sortable: true,
+      render: (p) => {
+        if (!p.parent_persona_id) return '<span style="color:var(--text-muted)">—</span>';
+        const par = Personas.byId(p.parent_persona_id);
+        if (!par) return '<span style="color:var(--text-muted)">unknown</span>';
+        return '<span class="chip" style="cursor:pointer" onclick="event.stopPropagation();Personas._openDetail(\''
+             + Dashboard.esc(p.parent_persona_id) + '\')">' + Dashboard.esc(par.name) + '</span>';
+      },
+      edit: {
+        type: 'select', field: 'parent_persona_id',
+        options: (entity) => [{ value: '', label: '— top of org —' }].concat(
+          Personas.list().filter(x => x.id !== (entity && entity.id) && Personas.cycleCheck(entity && entity.id, x.id))
+            .map(x => ({ value: x.id, label: x.name }))
+        ),
+      } },
+    { id: 'metrics', label: 'Held metrics', width: 280, alwaysOn: true,
+      render: (p) => {
+        const holdings = p.metric_holdings || [];
+        if (!holdings.length) return '<span style="color:var(--text-muted);font-style:italic">No metrics</span>';
+        const groups = MetricGroups.list();
+        const swatchOf = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+        return holdings.slice(0, 4).map(h => {
+          const m = Metrics.byId(h.metric_id);
+          if (!m) return '';
+          const dot = m.status === 'live' ? '#5fc995' : '#6a7488';
+          return '<span class="chip" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer" onclick="event.stopPropagation();Strategy.setActiveTab(\'metrics\');setTimeout(()=>Metrics._jumpToLibrary && Metrics._jumpToLibrary(\''
+               + Dashboard.esc(m.id) + '\'),60)">'
+               + '<span class="chip-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dot + '"></span>'
+               + '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + swatchOf(m.group_id) + '"></span>'
+               + Dashboard.esc(m.name) + '</span>';
+        }).join(' ') + (holdings.length > 4 ? ' <span style="color:var(--text-muted);font-size:11px">+' + (holdings.length - 4) + '</span>' : '');
+      } },
+    { id: 'people_count', label: 'People', width: 80,
+      render: (p) => {
+        const n = (typeof Person !== 'undefined') ? Person.byPersonaId(p.id).length : 0;
+        if (!n) return '<span style="color:var(--text-muted)">—</span>';
+        return '<span class="chip" style="cursor:pointer" onclick="event.stopPropagation();Person._setFilter(\'persona_id\',\''
+             + Dashboard.esc(p.id) + '\');Strategy.setActiveTab(\'people\')">' + n + '</span>';
+      } },
+    { id: 'raci_badge', label: 'RACI defaults', width: 130,
+      render: (p) => {
+        const counts = { A: 0, R: 0, C: 0, I: 0 };
+        Metrics.list().forEach(m => {
+          ['accountable','responsible','consulted','informed'].forEach(role => {
+            if (m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(p.id)) {
+              counts[role[0].toUpperCase()] += 1;
+            }
+          });
+        });
+        const total = counts.A + counts.R + counts.C + counts.I;
+        if (!total) return '<span style="color:var(--text-muted)">—</span>';
+        return ['A','R','C','I'].filter(l => counts[l] > 0).map(l =>
+          '<span class="raci-letter raci-' + l + '" title="' + counts[l] + ' as ' + l + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px">' + l + '</span>'
+        ).join('');
+      } },
+  ],
+
+  _depthOf(id) {
+    let depth = 0;
+    let cur = this.byId(id);
+    const seen = new Set();
+    while (cur && cur.parent_persona_id && !seen.has(cur.parent_persona_id)) {
+      seen.add(cur.parent_persona_id);
+      cur = this.byId(cur.parent_persona_id);
+      if (!cur) break;
+      depth += 1;
+    }
+    return depth;
+  },
+
+  _getColumnPrefs() {
+    const saved = (App.uiStateGet ? App.uiStateGet('strategy.personas.columns') : null);
+    if (saved && Array.isArray(saved.visible)) return saved;
+    return { visible: this.COLUMNS.filter(c => c.alwaysOn).map(c => c.id) };
+  },
+  _setColumnVisible(id, v) {
+    const prefs = this._getColumnPrefs();
+    const set = new Set(prefs.visible);
+    if (v) set.add(id); else set.delete(id);
+    if (App.uiStateSet) App.uiStateSet('strategy.personas.columns', { visible: Array.from(set) });
+  },
+  _resetColumns() { if (App.uiStateSet) App.uiStateSet('strategy.personas.columns', null); },
+  _visibleColumns() {
+    const prefs = this._getColumnPrefs();
+    const visibleSet = new Set(prefs.visible);
+    return this.COLUMNS.filter(c => c.alwaysOn || visibleSet.has(c.id));
+  },
+
   renderInventoryTab() {
     const filters = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
-    const toolbar = this._renderToolbar(filters);
-    const personas = this.applyFilters(filters);
-    const groups = MetricGroups.list();
-    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
-    const filtering = this._hasActiveFilters(filters);
-    const collapsedSet = filtering ? new Set() : this._loadCollapsed();
-
-    // Build a parent -> children index over the personas in scope.
-    const idSet = new Set(personas.map(p => p.id));
-    const childrenByParent = new Map();
-    personas.forEach(p => {
-      const pid = (p.parent_persona_id && idSet.has(p.parent_persona_id)) ? p.parent_persona_id : null;
-      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
-      childrenByParent.get(pid).push(p);
-    });
-    const hasChildren = (id) => (childrenByParent.get(id) || []).length > 0;
-
-    // Order: depth-first traversal. When filtering we render flat (depth = 0,
-    // no nesting). When not filtering we honour the collapsed set and skip
-    // descendants of any collapsed ancestor.
-    const ordered = [];
-    if (filtering) {
-      personas.forEach(p => ordered.push({ p, depth: 0 }));
-    } else {
-      const roots = childrenByParent.get(null) || [];
-      const visit = (p, depth) => {
-        ordered.push({ p, depth });
-        if (collapsedSet.has(p.id)) return;
-        (childrenByParent.get(p.id) || []).forEach(c => visit(c, depth + 1));
-      };
-      roots.forEach(r => visit(r, 0));
-    }
-
-    const chevronSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
-
-    const rowHtml = ({ p, depth }) => {
-      const indentPx = depth * 18;
-      const holdings = p.metric_holdings || [];
-      const chipsHtml = holdings.length
-        ? holdings.map(h => {
-            const m = Metrics.byId(h.metric_id);
-            if (!m) return '';
-            const dot = m.status === 'live' ? '#5fc995' : '#6a7488';
-            const swatch = groupSwatch(m.group_id);
-            const filterEntries = Object.entries(h.filter || {});
-            const filterTag = filterEntries.length
-              ? '<span class="filter-tag" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#eef;color:#334">' + Dashboard.esc(filterEntries.map(([k,v]) => k + ': ' + v).join(', ')) + '</span>'
-              : '';
-            const raciCount = ['responsible','consulted','informed']
-              .reduce((n, role) => n + ((m.raci && m.raci[role] && m.raci[role].length) || 0), 0);
-            const raciBadge = raciCount > 0
-              ? '<button class="raci-badge" data-metric-id="' + Dashboard.esc(m.id) + '" onclick="event.stopPropagation();Metrics._showRaciPopover(\'' + Dashboard.esc(m.id) + '\',event)" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#fef3c7;color:#7c5e00;border:0;cursor:pointer">+' + raciCount + '</button>'
-              : '';
-            return '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
-                 +   '<span class="chip-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dot + '"></span>'
-                 +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + swatch + '"></span>'
-                 +   Dashboard.esc(m.name)
-                 +   filterTag
-                 +   raciBadge
-                 + '</span>';
-          }).join(' ')
-        : '<span class="muted" style="color:var(--text-muted);font-style:italic;font-size:11px">No metrics</span> '
-          + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._addHoldingPrompt(\'' + Dashboard.esc(p.id) + '\')">+ add</button>';
-      // While filtering we hide the toggle entirely (rendering is flat).
-      let togglePart = '';
-      if (!filtering) {
-        if (hasChildren(p.id)) {
-          const isCollapsed = collapsedSet.has(p.id);
-          const cls = 'row-toggle' + (isCollapsed ? ' collapsed' : '');
-          const label = isCollapsed ? 'Expand subtree' : 'Collapse subtree';
-          togglePart = '<button type="button" class="' + cls + '" '
-            + 'onclick="event.stopPropagation();Personas._toggleCollapsed(\'' + Dashboard.esc(p.id) + '\')" '
-            + 'aria-expanded="' + (isCollapsed ? 'false' : 'true') + '" '
-            + 'aria-label="' + label + '" title="' + label + '">'
-            + chevronSvg
-            + '</button>';
-        } else {
-          togglePart = '<span class="row-toggle-spacer" aria-hidden="true"></span>';
-        }
+    const list = this.applyFilters(filters);
+    const sortBy = filters.sortBy || 'name';
+    const sorted = list.slice().sort((a, b) => {
+      if (sortBy === 'parent_persona_id') {
+        const da = Personas._depthOf(a.id);
+        const db = Personas._depthOf(b.id);
+        if (da !== db) return da - db;
+        return String(a.name || '').localeCompare(String(b.name || ''));
       }
-      return '<div class="strategy-row" data-persona-id="' + Dashboard.esc(p.id) + '" '
-           +   'style="padding:6px 12px 6px ' + (12 + indentPx) + 'px;border-bottom:1px solid var(--border-light);cursor:pointer" '
-           +   'onclick="Personas._openDetail(\'' + Dashboard.esc(p.id) + '\')">'
-           +   '<div class="persona-meta" style="margin-bottom:4px;display:flex;align-items:center">'
-           +     togglePart
-           +     '<strong>' + Dashboard.esc(p.name) + '</strong>'
-           +     ' <span class="role" style="color:var(--text-muted);font-size:11px;margin-left:6px">' + Dashboard.esc(p.role_title || '') + '</span>'
-           +   '</div>'
-           +   '<div class="persona-chips">' + chipsHtml + '</div>'
-           + '</div>';
-    };
+      const av = String(a[sortBy] || '').toLowerCase();
+      const bv = String(b[sortBy] || '').toLowerCase();
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    });
+    const header = Strategy._renderTabHeader({
+      title: 'Personas',
+      subtitle: 'Role archetypes that own metrics. People inherit each persona’s holdings and RACI defaults.',
+      action: '<button class="btn btn-outline btn-sm" onclick="Personas._addPrompt && Personas._addPrompt()">+ New persona</button>',
+    });
+    const toolbar = this._renderUnifiedToolbar(filters);
+    if (!sorted.length) {
+      return header + toolbar + '<div class="strategy-empty">No personas match these filters.</div>';
+    }
+    const table = Strategy._renderTable({
+      source: 'strategy.personas',
+      columns: this._visibleColumns(),
+      rows: sorted,
+      rowId: (e) => e.id,
+    });
+    return header + toolbar + table;
+  },
 
-    return '<div class="strategy-personas">'
-         +   toolbar
-         +   ordered.map(rowHtml).join('')
-         + '</div>';
+  _renderUnifiedToolbar(filters) {
+    const dims = new Set();
+    Metrics.list().forEach(m => (m.dimensions || []).forEach(d => dims.add(d)));
+    const periods = new Set();
+    this.list().forEach(p => (p.metric_holdings || []).forEach(h => (h.targets || []).forEach(t => periods.add(t.period))));
+    const personas = this.list();
+    const filtersSpec = [
+      { label: 'Status', onChange: "Personas._setFilter('status', this.value)",
+        options: [
+          { value: 'all', label: 'All', selected: !filters.status || filters.status === 'all' },
+          { value: 'live', label: 'Live', selected: filters.status === 'live' },
+          { value: 'draft', label: 'Draft', selected: filters.status === 'draft' },
+        ] },
+      { label: 'RACI involves', onChange: "Personas._setFilter('raciInvolved', this.value || null)",
+        options: [{ value: '', label: 'Any', selected: !filters.raciInvolved }].concat(
+          personas.map(p => ({ value: p.id, label: p.name, selected: filters.raciInvolved === p.id }))) },
+      { label: 'Dimension', onChange: "Personas._setFilter('dimension', this.value || null)",
+        options: [{ value: '', label: 'Any', selected: !filters.dimension }].concat(
+          [...dims].map(d => ({ value: d, label: d, selected: filters.dimension === d }))) },
+      { label: 'Target period', onChange: "Personas._setFilter('targetPeriod', this.value || null)",
+        options: [{ value: '', label: 'Any', selected: !filters.targetPeriod }].concat(
+          [...periods].sort().map(p => ({ value: p, label: p, selected: filters.targetPeriod === p }))) },
+      { label: 'Sort by', onChange: "Personas._setFilter('sortBy', this.value)",
+        options: [
+          { value: 'name', label: 'Name', selected: !filters.sortBy || filters.sortBy === 'name' },
+          { value: 'role_title', label: 'Role', selected: filters.sortBy === 'role_title' },
+          { value: 'parent_persona_id', label: 'Parent hierarchy', selected: filters.sortBy === 'parent_persona_id' },
+        ] },
+    ];
+    return Strategy._renderToolbar({
+      searchPlaceholder: 'Search personas…',
+      searchValue: filters.search || '',
+      onSearch: "Personas._setFilter('search', this.value)",
+      filters: filtersSpec,
+      actions: '<button class="btn btn-outline btn-sm" onclick="ColumnPicker.toggle(this, \'strategy.personas\')" title="Columns">Columns</button>',
+    });
   },
 
   // ----- Detail modal -----
@@ -12083,6 +12162,27 @@ const Strategy = {
 // (in the bottom-of-file init block) so all entity modules and ColumnPicker exist
 // by the time we touch them. See Strategy._registerSources below for the impl.
 Strategy._registerSources = function () {
+  if (typeof Personas !== 'undefined' && Personas.COLUMNS) {
+    Strategy.registerTable('strategy.personas', {
+      byId: (id) => Personas.byId(id),
+      columns: () => Personas.COLUMNS,
+      update: (id, field, value) => {
+        const patch = {};
+        if (field === 'parent_persona_id') patch[field] = value || null;
+        else patch[field] = value;
+        return Personas.update(id, patch);
+      },
+      onRowClick: (id) => Personas._openDetail(id),
+    });
+    ColumnPicker.register('strategy.personas', {
+      columns: () => Personas.COLUMNS,
+      getPrefs: () => Personas._getColumnPrefs(),
+      setVisible: (id, v) => Personas._setColumnVisible(id, v),
+      reset: () => Personas._resetColumns(),
+      onChange: () => { if (App.renderActiveView) App.renderActiveView(); },
+      groupOrder: [],
+    });
+  }
   if (typeof Person !== 'undefined' && Person.COLUMNS) {
     Strategy.registerTable('strategy.people', {
       byId: (id) => Person.byId(id),

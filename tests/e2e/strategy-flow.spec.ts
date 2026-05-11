@@ -48,8 +48,8 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
   await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toHaveClass(/active/);
   await page.click('.strategy-tabs button:has-text("Personas")');
-  await expect(page.locator('#viewStrategy .strategy-personas').first()).toContainText('E2E Sarah Chen');
-  await expect(page.locator('#viewStrategy .strategy-personas').first()).toContainText('E2E Total opex');
+  await expect(page.locator('#viewStrategy .strategy-table[data-source="strategy.personas"]')).toContainText('E2E Sarah Chen');
+  await expect(page.locator('#viewStrategy .strategy-table[data-source="strategy.personas"]')).toContainText('E2E Total opex');
 
   // Switch to Metrics tab and confirm the new metric appears
   await page.click('.strategy-tabs button:has-text("Metrics")');
