@@ -730,6 +730,32 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .strategy-body { flex: 1; min-height: 0; background: var(--surface); border: 1px solid var(--border-dim); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; }
 .strategy-body > .empty { padding: 24px; color: var(--text-muted); font-size: var(--fs-base); }
 
+/* Shared chrome across all Strategy tabs */
+.strategy-header { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px 8px; border-bottom: 1px solid var(--border-dim); background: var(--surface); }
+.strategy-header-text { flex: 1; min-width: 0; }
+.strategy-header-title { margin: 0; font-size: var(--fs-lg); font-weight: 700; color: var(--text-dark); letter-spacing: -0.2px; }
+.strategy-header-subtitle { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 2px; }
+.strategy-header-action { flex-shrink: 0; display: inline-flex; gap: 6px; }
+.strategy-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border-dim); background: var(--surface-2); font-size: var(--fs-sm); }
+.strategy-toolbar-search { padding: 3px 6px; font-size: var(--fs-sm); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-dark); min-width: 200px; font-family: inherit; }
+.strategy-toolbar-filter { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dark-secondary); font-weight: 500; font-size: var(--fs-sm); }
+.strategy-toolbar-filter select { background: var(--surface); color: var(--text-dark); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); padding: 3px 6px; font-size: var(--fs-sm); font-family: inherit; }
+.strategy-toolbar-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+.strategy-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; color: var(--text-muted); gap: 8px; font-size: var(--fs-base); text-align: center; }
+
+/* Shared schema-driven Strategy table */
+.strategy-table-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--surface); }
+.strategy-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); table-layout: fixed; }
+.strategy-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-muted); text-transform: uppercase; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.4px; padding: 8px 12px; border-bottom: 2px solid var(--border-light); text-align: left; white-space: nowrap; }
+.strategy-table thead th.sortable { cursor: pointer; user-select: none; }
+.strategy-table thead th.sortable:hover { color: var(--text-dark); }
+.strategy-table thead th .sort-indicator { margin-left: 4px; color: var(--accent-blue); }
+.strategy-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border-light); color: var(--text-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.strategy-table tbody tr { cursor: pointer; transition: background 0.12s; }
+.strategy-table tbody tr:hover { background: var(--surface-hover); }
+.strategy-table tbody tr.is-selected { background: var(--surface-inset); box-shadow: inset 3px 0 0 var(--accent-blue); }
+.strategy-table tbody td.is-edit-hover { outline: 1px dashed var(--accent-blue); outline-offset: -2px; }
+
 /* Personas tab */
 .strategy-personas { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
 .personas-toolbar { background: var(--surface-2); }
@@ -11748,6 +11774,96 @@ const Strategy = {
   _renderPeople()     { return Person.renderInventoryTab(); },
   _renderObjectives() { return Objectives.renderInventoryTab(); },
   _renderMetrics()    { return Metrics.renderInventoryTab(); },
+
+  /* ---- Shared chrome helpers (used by per-tab renderers) ---- */
+  _renderTabHeader(opts) {
+    const o = opts || {};
+    const title = Dashboard.esc(o.title || '');
+    const subtitle = Dashboard.esc(o.subtitle || '');
+    const action = o.action || '';
+    return '<div class="strategy-header">'
+         +   '<div class="strategy-header-text">'
+         +     '<h2 class="strategy-header-title">' + title + '</h2>'
+         +     (subtitle ? '<div class="strategy-header-subtitle">' + subtitle + '</div>' : '')
+         +   '</div>'
+         +   (action ? '<div class="strategy-header-action">' + action + '</div>' : '')
+         + '</div>';
+  },
+
+  _renderToolbar(opts) {
+    const o = opts || {};
+    let html = '<div class="strategy-toolbar">';
+    if (o.searchPlaceholder != null) {
+      const val = Dashboard.esc(o.searchValue || '');
+      const ph = Dashboard.esc(o.searchPlaceholder);
+      const onInput = (o.onSearch || '').replace(/"/g, '&quot;');
+      html += '<input type="search" class="strategy-toolbar-search" placeholder="' + ph + '" value="' + val + '" oninput="' + onInput + '">';
+    }
+    (o.filters || []).forEach(f => {
+      const label = Dashboard.esc(f.label || '');
+      const onChange = (f.onChange || '').replace(/"/g, '&quot;');
+      const opts2 = (f.options || []).map(opt => {
+        const sel = opt.selected ? ' selected' : '';
+        return '<option value="' + Dashboard.esc(String(opt.value)) + '"' + sel + '>' + Dashboard.esc(opt.label) + '</option>';
+      }).join('');
+      html += '<label class="strategy-toolbar-filter">' + label + ' <select onchange="' + onChange + '">' + opts2 + '</select></label>';
+    });
+    if (o.actions) {
+      html += '<div class="strategy-toolbar-actions">' + o.actions + '</div>';
+    }
+    html += '</div>';
+    return html;
+  },
+
+  _renderTable(spec) {
+    const s = spec || {};
+    const cols = (s.columns || []).filter(c => c.visible !== false);
+    const rows = s.rows || [];
+    const source = s.source || '';
+    const onRowClick = s.onRowClick || '';
+    const selectedId = s.selectedId || '';
+
+    if (!rows.length) {
+      const msg = Dashboard.esc(s.emptyMessage || 'No items to show.');
+      const cta = s.emptyAction || '';
+      return '<div class="strategy-empty">' + msg + (cta ? '<div>' + cta + '</div>' : '') + '</div>';
+    }
+
+    const colGroup = cols.map(c =>
+      '<col style="width:' + (c.width ? c.width + 'px' : 'auto') + '">'
+    ).join('');
+
+    const headerCells = cols.map(c => {
+      const label = Dashboard.esc(c.label || '');
+      const sortable = c.sortable ? ' sortable' : '';
+      const sortBy = (s.sortBy === c.id) ? ' <span class="sort-indicator">' + (s.sortDir === 'desc' ? '▼' : '▲') + '</span>' : '';
+      const onClick = c.sortable && s.onSort ? ' onclick="' + s.onSort.replace(/"/g, '&quot;') + '(\'' + c.id + '\')"' : '';
+      return '<th class="' + (c.cellClass || '') + sortable + '"' + onClick + '>' + label + sortBy + '</th>';
+    }).join('');
+
+    const bodyRows = rows.map(r => {
+      const id = (s.rowId ? s.rowId(r) : r.id) || '';
+      const safeId = String(id).replace(/'/g, "\\'");
+      const sel = (id === selectedId) ? ' is-selected' : '';
+      const clickAttr = onRowClick ? ' onclick="' + onRowClick.replace(/"/g, '&quot;') + '(\'' + safeId + '\', this)"' : '';
+      const cells = cols.map(c => {
+        const cellClass = c.cellClass || '';
+        const editAttr = c.edit ? ' data-quick-edit="' + Dashboard.esc(c.edit.field || c.id) + '"' : '';
+        let content = '';
+        try { content = c.render ? c.render(r) : ''; } catch (_) { content = ''; }
+        return '<td class="' + cellClass + '"' + editAttr + '>' + (content == null ? '' : content) + '</td>';
+      }).join('');
+      return '<tr class="strategy-row-tr' + sel + '" data-id="' + Dashboard.esc(String(id)) + '" data-source="' + Dashboard.esc(source) + '">' + cells + '</tr>';
+    }).join('');
+
+    return '<div class="strategy-table-wrap">'
+         +   '<table class="strategy-table" data-source="' + Dashboard.esc(source) + '">'
+         +     '<colgroup>' + colGroup + '</colgroup>'
+         +     '<thead><tr>' + headerCells + '</tr></thead>'
+         +     '<tbody>' + bodyRows + '</tbody>'
+         +   '</table>'
+         + '</div>';
+  },
 
   mount() {
     const container = document.getElementById('viewStrategy');
