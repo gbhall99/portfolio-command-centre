@@ -44,22 +44,17 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
 
   expect(seedResult.ok).toBeTruthy();
 
-  // Navigate to Strategy view — Metrics is the default tab; click Personas to verify it renders.
-  await page.click('.nav-item[data-view="strategy"]');
-  await expect(page.locator('#viewStrategy')).toHaveClass(/active/);
-  await page.click('.strategy-tabs button:has-text("Personas")');
-  // Personas is rendered as a hierarchy tree; the new persona must show up with
-  // its archetype (role) label since persona.name is now the archetype rather
-  // than the assigned person's name. The created node will render its role_title.
-  const personaTree = page.locator('#viewStrategy .persona-tree');
+  // 2026-05 IA rework: Personas + Metrics moved to their own top-level views
+  // under Governance. Strategy now holds Objectives only.
+  await page.click('.nav-item[data-view="personas"]');
+  await expect(page.locator('#viewPersonas')).toHaveClass(/active/);
+  const personaTree = page.locator('#viewPersonas .persona-tree');
   await expect(personaTree).toContainText('E2E Sarah Chen');
 
-  // Switch to Metrics tab and confirm the new metric appears
-  await page.click('.strategy-tabs button:has-text("Metrics")');
-  await expect(page.locator('#viewStrategy')).toContainText('E2E Total opex');
+  await page.click('.nav-item[data-view="metrics"]');
+  await expect(page.locator('#viewMetrics')).toContainText('E2E Total opex');
 
-  // Switch to Objectives tab and confirm the objective is listed
-  await page.click('.strategy-tabs button:has-text("Objectives")');
+  await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toContainText('E2E Reduce opex 15%');
 
   // Open the project's detail panel and verify Strategy section

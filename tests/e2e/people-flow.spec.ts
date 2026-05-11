@@ -53,28 +53,20 @@ test('Person flow — create person, seed RACI, override target, matrix drill + 
   expect(seed.seededAccountable).toBe(true);
   expect(seed.overrideValue).toBe(250);
 
-  // Navigate to Strategy → People tab and confirm the new Person appears.
-  await page.click('.nav-item[data-view="strategy"]');
-  await page.click('.strategy-tabs button:has-text("People")');
-  await expect(page.locator('#viewStrategy')).toContainText('E2E Diane');
+  // 2026-05 IA rework: People live as a sub-tab inside the top-level Personas
+  // view (under Governance). The RACI matrix view in Metrics was removed in
+  // favour of inline R/A/C/I columns + a cascade drill-down on each metric row.
+  await page.click('.nav-item[data-view="personas"]');
+  await page.click('#viewPersonas .strategy-tabs button:has-text("People")');
+  await expect(page.locator('#viewPersonas')).toContainText('E2E Diane');
 
-  // Switch to Metrics tab → RACI matrix; default tier 'leaders' includes our person (depth 0).
-  await page.click('.strategy-tabs button:has-text("Metrics")');
-  await page.click('button.metric-view-btn:has-text("RACI matrix")');
-  await expect(page.locator('.matrix-toolbar')).toBeVisible();
-  await expect(page.locator('.raci-matrix')).toContainText('E2E Diane');
+  // The Accountable column on the metric's row should carry the person's pill.
+  await page.click('.nav-item[data-view="metrics"]');
+  const metricRow = page.locator(`#viewMetrics tr[data-metric-id="${seed.metricId}"]`).first();
+  await expect(metricRow).toBeVisible();
+  await expect(metricRow.locator('.raci-pill-A', { hasText: 'E2E Diane' })).toHaveCount(1);
 
-  // Tier filter — clicking Heads should still include Diane (no manager).
-  await page.click('.matrix-toolbar button:has-text("Heads")', { force: true });
-  await expect(page.locator('.raci-matrix')).toContainText('E2E Diane');
-
-  // Drill into the metric by clicking its row label.
-  const metricRow = page.locator(`.raci-matrix th[data-metric-id="${seed.metricId}"]`).first();
-  await metricRow.click();
-  await expect(page.locator('.matrix-drill-metric')).toBeVisible();
-  await expect(page.locator('.matrix-toolbar')).toContainText('Back to matrix');
-
-  // Back to matrix.
-  await page.click('button:has-text("Back to matrix")');
-  await expect(page.locator('.matrix-drill-metric')).toHaveCount(0);
+  // Expanding the row reveals the cascade (the holding persona).
+  await metricRow.locator('.metric-twisty').click();
+  await expect(page.locator(`#viewMetrics .metric-cascade-row[data-parent="${seed.metricId}"]`).first()).toBeVisible();
 });
