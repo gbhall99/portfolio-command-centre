@@ -3978,10 +3978,16 @@ const App = {
       }
     });
 
-    // Seed metric_holdings on personas if missing
+    // Seed metric_holdings on personas if missing, plus the rich-definition fields
+    // added in the Strategy v2 work (goals / pain_points / decisions / information_needs
+    // / tools / stakeholders / communication_prefs). All are optional free-text and
+    // default to '' so the detail modal always has something to render against.
+    const PERSONA_STRING_FIELDS = ['goals', 'pain_points', 'decisions',
+      'information_needs', 'tools', 'stakeholders', 'communication_prefs'];
     data.personas.forEach(p => {
       if (!Array.isArray(p.metric_holdings)) p.metric_holdings = [];
       if (!Array.isArray(p.business_questions)) p.business_questions = [];
+      PERSONA_STRING_FIELDS.forEach(k => { if (typeof p[k] !== 'string') p[k] = ''; });
     });
 
     // Seed metric.dimensions / objective_ids / raci / actuals if missing
@@ -9186,24 +9192,11 @@ const Personas = {
     if (App.renderActiveView) App.renderActiveView();
   },
 
+  // Both Settings → Personas and the Strategy → Personas inventory list now route
+  // their "edit" affordance to the same rich modal so the persona definition is
+  // editable in one place.
   _edit(id) {
-    const p = this.byId(id);
-    if (!p) return;
-    const name = prompt('Persona name:', p.name);
-    if (name === null) return;
-    const role = prompt('Role title:', p.role_title || '');
-    if (role === null) return;
-    const parents = this.list().filter(x => x.id !== id && this.cycleCheck(id, x.id))
-      .map(x => x.id + ' — ' + x.name).join('\n');
-    const parentInput = prompt('Parent persona id (blank for none):\n\nValid options:\n' + parents, p.parent_persona_id || '');
-    if (parentInput === null) return;
-    const newParent = parentInput.trim() || null;
-    if (newParent && !this.cycleCheck(id, newParent)) {
-      alert('Cannot set that parent — would create a cycle.');
-      return;
-    }
-    this.update(id, { name: name.trim(), role_title: role.trim(), parent_persona_id: newParent });
-    if (App.renderActiveView) App.renderActiveView();
+    this._openDetail(id);
   },
 
   _remove(id) {
@@ -9463,9 +9456,348 @@ const Personas = {
          + '</div>';
   },
 
+  // ----- Detail modal -----
+  // Field declarations live in one place so the modal body, save handler, and
+  // tests stay in sync. `multiline: true` renders a textarea, otherwise a
+  // single-line input. `kind: 'parent_picker'` renders the parent persona <select>.
+  _DETAIL_FIELDS: {
+    name:                { label: 'Name',                  multiline: false },
+    role_title:          { label: 'Role title',            multiline: false },
+    parent_persona_id:   { label: 'Parent persona',        kind: 'parent_picker' },
+    definition:          { label: 'Definition',            multiline: true },
+    key_responsibilities:{ label: 'Key responsibilities',  multiline: true },
+    decisions:           { label: 'Decisions owned',       multiline: true },
+    stakeholders:        { label: 'Stakeholders',          multiline: true },
+    goals:               { label: 'Goals',                 multiline: true },
+    pain_points:         { label: 'Pain points',           multiline: true },
+    information_needs:   { label: 'Information needs',     multiline: true },
+    tools:               { label: 'Tools',                 multiline: true },
+    communication_prefs: { label: 'Communication preferences', multiline: false },
+    notes:               { label: 'Notes',                 multiline: true },
+  },
+
+  // Public helper — returns the inner markup of the detail modal body for a
+  // persona. Separated from the modal-open machinery so render tests can call
+  // it without DOM side effects. All user content is escaped via Dashboard.esc.
+  renderDetailBody(personaId) {
+    const p = this.byId(personaId);
+    if (!p) return '<div class="empty" style="padding:16px;color:var(--text-muted)">Persona not found</div>';
+    const esc = Dashboard.esc;
+    const F = this._DETAIL_FIELDS;
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;margin-bottom:4px';
+    const sectionStyle = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-light)';
+
+    const fieldHtml = (key) => {
+      const cfg = F[key];
+      const val = p[key] == null ? '' : String(p[key]);
+      if (cfg.kind === 'parent_picker') {
+        const opts = ['<option value="">— top of org —</option>']
+          .concat(this.list().filter(x => x.id !== personaId && this.cycleCheck(personaId, x.id))
+            .map(x => '<option value="' + esc(x.id) + '"' + (val === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'))
+          .join('');
+        return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(cfg.label)
+             +   '<select class="field-input" data-persona-field="' + key + '" style="display:block;margin-top:4px;width:100%">' + opts + '</select>'
+             + '</label>';
+      }
+      if (cfg.multiline) {
+        return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(cfg.label)
+             +   '<textarea class="field-input" data-persona-field="' + key + '" rows="3" '
+             +     'style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(val) + '</textarea>'
+             + '</label>';
+      }
+      return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(cfg.label)
+           +   '<input type="text" class="field-input" data-persona-field="' + key + '" value="' + esc(val) + '" '
+           +     'style="display:block;margin-top:4px;width:100%">'
+           + '</label>';
+    };
+
+    // Held metrics — read-only summary list pulled from rollup, with edit/remove
+    // buttons that re-use the existing prompt-based handlers.
+    const groups = MetricGroups.list();
+    const groupName = (gid) => { const g = groups.find(x => x.id === gid); return g ? g.name : gid; };
+    const groupSwatch = (gid) => { const g = groups.find(x => x.id === gid); return g ? g.swatch : '#888'; };
+    const holdings = Array.isArray(p.metric_holdings) ? p.metric_holdings : [];
+    const holdingsRows = holdings.length
+      ? holdings.map(h => {
+          const m = Metrics.byId(h.metric_id);
+          if (!m) return '';
+          const filterEntries = Object.entries(h.filter || {});
+          const filterStr = filterEntries.length
+            ? filterEntries.map(([k, v]) => esc(k) + ': ' + esc(String(v))).join(', ')
+            : '<span class="muted" style="color:var(--text-muted);font-style:italic">no filter</span>';
+          const targetsStr = Array.isArray(h.targets) && h.targets.length
+            ? h.targets.map(t => esc(String(t.period)) + '=' + esc(String(t.value))).join(' · ')
+            : '<span class="muted" style="color:var(--text-muted);font-style:italic">no target</span>';
+          return '<tr data-holding-id="' + esc(h.id) + '">'
+               +   '<td style="padding:6px"><span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + ';margin-right:6px"></span><strong>' + esc(m.name) + '</strong>'
+               +     ' <span class="muted" style="color:var(--text-muted);font-size:11px">' + esc(groupName(m.group_id)) + '</span></td>'
+               +   '<td style="padding:6px;font-size:11px">' + filterStr + '</td>'
+               +   '<td style="padding:6px;font-size:11px">' + targetsStr + '</td>'
+               +   '<td style="padding:6px;text-align:right">'
+               +     '<button class="btn btn-ghost btn-sm" onclick="Metrics._editHolding(\'' + esc(personaId) + '\',\'' + esc(h.id) + '\')">edit</button>'
+               +     ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Personas._removeHoldingFromModal(\'' + esc(personaId) + '\',\'' + esc(h.id) + '\')">remove</button>'
+               +   '</td>'
+               + '</tr>';
+        }).join('')
+      : '<tr><td colspan="4" style="padding:6px"><span class="muted" style="color:var(--text-muted);font-style:italic">No metrics held yet.</span></td></tr>';
+
+    // Business questions — managed list of strings.
+    const bq = Array.isArray(p.business_questions) ? p.business_questions : [];
+    const bqRow = (q, i) => '<div class="bq-row" data-bq-index="' + i + '" style="display:flex;gap:6px;align-items:center;margin-bottom:4px">'
+      +   '<input type="text" class="field-input" value="' + esc(q) + '" data-bq-input="' + i + '" style="flex:1">'
+      +   '<button type="button" class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Personas._removeBusinessQuestion(\'' + esc(personaId) + '\',' + i + ')" aria-label="Remove question">remove</button>'
+      + '</div>';
+    const bqHtml = bq.length
+      ? bq.map(bqRow).join('')
+      : '<div class="muted" style="color:var(--text-muted);font-style:italic;font-size:11px;margin-bottom:4px">No business questions yet.</div>';
+
+    // Derived rollup, collapsed by default.
+    const r = this.rollup(personaId) || { contributing_objectives: [], supporting_projects: [], raci_appearances: { accountable: [], responsible: [], consulted: [], informed: [] } };
+    const chip = (label) => '<span class="obj-chip" style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border-dim);margin:2px">' + esc(label) + '</span>';
+    const objsHtml = r.contributing_objectives.length
+      ? r.contributing_objectives.map(o => chip(o.name)).join('')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+    const projHtml = r.supporting_projects.length
+      ? r.supporting_projects.map(pr => chip(pr.name)).join('')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+    const raciAppearancesHtml = (() => {
+      const parts = [];
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        const list = r.raci_appearances[role] || [];
+        if (!list.length) return;
+        const letter = role[0].toUpperCase();
+        parts.push('<div style="margin:4px 0"><span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;margin-right:6px">' + letter + '</span>'
+          + list.map(m => esc(m.name)).join(', ') + '</div>');
+      });
+      return parts.length ? parts.join('') : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+    })();
+
+    // Build the body.
+    return '<div class="persona-modal-body">'
+      // Section 1 — Identity
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Identity</div>'
+      +   fieldHtml('name')
+      +   fieldHtml('role_title')
+      +   fieldHtml('parent_persona_id')
+      +   fieldHtml('definition')
+      + '</div>'
+      // Section 2 — Responsibilities & decisions
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Responsibilities &amp; decisions</div>'
+      +   fieldHtml('key_responsibilities')
+      +   fieldHtml('decisions')
+      +   fieldHtml('stakeholders')
+      + '</div>'
+      // Section 3 — Goals & pain points
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Goals &amp; pain points</div>'
+      +   fieldHtml('goals')
+      +   fieldHtml('pain_points')
+      + '</div>'
+      // Section 4 — Information needs (incl. business questions managed list)
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Information needs</div>'
+      +   fieldHtml('information_needs')
+      +   '<div style="' + caps + ';margin-top:10px">Business questions</div>'
+      +   '<div class="bq-list">' + bqHtml + '</div>'
+      +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="Personas._addBusinessQuestion(\'' + esc(personaId) + '\')">+ add question</button>'
+      + '</div>'
+      // Section 5 — Tools & communication
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Tools &amp; communication</div>'
+      +   fieldHtml('tools')
+      +   fieldHtml('communication_prefs')
+      + '</div>'
+      // Section 6 — Held metrics
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Held metrics</div>'
+      +   '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Metric</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Filter</th>'
+      +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Targets</th>'
+      +     '<th></th></tr></thead><tbody>' + holdingsRows + '</tbody></table>'
+      +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Personas._addHoldingPrompt(\'' + esc(personaId) + '\')">+ assign metric</button>'
+      + '</div>'
+      // Section 7 — Derived (collapsed by default)
+      + '<details class="sec" style="' + sectionStyle + '">'
+      +   '<summary style="' + caps + ';cursor:pointer">Derived</summary>'
+      +   '<div style="margin-top:8px"><div style="' + caps + '">Contributing objectives</div><div>' + objsHtml + '</div></div>'
+      +   '<div style="margin-top:8px"><div style="' + caps + '">Supporting projects</div><div>' + projHtml + '</div></div>'
+      +   '<div style="margin-top:8px"><div style="' + caps + '">RACI appearances</div><div>' + raciAppearancesHtml + '</div></div>'
+      + '</details>'
+      // Section 8 — Notes
+      + '<div class="sec" style="margin-bottom:8px">'
+      +   '<div style="' + caps + '">Notes</div>'
+      +   fieldHtml('notes')
+      + '</div>'
+      + '</div>';
+  },
+
   _openDetail(id) {
-    // TODO: open detail panel for the persona
-    console.log('open persona detail', id);
+    const p = this.byId(id);
+    if (!p) return;
+    if (typeof document === 'undefined') return;
+    const esc = Dashboard.esc;
+    // Close any prior instance.
+    this._closeDetailModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'split-modal-overlay';
+    overlay.id = 'personaDetailOverlay';
+    overlay.style.display = 'block';
+    overlay.style.zIndex = '9000';
+    overlay.addEventListener('click', () => this._closeDetailModal());
+    const modal = document.createElement('div');
+    modal.className = 'split-modal persona-detail-modal';
+    modal.id = 'personaDetailModal';
+    modal.style.display = 'block';
+    modal.style.width = '640px';
+    modal.style.maxWidth = 'calc(100vw - 32px)';
+    modal.style.maxHeight = 'calc(100vh - 48px)';
+    modal.style.zIndex = '9001';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'personaDetailTitle');
+    modal.addEventListener('click', (e) => e.stopPropagation());
+    // Inline templates are escaped with Dashboard.esc — this matches the
+    // long-standing innerHTML-based pattern documented in CLAUDE.md.
+    const html =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<h3 id="personaDetailTitle" style="margin:0;font-size:16px">Persona &middot; ' + esc(p.name) + '</h3>'
+      +   '<button type="button" class="btn btn-ghost btn-sm" aria-label="Close" onclick="Personas._closeDetailModal()">&times;</button>'
+      + '</div>'
+      + this.renderDetailBody(id)
+      + '<div class="split-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">'
+      +   '<button type="button" class="btn btn-outline btn-sm" onclick="Personas._closeDetailModal()">Cancel</button>'
+      +   '<button type="button" class="btn btn-primary btn-sm" onclick="Personas._saveDetailModal(\'' + esc(id) + '\')">Save</button>'
+      + '</div>';
+    modal.innerHTML = html;
+    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
+    // Escape closes
+    this._detailEscHandler = (e) => { if (e.key === 'Escape') this._closeDetailModal(); };
+    document.addEventListener('keydown', this._detailEscHandler);
+  },
+
+  _closeDetailModal() {
+    if (typeof document === 'undefined') return;
+    ['personaDetailOverlay', 'personaDetailModal'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+    if (this._detailEscHandler) {
+      document.removeEventListener('keydown', this._detailEscHandler);
+      this._detailEscHandler = null;
+    }
+  },
+
+  _saveDetailModal(personaId) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('personaDetailModal');
+    if (!modal) return;
+    const patch = {};
+    let cycleAbort = false;
+    modal.querySelectorAll('[data-persona-field]').forEach(el => {
+      const key = el.getAttribute('data-persona-field');
+      const val = (el.value == null ? '' : String(el.value)).trim();
+      if (key === 'parent_persona_id') {
+        const newParent = val || null;
+        if (newParent && !this.cycleCheck(personaId, newParent)) {
+          if (typeof alert === 'function') alert('Cannot set that parent — would create a cycle.');
+          cycleAbort = true;
+          return;
+        }
+        patch[key] = newParent;
+      } else {
+        patch[key] = val;
+      }
+    });
+    if (cycleAbort) return;
+    // Business questions — gather every visible input (drop blanks on save).
+    const bq = [];
+    modal.querySelectorAll('[data-bq-input]').forEach(el => {
+      const v = (el.value == null ? '' : String(el.value)).trim();
+      if (v) bq.push(v);
+    });
+    patch.business_questions = bq;
+    this.update(personaId, patch);
+    this._closeDetailModal();
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // ----- Business questions managed list -----
+  _addBusinessQuestion(personaId) {
+    // Persist any in-progress modal edits first so re-render doesn't lose them.
+    this._collectModalDraft(personaId);
+    const p = this.byId(personaId);
+    if (!p) return;
+    if (!Array.isArray(p.business_questions)) p.business_questions = [];
+    p.business_questions.push('');
+    if (App._save) App._save();
+    this._refreshDetailModal(personaId);
+  },
+
+  _removeBusinessQuestion(personaId, index) {
+    this._collectModalDraft(personaId);
+    const p = this.byId(personaId);
+    if (!p || !Array.isArray(p.business_questions)) return;
+    p.business_questions.splice(index, 1);
+    if (App._save) App._save();
+    this._refreshDetailModal(personaId);
+  },
+
+  _removeHoldingFromModal(personaId, holdingId) {
+    if (typeof confirm === 'function' && !confirm('Remove this metric holding?')) return;
+    this._collectModalDraft(personaId);
+    this.removeHolding(personaId, holdingId);
+    this._refreshDetailModal(personaId);
+  },
+
+  // Read the current modal field values into the persona record without saving
+  // / closing — used before re-rendering the modal body so user edits aren't
+  // discarded by the rebuild.
+  _collectModalDraft(personaId) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('personaDetailModal');
+    if (!modal) return;
+    const p = this.byId(personaId);
+    if (!p) return;
+    modal.querySelectorAll('[data-persona-field]').forEach(el => {
+      const key = el.getAttribute('data-persona-field');
+      const val = (el.value == null ? '' : String(el.value)).trim();
+      if (key === 'parent_persona_id') {
+        const newParent = val || null;
+        if (!newParent || this.cycleCheck(personaId, newParent)) p[key] = newParent;
+      } else {
+        p[key] = val;
+      }
+    });
+    const bq = [];
+    modal.querySelectorAll('[data-bq-input]').forEach(el => {
+      const v = (el.value == null ? '' : String(el.value)).trim();
+      bq.push(v);  // keep blanks during draft so the user can fill them in
+    });
+    p.business_questions = bq;
+  },
+
+  _refreshDetailModal(personaId) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('personaDetailModal');
+    if (!modal) return;
+    const esc = Dashboard.esc;
+    const p = this.byId(personaId);
+    if (!p) return;
+    const html =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<h3 id="personaDetailTitle" style="margin:0;font-size:16px">Persona &middot; ' + esc(p.name) + '</h3>'
+      +   '<button type="button" class="btn btn-ghost btn-sm" aria-label="Close" onclick="Personas._closeDetailModal()">&times;</button>'
+      + '</div>'
+      + this.renderDetailBody(personaId)
+      + '<div class="split-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">'
+      +   '<button type="button" class="btn btn-outline btn-sm" onclick="Personas._closeDetailModal()">Cancel</button>'
+      +   '<button type="button" class="btn btn-primary btn-sm" onclick="Personas._saveDetailModal(\'' + esc(personaId) + '\')">Save</button>'
+      + '</div>';
+    modal.innerHTML = html;
   },
 
   _addHoldingPrompt(personaId) {

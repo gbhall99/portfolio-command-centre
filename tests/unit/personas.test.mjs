@@ -140,3 +140,74 @@ describe('Personas hierarchy collapse', () => {
     app.teardown();
   });
 });
+
+describe('Personas rich definition fields', () => {
+  const NEW_FIELDS_STR = ['goals', 'pain_points', 'decisions', 'information_needs', 'tools', 'stakeholders', 'communication_prefs'];
+
+  it('migration seeds the new string fields and business_questions array on legacy personas', async () => {
+    // Build a dataset with a persona that has none of the new fields.
+    const legacy = {
+      id: 'P-LEGACY', customer: 'Acme Industries', name: 'Old', role_title: '',
+      definition: '', key_responsibilities: '', parent_persona_id: null,
+      metric_holdings: [], notes: '',
+      // Deliberately omit business_questions and all new fields.
+    };
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [legacy],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const p = app.Personas.byId('P-LEGACY');
+    NEW_FIELDS_STR.forEach(k => {
+      expect(p[k]).toBe('');
+    });
+    expect(Array.isArray(p.business_questions)).toBe(true);
+    expect(p.business_questions).toHaveLength(0);
+    app.teardown();
+  });
+
+  it('migration is idempotent: re-running does not clobber populated fields', async () => {
+    const populated = {
+      id: 'P-POP', customer: 'Acme Industries', name: 'Pop',
+      goals: 'Drive revenue', pain_points: 'Stale data', decisions: 'Pricing',
+      information_needs: 'Daily ARR', tools: 'Salesforce', stakeholders: 'CEO',
+      communication_prefs: 'Slack', business_questions: ['Q1?', 'Q2?'],
+      metric_holdings: [], notes: '',
+    };
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [populated],
+    }));
+    // Re-run migration; it should be a no-op for populated fields.
+    app.App.migrateSchema(app.App.data);
+    app.App.activeCustomer = 'Acme Industries';
+    const p = app.Personas.byId('P-POP');
+    expect(p.goals).toBe('Drive revenue');
+    expect(p.business_questions).toEqual(['Q1?', 'Q2?']);
+    app.teardown();
+  });
+
+  it('Personas.update persists a new string field across a fetch round-trip', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [makePersona({ id: 'P1', name: 'CFO' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Personas.update('P1', { goals: 'Drive cost reduction' });
+    expect(app.Personas.byId('P1').goals).toBe('Drive cost reduction');
+    app.teardown();
+  });
+
+  it('Personas.update persists a business_questions array', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [makePersona({ id: 'P1', name: 'CFO' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Personas.update('P1', { business_questions: ['Q1?', 'Q2?'] });
+    expect(app.Personas.byId('P1').business_questions).toEqual(['Q1?', 'Q2?']);
+    app.teardown();
+  });
+});
