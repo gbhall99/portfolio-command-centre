@@ -9681,6 +9681,39 @@ const Metrics = {
     };
   },
 
+  renderRaciPopover(metricId) {
+    const m = this.byId(metricId);
+    if (!m) return '';
+    const r = this.rollup(metricId);
+    const row = (letter, persona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:4px 0">'
+      +   '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#eef;color:#334;font-size:10px;font-weight:700">' + letter + '</span>'
+      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(persona.name) + '</span>'
+      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span>'
+      + '</div>';
+    let html = '<div class="raci-popover" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:240px">'
+             + '<div class="title" style="font-weight:700;margin-bottom:6px;font-size:12px">' + Dashboard.esc(m.name) + ' · RACI</div>';
+    r.raci_personas.accountable.forEach(p => html += row('A', p));
+    r.raci_personas.responsible.forEach(p => html += row('R', p));
+    r.raci_personas.consulted.forEach(p => html += row('C', p));
+    r.raci_personas.informed.forEach(p => html += row('I', p));
+    html += '</div>';
+    return html;
+  },
+
+  _showRaciPopover(metricId, evt) {
+    const existing = document.getElementById('raciPopoverOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'raciPopoverOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:transparent';
+    const popHtml = this.renderRaciPopover(metricId);
+    const x = (evt && evt.clientX) || 100;
+    const y = (evt && evt.clientY) || 100;
+    overlay.innerHTML = '<div style="position:absolute;left:' + Math.min(x, window.innerWidth - 280) + 'px;top:' + (y + 12) + 'px">' + popHtml + '</div>';
+    overlay.addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
+  },
+
   renderInventoryTab() { return '<!-- TODO: Metrics inventory -->'; },
 };
 
