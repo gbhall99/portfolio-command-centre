@@ -9102,8 +9102,75 @@ const Personas = {
     return { descendants, holdings, held_metrics, contributing_objectives, supporting_projects, raci_appearances };
   },
 
-  renderInventoryTab() {
+  applyFilters(filters) {
+    let list = this.list();
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.role_title || '').toLowerCase().includes(q));
+    }
+    if (filters.status && filters.status !== 'all') {
+      list = list.filter(p => (p.metric_holdings || []).some(h => {
+        const m = Metrics.byId(h.metric_id);
+        return m && m.status === filters.status;
+      }));
+    }
+    if (filters.raciInvolved) {
+      const targetPid = filters.raciInvolved;
+      list = list.filter(p => p.id === targetPid);
+    }
+    if (filters.dimension) {
+      list = list.filter(p => (p.metric_holdings || []).some(h =>
+        Object.keys(h.filter || {}).includes(filters.dimension)));
+    }
+    if (filters.targetPeriod) {
+      list = list.filter(p => (p.metric_holdings || []).some(h =>
+        (h.targets || []).some(t => t.period === filters.targetPeriod)));
+    }
+    return list;
+  },
+
+  _renderToolbar(filters) {
+    const dims = new Set();
+    Metrics.list().forEach(m => (m.dimensions || []).forEach(d => dims.add(d)));
+    const periods = new Set();
+    this.list().forEach(p => (p.metric_holdings || []).forEach(h => (h.targets || []).forEach(t => periods.add(t.period))));
     const personas = this.list();
+    const personaOpts = personas.map(p => '<option value="' + Dashboard.esc(p.id) + '"' + (filters.raciInvolved === p.id ? ' selected' : '') + '>' + Dashboard.esc(p.name) + '</option>').join('');
+    const dimOpts    = [...dims].map(d => '<option value="' + Dashboard.esc(d) + '"' + (filters.dimension === d ? ' selected' : '') + '>' + Dashboard.esc(d) + '</option>').join('');
+    const periodOpts = [...periods].sort().map(p => '<option value="' + Dashboard.esc(p) + '"' + (filters.targetPeriod === p ? ' selected' : '') + '>' + Dashboard.esc(p) + '</option>').join('');
+    const sval = (k, v) => filters[k] === v ? ' selected' : '';
+    return '<div class="personas-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:11px">'
+         +   '<input type="search" placeholder="Search personas…" value="' + Dashboard.esc(filters.search || '') + '" oninput="Personas._setFilter(\'search\', this.value)" style="padding:3px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">'
+         +   '<label>Status <select onchange="Personas._setFilter(\'status\', this.value)" style="font-size:11px">'
+         +     '<option value="all"' + sval('status', 'all') + '>All</option>'
+         +     '<option value="live"' + sval('status', 'live') + '>Live</option>'
+         +     '<option value="draft"' + sval('status', 'draft') + '>Draft</option>'
+         +   '</select></label>'
+         +   '<label>RACI involves <select onchange="Personas._setFilter(\'raciInvolved\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + personaOpts
+         +   '</select></label>'
+         +   '<label>Dimension <select onchange="Personas._setFilter(\'dimension\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + dimOpts
+         +   '</select></label>'
+         +   '<label>Target period <select onchange="Personas._setFilter(\'targetPeriod\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + periodOpts
+         +   '</select></label>'
+         + '</div>';
+  },
+
+  _setFilter(key, value) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
+    if (value === null || value === undefined || value === '') delete cur[key]; else cur[key] = value;
+    if (App.uiStateSet) App.uiStateSet('strategy.personas.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  renderInventoryTab() {
+    const filters = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
+    const toolbar = this._renderToolbar(filters);
+    const personas = this.applyFilters(filters);
     const groups = MetricGroups.list();
     const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
 
@@ -9157,6 +9224,7 @@ const Personas = {
     };
 
     return '<div class="strategy-personas">'
+         +   toolbar
          +   ordered.map(rowHtml).join('')
          + '</div>';
   },
