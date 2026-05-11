@@ -98,3 +98,51 @@ describe('Metrics module', () => {
     expect(app.Personas.byId('P1').metric_holdings).toHaveLength(0);
   });
 });
+
+describe('Metrics view toggle (library | raci)', () => {
+  it('defaults to library view and persists view changes via App.uiStateSet', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    expect(app.App.uiStateGet('strategy.metric.view')).toBeNull();
+    app.Metrics._setView('raci');
+    expect(app.App.uiStateGet('strategy.metric.view')).toBe('raci');
+    app.Metrics._setView('library');
+    expect(app.App.uiStateGet('strategy.metric.view')).toBe('library');
+    app.teardown();
+  });
+
+  it('renderInventoryTab swaps to the matrix when the view is set to "raci"', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    let out = app.Metrics.renderInventoryTab();
+    expect(out).toContain('library-pane');           // default library two-pane
+    expect(out).not.toContain('raci-matrix');
+    app.App.uiStateSet('strategy.metric.view', 'raci');
+    out = app.Metrics.renderInventoryTab();
+    expect(out).toContain('raci-matrix');
+    expect(out).not.toContain('library-pane');
+    app.teardown();
+  });
+
+  it('renderInventoryTab emits the view-toggle controls in both modes', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const lib = app.Metrics.renderInventoryTab();
+    expect(lib.toLowerCase()).toContain('raci matrix');
+    expect(lib).toContain('Library');
+    app.App.uiStateSet('strategy.metric.view', 'raci');
+    const raci = app.Metrics.renderInventoryTab();
+    expect(raci.toLowerCase()).toContain('raci matrix');
+    expect(raci).toContain('Library');
+    app.teardown();
+  });
+});

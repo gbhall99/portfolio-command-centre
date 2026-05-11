@@ -817,6 +817,30 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .cascade-table tbody td { border-bottom: 1px solid var(--border-dim); color: var(--text-dark); }
 .cascade-table tbody tr:hover { background: var(--surface-hover); }
 
+/* Metric view toggle (Library | RACI matrix) */
+.metric-view-toggle .metric-view-btn { font-size: var(--fs-sm); padding: 4px 10px; border: 1px solid var(--border-dim); background: var(--surface); color: var(--text-dark-secondary); border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; font-weight: 600; }
+.metric-view-toggle .metric-view-btn:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--text-dark); }
+.metric-view-toggle .metric-view-btn.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+
+/* RACI matrix view */
+.raci-matrix { background: var(--surface); border-top: 0; }
+.raci-matrix-table { border-collapse: separate; border-spacing: 0; font-size: var(--fs-sm); }
+.raci-matrix-table th, .raci-matrix-table td { box-sizing: border-box; }
+.raci-matrix-table .raci-corner { background: var(--surface-2) !important; color: var(--text-muted); }
+.raci-matrix-table .raci-col-head { background: var(--surface-2) !important; color: var(--text-dark); transition: background 0.12s; }
+.raci-matrix-table .raci-col-head:hover { background: var(--surface-hover) !important; }
+.raci-matrix-table .raci-col-label { max-width: 120px; }
+.raci-matrix-table .raci-row-head { background: var(--surface) !important; transition: background 0.12s; }
+.raci-matrix-table .raci-row-head:hover { background: var(--surface-hover) !important; }
+.raci-matrix-table tbody tr:hover .raci-cell { background: var(--surface-hover) !important; }
+.raci-matrix-table tbody tr:hover .raci-row-head { background: var(--surface-hover) !important; }
+.raci-matrix-table .raci-cell { transition: background 0.12s; }
+.raci-matrix-table .raci-cell:hover { background: var(--surface-inset) !important; }
+.raci-matrix-table .raci-letter.raci-A { background: var(--accent-violet) !important; color: white !important; }
+.raci-matrix-table .raci-letter.raci-R { background: var(--accent-blue)   !important; color: white !important; }
+.raci-matrix-table .raci-letter.raci-C { background: var(--accent-teal)   !important; color: white !important; }
+.raci-matrix-table .raci-letter.raci-I { background: var(--text-faint)    !important; color: white !important; }
+
 /* RACI popover (anchored bottom of click target via inline JS positioning) */
 .raci-popover { background: var(--surface) !important; border: 1px solid var(--border-dim) !important; border-radius: var(--radius-md) !important; padding: 10px !important; box-shadow: var(--shadow-md) !important; min-width: 240px; max-width: 280px; color: var(--text-dark); }
 .raci-popover .title { font-weight: 700; margin-bottom: 6px; font-size: var(--fs-base); color: var(--text-dark); }
@@ -10321,6 +10345,10 @@ const Metrics = {
   },
 
   renderInventoryTab() {
+    const view = (App.uiStateGet ? App.uiStateGet('strategy.metric.view') : null) || 'library';
+    const toggle = this._renderViewToggle(view);
+    if (view === 'raci') return toggle + this.renderRaciMatrix();
+
     const metrics = this.list();
     const groups  = MetricGroups.list();
     const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
@@ -10355,10 +10383,157 @@ const Metrics = {
       ? this.renderDetailPane(selectedId)
       : '<div class="empty" style="padding:16px;color:var(--text-muted)">No metric selected</div>';
 
-    return '<div class="strategy-metrics" style="display:flex;height:100%;min-height:400px">'
+    return toggle
+         + '<div class="strategy-metrics" style="display:flex;height:100%;min-height:400px">'
          +   '<div class="library-pane" style="flex:0 0 360px;border-right:1px solid var(--border-light);overflow-y:auto">' + metrics.map(rowHtml).join('') + '</div>'
          +   '<div class="detail-pane" style="flex:1;overflow-y:auto;padding:16px">'  + detail + '</div>'
          + '</div>';
+  },
+
+  _renderViewToggle(active) {
+    const opt = (id, label) => '<button type="button" class="metric-view-btn' + (active === id ? ' active' : '') + '" '
+      + 'onclick="Metrics._setView(\'' + id + '\')" '
+      + 'aria-pressed="' + (active === id ? 'true' : 'false') + '">' + label + '</button>';
+    return '<div class="metric-view-toggle" role="tablist" aria-label="Metric view" '
+         +   'style="display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--surface-2)">'
+         +   '<span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;align-self:center;margin-right:4px">View:</span>'
+         +   opt('library', 'Library')
+         +   opt('raci', 'RACI matrix')
+         + '</div>';
+  },
+
+  _setView(name) {
+    if (App.uiStateSet) App.uiStateSet('strategy.metric.view', name);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  // RACI matrix — rows = personas (org-tree order), columns = metrics (group, name).
+  // Cell shows every RACI letter the persona holds on that metric (could be 0..4).
+  renderRaciMatrix() {
+    const personas = Personas.list();
+    const metrics  = this.list().slice().sort((a, b) =>
+      ((a.group_id || '') + (a.name || '')).localeCompare((b.group_id || '') + (b.name || '')));
+    const groups  = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    const esc = Dashboard.esc;
+
+    if (!personas.length || !metrics.length) {
+      const why = !personas.length && !metrics.length ? 'No personas or metrics defined yet.'
+                : !personas.length ? 'No personas defined yet.' : 'No metrics defined yet.';
+      return '<div class="raci-matrix-empty" style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">'
+           +   '<div style="margin-bottom:8px">' + esc(why) + '</div>'
+           +   '<button class="btn btn-outline btn-sm" onclick="Metrics._setView(\'library\')">Back to Library</button>'
+           + '</div>';
+    }
+
+    // Order personas by org-tree depth so siblings group naturally.
+    const byId = new Map(personas.map(p => [p.id, p]));
+    const idSet = new Set(personas.map(p => p.id));
+    const childrenByParent = new Map();
+    personas.forEach(p => {
+      const pid = (p.parent_persona_id && idSet.has(p.parent_persona_id)) ? p.parent_persona_id : null;
+      if (!childrenByParent.has(pid)) childrenByParent.set(pid, []);
+      childrenByParent.get(pid).push(p);
+    });
+    const ordered = [];
+    const visit = (p, depth) => {
+      ordered.push({ p, depth });
+      (childrenByParent.get(p.id) || []).forEach(c => visit(c, depth + 1));
+    };
+    (childrenByParent.get(null) || []).forEach(r => visit(r, 0));
+    // Safety net for any persona not reachable from a root (e.g. orphaned chain).
+    if (ordered.length < personas.length) {
+      personas.forEach(p => { if (!ordered.some(o => o.p.id === p.id)) ordered.push({ p, depth: 0 }); });
+    }
+
+    // Build header cells (sticky top + sticky-left corner).
+    const cornerStyle = 'position:sticky;left:0;top:0;z-index:3;background:var(--surface-2);'
+                      + 'border-right:1px solid var(--border-light);border-bottom:1px solid var(--border-light);'
+                      + 'min-width:200px;padding:8px;text-align:left;font-size:11px;color:var(--text-muted);'
+                      + 'text-transform:uppercase;letter-spacing:0.4px;font-weight:600';
+    let head = '<thead><tr><th class="raci-corner" style="' + cornerStyle + '">Persona / Metric</th>';
+    metrics.forEach(m => {
+      head += '<th class="raci-col-head" data-metric-id="' + esc(m.id) + '" '
+            + 'onclick="Metrics._jumpToLibrary(\'' + esc(m.id) + '\')" '
+            + 'style="position:sticky;top:0;z-index:2;background:var(--surface-2);border-bottom:1px solid var(--border-light);'
+            + 'border-right:1px solid var(--border-light);padding:6px 4px;cursor:pointer;'
+            + 'min-width:90px;max-width:140px;vertical-align:bottom;font-weight:600;font-size:11px;color:var(--text-dark)" '
+            + 'title="' + esc(m.name) + '">'
+            + '<div style="display:flex;align-items:center;justify-content:center;gap:4px">'
+            +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + groupSwatch(m.group_id) + '"></span>'
+            + '</div>'
+            + '<div class="raci-col-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">'
+            +   esc(m.name)
+            + '</div>'
+            + '</th>';
+    });
+    head += '</tr></thead>';
+
+    // Body rows.
+    let body = '<tbody>';
+    ordered.forEach(({ p, depth }) => {
+      body += '<tr data-persona-id="' + esc(p.id) + '">';
+      body += '<th class="raci-row-head" data-persona-id="' + esc(p.id) + '" '
+            + 'onclick="Personas._openDetail(\'' + esc(p.id) + '\')" '
+            + 'style="position:sticky;left:0;z-index:1;background:var(--surface);border-right:1px solid var(--border-light);'
+            + 'border-bottom:1px solid var(--border-light);padding:6px 8px 6px ' + (8 + depth * 14) + 'px;'
+            + 'text-align:left;cursor:pointer;font-weight:600;font-size:12px;color:var(--text-dark);min-width:200px">'
+            +   esc(p.name)
+            +   '<span class="role" style="color:var(--text-muted);font-weight:400;font-size:11px;margin-left:6px">' + esc(p.role_title || '') + '</span>'
+            + '</th>';
+      metrics.forEach(m => {
+        const letters = [];
+        if (m.raci) {
+          if ((m.raci.accountable || []).includes(p.id)) letters.push('A');
+          if ((m.raci.responsible || []).includes(p.id)) letters.push('R');
+          if ((m.raci.consulted   || []).includes(p.id)) letters.push('C');
+          if ((m.raci.informed    || []).includes(p.id)) letters.push('I');
+        }
+        const inner = letters.length
+          ? letters.map(L => '<span class="raci-letter raci-' + L + '" '
+              + 'style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;'
+              + 'font-size:10px;font-weight:700;color:white">' + L + '</span>').join(' ')
+          : '<span class="raci-empty" style="color:var(--text-faint)">·</span>';
+        body += '<td class="raci-cell" data-persona-id="' + esc(p.id) + '" data-metric-id="' + esc(m.id) + '" '
+              + 'onclick="Metrics._jumpToLibrary(\'' + esc(m.id) + '\')" '
+              + 'style="border-right:1px solid var(--border-light);border-bottom:1px solid var(--border-light);'
+              + 'padding:6px 4px;text-align:center;cursor:pointer;background:var(--surface)">'
+              + inner
+              + '</td>';
+      });
+      body += '</tr>';
+    });
+    body += '</tbody>';
+
+    // The wrapping <div> establishes the scroll container; sticky headers stay
+    // pinned to it. table-layout:auto so column widths adapt to metric name length.
+    return '<div class="raci-matrix" style="overflow:auto;max-height:calc(100vh - 220px);background:var(--surface)">'
+         +   '<table class="raci-matrix-table" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%">'
+         +     head + body
+         +   '</table>'
+         + '</div>';
+  },
+
+  // Library jump from the matrix — switches the metric view back to library and
+  // scrolls / selects the picked metric. The library re-render uses the
+  // selected id we just stored.
+  _jumpToLibrary(metricId) {
+    if (App.uiStateSet) {
+      App.uiStateSet('strategy.metric.selected', metricId);
+      App.uiStateSet('strategy.metric.view', 'library');
+    }
+    if (App.renderActiveView) App.renderActiveView();
+    // Best-effort scroll to the RACI section in the detail pane.
+    if (typeof document !== 'undefined') {
+      setTimeout(() => {
+        const pane = document.querySelector('.strategy-metrics .detail-pane');
+        if (!pane) return;
+        // Look for the RACI column — the second column inside .grid-2 in the
+        // detail pane. If the markup ever changes, this is a noop, not a crash.
+        const grid = pane.querySelector('.grid-2');
+        if (grid && grid.scrollIntoView) grid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 60);
+    }
   },
 
   _select(id) {
