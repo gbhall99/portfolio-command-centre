@@ -103,3 +103,74 @@ export function makeDataset(overrides = {}) {
     ...overrides
   };
 }
+
+export function makePersona(overrides = {}) {
+  return {
+    id: nextId('PER'),
+    customer: 'Acme Industries',
+    name: 'Test Persona',
+    role_title: '',
+    definition: '',
+    key_responsibilities: '',
+    parent_persona_id: null,
+    metric_holdings: [],
+    business_questions: [],
+    notes: '',
+    ...overrides,
+  };
+}
+
+export function makeObjective(overrides = {}) {
+  return {
+    id: nextId('OBJ'),
+    customer: 'Acme Industries',
+    name: 'Test Objective',
+    description: '',
+    status: 'active',
+    time_horizon: { start_date: null, target_date: null },
+    notes: '',
+    ...overrides,
+  };
+}
+
+export function makeMetric(overrides = {}) {
+  return {
+    id: nextId('MET'),
+    customer: 'Acme Industries',
+    name: 'Test Metric',
+    definition: '',
+    pseudo_logic: '',
+    unit: '',
+    direction: 'higher_is_better',
+    group_id: 'performance',
+    source: '',
+    status: 'live',
+    dimensions: [],
+    objective_ids: [],
+    raci: { accountable: [], responsible: [], consulted: [], informed: [] },
+    actuals: [],
+    notes: '',
+    ...overrides,
+  };
+}
+
+export function makeMetricGroup(overrides = {}) {
+  return {
+    id: nextId('GRP').toLowerCase(),
+    customer: 'Acme Industries',
+    name: 'Test Group',
+    swatch: '#888',
+    ...overrides,
+  };
+}
+
+export function makeHolding(overrides = {}) {
+  return {
+    id: nextId('HLD'),
+    metric_id: '',
+    filter: {},
+    targets: [],
+    notes: '',
+    ...overrides,
+  };
+}

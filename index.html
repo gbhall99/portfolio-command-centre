@@ -2542,6 +2542,10 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
         <span>Backlog</span>
       </div>
+      <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
+        Strategy
+      </div>
       <div class="nav-item active" data-view="dashboard" onclick="App.navigate('dashboard')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         Projects <span class="nav-badge" id="navBadgeTotal">0</span>
@@ -2652,6 +2656,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
       </div>
       <div id="backlogTabBody"></div>
     </div>
+    <div class="view" id="viewStrategy"></div>
     <div class="view" id="viewDashboard">
       <div class="dashboard-container">
         <!-- Exec Summary narrative -->
@@ -2674,6 +2679,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <div class="multi-select" id="filterCategory" data-field="category"></div>
           <span class="filter-label">Sprint</span>
           <div class="multi-select" id="filterSprint" data-field="current_sprint"></div>
+          <span class="filter-label">Metric</span>
+          <select name="filter-metric" id="filterMetric" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
+          <span class="filter-label">Objective</span>
+          <select name="filter-objective" id="filterObjective" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
+          <span class="filter-label">Persona</span>
+          <select name="filter-persona" id="filterPersona" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
           <span class="filter-count" id="filterCount"></span>
           <span class="filter-clear" id="filterClear" onclick="Dashboard.clearFilters()" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear</span>
           <div class="filter-divider"></div>
@@ -3396,12 +3407,16 @@ const App = {
     for (let i = 0; i < n; i++) this.undo();
   },
 
+  // Alias used by Strategy modules (Personas / Objectives / Metrics / MetricGroups).
+  renderActiveView() { return this.refreshCurrentView(); },
+
   refreshCurrentView() {
     if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.render();
     else if (this.currentView === 'sprint') Sprint.render();
     else if (this.currentView === 'roadmap') Gantt.render();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     else if (this.currentView === 'config') this.renderConfig();
   },
 
@@ -3813,6 +3828,48 @@ const App = {
     // rewrite every skill_splits reference. Guarded by meta.sprintLabelMigration so it never
     // re-runs and therefore never clobbers deliberate manual edits.
     try { this._migrateSprintLabelYears(data); } catch (_e) { /* diagnostic only */ }
+
+    // Always-run: Strategy entities (personas/objectives/metrics) — additive.
+    if (!Array.isArray(data.personas))      data.personas      = [];
+    if (!Array.isArray(data.objectives))    data.objectives    = [];
+    if (!Array.isArray(data.metrics))       data.metrics       = [];
+    if (!Array.isArray(data.metric_groups)) data.metric_groups = [];
+
+    // Default metric_groups per customer if none defined for that customer
+    const DEFAULT_METRIC_GROUPS = [
+      { id: 'customer',    name: 'Customer',    swatch: '#66d9e8' },
+      { id: 'operations',  name: 'Operations',  swatch: '#8fb4ff' },
+      { id: 'performance', name: 'Performance', swatch: '#c89dde' },
+    ];
+    (data.customers || []).forEach(c => {
+      const has = data.metric_groups.some(g => g.customer === c.name);
+      if (!has) {
+        DEFAULT_METRIC_GROUPS.forEach(g => {
+          data.metric_groups.push({ ...g, customer: c.name });
+        });
+      }
+    });
+
+    // Seed metric_holdings on personas if missing
+    data.personas.forEach(p => {
+      if (!Array.isArray(p.metric_holdings)) p.metric_holdings = [];
+      if (!Array.isArray(p.business_questions)) p.business_questions = [];
+    });
+
+    // Seed metric.dimensions / objective_ids / raci / actuals if missing
+    data.metrics.forEach(m => {
+      if (!Array.isArray(m.dimensions))    m.dimensions    = [];
+      if (!Array.isArray(m.objective_ids)) m.objective_ids = [];
+      if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
+      if (!Array.isArray(m.actuals)) m.actuals = [];
+    });
+
+    // Project additions
+    (data.projects || []).forEach(p => {
+      if (!Array.isArray(p.metric_ids))  p.metric_ids  = [];
+      if (!Array.isArray(p.persona_ids)) p.persona_ids = [];
+    });
+
     data.meta.schema_version = this.SCHEMA_VERSION;
     data.meta.migrated_at = new Date().toISOString();
     return data;
@@ -4289,6 +4346,7 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     else if (this.currentView === 'config') this.renderConfig();
 
     var total = report.updatedProjects + report.addedProjects + report.updatedMembers + report.addedMembers +
@@ -6044,6 +6102,7 @@ const App = {
     if (viewName === 'backlog' && this.data) Dashboard.renderBacklogTab(this.activeCustomer);
     if (viewName === 'governance' && this.data) Governance.render();
     if (viewName === 'activity' && this.data) AuditPanel.render();
+    if (viewName === 'strategy' && this.data && typeof Strategy !== 'undefined') Strategy.mount();
     if (viewName === 'config') this.renderConfig();
     this.updateViewTitlebar();
   },
@@ -6052,7 +6111,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Meetings', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', governance: 'Governance Meetings', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -6091,6 +6150,7 @@ const App = {
     else if (this.currentView === 'roadmap') Gantt.init();
     else if (this.currentView === 'capacity') Capacity.render();
     else if (this.currentView === 'governance') Governance.render();
+    else if (this.currentView === 'strategy' && typeof Strategy !== 'undefined') Strategy.mount();
     // Summary cards depend on active customer
     if (typeof Dashboard !== 'undefined') Dashboard.renderSummaryCards && Dashboard.renderSummaryCards();
     this.updateViewTitlebar();
@@ -6472,6 +6532,18 @@ const App = {
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
       summary: () => 'Theme & thresholds',
       render: () => (App._renderDisplayThresholdsCard ? App._renderDisplayThresholdsCard() : '') + (App._renderBrandingCard ? App._renderBrandingCard() : '') },
+    { id: 'personas', label: 'Personas',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="17" cy="7" r="3"/></svg>',
+      summary: () => (typeof Personas !== 'undefined' ? Personas.list().length : 0) + ' personas',
+      render: () => (typeof Personas !== 'undefined') ? Personas.renderSettingsTab() : '' },
+    { id: 'objectives', label: 'Objectives',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+      summary: () => (typeof Objectives !== 'undefined' ? Objectives.list().length : 0) + ' objectives',
+      render: () => (typeof Objectives !== 'undefined') ? Objectives.renderSettingsTab() : '' },
+    { id: 'metrics', label: 'Metrics',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+      summary: () => (typeof Metrics !== 'undefined' ? Metrics.list().length : 0) + ' metrics',
+      render: () => (typeof Metrics !== 'undefined') ? Metrics.renderSettingsTab() : '' },
     { id: 'data', label: 'Data',
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
       summary: () => 'Export · import · backups',
@@ -8817,6 +8889,1107 @@ const Validator = {
 };
 
 /* ============================================================
+   Personas — strategy entity (CRUD + hierarchy)
+   ============================================================ */
+const Personas = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.personas)) return [];
+    const cust = App.activeCustomer;
+    return App.data.personas.filter(p => p.customer === cust);
+  },
+
+  byId(id) {
+    return (App.data.personas || []).find(p => p.id === id) || null;
+  },
+
+  descendants(personaId) {
+    const all = this.list();
+    const out = [];
+    const seen = new Set();
+    const walk = (id) => {
+      const children = all.filter(p => p.parent_persona_id === id);
+      children.forEach(c => {
+        if (seen.has(c.id)) return;
+        seen.add(c.id);
+        out.push(c);
+        walk(c.id);
+      });
+    };
+    walk(personaId);
+    return out;
+  },
+
+  ancestors(personaId) {
+    const all = this.list();
+    const out = [];
+    let cur = this.byId(personaId);
+    const seen = new Set();
+    while (cur && cur.parent_persona_id && !seen.has(cur.parent_persona_id)) {
+      seen.add(cur.parent_persona_id);
+      const parent = all.find(p => p.id === cur.parent_persona_id);
+      if (!parent) break;
+      out.push(parent);
+      cur = parent;
+    }
+    return out;
+  },
+
+  // Returns true if assigning `parentId` as the parent of `personaId` is valid (no cycle, not self).
+  cycleCheck(personaId, parentId) {
+    if (!parentId) return true;
+    if (personaId === parentId) return false;
+    const seen = new Set();
+    let cur = this.byId(parentId);
+    while (cur && cur.parent_persona_id && !seen.has(cur.parent_persona_id)) {
+      if (cur.parent_persona_id === personaId) return false;
+      seen.add(cur.parent_persona_id);
+      cur = this.byId(cur.parent_persona_id);
+    }
+    return true;
+  },
+
+  add(persona) {
+    if (!App.data.personas) App.data.personas = [];
+    const rec = { ...persona, customer: persona.customer || App.activeCustomer };
+    if (!rec.id) rec.id = 'PER-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    if (!Array.isArray(rec.metric_holdings)) rec.metric_holdings = [];
+    if (!Array.isArray(rec.business_questions)) rec.business_questions = [];
+    App.data.personas.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const p = this.byId(id);
+    if (!p) return null;
+    Object.assign(p, patch);
+    if (App._save) App._save();
+    return p;
+  },
+
+  remove(id) {
+    const idx = (App.data.personas || []).findIndex(p => p.id === id);
+    if (idx < 0) return false;
+    App.data.personas.splice(idx, 1);
+    (App.data.personas || []).forEach(p => {
+      if (p.parent_persona_id === id) p.parent_persona_id = null;
+    });
+    if (App._save) App._save();
+    return true;
+  },
+
+  // ----- Holdings helpers -----
+  addHolding(personaId, holding) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const metric = Metrics.byId(holding.metric_id);
+    if (!metric) return null;
+    const filter = holding.filter || {};
+    const dims = metric.dimensions || [];
+    const filterKeys = Object.keys(filter);
+    if (filterKeys.some(k => dims.indexOf(k) < 0)) return null;
+    const rec = {
+      filter: {}, targets: [], notes: '',
+      ...holding,
+      id: holding.id || ('HLD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+    };
+    if (!Array.isArray(persona.metric_holdings)) persona.metric_holdings = [];
+    persona.metric_holdings.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  updateHolding(personaId, holdingId, patch) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const h = (persona.metric_holdings || []).find(x => x.id === holdingId);
+    if (!h) return null;
+    if (patch.filter) {
+      const metric = Metrics.byId(h.metric_id);
+      if (metric) {
+        const dims = metric.dimensions || [];
+        if (Object.keys(patch.filter).some(k => dims.indexOf(k) < 0)) return null;
+      }
+    }
+    Object.assign(h, patch);
+    if (App._save) App._save();
+    return h;
+  },
+
+  removeHolding(personaId, holdingId) {
+    const persona = this.byId(personaId);
+    if (!persona || !Array.isArray(persona.metric_holdings)) return false;
+    const idx = persona.metric_holdings.findIndex(x => x.id === holdingId);
+    if (idx < 0) return false;
+    persona.metric_holdings.splice(idx, 1);
+    if (App._save) App._save();
+    return true;
+  },
+
+  renderSettingsTab() {
+    const personas = this.list();
+    if (!personas.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No personas yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Personas._showAddForm()">+ Add the first</button></div>';
+    }
+    const rows = personas.map(p => {
+      const parent = p.parent_persona_id ? this.byId(p.parent_persona_id) : null;
+      return '<tr data-persona-id="' + Dashboard.esc(p.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(p.name) + '</strong></td>'
+           +   '<td>' + Dashboard.esc(p.role_title || '') + '</td>'
+           +   '<td>' + (parent ? Dashboard.esc(parent.name) : '<span class="muted" style="color:var(--text-muted);font-style:italic">top of org</span>') + '</td>'
+           +   '<td>' + (p.metric_holdings || []).length + ' held</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Personas._edit(\'' + p.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Personas._remove(\'' + p.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="personas-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Role</th>'
+         + '<th style="text-align:left;padding:6px">Parent</th><th style="text-align:left;padding:6px">Holdings</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Personas._showAddForm()">+ Add persona</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Persona name:');
+    if (!name) return;
+    const role = prompt('Role title (optional):') || '';
+    this.add({ name: name.trim(), role_title: role.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const p = this.byId(id);
+    if (!p) return;
+    const name = prompt('Persona name:', p.name);
+    if (name === null) return;
+    const role = prompt('Role title:', p.role_title || '');
+    if (role === null) return;
+    const parents = this.list().filter(x => x.id !== id && this.cycleCheck(id, x.id))
+      .map(x => x.id + ' — ' + x.name).join('\n');
+    const parentInput = prompt('Parent persona id (blank for none):\n\nValid options:\n' + parents, p.parent_persona_id || '');
+    if (parentInput === null) return;
+    const newParent = parentInput.trim() || null;
+    if (newParent && !this.cycleCheck(id, newParent)) {
+      alert('Cannot set that parent — would create a cycle.');
+      return;
+    }
+    this.update(id, { name: name.trim(), role_title: role.trim(), parent_persona_id: newParent });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this persona?')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  rollup(personaId) {
+    const persona = this.byId(personaId);
+    if (!persona) return null;
+    const holdings = Array.isArray(persona.metric_holdings) ? persona.metric_holdings : [];
+    const held_metrics = holdings.map(h => Metrics.byId(h.metric_id)).filter(Boolean);
+    const contributing_objectives_ids = new Set();
+    held_metrics.forEach(m => (m.objective_ids || []).forEach(oid => contributing_objectives_ids.add(oid)));
+    const contributing_objectives = [...contributing_objectives_ids]
+      .map(id => Objectives.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === persona.customer);
+    const supporting_projects = projects.filter(p => {
+      const viaMetric  = (p.metric_ids  || []).some(mid => held_metrics.some(m => m.id === mid));
+      const viaPersona = (p.persona_ids || []).includes(personaId);
+      return viaMetric || viaPersona;
+    });
+    const descendants = this.descendants(personaId);
+    const raci_appearances = { accountable: [], responsible: [], consulted: [], informed: [] };
+    Metrics.list().forEach(m => {
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        if (m.raci && Array.isArray(m.raci[role]) && m.raci[role].includes(personaId)) {
+          raci_appearances[role].push(m);
+        }
+      });
+    });
+    return { descendants, holdings, held_metrics, contributing_objectives, supporting_projects, raci_appearances };
+  },
+
+  applyFilters(filters) {
+    let list = this.list();
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      list = list.filter(p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.role_title || '').toLowerCase().includes(q));
+    }
+    if (filters.status && filters.status !== 'all') {
+      list = list.filter(p => (p.metric_holdings || []).some(h => {
+        const m = Metrics.byId(h.metric_id);
+        return m && m.status === filters.status;
+      }));
+    }
+    if (filters.raciInvolved) {
+      const targetPid = filters.raciInvolved;
+      list = list.filter(p => p.id === targetPid);
+    }
+    if (filters.dimension) {
+      list = list.filter(p => (p.metric_holdings || []).some(h =>
+        Object.keys(h.filter || {}).includes(filters.dimension)));
+    }
+    if (filters.targetPeriod) {
+      list = list.filter(p => (p.metric_holdings || []).some(h =>
+        (h.targets || []).some(t => t.period === filters.targetPeriod)));
+    }
+    return list;
+  },
+
+  _renderToolbar(filters) {
+    const dims = new Set();
+    Metrics.list().forEach(m => (m.dimensions || []).forEach(d => dims.add(d)));
+    const periods = new Set();
+    this.list().forEach(p => (p.metric_holdings || []).forEach(h => (h.targets || []).forEach(t => periods.add(t.period))));
+    const personas = this.list();
+    const personaOpts = personas.map(p => '<option value="' + Dashboard.esc(p.id) + '"' + (filters.raciInvolved === p.id ? ' selected' : '') + '>' + Dashboard.esc(p.name) + '</option>').join('');
+    const dimOpts    = [...dims].map(d => '<option value="' + Dashboard.esc(d) + '"' + (filters.dimension === d ? ' selected' : '') + '>' + Dashboard.esc(d) + '</option>').join('');
+    const periodOpts = [...periods].sort().map(p => '<option value="' + Dashboard.esc(p) + '"' + (filters.targetPeriod === p ? ' selected' : '') + '>' + Dashboard.esc(p) + '</option>').join('');
+    const sval = (k, v) => filters[k] === v ? ' selected' : '';
+    return '<div class="personas-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:11px">'
+         +   '<input type="search" placeholder="Search personas…" value="' + Dashboard.esc(filters.search || '') + '" oninput="Personas._setFilter(\'search\', this.value)" style="padding:3px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">'
+         +   '<label>Status <select onchange="Personas._setFilter(\'status\', this.value)" style="font-size:11px">'
+         +     '<option value="all"' + sval('status', 'all') + '>All</option>'
+         +     '<option value="live"' + sval('status', 'live') + '>Live</option>'
+         +     '<option value="draft"' + sval('status', 'draft') + '>Draft</option>'
+         +   '</select></label>'
+         +   '<label>RACI involves <select onchange="Personas._setFilter(\'raciInvolved\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + personaOpts
+         +   '</select></label>'
+         +   '<label>Dimension <select onchange="Personas._setFilter(\'dimension\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + dimOpts
+         +   '</select></label>'
+         +   '<label>Target period <select onchange="Personas._setFilter(\'targetPeriod\', this.value || null)" style="font-size:11px">'
+         +     '<option value="">—</option>' + periodOpts
+         +   '</select></label>'
+         + '</div>';
+  },
+
+  _setFilter(key, value) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
+    if (value === null || value === undefined || value === '') delete cur[key]; else cur[key] = value;
+    if (App.uiStateSet) App.uiStateSet('strategy.personas.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  renderInventoryTab() {
+    const filters = (App.uiStateGet ? App.uiStateGet('strategy.personas.filters') : null) || {};
+    const toolbar = this._renderToolbar(filters);
+    const personas = this.applyFilters(filters);
+    const groups = MetricGroups.list();
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+
+    // Order: roots first, then sorted depth-first traversal
+    const roots = personas.filter(p => !p.parent_persona_id);
+    const ordered = [];
+    const visit = (p, depth) => {
+      ordered.push({ p, depth });
+      personas.filter(c => c.parent_persona_id === p.id).forEach(c => visit(c, depth + 1));
+    };
+    roots.forEach(r => visit(r, 0));
+    // Append any orphan personas whose parent isn't in this customer set
+    personas.filter(p => p.parent_persona_id && !personas.some(q => q.id === p.parent_persona_id))
+      .forEach(p => { if (!ordered.find(o => o.p.id === p.id)) visit(p, 0); });
+
+    const rowHtml = ({ p, depth }) => {
+      const indentPx = depth * 18;
+      const holdings = p.metric_holdings || [];
+      const chipsHtml = holdings.length
+        ? holdings.map(h => {
+            const m = Metrics.byId(h.metric_id);
+            if (!m) return '';
+            const dot = m.status === 'live' ? '#5fc995' : '#6a7488';
+            const swatch = groupSwatch(m.group_id);
+            const filterEntries = Object.entries(h.filter || {});
+            const filterTag = filterEntries.length
+              ? '<span class="filter-tag" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#eef;color:#334">' + Dashboard.esc(filterEntries.map(([k,v]) => k + ': ' + v).join(', ')) + '</span>'
+              : '';
+            const raciCount = ['responsible','consulted','informed']
+              .reduce((n, role) => n + ((m.raci && m.raci[role] && m.raci[role].length) || 0), 0);
+            const raciBadge = raciCount > 0
+              ? '<button class="raci-badge" data-metric-id="' + Dashboard.esc(m.id) + '" onclick="event.stopPropagation();Metrics._showRaciPopover(\'' + Dashboard.esc(m.id) + '\',event)" style="margin-left:4px;font-size:10px;padding:1px 5px;border-radius:8px;background:#fef3c7;color:#7c5e00;border:0;cursor:pointer">+' + raciCount + '</button>'
+              : '';
+            return '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
+                 +   '<span class="chip-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + dot + '"></span>'
+                 +   '<span class="group-swatch" style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + swatch + '"></span>'
+                 +   Dashboard.esc(m.name)
+                 +   filterTag
+                 +   raciBadge
+                 + '</span>';
+          }).join(' ')
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic;font-size:11px">No metrics</span> '
+          + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._addHoldingPrompt(\'' + Dashboard.esc(p.id) + '\')">+ add</button>';
+      return '<div class="strategy-row" data-persona-id="' + Dashboard.esc(p.id) + '" '
+           +   'style="padding:6px 12px 6px ' + (12 + indentPx) + 'px;border-bottom:1px solid var(--border-light);cursor:pointer" '
+           +   'onclick="Personas._openDetail(\'' + Dashboard.esc(p.id) + '\')">'
+           +   '<div class="persona-meta" style="margin-bottom:4px"><strong>' + Dashboard.esc(p.name) + '</strong>'
+           +     ' <span class="role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(p.role_title || '') + '</span></div>'
+           +   '<div class="persona-chips">' + chipsHtml + '</div>'
+           + '</div>';
+    };
+
+    return '<div class="strategy-personas">'
+         +   toolbar
+         +   ordered.map(rowHtml).join('')
+         + '</div>';
+  },
+
+  _openDetail(id) {
+    // TODO: open detail panel for the persona
+    console.log('open persona detail', id);
+  },
+
+  _addHoldingPrompt(personaId) {
+    const p = this.byId(personaId);
+    if (!p) return;
+    const metrics = Metrics.list();
+    if (!metrics.length) { alert('No metrics defined yet for this customer.'); return; }
+    const list = metrics.map((m, i) => (i + 1) + ') ' + m.name + ' [' + m.id + ']').join('\n');
+    const sel = prompt('Pick a metric (id or number):\n' + list);
+    if (!sel) return;
+    let metric = metrics.find(m => m.id === sel.trim());
+    if (!metric) {
+      const idx = parseInt(sel.trim(), 10);
+      if (!isNaN(idx) && idx >= 1 && idx <= metrics.length) metric = metrics[idx - 1];
+    }
+    if (!metric) { alert('Metric not found.'); return; }
+    let filter = {};
+    if ((metric.dimensions || []).length) {
+      const filterText = prompt('Filter (optional, "key=value, key=value"):', '');
+      if (filterText) {
+        filterText.split(',').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => (s || '').trim());
+          if (k && v) filter[k] = v;
+        });
+      }
+    }
+    this.addHolding(personaId, { metric_id: metric.id, filter, targets: [] });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+};
+
+/* ============================================================
+   Objectives — strategy entity (CRUD)
+   ============================================================ */
+const Objectives = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.objectives)) return [];
+    return App.data.objectives.filter(o => o.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return (App.data.objectives || []).find(o => o.id === id) || null;
+  },
+
+  add(objective) {
+    if (!App.data.objectives) App.data.objectives = [];
+    const rec = {
+      status: 'active',
+      time_horizon: { start_date: null, target_date: null },
+      description: '',
+      notes: '',
+      ...objective,
+      customer: objective.customer || App.activeCustomer,
+    };
+    if (!rec.id) rec.id = 'OBJ-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    if (!rec.time_horizon) rec.time_horizon = { start_date: null, target_date: null };
+    App.data.objectives.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const o = this.byId(id);
+    if (!o) return null;
+    Object.assign(o, patch);
+    if (App._save) App._save();
+    return o;
+  },
+
+  remove(id) {
+    const idx = (App.data.objectives || []).findIndex(o => o.id === id);
+    if (idx < 0) return false;
+    App.data.objectives.splice(idx, 1);
+    (App.data.metrics || []).forEach(m => {
+      if (Array.isArray(m.objective_ids)) {
+        m.objective_ids = m.objective_ids.filter(oid => oid !== id);
+      }
+    });
+    if (App._save) App._save();
+    return true;
+  },
+
+  renderSettingsTab() {
+    const objs = this.list();
+    if (!objs.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No objectives yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Objectives._showAddForm()">+ Add the first</button></div>';
+    }
+    const rows = objs.map(o => {
+      const start = (o.time_horizon && o.time_horizon.start_date)  || '';
+      const end   = (o.time_horizon && o.time_horizon.target_date) || '';
+      return '<tr data-objective-id="' + Dashboard.esc(o.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(o.name) + '</strong></td>'
+           +   '<td><span class="status-pill status-' + Dashboard.esc(o.status) + '" style="font-size:10px;padding:2px 6px;border-radius:10px;background:#eef;color:var(--text-dark)">' + Dashboard.esc(o.status) + '</span></td>'
+           +   '<td>' + Dashboard.esc(start) + (start || end ? ' → ' : '') + Dashboard.esc(end) + '</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Objectives._edit(\'' + o.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Objectives._remove(\'' + o.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="objectives-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Status</th>'
+         + '<th style="text-align:left;padding:6px">Window</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Objectives._showAddForm()">+ Add objective</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Objective name:');
+    if (!name) return;
+    const desc = prompt('Description (optional):') || '';
+    this.add({ name: name.trim(), description: desc.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const o = this.byId(id);
+    if (!o) return;
+    const name = prompt('Objective name:', o.name);
+    if (name === null) return;
+    const desc = prompt('Description:', o.description || '');
+    if (desc === null) return;
+    const status = prompt('Status (active/achieved/abandoned):', o.status || 'active');
+    if (status === null) return;
+    this.update(id, { name: name.trim(), description: desc.trim(), status: status.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this objective?')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  rollup(objectiveId) {
+    const obj = this.byId(objectiveId);
+    if (!obj) return null;
+    const measuring_metrics = Metrics.list().filter(m => (m.objective_ids || []).includes(objectiveId));
+    const personaSet = new Set();
+    Personas.list().forEach(p => {
+      const holds = (p.metric_holdings || []).some(h => measuring_metrics.some(m => m.id === h.metric_id));
+      if (holds) personaSet.add(p.id);
+    });
+    const contributing_personas = [...personaSet].map(id => Personas.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === obj.customer);
+    const delivering_projects = projects.filter(p =>
+      (p.metric_ids || []).some(mid => measuring_metrics.some(m => m.id === mid))
+    );
+    return {
+      measuring_metrics,
+      contributing_personas,
+      delivering_projects,
+      metric_count: measuring_metrics.length,
+    };
+  },
+
+  renderInventoryTab() {
+    const objs = this.list();
+    if (!objs.length) {
+      return '<div class="empty" style="padding:16px;color:var(--text-muted);font-size:13px">No objectives for ' + Dashboard.esc(App.activeCustomer || '') + '.</div>';
+    }
+    const statusColour = (s) => ({ active: '#5fc995', planned: '#6a91d4', achieved: '#7eb6e8', deferred: '#c0c0c0' })[s] || '#888';
+    const entryHtml = (o) => {
+      const r = this.rollup(o.id);
+      const start = (o.time_horizon && o.time_horizon.start_date)  || '';
+      const end   = (o.time_horizon && o.time_horizon.target_date) || '';
+      const win   = (start || end) ? Dashboard.esc(start) + ' → ' + Dashboard.esc(end) : 'not set';
+      const chips = r.measuring_metrics.map(m =>
+        '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
+        +   Dashboard.esc(m.name)
+        + '</span>'
+      ).join(' ');
+      return '<div class="strategy-row obj obj-' + Dashboard.esc(o.status) + '" data-objective-id="' + Dashboard.esc(o.id) + '"'
+           +   ' onclick="Objectives._openDetail(\'' + Dashboard.esc(o.id) + '\')"'
+           +   ' style="display:flex;align-items:stretch;border-bottom:1px solid var(--border-light);cursor:pointer">'
+           +   '<span class="accent" style="width:4px;background:' + statusColour(o.status) + '"></span>'
+           +   '<div class="body" style="flex:1;padding:10px 14px">'
+           +     '<div class="title" style="font-weight:700;font-size:13px">' + Dashboard.esc(o.name) + '</div>'
+           +     '<div class="desc" style="color:var(--text-muted);font-size:11px;margin:2px 0 6px">' + Dashboard.esc(o.description || '') + '</div>'
+           +     '<div class="meta" style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-secondary);margin-bottom:4px">'
+           +       '<span><span class="caps" style="text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;margin-right:4px">window</span> ' + win + '</span>'
+           +       '<span>' + r.metric_count + ' metrics</span>'
+           +       '<span>' + r.contributing_personas.length + ' personas</span>'
+           +       '<span>' + r.delivering_projects.length + ' projects</span>'
+           +       '<span class="status-text" style="color:' + statusColour(o.status) + ';font-weight:600">' + Dashboard.esc(o.status) + '</span>'
+           +     '</div>'
+           +     '<div class="chips">' + chips + '</div>'
+           +   '</div>'
+           + '</div>';
+    };
+    return '<div class="strategy-objectives">' + objs.map(entryHtml).join('') + '</div>';
+  },
+
+  _openDetail(id) {
+    // TODO: open detail panel for the objective
+    console.log('open objective detail', id);
+  },
+};
+
+/* ============================================================
+   MetricGroups — grouping for metric definitions
+   ============================================================ */
+const MetricGroups = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.metric_groups)) return [];
+    return App.data.metric_groups.filter(g => g.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return this.list().find(g => g.id === id) || null;
+  },
+
+  add(group) {
+    if (!App.data.metric_groups) App.data.metric_groups = [];
+    const cust = group.customer || App.activeCustomer;
+    const exists = App.data.metric_groups.some(g => g.customer === cust && g.id === group.id);
+    if (exists) return null;
+    const rec = { swatch: '#888', ...group, customer: cust };
+    App.data.metric_groups.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const g = this.byId(id);
+    if (!g) return null;
+    if (patch.id && patch.id !== id) return null; // id is immutable
+    Object.assign(g, patch);
+    if (App._save) App._save();
+    return g;
+  },
+
+  remove(id) {
+    const cust = App.activeCustomer;
+    const idx = (App.data.metric_groups || []).findIndex(g => g.customer === cust && g.id === id);
+    if (idx < 0) return false;
+    const inUse = (App.data.metrics || []).some(m => m.customer === cust && m.group_id === id);
+    if (inUse) return false;
+    App.data.metric_groups.splice(idx, 1);
+    if (App._save) App._save();
+    return true;
+  },
+
+  renderConfigBody() {
+    const groups = this.list();
+    const metrics = (typeof Metrics !== 'undefined') ? Metrics.list() : [];
+    const inUse = (id) => metrics.filter(m => m.group_id === id).length;
+    const rows = groups.map(g => {
+      const n = inUse(g.id);
+      const removeBtn = n > 0
+        ? '<button class="btn btn-ghost btn-sm" disabled title="Cannot remove: ' + n + ' metric(s) in this group">remove</button>'
+        : '<button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="MetricGroups._remove(\'' + g.id + '\')">remove</button>';
+      return '<tr><td><span style="display:inline-block;width:10px;height:10px;background:' + g.swatch + ';border-radius:2px;margin-right:6px"></span>'
+           +   '<strong>' + Dashboard.esc(g.name) + '</strong></td>'
+           +   '<td><code>' + Dashboard.esc(g.id) + '</code></td>'
+           +   '<td>' + n + '</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="MetricGroups._edit(\'' + g.id + '\')">rename</button> ' + removeBtn + '</td>'
+           + '</tr>';
+    }).join('');
+    return '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         +   '<th style="text-align:left;padding:6px">Group</th><th style="text-align:left;padding:6px">id</th>'
+         +   '<th style="text-align:left;padding:6px">In use</th><th></th></tr></thead><tbody>'
+         +   rows
+         + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="MetricGroups._showAddForm()">+ Add group</button>';
+  },
+
+  _openConfig() {
+    const body = this.renderConfigBody();
+    // Lightweight overlay modal
+    const existing = document.getElementById('metricGroupsConfigOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'metricGroupsConfigOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const html =
+      '<div style="background:white;border-radius:var(--radius-md);padding:20px;min-width:480px;max-width:90vw;max-height:90vh;overflow:auto">'
+      + '<h3 style="font-size:14px;font-weight:700;margin-bottom:12px">Metric groups</h3>'
+      + body
+      + '<div style="text-align:right;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="document.getElementById(\'metricGroupsConfigOverlay\').remove()">Close</button></div>'
+      + '</div>';
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  },
+
+  _edit(id) {
+    const g = this.byId(id);
+    if (!g) return;
+    const name = prompt('Group name:', g.name);
+    if (name === null) return;
+    const swatch = prompt('Swatch colour (hex):', g.swatch || '#888');
+    if (swatch === null) return;
+    this.update(id, { name: name.trim(), swatch: swatch.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this group?')) return;
+    if (!this.remove(id)) { alert('Cannot remove: group is in use.'); return; }
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
+
+  _showAddForm() {
+    const id = prompt('Group id (lowercase, no spaces):');
+    if (!id) return;
+    const name = prompt('Group name:');
+    if (!name) return;
+    const swatch = prompt('Swatch colour (hex):', '#888') || '#888';
+    const r = this.add({ id: id.trim().toLowerCase(), name: name.trim(), swatch: swatch.trim() });
+    if (!r) { alert('A group with that id already exists.'); return; }
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
+};
+
+/* ============================================================
+   Metrics — strategy entity (CRUD on definitions)
+   ============================================================ */
+const Metrics = {
+  list() {
+    if (!App.data || !Array.isArray(App.data.metrics)) return [];
+    return App.data.metrics.filter(m => m.customer === App.activeCustomer);
+  },
+
+  byId(id) {
+    return (App.data.metrics || []).find(m => m.id === id) || null;
+  },
+
+  add(metric) {
+    if (!App.data.metrics) App.data.metrics = [];
+    const cust = metric.customer || App.activeCustomer;
+    const groups = (App.data.metric_groups || []).filter(g => g.customer === cust);
+    const defaultGroup = groups.find(g => g.id === 'performance') || groups[0];
+    const groupId = metric.group_id || (defaultGroup && defaultGroup.id);
+    if (!groupId || !groups.some(g => g.id === groupId)) return null;
+    const rec = {
+      definition: '', pseudo_logic: '', unit: '', direction: 'higher_is_better',
+      source: '', status: 'draft', dimensions: [], objective_ids: [],
+      raci: { accountable: [], responsible: [], consulted: [], informed: [] },
+      actuals: [], notes: '',
+      ...metric,
+      customer: cust, group_id: groupId,
+    };
+    if (!rec.id) rec.id = 'MET-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    App.data.metrics.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+
+  update(id, patch) {
+    const m = this.byId(id);
+    if (!m) return null;
+    if (patch.group_id && patch.group_id !== m.group_id) {
+      const groups = (App.data.metric_groups || []).filter(g => g.customer === m.customer);
+      if (!groups.some(g => g.id === patch.group_id)) return null;
+    }
+    Object.assign(m, patch);
+    if (App._save) App._save();
+    return m;
+  },
+
+  remove(id) {
+    const idx = (App.data.metrics || []).findIndex(m => m.id === id);
+    if (idx < 0) return false;
+    App.data.metrics.splice(idx, 1);
+    (App.data.personas || []).forEach(p => {
+      if (Array.isArray(p.metric_holdings)) {
+        p.metric_holdings = p.metric_holdings.filter(h => h.metric_id !== id);
+      }
+    });
+    (App.data.projects || []).forEach(pr => {
+      if (Array.isArray(pr.metric_ids)) {
+        pr.metric_ids = pr.metric_ids.filter(mid => mid !== id);
+      }
+    });
+    if (App._save) App._save();
+    return true;
+  },
+
+  renderSettingsTab() {
+    const metrics = this.list();
+    const groups  = MetricGroups.list();
+    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    if (!metrics.length) {
+      return '<div class="empty" style="font-size:13px;color:var(--text-muted);padding:12px">No metrics yet for ' + Dashboard.esc(App.activeCustomer || '') + '. '
+           + '<button class="btn btn-outline btn-sm" onclick="Metrics._showAddForm()">+ Add the first</button>'
+           + ' <button class="btn btn-outline btn-sm" onclick="MetricGroups._openConfig()" style="margin-left:8px">edit groups…</button></div>';
+    }
+    const rows = metrics.map(m => {
+      const dims = (m.dimensions || []).join(', ') || '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+      return '<tr data-metric-id="' + Dashboard.esc(m.id) + '">'
+           +   '<td><strong>' + Dashboard.esc(m.name) + '</strong></td>'
+           +   '<td><span class="group-tag" style="border-left:3px solid ' + groupSwatch(m.group_id) + ';padding-left:4px;font-size:11px">'
+           +     Dashboard.esc(groupName(m.group_id)) + '</span></td>'
+           +   '<td>' + dims + '</td>'
+           +   '<td><span class="status-pill status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:2px 6px;border-radius:10px;background:#eef">' + Dashboard.esc(m.status) + '</span></td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="Metrics._edit(\'' + m.id + '\')">edit</button>'
+           +       ' <button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="Metrics._remove(\'' + m.id + '\')">remove</button></td>'
+           + '</tr>';
+    }).join('');
+    return '<table class="metrics-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Group</th>'
+         + '<th style="text-align:left;padding:6px">Dimensions</th><th style="text-align:left;padding:6px">Status</th><th></th>'
+         + '</tr></thead><tbody>' + rows + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Metrics._showAddForm()">+ Add metric</button>'
+         + ' <button class="btn btn-outline btn-sm" onclick="MetricGroups._openConfig()" style="margin-left:8px">edit groups…</button>';
+  },
+
+  _showAddForm() {
+    const name = prompt('Metric name:');
+    if (!name) return;
+    const def = prompt('Definition (optional):') || '';
+    const groups = MetricGroups.list().map(g => g.id).join(', ');
+    const groupId = prompt('Group id (' + groups + '):', 'performance') || 'performance';
+    const dims = prompt('Dimensions (comma-separated, optional):', '') || '';
+    const dimensions = dims.split(',').map(d => d.trim()).filter(Boolean);
+    this.add({ name: name.trim(), definition: def.trim(), group_id: groupId.trim(), dimensions });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _edit(id) {
+    const m = this.byId(id);
+    if (!m) return;
+    const name = prompt('Metric name:', m.name);
+    if (name === null) return;
+    const def = prompt('Definition:', m.definition || '');
+    if (def === null) return;
+    const pseudo = prompt('Pseudo-logic:', m.pseudo_logic || '');
+    if (pseudo === null) return;
+    const groups = MetricGroups.list().map(g => g.id).join(', ');
+    const groupId = prompt('Group id (' + groups + '):', m.group_id);
+    if (groupId === null) return;
+    const dims = prompt('Dimensions (comma-separated):', (m.dimensions || []).join(','));
+    if (dims === null) return;
+    const status = prompt('Status (live/draft/deprecated):', m.status);
+    if (status === null) return;
+    this.update(id, {
+      name: name.trim(), definition: def.trim(), pseudo_logic: pseudo.trim(),
+      group_id: groupId.trim(),
+      dimensions: dims.split(',').map(d => d.trim()).filter(Boolean),
+      status: status.trim(),
+    });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this metric? Holdings on personas will be deleted.')) return;
+    this.remove(id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  rollup(metricId) {
+    const metric = this.byId(metricId);
+    if (!metric) return null;
+    const holders = [];
+    Personas.list().forEach(p => {
+      (p.metric_holdings || []).filter(h => h.metric_id === metricId)
+        .forEach(h => holders.push({ persona: p, holding: h }));
+    });
+    const served_objectives = (metric.objective_ids || [])
+      .map(id => Objectives.byId(id)).filter(Boolean);
+    const projects = (App.data.projects || []).filter(p => p.customer === metric.customer);
+    const delivering_projects = projects.filter(p => (p.metric_ids || []).includes(metricId));
+    const raci_personas = { accountable: [], responsible: [], consulted: [], informed: [] };
+    if (metric.raci) {
+      ['accountable','responsible','consulted','informed'].forEach(role => {
+        (metric.raci[role] || []).forEach(pid => {
+          const p = Personas.byId(pid);
+          if (p) raci_personas[role].push(p);
+        });
+      });
+    }
+    const has_targets_anywhere = holders.some(h => Array.isArray(h.holding.targets) && h.holding.targets.length > 0);
+    return {
+      holders,
+      holder_count: holders.length,
+      served_objectives,
+      delivering_projects,
+      raci_personas,
+      has_targets_anywhere,
+    };
+  },
+
+  renderRaciPopover(metricId) {
+    const m = this.byId(metricId);
+    if (!m) return '';
+    const r = this.rollup(metricId);
+    const row = (letter, persona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:4px 0">'
+      +   '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#eef;color:#334;font-size:10px;font-weight:700">' + letter + '</span>'
+      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(persona.name) + '</span>'
+      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span>'
+      + '</div>';
+    let html = '<div class="raci-popover" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:10px;box-shadow:0 4px 12px rgba(0,0,0,0.15);min-width:240px">'
+             + '<div class="title" style="font-weight:700;margin-bottom:6px;font-size:12px">' + Dashboard.esc(m.name) + ' · RACI</div>';
+    r.raci_personas.accountable.forEach(p => html += row('A', p));
+    r.raci_personas.responsible.forEach(p => html += row('R', p));
+    r.raci_personas.consulted.forEach(p => html += row('C', p));
+    r.raci_personas.informed.forEach(p => html += row('I', p));
+    html += '</div>';
+    return html;
+  },
+
+  _showRaciPopover(metricId, evt) {
+    const existing = document.getElementById('raciPopoverOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'raciPopoverOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:transparent';
+    const popHtml = this.renderRaciPopover(metricId);
+    const x = (evt && evt.clientX) || 100;
+    const y = (evt && evt.clientY) || 100;
+    overlay.innerHTML = '<div style="position:absolute;left:' + Math.min(x, window.innerWidth - 280) + 'px;top:' + (y + 12) + 'px">' + popHtml + '</div>';
+    overlay.addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
+  },
+
+  renderInventoryTab() {
+    const metrics = this.list();
+    const groups  = MetricGroups.list();
+    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
+    const selectedId = (App.uiStateGet ? App.uiStateGet('strategy.metric.selected') : null) || (metrics[0] && metrics[0].id);
+
+    const rowHtml = (m) => {
+      const r = this.rollup(m.id);
+      const isSel = (m.id === selectedId);
+      const dims = (m.dimensions || []).map(d => '<span class="dim-tag" style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#f0f3f8;color:#444;margin-right:3px">' + Dashboard.esc(d) + '</span>').join(' ');
+      return '<div class="metric-row' + (isSel ? ' selected' : '') + '" '
+           +   'data-metric-id="' + Dashboard.esc(m.id) + '" '
+           +   'onclick="Metrics._select(\'' + Dashboard.esc(m.id) + '\')" '
+           +   'style="display:flex;align-items:stretch;border-bottom:1px solid var(--border-light);cursor:pointer;background:' + (isSel ? 'var(--bg-tertiary)' : 'transparent') + '">'
+           +   '<span class="accent" style="width:4px;background:' + groupSwatch(m.group_id) + '"></span>'
+           +   '<div class="body" style="flex:1;padding:8px 12px">'
+           +     '<div class="top" style="display:flex;align-items:center;gap:8px">'
+           +       '<span class="name" style="font-weight:600;font-size:13px">' + Dashboard.esc(m.name) + '</span>'
+           +       '<span class="status status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:1px 6px;border-radius:10px;background:#eef;color:#334">' + Dashboard.esc(m.status) + '</span>'
+           +     '</div>'
+           +     '<div class="desc" style="font-size:11px;color:var(--text-muted);margin:2px 0">' + Dashboard.esc(m.definition || '') + '</div>'
+           +     '<div class="meta" style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--text-secondary);align-items:center">'
+           +       '<span class="group-tag" style="border-left:3px solid ' + groupSwatch(m.group_id) + ';padding-left:4px">' + Dashboard.esc(groupName(m.group_id)) + '</span>'
+           +       '<span>' + r.holder_count + ' holders</span>'
+           +       dims
+           +     '</div>'
+           +   '</div>'
+           + '</div>';
+    };
+
+    const detail = selectedId
+      ? this.renderDetailPane(selectedId)
+      : '<div class="empty" style="padding:16px;color:var(--text-muted)">No metric selected</div>';
+
+    return '<div class="strategy-metrics" style="display:flex;height:100%;min-height:400px">'
+         +   '<div class="library-pane" style="flex:0 0 360px;border-right:1px solid var(--border-light);overflow-y:auto">' + metrics.map(rowHtml).join('') + '</div>'
+         +   '<div class="detail-pane" style="flex:1;overflow-y:auto;padding:16px">'  + detail + '</div>'
+         + '</div>';
+  },
+
+  _select(id) {
+    if (App.uiStateSet) App.uiStateSet('strategy.metric.selected', id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  renderDetailPane(id) {
+    const m = this.byId(id);
+    if (!m) return '<div class="empty" style="padding:16px;color:var(--text-muted)">Metric not found</div>';
+    const r = this.rollup(id);
+    const groups = MetricGroups.list();
+    const grp = groups.find(g => g.id === m.group_id);
+    const grpHtml = grp
+      ? '<span class="group-tag" style="border-left: 3px solid ' + grp.swatch + '; padding-left: 4px;">' + Dashboard.esc(grp.name) + '</span>'
+      : '';
+
+    const dimsHtml = (m.dimensions || []).length
+      ? (m.dimensions || []).map(d => '<span class="dim-tag" style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#f0f3f8;color:#444;margin-right:3px">' + Dashboard.esc(d) + '</span>').join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+
+    const objHtml = r.served_objectives.length
+      ? r.served_objectives.map(o => '<span class="obj-chip" style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:#eef2f7;margin-right:4px">' + Dashboard.esc(o.name) + '</span>').join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">none</span>';
+
+    const raciRow = (letter, persona) => '<div class="raci-row" style="display:flex;align-items:center;gap:8px;padding:3px 0">'
+      +   '<span class="raci-letter raci-' + letter + '" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#eef;color:#334;font-size:10px;font-weight:700">' + letter + '</span>'
+      +   '<span class="raci-name" style="font-weight:600">' + Dashboard.esc(persona.name) + '</span>'
+      +   '<span class="raci-role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span>'
+      + '</div>';
+    let raciHtml = '';
+    r.raci_personas.accountable.forEach(p => raciHtml += raciRow('A', p));
+    r.raci_personas.responsible.forEach(p => raciHtml += raciRow('R', p));
+    r.raci_personas.consulted.forEach(p => raciHtml += raciRow('C', p));
+    r.raci_personas.informed.forEach(p => raciHtml += raciRow('I', p));
+    if (!raciHtml) raciHtml = '<span class="muted" style="color:var(--text-muted);font-style:italic">no RACI assigned</span>';
+
+    const cascadeRow = ({ persona, holding }) => {
+      const filterEntries = Object.entries(holding.filter || {});
+      const filterCell = filterEntries.length
+        ? '<span class="filter-tag" style="font-size:10px;padding:1px 5px;border-radius:8px;background:#eef;color:#334">' + Dashboard.esc(filterEntries.map(([k,v]) => k + ': ' + v).join(', ')) + '</span>'
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic">all (' + ((m.dimensions || [])[0] || 'unfiltered') + ')</span>';
+      const targetCell = (holding.targets || []).length
+        ? holding.targets.map(t => Dashboard.esc(t.period) + ' £' + Dashboard.esc(String(t.value))).join(' &nbsp; ')
+        : '<span class="muted" style="color:var(--text-muted);font-style:italic">no target</span>';
+      return '<tr><td style="padding:6px"><strong>' + Dashboard.esc(persona.name) + '</strong>'
+           +    ' <span class="role" style="color:var(--text-muted);font-size:11px">' + Dashboard.esc(persona.role_title || '') + '</span></td>'
+           +    '<td style="padding:6px">' + filterCell + '</td>'
+           +    '<td style="padding:6px">' + targetCell + '</td>'
+           +    '<td style="padding:6px"><button class="btn btn-ghost btn-sm" onclick="Metrics._editHolding(\'' + Dashboard.esc(persona.id) + '\',\'' + Dashboard.esc(holding.id) + '\')">edit</button></td>'
+           + '</tr>';
+    };
+    const cascadeBody = r.holders.length
+      ? r.holders.map(cascadeRow).join('')
+      : '<tr><td colspan="4" style="padding:6px" class="muted"><span style="color:var(--text-muted);font-style:italic">No holders yet — assign this metric to a persona.</span></td></tr>';
+
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;margin-bottom:4px';
+
+    return '<div class="metric-detail">'
+         +   '<div class="hdr" style="margin-bottom:14px">'
+         +     '<h2 style="font-size:18px;margin:0 0 6px">' + Dashboard.esc(m.name) + '</h2>'
+         +     '<div class="hdr-meta" style="font-size:11px;display:flex;align-items:center;gap:8px">' + grpHtml
+         +       ' <span class="status status-' + Dashboard.esc(m.status) + '" style="font-size:10px;padding:1px 6px;border-radius:10px;background:#eef;color:#334">' + Dashboard.esc(m.status) + '</span>'
+         +     '</div>'
+         +   '</div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Definition</div><div>' + Dashboard.esc(m.definition || '') + '</div></div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Pseudo-logic</div><pre class="pseudo" style="font-family:monospace;font-size:11px;background:#f7f8fa;padding:8px;border-radius:var(--radius-sm);overflow-x:auto">' + Dashboard.esc(m.pseudo_logic || '') + '</pre></div>'
+         +   '<div class="sec grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">'
+         +     '<div>'
+         +       '<div class="caps" style="' + caps + '">Source</div><div>' + Dashboard.esc(m.source || '') + '</div>'
+         +       '<div class="caps" style="' + caps + ';margin-top:12px">Dimensions</div><div>' + dimsHtml + '</div>'
+         +       '<div class="caps" style="' + caps + ';margin-top:12px">Linked objectives</div><div>' + objHtml + '</div>'
+         +     '</div>'
+         +     '<div>'
+         +       '<div class="caps" style="' + caps + '">RACI · definition</div>' + raciHtml
+         +     '</div>'
+         +   '</div>'
+         +   '<div class="sec" style="margin-bottom:14px"><div class="caps" style="' + caps + '">Cascade · ' + r.holder_count + ' holders</div>'
+         +     '<table class="cascade-table" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         +       '<th style="text-align:left;padding:6px">Persona &amp; role</th><th style="text-align:left;padding:6px">Filter</th><th style="text-align:left;padding:6px">Target</th><th></th>'
+         +     '</tr></thead><tbody>' + cascadeBody + '</tbody></table>'
+         +     '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Metrics._addHolderPrompt(\'' + Dashboard.esc(id) + '\')">+ assign to another persona</button>'
+         +   '</div>'
+         + '</div>';
+  },
+
+  _editHolding(personaId, holdingId) {
+    const persona = Personas.byId(personaId);
+    if (!persona) return;
+    const holding = (persona.metric_holdings || []).find(h => h.id === holdingId);
+    if (!holding) return;
+    const filterStr = Object.entries(holding.filter || {}).map(([k,v]) => k + '=' + v).join(', ');
+    const newFilter = prompt('Filter ("key=value, key=value"):', filterStr);
+    if (newFilter === null) return;
+    const filter = {};
+    newFilter.split(',').forEach(pair => {
+      const [k, v] = pair.split('=').map(s => (s || '').trim());
+      if (k && v) filter[k] = v;
+    });
+    const targetsStr = (holding.targets || []).map(t => t.period + '=' + t.value + ':' + (t.period_type || 'annual')).join(', ');
+    const newTargets = prompt('Targets ("period=value:period_type, …"):', targetsStr);
+    if (newTargets === null) return;
+    const targets = [];
+    newTargets.split(',').map(s => s.trim()).filter(Boolean).forEach(spec => {
+      const [periodPart, ptype] = spec.split(':').map(s => (s || '').trim());
+      const [period, value] = (periodPart || '').split('=').map(s => (s || '').trim());
+      if (period && value) targets.push({ period, value: parseFloat(value), period_type: ptype || 'annual' });
+    });
+    Personas.updateHolding(personaId, holdingId, { filter, targets });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _addHolderPrompt(metricId) {
+    const personas = Personas.list();
+    if (!personas.length) { alert('No personas defined yet.'); return; }
+    const list = personas.map((p, i) => (i + 1) + ') ' + p.name + ' [' + p.id + ']').join('\n');
+    const sel = prompt('Pick a persona (id or number):\n' + list);
+    if (!sel) return;
+    let persona = personas.find(p => p.id === sel.trim());
+    if (!persona) {
+      const idx = parseInt(sel.trim(), 10);
+      if (!isNaN(idx) && idx >= 1 && idx <= personas.length) persona = personas[idx - 1];
+    }
+    if (!persona) { alert('Persona not found.'); return; }
+    const m = this.byId(metricId);
+    let filter = {};
+    if (m && (m.dimensions || []).length) {
+      const filterText = prompt('Filter (optional, "key=value, key=value"):', '');
+      if (filterText) {
+        filterText.split(',').forEach(pair => {
+          const [k, v] = pair.split('=').map(s => (s || '').trim());
+          if (k && v) filter[k] = v;
+        });
+      }
+    }
+    Personas.addHolding(persona.id, { metric_id: metricId, filter, targets: [] });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+};
+
+/* ============================================================
+   Strategy — top-level view (Personas / Objectives / Metrics)
+   ============================================================ */
+const Strategy = {
+  TABS: [
+    { id: 'personas',   label: 'Personas'   },
+    { id: 'objectives', label: 'Objectives' },
+    { id: 'metrics',    label: 'Metrics'    },
+  ],
+
+  tabs() { return this.TABS.slice(); },
+
+  activeTab() {
+    return (App.uiStateGet ? (App.uiStateGet('strategy.tab') || 'personas') : 'personas');
+  },
+
+  setActiveTab(id) {
+    if (App.uiStateSet) App.uiStateSet('strategy.tab', id);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  render() {
+    const active = this.activeTab();
+    const tabs = this.TABS.map(t =>
+      '<button class="tab' + (t.id === active ? ' active' : '') + '" '
+      + 'onclick="Strategy.setActiveTab(\'' + t.id + '\')">' + Dashboard.esc(t.label) + '</button>'
+    ).join('');
+    let body = '';
+    if      (active === 'personas')   body = this._renderPersonas();
+    else if (active === 'objectives') body = this._renderObjectives();
+    else if (active === 'metrics')    body = this._renderMetrics();
+    return '<div class="strategy-view">'
+         +   '<div class="strategy-tabs">' + tabs + '</div>'
+         +   '<div class="strategy-body">' + body + '</div>'
+         + '</div>';
+  },
+
+  _renderPersonas()   { return Personas.renderInventoryTab(); },
+  _renderObjectives() { return Objectives.renderInventoryTab(); },
+  _renderMetrics()    { return Metrics.renderInventoryTab(); },
+
+  mount() {
+    const container = document.getElementById('viewStrategy');
+    if (container) container.innerHTML = this.render();
+  },
+};
+
+/* ============================================================
    Progress — long-operation overlay
    ============================================================ */
 const Progress = {
@@ -9777,6 +10950,12 @@ const Dashboard = {
       { id: 'category', group: 'Identity', label: 'Category', width: 100, sortable: true,
         render: (p) => Dashboard.esc(p.category || ''),
         edit: { type: 'text', field: 'category' } },
+      { id: 'personas', group: 'Identity', label: 'Personas', width: 160,
+        render: (p) => Dashboard._renderPersonaChips(p),
+        edit: { type: 'multi-select', field: 'persona_ids', source: 'personas' } },
+      { id: 'metrics', group: 'Identity', label: 'Metrics', width: 180,
+        render: (p) => Dashboard._renderMetricChips(p),
+        edit: { type: 'multi-select', field: 'metric_ids', source: 'metrics' } },
       { id: 'manager', group: 'Identity', label: 'Manager', width: 130, sortable: true, cellClass: 'manager-cell',
         render: (p) => Dashboard.esc(p.manager || '—'),
         edit: { type: 'text', field: 'manager' } },
@@ -10146,6 +11325,19 @@ const Dashboard = {
     // M7: sprint filter lists every configured sprint_id (ordered chronologically).
     const sprintOptions = (App.data && App.data.sprints ? App.data.sprints.map(s => s.sprint_id) : []);
     this.initMultiSelect('filterSprint', sprintOptions);
+    // Strategy linkage filters (Task 22)
+    this._populateStrategyFilter('filterMetric',    typeof Metrics    !== 'undefined' ? Metrics.list()    : [], (m) => m.name);
+    this._populateStrategyFilter('filterObjective', typeof Objectives !== 'undefined' ? Objectives.list() : [], (o) => o.name);
+    this._populateStrategyFilter('filterPersona',   typeof Personas   !== 'undefined' ? Personas.list()   : [], (p) => p.name + (p.role_title ? ' — ' + p.role_title : ''));
+  },
+
+  _populateStrategyFilter(elId, items, labelFn) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const current = el.value;
+    el.innerHTML = '<option value="">— any —</option>'
+      + items.map(it => '<option value="' + this.esc(it.id) + '">' + this.esc(labelFn(it)) + '</option>').join('');
+    if (current && items.some(it => it.id === current)) el.value = current;
   },
 
   fillSelect(id, values, autoSelectFirst) {
@@ -10316,6 +11508,30 @@ const Dashboard = {
     this.applyFilters();
   },
 
+  // ===== Strategy linkage filters (Task 22) =====
+  filterByMetric(metricId) {
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p => (p.metric_ids || []).includes(metricId));
+  },
+
+  filterByObjective(objectiveId) {
+    const metricIds = (typeof Metrics !== 'undefined' ? Metrics.list() : [])
+      .filter(m => (m.objective_ids || []).includes(objectiveId)).map(m => m.id);
+    if (!metricIds.length) return [];
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p => (p.metric_ids || []).some(mid => metricIds.includes(mid)));
+  },
+
+  filterByPersona(personaId) {
+    const persona = (typeof Personas !== 'undefined') ? Personas.byId(personaId) : null;
+    const metricIds = persona ? (persona.metric_holdings || []).map(h => h.metric_id) : [];
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p =>
+      (p.persona_ids || []).includes(personaId) ||
+      (p.metric_ids  || []).some(mid => metricIds.includes(mid))
+    );
+  },
+
   applyFilters() {
     if (!App.data) return;
     try {
@@ -10330,6 +11546,12 @@ const Dashboard = {
       const statuses = this.getFilterValues('filterStatus');
       const categories = this.getFilterValues('filterCategory');
       const sprints = this.getFilterValues('filterSprint');
+      const metricFilterEl    = document.querySelector('select[name="filter-metric"]');
+      const objectiveFilterEl = document.querySelector('select[name="filter-objective"]');
+      const personaFilterEl   = document.querySelector('select[name="filter-persona"]');
+      const metricFilter    = metricFilterEl    ? metricFilterEl.value    : '';
+      const objectiveFilter = objectiveFilterEl ? objectiveFilterEl.value : '';
+      const personaFilter   = personaFilterEl   ? personaFilterEl.value   : '';
 
       let projects = App.data.projects.slice();
 
@@ -10355,6 +11577,19 @@ const Dashboard = {
           const splits = p.skill_splits || {};
           return Object.values(splits).some(arr => Array.isArray(arr) && arr.some(sp => sprints.includes(sp.sprint)));
         });
+      }
+      // Strategy linkage filters (Task 22)
+      if (metricFilter) {
+        const ids = new Set(this.filterByMetric(metricFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
+      }
+      if (objectiveFilter) {
+        const ids = new Set(this.filterByObjective(objectiveFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
+      }
+      if (personaFilter) {
+        const ids = new Set(this.filterByPersona(personaFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
       }
 
       // Evaluate RAG auto-scoring rules (per-project failures are isolated)
@@ -10774,6 +12009,39 @@ const Dashboard = {
       ).join('');
       cell.innerHTML = '<select class="quick-edit-input">' + opts + '</select>';
       editor = cell.querySelector('select');
+    } else if (edit.type === 'multi-select') {
+      // Mirrors 'select' branch but multi. Source is 'personas' or 'metrics'; ids/labels are
+      // app-internal (escaped via Dashboard.esc per project convention).
+      const source = edit.source;
+      let items = [];
+      if (source === 'personas' && typeof Personas !== 'undefined') items = Personas.list().map(p => ({ id: p.id, label: p.name }));
+      else if (source === 'metrics' && typeof Metrics !== 'undefined') items = Metrics.list().map(m => ({ id: m.id, label: m.name }));
+      const selected = new Set(Array.isArray(originalValue) ? originalValue : []);
+      const opts = items.map(it =>
+        '<option value="' + Dashboard.esc(it.id) + '"' + (selected.has(it.id) ? ' selected' : '') + '>' + Dashboard.esc(it.label) + '</option>'
+      ).join('');
+      const sizeAttr = Math.min(8, Math.max(3, items.length || 3));
+      const html = '<select multiple size="' + sizeAttr + '" class="quick-edit-input quick-edit-multi">' + opts + '</select>';
+      cell.innerHTML = html;
+      editor = cell.querySelector('select');
+      if (editor) {
+        const commitMulti = () => {
+          const next = Array.from(editor.selectedOptions).map(o => o.value);
+          const cur = Array.isArray(originalValue) ? originalValue : [];
+          const same = next.length === cur.length && next.every((v, i) => v === cur[i]);
+          if (same) { cancel(); return; }
+          App.updateProject(projectId, dataField, next);
+          reRender();
+          delete cell.dataset.editing;
+        };
+        editor.addEventListener('blur', commitMulti);
+        editor.addEventListener('keydown', e => {
+          if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+          else if (e.key === 'Enter') { e.preventDefault(); editor.blur(); }
+        });
+        try { editor.focus(); } catch (_) {}
+        return;
+      }
     } else {
       cell.innerHTML = '<input type="text" class="quick-edit-input" value="' + Dashboard.esc(String(originalValue == null ? '' : originalValue)) + '">';
       editor = cell.querySelector('input');
@@ -12073,6 +13341,28 @@ const Dashboard = {
     } catch (e) { return false; }
   },
 
+  _renderPersonaChips(project) {
+    const ids = project.persona_ids || [];
+    if (!ids.length) return '<span class="muted">—</span>';
+    return ids.map(id => {
+      const p = (typeof Personas !== 'undefined') ? Personas.byId(id) : null;
+      if (!p) return '';
+      return '<span class="chip-sm">' + Dashboard.esc(p.name) + '</span>';
+    }).join(' ');
+  },
+  _renderMetricChips(project) {
+    const ids = project.metric_ids || [];
+    if (!ids.length) return '<span class="muted">—</span>';
+    return ids.map(id => {
+      const m = (typeof Metrics !== 'undefined') ? Metrics.byId(id) : null;
+      if (!m) return '';
+      const grp = (typeof MetricGroups !== 'undefined') ? MetricGroups.byId(m.group_id) : null;
+      const swatch = grp ? grp.swatch : '#888';
+      return '<span class="chip-sm" style="border-left: 2px solid ' + swatch + '">'
+           + Dashboard.esc(m.name) + '</span>';
+    }).join(' ');
+  },
+
   esc(str) {
     const d = document.createElement('div');
     d.textContent = str;
@@ -12837,6 +14127,115 @@ const BacklogHealth = {
    ============================================================ */
 const DetailPanel = {
   currentId: null,
+  // ===== Strategy linkage (Tasks 20 + 21) =====
+  renderStrategyEditFields(project) {
+    const personas = (typeof Personas !== 'undefined') ? Personas.list() : [];
+    const metrics  = (typeof Metrics  !== 'undefined') ? Metrics.list()  : [];
+    const groups   = (typeof MetricGroups !== 'undefined') ? MetricGroups.list() : [];
+    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const selectedMetricIds  = new Set(project.metric_ids  || []);
+    const selectedPersonaIds = new Set(project.persona_ids || []);
+
+    // Group metrics by group_id for display
+    const byGroup = {};
+    metrics.forEach(m => {
+      if (!byGroup[m.group_id]) byGroup[m.group_id] = [];
+      byGroup[m.group_id].push(m);
+    });
+    let metricOpts = '';
+    Object.keys(byGroup).forEach(gid => {
+      metricOpts += '<optgroup label="' + Dashboard.esc(groupName(gid)) + '">';
+      byGroup[gid].forEach(m => {
+        const sel = selectedMetricIds.has(m.id) ? ' selected' : '';
+        metricOpts += '<option value="' + Dashboard.esc(m.id) + '"' + sel + '>' + Dashboard.esc(m.name) + '</option>';
+      });
+      metricOpts += '</optgroup>';
+    });
+    const personaOpts = personas.map(p => {
+      const sel = selectedPersonaIds.has(p.id) ? ' selected' : '';
+      return '<option value="' + Dashboard.esc(p.id) + '"' + sel + '>'
+           + Dashboard.esc(p.name) + (p.role_title ? ' — ' + Dashboard.esc(p.role_title) : '') + '</option>';
+    }).join('');
+
+    return '<div class="strategy-edit-fields" style="display:flex;flex-direction:column;gap:8px">'
+         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Metrics this project delivers <small style="font-weight:400;color:var(--text-muted)">— primary link</small>'
+         +     '<select multiple name="metric_ids" id="proj-metric-ids" size="6" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'metric_ids\', this)">' + metricOpts + '</select>'
+         +   '</label>'
+         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Personas served <small style="font-weight:400;color:var(--text-muted)">— optional, for non-metric work</small>'
+         +     '<select multiple name="persona_ids" id="proj-persona-ids" size="4" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'persona_ids\', this)">' + personaOpts + '</select>'
+         +   '</label>'
+         + '</div>';
+  },
+
+  onStrategyMultiChange(field, sel) {
+    if (!this.currentId || !App.data || !Array.isArray(App.data.projects)) return;
+    const project = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!project) return;
+    const values = Array.from(sel.selectedOptions).map(o => o.value);
+    project[field] = values;
+    if (App._save) App._save();
+  },
+
+  renderStrategySection(project) {
+    const linkedMetrics = (project.metric_ids || []).map(id => Metrics.byId(id)).filter(Boolean);
+
+    // Derived objectives: union of linkedMetrics' objective_ids
+    const objIdSet = new Set();
+    linkedMetrics.forEach(m => (m.objective_ids || []).forEach(id => objIdSet.add(id)));
+    const derivedObjectives = [...objIdSet].map(id => ({
+      obj: Objectives.byId(id),
+      viaMetricNames: linkedMetrics.filter(m => (m.objective_ids || []).includes(id)).map(m => m.name)
+    })).filter(x => x.obj);
+
+    // Derived personas: from holders of linkedMetrics, plus explicit persona_ids
+    const personaMap = new Map(); // id → { persona, viaLabels: [] }
+    Personas.list().forEach(p => {
+      (p.metric_holdings || []).forEach(h => {
+        const m = linkedMetrics.find(mm => mm.id === h.metric_id);
+        if (!m) return;
+        const filterText = Object.entries(h.filter || {}).map(([k,v]) => k + ': ' + v).join(', ');
+        const label = m.name + (filterText ? ' · ' + filterText : '');
+        if (!personaMap.has(p.id)) personaMap.set(p.id, { persona: p, viaLabels: [] });
+        personaMap.get(p.id).viaLabels.push(label);
+      });
+    });
+    (project.persona_ids || []).forEach(pid => {
+      const p = Personas.byId(pid);
+      if (!p) return;
+      if (!personaMap.has(pid)) personaMap.set(pid, { persona: p, viaLabels: [] });
+    });
+
+    const chipBase = 'display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:#eef2f7;margin-right:4px;margin-bottom:3px';
+    const muted = 'color:var(--text-muted);font-style:italic';
+    const flag = 'color:var(--text-muted);font-size:10px;font-weight:400;margin-left:4px';
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;display:inline-block;width:90px';
+
+    const metricChips = linkedMetrics.length
+      ? linkedMetrics.map(m => '<span class="chip" style="' + chipBase + '">' + Dashboard.esc(m.name) + '</span>').join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    const objectiveChips = derivedObjectives.length
+      ? derivedObjectives.map(({ obj, viaMetricNames }) =>
+          '<span class="obj-chip" style="' + chipBase + '">' + Dashboard.esc(obj.name)
+          + ' <span class="derived-flag" style="' + flag + '">via ' + Dashboard.esc(viaMetricNames.join(', ')) + '</span></span>'
+        ).join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    const personaChips = personaMap.size
+      ? [...personaMap.values()].map(({ persona, viaLabels }) =>
+          '<span class="persona-chip" style="' + chipBase + '">' + Dashboard.esc(persona.name)
+          + (viaLabels.length ? ' <span class="derived-flag" style="' + flag + '">via ' + Dashboard.esc(viaLabels.join(' / ')) + '</span>' : '')
+          + '</span>'
+        ).join('')
+      : '<span class="muted" style="' + muted + '">none</span>';
+
+    return '<div class="strategy-section">'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Metrics</span>'    + metricChips    + '</div>'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Objectives</span>' + objectiveChips + '</div>'
+         +   '<div class="strategy-row" style="padding:6px 0"><span class="caps" style="' + caps + '">Personas</span>'   + personaChips   + '</div>'
+         + '</div>';
+  },
+
   // Issue 9: three-tab redesign — Setup (once-off), Health (weekly review),
   // Delivery (daily ops). Default tab = Health, the most common reason to open.
   activeTab: 'health',
@@ -13422,6 +14821,12 @@ const DetailPanel = {
     // Completion date moved to Delivery > Dates as a read-only badge (Project Details Overhaul, T8).
     healthSections.push(
       '<div class="panel-section">' +
+        '<div class="panel-section-title">Strategy</div>' +
+        this.renderStrategySection(p) +
+      '</div>'
+    );
+    healthSections.push(
+      '<div class="panel-section">' +
         '<div class="panel-section-title">Notes</div>' +
         textarea('notes', p.notes) +
       '</div>'
@@ -13646,6 +15051,12 @@ const DetailPanel = {
         '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
         '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
+      '</div>'
+    );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Strategy linkage</div>' +
+        this.renderStrategyEditFields(p) +
       '</div>'
     );
     setupSections.push(

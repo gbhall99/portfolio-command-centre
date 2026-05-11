@@ -30,7 +30,7 @@ describe('Dashboard.COLUMNS registry', () => {
 
   it('every editable column has a known edit.type', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
-    const known = new Set(['text', 'number', 'date', 'select', 'textarea', 'rag', 'sprint', 'derived']);
+    const known = new Set(['text', 'number', 'date', 'select', 'textarea', 'rag', 'sprint', 'derived', 'multi-select']);
     for (const col of app.Dashboard.COLUMNS) {
       if (col.edit) {
         expect(known.has(col.edit.type), col.id + ': ' + col.edit.type).toBe(true);
