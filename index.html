@@ -1537,14 +1537,25 @@ html[data-theme="dark"] .gantt-grid-bg > .gantt-grid-month { border-left-color: 
 .gantt-bar {
   position: absolute; top: 22px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
-  font-size: 11px; font-weight: 700; color: white; overflow: hidden;
-  white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
+  font-size: 11px; font-weight: 700; color: white;
+  white-space: nowrap; cursor: pointer;
   transition: opacity 0.15s; min-width: 4px; z-index: 2;
   box-shadow: 0 2px 4px rgba(15,23,42,0.18), inset 0 0 0 1px rgba(255,255,255,0.10);
   letter-spacing: 0.2px;
+  /* clip-path replaces overflow:hidden so the bar visually clips the label
+     to its bounds without becoming the sticky reference — that lets the bar
+     label stay readable past the sticky Project column when the bar starts
+     off-screen left. */
+  clip-path: inset(0 round 5px);
 }
 .gantt-bar:hover { opacity: 0.92; box-shadow: 0 3px 6px rgba(15,23,42,0.24), inset 0 0 0 1px rgba(255,255,255,0.14); }
-.gantt-bar .bar-label { overflow: hidden; text-overflow: ellipsis; }
+.gantt-bar .bar-label {
+  overflow: hidden; text-overflow: ellipsis;
+  /* Stick to the visible-left edge of the timeline so the project name
+     stays readable when the bar extends behind the sticky labels column
+     (labels are 440px wide; we offset 8px past their right edge). */
+  position: sticky; left: 448px;
+}
 .gantt-sub-row { background: linear-gradient(to right, rgba(15,23,42,0.02), rgba(15,23,42,0.01) 35%, transparent); border-left: 2px solid rgba(15,23,42,0.06); }
 html[data-theme="dark"] .gantt-sub-row { background: linear-gradient(to right, rgba(255,255,255,0.04), rgba(255,255,255,0.02) 35%, transparent); border-left-color: rgba(255,255,255,0.08); border-bottom-color: #1f2937 !important; }
 
@@ -21288,7 +21299,7 @@ const Gantt = {
       // Lifecycle stage chip is intentionally omitted from Gantt bars — bar labels are tight,
       // most projects sit at the default Implementation stage, and the chip duplicates info
       // that's already on the Projects table and Detail Panel (Issue 7).
-      if (w > 60) barLabel = '<span class="bar-label" style="position:relative;z-index:1">' + Dashboard.esc(p.name) + '</span>';
+      if (w > 60) barLabel = '<span class="bar-label">' + Dashboard.esc(p.name) + '</span>';
 
       let barContent = '';
       if (segmentsHtml) {
@@ -21494,7 +21505,7 @@ const Gantt = {
       _chartZebraIndex += 1;
       const mainRowCls = 'gantt-row ' + rowZebra + (isDetailed ? ' gantt-row-in-block' : '');
       let mainRow = groupSpacer + '<div class="' + mainRowCls + '" style="width:' + totalWidth + 'px">' +
-        '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';overflow:hidden;border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
+        '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
         confidenceHtml +
