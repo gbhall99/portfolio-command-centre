@@ -19,9 +19,12 @@ describe('Strategy — Metrics inventory list', () => {
     expect(out).toContain('Customer NPS');
     // Dimensions render as compact chips in the new flat table.
     expect(out).toContain('region');
-    // Persona / People / Targets counts surface in dedicated columns.
-    expect(out).toMatch(/<td class="metric-th-right">1<\/td>/);
-    expect(out).toMatch(/<td class="metric-th-right">0<\/td>/);
+    // Metric rows expose the twisty + R/A/C/I columns.
+    expect(out).toContain('metric-twisty');
+    expect(out).toContain('Responsible');
+    expect(out).toContain('Accountable');
+    expect(out).toContain('Consulted');
+    expect(out).toContain('Informed');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-metrics-list.html');
     app.teardown();
   });

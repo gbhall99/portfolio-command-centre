@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
-import { makeDataset, makeMetric, makeMetricGroup, resetIdSeq } from '../harness/fixtures.mjs';
+import { makeDataset, makeMetric, makeMetricGroup, makePersona, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('MetricGroups module', () => {
   it('list() returns groups for the active customer', async () => {
@@ -99,50 +99,59 @@ describe('Metrics module', () => {
   });
 });
 
-describe('Metrics view toggle (library | raci)', () => {
-  it('defaults to library view and persists view changes via App.uiStateSet', async () => {
+// 2026-05: the Library / RACI matrix view toggle was removed in favour of a
+// single flat table with R/A/C/I as separate columns and inline cascade
+// expansion. The state key + helpers still exist for legacy callers but no
+// longer change the rendering output.
+describe('Metrics inventory — single flat-table layout', () => {
+  it('renderInventoryTab renders the flat library table regardless of view state', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    expect(app.App.uiStateGet('strategy.metric.view')).toBeNull();
-    app.Metrics._setView('raci');
-    expect(app.App.uiStateGet('strategy.metric.view')).toBe('raci');
-    app.Metrics._setView('library');
-    expect(app.App.uiStateGet('strategy.metric.view')).toBe('library');
-    app.teardown();
-  });
-
-  it('renderInventoryTab swaps to the matrix when the view is set to "raci"', async () => {
-    const app = await loadApp(makeDataset({
-      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
-    }));
-    app.App.activeCustomer = 'Acme Industries';
-    let out = app.Metrics.renderInventoryTab();
-    expect(out).toContain('metric-library-table');    // default library flat table
+    const out = app.Metrics.renderInventoryTab();
+    expect(out).toContain('metric-library-table');
+    // RACI matrix view + toggle no longer surface in the inventory tab.
     expect(out).not.toContain('raci-matrix');
+    expect(out).not.toContain('RACI matrix');
+    expect(out).not.toContain('>Library<');
     app.App.uiStateSet('strategy.metric.view', 'raci');
-    out = app.Metrics.renderInventoryTab();
-    expect(out).toContain('raci-matrix');
-    expect(out).not.toContain('metric-library-table');
+    const out2 = app.Metrics.renderInventoryTab();
+    expect(out2).toContain('metric-library-table');
+    expect(out2).not.toContain('raci-matrix');
     app.teardown();
   });
 
-  it('renderInventoryTab emits the view-toggle controls in both modes', async () => {
+  it('exposes Expand all / Collapse all controls', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    const lib = app.Metrics.renderInventoryTab();
-    expect(lib.toLowerCase()).toContain('raci matrix');
-    expect(lib).toContain('Library');
-    app.App.uiStateSet('strategy.metric.view', 'raci');
-    const raci = app.Metrics.renderInventoryTab();
-    expect(raci.toLowerCase()).toContain('raci matrix');
-    expect(raci).toContain('Library');
+    const out = app.Metrics.renderInventoryTab();
+    expect(out).toContain('Expand all');
+    expect(out).toContain('Collapse all');
+    app.teardown();
+  });
+
+  it('expanding a metric reveals an inline cascade row per holder', async () => {
+    const persona = makePersona({ id: 'P1', name: 'CFO',
+      metric_holdings: [{ id: 'H1', metric_id: 'M1', filter: {}, targets: [{ period: '2026', value: 100, period_type: 'annual' }] }],
+    });
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [persona],
+      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    // Collapsed: no cascade row.
+    expect(app.Metrics.renderInventoryTab()).not.toContain('metric-cascade-row');
+    // Expanded: one cascade row mentioning the persona.
+    app.Metrics._toggleExpand('M1');
+    const expanded = app.Metrics.renderInventoryTab();
+    expect(expanded).toContain('metric-cascade-row');
+    expect(expanded).toContain('CFO');
     app.teardown();
   });
 });

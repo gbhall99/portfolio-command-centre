@@ -26,14 +26,14 @@ describe('Strategy — Metrics library tabular view', () => {
 
     // Tabular structure markers.
     expect(out).toContain('metric-library-table');
-    // Column headers — extended with Definition, RACI and Dimensions.
-    ['Name', 'Group', 'Definition', 'Owner (Accountable)', 'RACI', 'Dimensions', 'Personas', 'People', 'Targets', 'Status', 'Updated']
+    // R/A/C/I now live as separate columns; counts/owner columns are gone.
+    ['Name', 'Group', 'Definition', 'Responsible', 'Accountable', 'Consulted', 'Informed', 'Dimensions', 'Status', 'Updated']
       .forEach(label => expect(out).toContain(label));
     // Both metrics rendered as rows.
     expect(out).toContain('Revenue');
     expect(out).toContain('Customer NPS');
-    // Owner accountable Person resolved.
-    expect(out).toContain('Sarah Chen');
+    // Accountable person pill resolves in the A column.
+    expect(out).toMatch(/raci-pill-A[^>]*>[^<]*Sarah Chen/);
 
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-metrics-library-table.html');
     app.teardown();
