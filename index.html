@@ -2679,6 +2679,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <div class="multi-select" id="filterCategory" data-field="category"></div>
           <span class="filter-label">Sprint</span>
           <div class="multi-select" id="filterSprint" data-field="current_sprint"></div>
+          <span class="filter-label">Metric</span>
+          <select name="filter-metric" id="filterMetric" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
+          <span class="filter-label">Objective</span>
+          <select name="filter-objective" id="filterObjective" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
+          <span class="filter-label">Persona</span>
+          <select name="filter-persona" id="filterPersona" class="filter-select" onchange="Dashboard.applyFilters()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);max-width:160px"><option value="">— any —</option></select>
           <span class="filter-count" id="filterCount"></span>
           <span class="filter-clear" id="filterClear" onclick="Dashboard.clearFilters()" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Clear</span>
           <div class="filter-divider"></div>
@@ -11316,6 +11322,19 @@ const Dashboard = {
     // M7: sprint filter lists every configured sprint_id (ordered chronologically).
     const sprintOptions = (App.data && App.data.sprints ? App.data.sprints.map(s => s.sprint_id) : []);
     this.initMultiSelect('filterSprint', sprintOptions);
+    // Strategy linkage filters (Task 22)
+    this._populateStrategyFilter('filterMetric',    typeof Metrics    !== 'undefined' ? Metrics.list()    : [], (m) => m.name);
+    this._populateStrategyFilter('filterObjective', typeof Objectives !== 'undefined' ? Objectives.list() : [], (o) => o.name);
+    this._populateStrategyFilter('filterPersona',   typeof Personas   !== 'undefined' ? Personas.list()   : [], (p) => p.name + (p.role_title ? ' — ' + p.role_title : ''));
+  },
+
+  _populateStrategyFilter(elId, items, labelFn) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const current = el.value;
+    el.innerHTML = '<option value="">— any —</option>'
+      + items.map(it => '<option value="' + this.esc(it.id) + '">' + this.esc(labelFn(it)) + '</option>').join('');
+    if (current && items.some(it => it.id === current)) el.value = current;
   },
 
   fillSelect(id, values, autoSelectFirst) {
@@ -11486,6 +11505,30 @@ const Dashboard = {
     this.applyFilters();
   },
 
+  // ===== Strategy linkage filters (Task 22) =====
+  filterByMetric(metricId) {
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p => (p.metric_ids || []).includes(metricId));
+  },
+
+  filterByObjective(objectiveId) {
+    const metricIds = (typeof Metrics !== 'undefined' ? Metrics.list() : [])
+      .filter(m => (m.objective_ids || []).includes(objectiveId)).map(m => m.id);
+    if (!metricIds.length) return [];
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p => (p.metric_ids || []).some(mid => metricIds.includes(mid)));
+  },
+
+  filterByPersona(personaId) {
+    const persona = (typeof Personas !== 'undefined') ? Personas.byId(personaId) : null;
+    const metricIds = persona ? (persona.metric_holdings || []).map(h => h.metric_id) : [];
+    const projects = (App.data && App.data.projects) ? App.data.projects.filter(p => p.customer === App.activeCustomer) : [];
+    return projects.filter(p =>
+      (p.persona_ids || []).includes(personaId) ||
+      (p.metric_ids  || []).some(mid => metricIds.includes(mid))
+    );
+  },
+
   applyFilters() {
     if (!App.data) return;
     try {
@@ -11500,6 +11543,12 @@ const Dashboard = {
       const statuses = this.getFilterValues('filterStatus');
       const categories = this.getFilterValues('filterCategory');
       const sprints = this.getFilterValues('filterSprint');
+      const metricFilterEl    = document.querySelector('select[name="filter-metric"]');
+      const objectiveFilterEl = document.querySelector('select[name="filter-objective"]');
+      const personaFilterEl   = document.querySelector('select[name="filter-persona"]');
+      const metricFilter    = metricFilterEl    ? metricFilterEl.value    : '';
+      const objectiveFilter = objectiveFilterEl ? objectiveFilterEl.value : '';
+      const personaFilter   = personaFilterEl   ? personaFilterEl.value   : '';
 
       let projects = App.data.projects.slice();
 
@@ -11525,6 +11574,19 @@ const Dashboard = {
           const splits = p.skill_splits || {};
           return Object.values(splits).some(arr => Array.isArray(arr) && arr.some(sp => sprints.includes(sp.sprint)));
         });
+      }
+      // Strategy linkage filters (Task 22)
+      if (metricFilter) {
+        const ids = new Set(this.filterByMetric(metricFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
+      }
+      if (objectiveFilter) {
+        const ids = new Set(this.filterByObjective(objectiveFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
+      }
+      if (personaFilter) {
+        const ids = new Set(this.filterByPersona(personaFilter).map(p => p.id));
+        projects = projects.filter(p => ids.has(p.id));
       }
 
       // Evaluate RAG auto-scoring rules (per-project failures are isolated)
