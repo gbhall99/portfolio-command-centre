@@ -1508,8 +1508,17 @@ html[data-theme="dark"] .gantt-proj-zebra-1 { background: rgba(255,255,255,0.03)
 .gantt-label-row-in-block { border-bottom: none !important; }
 .gantt-label-sub { border-bottom: none; }
 .gantt-label-sub-last { border-bottom: 1px solid var(--border-light); }
-.gantt-row-bg { position: absolute; inset: 0; }
-.gantt-row-bg .weekend-stripe { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.018); }
+/* Full-height grid backdrop — paints weekend stripes + week/month separators
+   across the entire row stack, including any expanded sub-rows in Detailed mode.
+   Sits behind every row (z-index 0); rows have their own background so zebra
+   striping continues to work. */
+.gantt-grid-bg { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; }
+.gantt-grid-bg > .gantt-grid-weekend { position: absolute; top: 0; bottom: 0; background: rgba(0,0,0,0.022); }
+.gantt-grid-bg > .gantt-grid-week  { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid #f1f5f9; }
+.gantt-grid-bg > .gantt-grid-month { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border-light); }
+html[data-theme="dark"] .gantt-grid-bg > .gantt-grid-weekend { background: rgba(255,255,255,0.035); }
+html[data-theme="dark"] .gantt-grid-bg > .gantt-grid-week,
+html[data-theme="dark"] .gantt-grid-bg > .gantt-grid-month { border-left-color: #1f2937; }
 .gantt-bar {
   position: absolute; top: 22px; height: 24px; border-radius: 5px;
   display: flex; align-items: center; padding: 0 8px;
@@ -21220,10 +21229,7 @@ const Gantt = {
         depLines + '</svg>';
     }
 
-    const ganttRowsEl = document.getElementById('ganttRows');
-    ganttRowsEl.innerHTML = annotationRow + rowsHtml + todayHtml + sprintLines + fyLines + depSvg;
-    ganttRowsEl.style.width = totalWidth + 'px';
-    // Calculate total height including sub-rows in detailed mode
+    // Compute the row stack height up front so the backdrop matches the expanded view exactly.
     let totalRowH = projects.length * rowH + 22; // +22 for annotation row
     if (isDetailed) {
       projects.forEach(p => {
@@ -21232,6 +21238,25 @@ const Gantt = {
         po.forEach(ph => { const sk = psm2[ph]; if (sk && (p[sk] || 0) > 0) totalRowH += subRowH; });
       });
     }
+    // Full-height column backdrop — weekend stripes + week/month separators that
+    // run through every row, including expanded sub-rows on the last project.
+    let gridBg = '<div class="gantt-grid-bg" style="height:' + totalRowH + 'px;width:' + totalWidth + 'px">';
+    let _cx = 0;
+    cols.forEach(c => {
+      if (c.isWeekend) {
+        gridBg += '<div class="gantt-grid-weekend" style="left:' + _cx + 'px;width:' + c.width + 'px"></div>';
+      }
+      if (_cx > 0) {
+        const sepClass = c.isMonthStart ? 'gantt-grid-month' : 'gantt-grid-week';
+        gridBg += '<div class="' + sepClass + '" style="left:' + _cx + 'px"></div>';
+      }
+      _cx += c.width;
+    });
+    gridBg += '</div>';
+
+    const ganttRowsEl = document.getElementById('ganttRows');
+    ganttRowsEl.innerHTML = gridBg + annotationRow + rowsHtml + todayHtml + sprintLines + fyLines + depSvg;
+    ganttRowsEl.style.width = totalWidth + 'px';
     ganttRowsEl.style.height = totalRowH + 'px';
     const ganttChartEl = document.getElementById('ganttChartArea');
     ganttChartEl.style.width = totalWidth + 'px';
