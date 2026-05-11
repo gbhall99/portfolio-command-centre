@@ -9387,7 +9387,47 @@ const Objectives = {
     };
   },
 
-  renderInventoryTab() { return '<!-- TODO: Objectives inventory -->'; },
+  renderInventoryTab() {
+    const objs = this.list();
+    if (!objs.length) {
+      return '<div class="empty" style="padding:16px;color:var(--text-muted);font-size:13px">No objectives for ' + Dashboard.esc(App.activeCustomer || '') + '.</div>';
+    }
+    const statusColour = (s) => ({ active: '#5fc995', planned: '#6a91d4', achieved: '#7eb6e8', deferred: '#c0c0c0' })[s] || '#888';
+    const entryHtml = (o) => {
+      const r = this.rollup(o.id);
+      const start = (o.time_horizon && o.time_horizon.start_date)  || '';
+      const end   = (o.time_horizon && o.time_horizon.target_date) || '';
+      const win   = (start || end) ? Dashboard.esc(start) + ' → ' + Dashboard.esc(end) : 'not set';
+      const chips = r.measuring_metrics.map(m =>
+        '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
+        +   Dashboard.esc(m.name)
+        + '</span>'
+      ).join(' ');
+      return '<div class="strategy-row obj obj-' + Dashboard.esc(o.status) + '" data-objective-id="' + Dashboard.esc(o.id) + '"'
+           +   ' onclick="Objectives._openDetail(\'' + Dashboard.esc(o.id) + '\')"'
+           +   ' style="display:flex;align-items:stretch;border-bottom:1px solid var(--border-light);cursor:pointer">'
+           +   '<span class="accent" style="width:4px;background:' + statusColour(o.status) + '"></span>'
+           +   '<div class="body" style="flex:1;padding:10px 14px">'
+           +     '<div class="title" style="font-weight:700;font-size:13px">' + Dashboard.esc(o.name) + '</div>'
+           +     '<div class="desc" style="color:var(--text-muted);font-size:11px;margin:2px 0 6px">' + Dashboard.esc(o.description || '') + '</div>'
+           +     '<div class="meta" style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-secondary);margin-bottom:4px">'
+           +       '<span><span class="caps" style="text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;margin-right:4px">window</span> ' + win + '</span>'
+           +       '<span>' + r.metric_count + ' metrics</span>'
+           +       '<span>' + r.contributing_personas.length + ' personas</span>'
+           +       '<span>' + r.delivering_projects.length + ' projects</span>'
+           +       '<span class="status-text" style="color:' + statusColour(o.status) + ';font-weight:600">' + Dashboard.esc(o.status) + '</span>'
+           +     '</div>'
+           +     '<div class="chips">' + chips + '</div>'
+           +   '</div>'
+           + '</div>';
+    };
+    return '<div class="strategy-objectives">' + objs.map(entryHtml).join('') + '</div>';
+  },
+
+  _openDetail(id) {
+    // TODO: open detail panel for the objective
+    console.log('open objective detail', id);
+  },
 };
 
 /* ============================================================
