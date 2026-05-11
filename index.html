@@ -4075,6 +4075,24 @@ const App = {
       if (!('persona_id' in person)) person.persona_id = null;
     });
 
+    // Seed metric.raci from raci_defaults for every active Person whose persona has
+    // a default. Idempotent — only adds person ids that aren't already in the role.
+    // This runs every load so new People defined in seed data without explicit raci
+    // wiring still light up in the matrix.
+    data.people.forEach(person => {
+      if (!person || !person.persona_id || person.active === false) return;
+      data.metrics.forEach(m => {
+        if (m.customer !== person.customer || !m.raci_defaults) return;
+        ['accountable','responsible','consulted','informed'].forEach(role => {
+          const list = m.raci_defaults[role] || [];
+          if (!list.includes(person.persona_id)) return;
+          if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
+          if (!Array.isArray(m.raci[role])) m.raci[role] = [];
+          if (!m.raci[role].includes(person.id)) m.raci[role].push(person.id);
+        });
+      });
+    });
+
     // Project additions
     (data.projects || []).forEach(p => {
       if (!Array.isArray(p.metric_ids))  p.metric_ids  = [];
