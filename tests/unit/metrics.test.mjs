@@ -121,12 +121,12 @@ describe('Metrics view toggle (library | raci)', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     let out = app.Metrics.renderInventoryTab();
-    expect(out).toContain('library-pane');           // default library two-pane
+    expect(out).toContain('metric-library-table');    // default library flat table
     expect(out).not.toContain('raci-matrix');
     app.App.uiStateSet('strategy.metric.view', 'raci');
     out = app.Metrics.renderInventoryTab();
     expect(out).toContain('raci-matrix');
-    expect(out).not.toContain('library-pane');
+    expect(out).not.toContain('metric-library-table');
     app.teardown();
   });
 

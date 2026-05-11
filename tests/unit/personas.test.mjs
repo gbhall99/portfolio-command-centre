@@ -52,19 +52,19 @@ describe('Personas module', () => {
   });
 });
 
-describe('Personas — tabular inventory', () => {
-  // After the 2026-05 tabular rework, the Personas tab is a flat schema-driven
-  // table sorted by name / role / parent-hierarchy. Tree collapse is gone; the
-  // data model (parent_persona_id) is unchanged and drives the Parent column.
-  const extractRowIds = (html) => {
+describe('Personas — hierarchy inventory', () => {
+  // The Personas tab renders the reporting tree as nested persona-node rows.
+  // Each node carries data-id + data-depth so tests can verify the structure
+  // without coupling to internal layout choices.
+  const extractIds = (html) => {
     const ids = [];
-    const re = /<tr class="strategy-row-tr[^"]*"[^>]*data-id="([^"]+)"/g;
+    const re = /<div class="persona-node"[^>]*data-id="([^"]+)"/g;
     let m;
     while ((m = re.exec(html)) !== null) ids.push(m[1]);
     return ids;
   };
 
-  it('renders every persona as a flat table row', async () => {
+  it('renders every persona as a node ordered by hierarchy', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO', parent_persona_id: null });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -75,11 +75,14 @@ describe('Personas — tabular inventory', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     const html = app.Personas.renderInventoryTab();
-    expect(extractRowIds(html).sort()).toEqual(['P1', 'P2', 'P3']);
+    // Order is depth-first from root: P1 then P2 then P3.
+    expect(extractIds(html)).toEqual(['P1', 'P2', 'P3']);
+    expect(html).toMatch(/data-id="P2"[^>]*data-depth="1"/);
+    expect(html).toMatch(/data-id="P3"[^>]*data-depth="2"/);
     app.teardown();
   });
 
-  it('search filter narrows the visible rows', async () => {
+  it('search filter flattens the tree to matched nodes only', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO' });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -89,7 +92,22 @@ describe('Personas — tabular inventory', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     app.App.uiStateSet('strategy.personas.filters', { search: 'CFO' });
-    expect(extractRowIds(app.Personas.renderInventoryTab())).toEqual(['P2']);
+    expect(extractIds(app.Personas.renderInventoryTab())).toEqual(['P2']);
+    app.teardown();
+  });
+
+  it('collapsing a parent hides its descendants in the rendered tree', async () => {
+    resetIdSeq();
+    const ceo = makePersona({ id: 'P1', name: 'CEO' });
+    const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
+    const finM = makePersona({ id: 'P3', name: 'Fin Mgr', parent_persona_id: 'P2' });
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [ceo, cfo, finM],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.uiStateSet(app.Personas._COLLAPSED_KEY, ['P1']);
+    expect(extractIds(app.Personas.renderInventoryTab())).toEqual(['P1']);
     app.teardown();
   });
 

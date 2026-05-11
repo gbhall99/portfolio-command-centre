@@ -26,8 +26,8 @@ describe('Strategy — Metrics library tabular view', () => {
 
     // Tabular structure markers.
     expect(out).toContain('metric-library-table');
-    // Column headers.
-    ['Name', 'Group', 'Owner (Accountable)', '# Personas', '# People', 'Targets', 'Status', 'Updated']
+    // Column headers — extended with Definition, RACI and Dimensions.
+    ['Name', 'Group', 'Definition', 'Owner (Accountable)', 'RACI', 'Dimensions', 'Personas', 'People', 'Targets', 'Status', 'Updated']
       .forEach(label => expect(out).toContain(label));
     // Both metrics rendered as rows.
     expect(out).toContain('Revenue');

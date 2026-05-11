@@ -17,9 +17,11 @@ describe('Strategy — Metrics inventory list', () => {
     const out = app.Metrics.renderInventoryTab();
     expect(out).toContain('Revenue');
     expect(out).toContain('Customer NPS');
+    // Dimensions render as compact chips in the new flat table.
     expect(out).toContain('region');
-    expect(out).toMatch(/1.*holders?/);
-    expect(out).toMatch(/0.*holders?/);
+    // Persona / People / Targets counts surface in dedicated columns.
+    expect(out).toMatch(/<td class="metric-th-right">1<\/td>/);
+    expect(out).toMatch(/<td class="metric-th-right">0<\/td>/);
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-metrics-list.html');
     app.teardown();
   });

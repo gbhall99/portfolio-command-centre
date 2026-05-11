@@ -48,8 +48,11 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
   await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toHaveClass(/active/);
   await page.click('.strategy-tabs button:has-text("Personas")');
-  await expect(page.locator('#viewStrategy .strategy-table[data-source="strategy.personas"]')).toContainText('E2E Sarah Chen');
-  await expect(page.locator('#viewStrategy .strategy-table[data-source="strategy.personas"]')).toContainText('E2E Total opex');
+  // Personas is rendered as a hierarchy tree; the new persona must show up with
+  // its archetype (role) label since persona.name is now the archetype rather
+  // than the assigned person's name. The created node will render its role_title.
+  const personaTree = page.locator('#viewStrategy .persona-tree');
+  await expect(personaTree).toContainText('E2E Sarah Chen');
 
   // Switch to Metrics tab and confirm the new metric appears
   await page.click('.strategy-tabs button:has-text("Metrics")');
