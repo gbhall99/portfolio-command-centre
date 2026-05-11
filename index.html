@@ -14062,6 +14062,55 @@ const BacklogHealth = {
    ============================================================ */
 const DetailPanel = {
   currentId: null,
+  // ===== Strategy linkage (Tasks 20 + 21) =====
+  renderStrategyEditFields(project) {
+    const personas = (typeof Personas !== 'undefined') ? Personas.list() : [];
+    const metrics  = (typeof Metrics  !== 'undefined') ? Metrics.list()  : [];
+    const groups   = (typeof MetricGroups !== 'undefined') ? MetricGroups.list() : [];
+    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const selectedMetricIds  = new Set(project.metric_ids  || []);
+    const selectedPersonaIds = new Set(project.persona_ids || []);
+
+    // Group metrics by group_id for display
+    const byGroup = {};
+    metrics.forEach(m => {
+      if (!byGroup[m.group_id]) byGroup[m.group_id] = [];
+      byGroup[m.group_id].push(m);
+    });
+    let metricOpts = '';
+    Object.keys(byGroup).forEach(gid => {
+      metricOpts += '<optgroup label="' + Dashboard.esc(groupName(gid)) + '">';
+      byGroup[gid].forEach(m => {
+        const sel = selectedMetricIds.has(m.id) ? ' selected' : '';
+        metricOpts += '<option value="' + Dashboard.esc(m.id) + '"' + sel + '>' + Dashboard.esc(m.name) + '</option>';
+      });
+      metricOpts += '</optgroup>';
+    });
+    const personaOpts = personas.map(p => {
+      const sel = selectedPersonaIds.has(p.id) ? ' selected' : '';
+      return '<option value="' + Dashboard.esc(p.id) + '"' + sel + '>'
+           + Dashboard.esc(p.name) + (p.role_title ? ' — ' + Dashboard.esc(p.role_title) : '') + '</option>';
+    }).join('');
+
+    return '<div class="strategy-edit-fields" style="display:flex;flex-direction:column;gap:8px">'
+         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Metrics this project delivers <small style="font-weight:400;color:var(--text-muted)">— primary link</small>'
+         +     '<select multiple name="metric_ids" id="proj-metric-ids" size="6" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'metric_ids\', this)">' + metricOpts + '</select>'
+         +   '</label>'
+         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Personas served <small style="font-weight:400;color:var(--text-muted)">— optional, for non-metric work</small>'
+         +     '<select multiple name="persona_ids" id="proj-persona-ids" size="4" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'persona_ids\', this)">' + personaOpts + '</select>'
+         +   '</label>'
+         + '</div>';
+  },
+
+  onStrategyMultiChange(field, sel) {
+    if (!this.currentId || !App.data || !Array.isArray(App.data.projects)) return;
+    const project = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!project) return;
+    const values = Array.from(sel.selectedOptions).map(o => o.value);
+    project[field] = values;
+    if (App._save) App._save();
+  },
+
   // Issue 9: three-tab redesign — Setup (once-off), Health (weekly review),
   // Delivery (daily ops). Default tab = Health, the most common reason to open.
   activeTab: 'health',
@@ -14871,6 +14920,12 @@ const DetailPanel = {
         '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
         '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
+      '</div>'
+    );
+    setupSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Strategy linkage</div>' +
+        this.renderStrategyEditFields(p) +
       '</div>'
     );
     setupSections.push(
