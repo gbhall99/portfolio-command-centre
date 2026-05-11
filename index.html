@@ -9262,6 +9262,83 @@ const MetricGroups = {
     if (App._save) App._save();
     return true;
   },
+
+  renderConfigBody() {
+    const groups = this.list();
+    const metrics = (typeof Metrics !== 'undefined') ? Metrics.list() : [];
+    const inUse = (id) => metrics.filter(m => m.group_id === id).length;
+    const rows = groups.map(g => {
+      const n = inUse(g.id);
+      const removeBtn = n > 0
+        ? '<button class="btn btn-ghost btn-sm" disabled title="Cannot remove: ' + n + ' metric(s) in this group">remove</button>'
+        : '<button class="btn btn-ghost btn-sm" style="color:var(--status-red)" onclick="MetricGroups._remove(\'' + g.id + '\')">remove</button>';
+      return '<tr><td><span style="display:inline-block;width:10px;height:10px;background:' + g.swatch + ';border-radius:2px;margin-right:6px"></span>'
+           +   '<strong>' + Dashboard.esc(g.name) + '</strong></td>'
+           +   '<td><code>' + Dashboard.esc(g.id) + '</code></td>'
+           +   '<td>' + n + '</td>'
+           +   '<td><button class="btn btn-ghost btn-sm" onclick="MetricGroups._edit(\'' + g.id + '\')">rename</button> ' + removeBtn + '</td>'
+           + '</tr>';
+    }).join('');
+    return '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
+         +   '<th style="text-align:left;padding:6px">Group</th><th style="text-align:left;padding:6px">id</th>'
+         +   '<th style="text-align:left;padding:6px">In use</th><th></th></tr></thead><tbody>'
+         +   rows
+         + '</tbody></table>'
+         + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="MetricGroups._showAddForm()">+ Add group</button>';
+  },
+
+  _openConfig() {
+    const body = this.renderConfigBody();
+    // Lightweight overlay modal
+    const existing = document.getElementById('metricGroupsConfigOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'metricGroupsConfigOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center';
+    const html =
+      '<div style="background:white;border-radius:var(--radius-md);padding:20px;min-width:480px;max-width:90vw;max-height:90vh;overflow:auto">'
+      + '<h3 style="font-size:14px;font-weight:700;margin-bottom:12px">Metric groups</h3>'
+      + body
+      + '<div style="text-align:right;margin-top:12px"><button class="btn btn-outline btn-sm" onclick="document.getElementById(\'metricGroupsConfigOverlay\').remove()">Close</button></div>'
+      + '</div>';
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  },
+
+  _edit(id) {
+    const g = this.byId(id);
+    if (!g) return;
+    const name = prompt('Group name:', g.name);
+    if (name === null) return;
+    const swatch = prompt('Swatch colour (hex):', g.swatch || '#888');
+    if (swatch === null) return;
+    this.update(id, { name: name.trim(), swatch: swatch.trim() });
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
+
+  _remove(id) {
+    if (!confirm('Remove this group?')) return;
+    if (!this.remove(id)) { alert('Cannot remove: group is in use.'); return; }
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
+
+  _showAddForm() {
+    const id = prompt('Group id (lowercase, no spaces):');
+    if (!id) return;
+    const name = prompt('Group name:');
+    if (!name) return;
+    const swatch = prompt('Swatch colour (hex):', '#888') || '#888';
+    const r = this.add({ id: id.trim().toLowerCase(), name: name.trim(), swatch: swatch.trim() });
+    if (!r) { alert('A group with that id already exists.'); return; }
+    if (App.renderActiveView) App.renderActiveView();
+    const overlay = document.getElementById('metricGroupsConfigOverlay');
+    if (overlay) { overlay.remove(); this._openConfig(); }
+  },
 };
 
 /* ============================================================
