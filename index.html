@@ -10881,46 +10881,294 @@ const Objectives = {
     };
   },
 
+  COLUMNS: [
+    { id: 'name', label: 'Objective', width: 280, alwaysOn: true, sortable: true,
+      render: (o) => '<strong>' + Dashboard.esc(o.name) + '</strong>',
+      edit: { type: 'text', field: 'name' } },
+    { id: 'description', label: 'Description', width: 320,
+      render: (o) => Dashboard.esc((o.description || '').slice(0, 100)) + ((o.description || '').length > 100 ? '…' : ''),
+      edit: { type: 'textarea', field: 'description' } },
+    { id: 'status', label: 'Status', width: 110, alwaysOn: true, sortable: true,
+      render: (o) => {
+        const colour = ({ active: '#5fc995', planned: '#6a91d4', achieved: '#7eb6e8', deferred: '#c0c0c0', abandoned: '#a0a0a0' })[o.status] || '#888';
+        return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + colour + '"></span>' + Dashboard.esc(o.status || '—') + '</span>';
+      },
+      edit: {
+        type: 'select', field: 'status',
+        options: () => [
+          { value: 'active', label: 'Active' },
+          { value: 'planned', label: 'Planned' },
+          { value: 'achieved', label: 'Achieved' },
+          { value: 'deferred', label: 'Deferred' },
+          { value: 'abandoned', label: 'Abandoned' },
+        ],
+      } },
+    { id: 'start_date', label: 'Start', width: 95, sortable: true,
+      render: (o) => Dashboard.esc((o.time_horizon && o.time_horizon.start_date) || '—'),
+      edit: { type: 'date', field: 'start_date' } },
+    { id: 'target_date', label: 'Target', width: 95, alwaysOn: true, sortable: true,
+      render: (o) => Dashboard.esc((o.time_horizon && o.time_horizon.target_date) || '—'),
+      edit: { type: 'date', field: 'target_date' } },
+    { id: 'metrics', label: 'Metrics', width: 240, alwaysOn: true,
+      render: (o) => {
+        const r = Objectives.rollup(o.id);
+        if (!r.measuring_metrics.length) return '<span style="color:var(--text-muted);font-style:italic">—</span>';
+        return r.measuring_metrics.slice(0, 4).map(m =>
+          '<span class="chip" style="cursor:pointer" onclick="event.stopPropagation();Strategy.setActiveTab(\'metrics\');setTimeout(()=>Metrics._jumpToLibrary && Metrics._jumpToLibrary(\''
+          + Dashboard.esc(m.id) + '\'),60)">' + Dashboard.esc(m.name) + '</span>'
+        ).join(' ') + (r.measuring_metrics.length > 4 ? ' <span style="color:var(--text-muted);font-size:11px">+' + (r.measuring_metrics.length - 4) + '</span>' : '');
+      } },
+    { id: 'personas', label: 'Personas', width: 90,
+      render: (o) => {
+        const n = Objectives.rollup(o.id).contributing_personas.length;
+        return n ? '<span class="chip">' + n + '</span>' : '<span style="color:var(--text-muted)">—</span>';
+      } },
+    { id: 'projects', label: 'Projects', width: 90,
+      render: (o) => {
+        const n = Objectives.rollup(o.id).delivering_projects.length;
+        return n ? '<span class="chip">' + n + '</span>' : '<span style="color:var(--text-muted)">—</span>';
+      } },
+  ],
+
+  _getColumnPrefs() {
+    const saved = (App.uiStateGet ? App.uiStateGet('strategy.objectives.columns') : null);
+    if (saved && Array.isArray(saved.visible)) return saved;
+    return { visible: this.COLUMNS.filter(c => c.alwaysOn).map(c => c.id) };
+  },
+  _setColumnVisible(id, v) {
+    const prefs = this._getColumnPrefs();
+    const set = new Set(prefs.visible);
+    if (v) set.add(id); else set.delete(id);
+    if (App.uiStateSet) App.uiStateSet('strategy.objectives.columns', { visible: Array.from(set) });
+  },
+  _resetColumns() { if (App.uiStateSet) App.uiStateSet('strategy.objectives.columns', null); },
+  _visibleColumns() {
+    const prefs = this._getColumnPrefs();
+    const visibleSet = new Set(prefs.visible);
+    return this.COLUMNS.filter(c => c.alwaysOn || visibleSet.has(c.id));
+  },
+
   renderInventoryTab() {
-    const objs = this.list();
-    if (!objs.length) {
-      return '<div class="empty" style="padding:16px;color:var(--text-muted);font-size:13px">No objectives for ' + Dashboard.esc(App.activeCustomer || '') + '.</div>';
+    const filters = (App.uiStateGet ? App.uiStateGet('strategy.objectives.filters') : null) || {};
+    const all = this.list();
+    const list = all.filter(o => {
+      if (filters.status && filters.status !== 'all' && o.status !== filters.status) return false;
+      if (filters.search) {
+        const q = String(filters.search).toLowerCase();
+        const hay = (o.name + ' ' + (o.description || '')).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    const header = Strategy._renderTabHeader({
+      title: 'Objectives',
+      subtitle: 'What this customer is trying to achieve. Each objective rolls up metrics, contributing personas, and delivering projects.',
+      action: '<button class="btn btn-outline btn-sm" onclick="Objectives._addPrompt()">+ New objective</button>',
+    });
+    const toolbar = this._renderUnifiedToolbar(filters);
+    if (!list.length) {
+      const cust = Dashboard.esc(App.activeCustomer || '');
+      return header + toolbar
+           + '<div class="strategy-empty">No objectives yet for ' + cust + '. Create one to anchor metrics and projects to a goal.'
+           + '<button class="btn btn-outline btn-sm" onclick="Objectives._addPrompt()">+ New objective</button></div>';
     }
-    const statusColour = (s) => ({ active: '#5fc995', planned: '#6a91d4', achieved: '#7eb6e8', deferred: '#c0c0c0' })[s] || '#888';
-    const entryHtml = (o) => {
-      const r = this.rollup(o.id);
-      const start = (o.time_horizon && o.time_horizon.start_date)  || '';
-      const end   = (o.time_horizon && o.time_horizon.target_date) || '';
-      const win   = (start || end) ? Dashboard.esc(start) + ' → ' + Dashboard.esc(end) : 'not set';
-      const chips = r.measuring_metrics.map(m =>
-        '<span class="chip" data-metric-id="' + Dashboard.esc(m.id) + '" style="display:inline-flex;align-items:center;padding:2px 8px;border:1px solid var(--border-light);border-radius:12px;font-size:11px;margin:2px">'
-        +   Dashboard.esc(m.name)
-        + '</span>'
-      ).join(' ');
-      return '<div class="strategy-row obj obj-' + Dashboard.esc(o.status) + '" data-objective-id="' + Dashboard.esc(o.id) + '"'
-           +   ' onclick="Objectives._openDetail(\'' + Dashboard.esc(o.id) + '\')"'
-           +   ' style="display:flex;align-items:stretch;border-bottom:1px solid var(--border-light);cursor:pointer">'
-           +   '<span class="accent" style="width:4px;background:' + statusColour(o.status) + '"></span>'
-           +   '<div class="body" style="flex:1;padding:10px 14px">'
-           +     '<div class="title" style="font-weight:700;font-size:13px">' + Dashboard.esc(o.name) + '</div>'
-           +     '<div class="desc" style="color:var(--text-muted);font-size:11px;margin:2px 0 6px">' + Dashboard.esc(o.description || '') + '</div>'
-           +     '<div class="meta" style="display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text-secondary);margin-bottom:4px">'
-           +       '<span><span class="caps" style="text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;margin-right:4px">window</span> ' + win + '</span>'
-           +       '<span>' + r.metric_count + ' metrics</span>'
-           +       '<span>' + r.contributing_personas.length + ' personas</span>'
-           +       '<span>' + r.delivering_projects.length + ' projects</span>'
-           +       '<span class="status-text" style="color:' + statusColour(o.status) + ';font-weight:600">' + Dashboard.esc(o.status) + '</span>'
-           +     '</div>'
-           +     '<div class="chips">' + chips + '</div>'
-           +   '</div>'
-           + '</div>';
+    const table = Strategy._renderTable({
+      source: 'strategy.objectives',
+      columns: this._visibleColumns(),
+      rows: list,
+      rowId: (e) => e.id,
+    });
+    return header + toolbar + table;
+  },
+
+  _renderUnifiedToolbar(filters) {
+    const filtersSpec = [
+      { label: 'Status', onChange: "Objectives._setFilter('status', this.value)",
+        options: [
+          { value: 'all', label: 'All', selected: !filters.status || filters.status === 'all' },
+          { value: 'active', label: 'Active', selected: filters.status === 'active' },
+          { value: 'planned', label: 'Planned', selected: filters.status === 'planned' },
+          { value: 'achieved', label: 'Achieved', selected: filters.status === 'achieved' },
+          { value: 'deferred', label: 'Deferred', selected: filters.status === 'deferred' },
+          { value: 'abandoned', label: 'Abandoned', selected: filters.status === 'abandoned' },
+        ] },
+    ];
+    return Strategy._renderToolbar({
+      searchPlaceholder: 'Search objectives…',
+      searchValue: filters.search || '',
+      onSearch: "Objectives._setFilter('search', this.value)",
+      filters: filtersSpec,
+      actions: '<button class="btn btn-outline btn-sm" onclick="ColumnPicker.toggle(this, \'strategy.objectives\')" title="Columns">Columns</button>',
+    });
+  },
+
+  _setFilter(key, value) {
+    const cur = (App.uiStateGet ? App.uiStateGet('strategy.objectives.filters') : null) || {};
+    if (value === null || value === undefined || value === '') delete cur[key]; else cur[key] = value;
+    if (App.uiStateSet) App.uiStateSet('strategy.objectives.filters', cur);
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _addPrompt() {
+    const name = (typeof prompt === 'function') ? prompt('Objective name:') : null;
+    if (!name || !name.trim()) return;
+    const description = (typeof prompt === 'function') ? (prompt('Description (optional):') || '') : '';
+    this.add({ name: name.trim(), description: description.trim(), status: 'active', time_horizon: {} });
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  renderDetailBody(objectiveId) {
+    const o = this.byId(objectiveId);
+    if (!o) return '<div class="empty" style="padding:16px;color:var(--text-muted)">Objective not found</div>';
+    const esc = Dashboard.esc;
+    const r = this.rollup(objectiveId);
+    const caps = 'text-transform:uppercase;color:var(--text-muted);font-size:10px;letter-spacing:0.5px;font-weight:600;margin-bottom:4px';
+    const sectionStyle = 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border-light)';
+    const startDate = (o.time_horizon && o.time_horizon.start_date) || '';
+    const targetDate = (o.time_horizon && o.time_horizon.target_date) || '';
+
+    const fld = (key, label, type) => {
+      type = type || 'text';
+      const val = o[key] == null ? '' : String(o[key]);
+      return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(label)
+           +   '<input type="' + type + '" class="field-input" data-objective-field="' + key + '" value="' + esc(val) + '" '
+           +     'style="display:block;margin-top:4px;width:100%">'
+           + '</label>';
     };
-    return '<div class="strategy-objectives">' + objs.map(entryHtml).join('') + '</div>';
+    const ta = (key, label) => {
+      const val = o[key] == null ? '' : String(o[key]);
+      return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(label)
+           +   '<textarea class="field-input" data-objective-field="' + key + '" rows="3" '
+           +     'style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(val) + '</textarea>'
+           + '</label>';
+    };
+    const statusOpts = ['active','planned','achieved','deferred','abandoned']
+      .map(s => '<option value="' + s + '"' + (o.status === s ? ' selected' : '') + '>' + s.replace(/^./, c => c.toUpperCase()) + '</option>').join('');
+    const statusSel = '<label class="field-label" style="display:block;margin-bottom:8px">Status'
+                    +   '<select class="field-input" data-objective-field="status" style="display:block;margin-top:4px;width:100%">' + statusOpts + '</select>'
+                    + '</label>';
+    const dateSplit = '<div style="display:flex;gap:8px">'
+                    +   '<label class="field-label" style="flex:1">Start'
+                    +     '<input type="date" class="field-input" data-objective-field="start_date" value="' + esc(startDate) + '" style="display:block;margin-top:4px;width:100%">'
+                    +   '</label>'
+                    +   '<label class="field-label" style="flex:1">Target'
+                    +     '<input type="date" class="field-input" data-objective-field="target_date" value="' + esc(targetDate) + '" style="display:block;margin-top:4px;width:100%">'
+                    +   '</label>'
+                    + '</div>';
+
+    const metricChips = r.measuring_metrics.length
+      ? r.measuring_metrics.map(m =>
+          '<span class="chip" style="cursor:pointer;margin:2px" onclick="Objectives._closeDetailModal();Strategy.setActiveTab(\'metrics\');setTimeout(()=>Metrics._jumpToLibrary && Metrics._jumpToLibrary(\''
+          + esc(m.id) + '\'),60)">' + esc(m.name) + '</span>'
+        ).join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">No metrics linked yet.</span>';
+    const personaChips = r.contributing_personas.length
+      ? r.contributing_personas.map(p =>
+          '<span class="chip" style="cursor:pointer;margin:2px" onclick="Objectives._closeDetailModal();Strategy.setActiveTab(\'personas\');setTimeout(()=>Personas._openDetail(\''
+          + esc(p.id) + '\'),60)">' + esc(p.name) + '</span>'
+        ).join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">No contributing personas (no persona holds any of this objective\'s metrics).</span>';
+    const projectLinks = r.delivering_projects.length
+      ? r.delivering_projects.map(p =>
+          '<button type="button" class="chip" style="cursor:pointer;margin:2px;border:1px solid var(--border-light);background:var(--surface-2)" onclick="Objectives._jumpToProject(\''
+          + esc(p.id) + '\')">' + esc(p.name) + '</button>'
+        ).join(' ')
+      : '<span class="muted" style="color:var(--text-muted);font-style:italic">No projects delivering this objective.</span>';
+
+    return ''
+      + '<div style="' + sectionStyle + '">'
+      +   fld('name', 'Name')
+      +   ta('description', 'Description')
+      +   statusSel
+      +   dateSplit
+      + '</div>'
+      + '<div style="' + sectionStyle + '"><div style="' + caps + '">Measuring metrics</div>' + metricChips + '</div>'
+      + '<div style="' + sectionStyle + '"><div style="' + caps + '">Contributing personas</div>' + personaChips + '</div>'
+      + '<div style="margin-bottom:8px"><div style="' + caps + '">Delivering projects</div>' + projectLinks + '</div>';
   },
 
   _openDetail(id) {
-    // TODO: open detail panel for the objective
-    console.log('open objective detail', id);
+    if (typeof document === 'undefined') return;
+    const o = this.byId(id);
+    if (!o) return;
+    const esc = Dashboard.esc;
+    this._closeDetailModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'split-modal-overlay';
+    overlay.id = 'objectiveDetailOverlay';
+    overlay.style.display = 'block';
+    overlay.style.zIndex = '9000';
+    overlay.addEventListener('click', () => this._closeDetailModal());
+    const modal = document.createElement('div');
+    modal.className = 'split-modal objective-detail-modal';
+    modal.id = 'objectiveDetailModal';
+    modal.style.display = 'block';
+    modal.style.width = '640px';
+    modal.style.maxWidth = 'calc(100vw - 32px)';
+    modal.style.maxHeight = 'calc(100vh - 48px)';
+    modal.style.zIndex = '9001';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'objectiveDetailTitle');
+    modal.addEventListener('click', (e) => e.stopPropagation());
+    const html =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+      +   '<h3 id="objectiveDetailTitle" style="margin:0;font-size:16px">Objective &middot; ' + esc(o.name) + '</h3>'
+      +   '<button type="button" class="btn btn-ghost btn-sm" aria-label="Close" onclick="Objectives._closeDetailModal()">&times;</button>'
+      + '</div>'
+      + this.renderDetailBody(id)
+      + '<div class="split-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:10px;border-top:1px solid var(--border-light)">'
+      +   '<button type="button" class="btn btn-outline btn-sm" onclick="Objectives._closeDetailModal()">Cancel</button>'
+      +   '<button type="button" class="btn btn-primary btn-sm" onclick="Objectives._saveDetailModal(\'' + esc(id) + '\')">Save</button>'
+      + '</div>';
+    modal.innerHTML = html;
+    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
+    this._detailEscHandler = (e) => { if (e.key === 'Escape') this._closeDetailModal(); };
+    document.addEventListener('keydown', this._detailEscHandler);
+  },
+
+  _closeDetailModal() {
+    if (typeof document === 'undefined') return;
+    ['objectiveDetailOverlay', 'objectiveDetailModal'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+    if (this._detailEscHandler) {
+      document.removeEventListener('keydown', this._detailEscHandler);
+      this._detailEscHandler = null;
+    }
+  },
+
+  _saveDetailModal(objectiveId) {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('objectiveDetailModal');
+    if (!modal) return;
+    const patch = {};
+    const timeHorizon = {};
+    modal.querySelectorAll('[data-objective-field]').forEach(el => {
+      const key = el.getAttribute('data-objective-field');
+      const val = (el.value == null ? '' : String(el.value)).trim();
+      if (key === 'start_date' || key === 'target_date') {
+        if (val) timeHorizon[key] = val;
+      } else {
+        patch[key] = val;
+      }
+    });
+    if (Object.keys(timeHorizon).length || (this.byId(objectiveId) && this.byId(objectiveId).time_horizon)) {
+      patch.time_horizon = { ...(this.byId(objectiveId).time_horizon || {}), ...timeHorizon };
+    }
+    this.update(objectiveId, patch);
+    this._closeDetailModal();
+    if (App.renderActiveView) App.renderActiveView();
+  },
+
+  _jumpToProject(projectId) {
+    this._closeDetailModal();
+    if (App.navigate) App.navigate('dashboard');
+    setTimeout(() => {
+      if (typeof DetailPanel !== 'undefined' && DetailPanel.open) DetailPanel.open(projectId);
+    }, 80);
   },
 };
 
@@ -12179,6 +12427,32 @@ const Strategy = {
 // (in the bottom-of-file init block) so all entity modules and ColumnPicker exist
 // by the time we touch them. See Strategy._registerSources below for the impl.
 Strategy._registerSources = function () {
+  if (typeof Objectives !== 'undefined' && Objectives.COLUMNS) {
+    Strategy.registerTable('strategy.objectives', {
+      byId: (id) => Objectives.byId(id),
+      columns: () => Objectives.COLUMNS,
+      update: (id, field, value) => {
+        if (field === 'start_date' || field === 'target_date') {
+          const o = Objectives.byId(id);
+          const th = { ...((o && o.time_horizon) || {}) };
+          if (value) th[field] = value; else delete th[field];
+          return Objectives.update(id, { time_horizon: th });
+        }
+        const patch = {};
+        patch[field] = value;
+        return Objectives.update(id, patch);
+      },
+      onRowClick: (id) => Objectives._openDetail(id),
+    });
+    ColumnPicker.register('strategy.objectives', {
+      columns: () => Objectives.COLUMNS,
+      getPrefs: () => Objectives._getColumnPrefs(),
+      setVisible: (id, v) => Objectives._setColumnVisible(id, v),
+      reset: () => Objectives._resetColumns(),
+      onChange: () => { if (App.renderActiveView) App.renderActiveView(); },
+      groupOrder: [],
+    });
+  }
   if (typeof Personas !== 'undefined' && Personas.COLUMNS) {
     Strategy.registerTable('strategy.personas', {
       byId: (id) => Personas.byId(id),

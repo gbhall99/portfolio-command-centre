@@ -19,11 +19,15 @@ describe('Strategy — Objectives inventory', () => {
     const out = app.Objectives.renderInventoryTab();
     expect(out).toContain('Reduce opex 15%');
     expect(out).toContain('Total opex');
-    expect(out).toMatch(/1.*metrics?/);
-    expect(out).toMatch(/1.*personas?/);
-    expect(out).toMatch(/1.*projects?/);
-    expect(out).toContain('2025-06-01');
+    // Tabular layout: counts now live in Personas + Projects columns rendered
+    // by Objectives.rollup. Verify the rollup data still flows by checking it
+    // directly rather than scanning the rendered HTML for textual labels.
+    const rollup = app.Objectives.rollup('O1');
+    expect(rollup.metric_count).toBe(1);
+    expect(rollup.contributing_personas.length).toBe(1);
+    expect(rollup.delivering_projects.length).toBe(1);
     expect(out).toContain('2026-05-31');
+    expect(out).toContain('strategy-table');
     expect(out).not.toContain('Uncovered');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-objectives.html');
     app.teardown();
