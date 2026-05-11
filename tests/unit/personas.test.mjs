@@ -142,7 +142,9 @@ describe('Personas hierarchy collapse', () => {
 });
 
 describe('Personas rich definition fields', () => {
-  const NEW_FIELDS_STR = ['goals', 'pain_points', 'decisions', 'information_needs', 'tools', 'stakeholders', 'communication_prefs'];
+  // After the 2026-05 Person rework: tools and decisions have been removed
+  // from the persona schema; the rest stay as the role-level template.
+  const NEW_FIELDS_STR = ['goals', 'pain_points', 'information_needs', 'stakeholders', 'communication_prefs'];
 
   it('migration seeds the new string fields and business_questions array on legacy personas', async () => {
     // Build a dataset with a persona that has none of the new fields.
@@ -163,14 +165,17 @@ describe('Personas rich definition fields', () => {
     });
     expect(Array.isArray(p.business_questions)).toBe(true);
     expect(p.business_questions).toHaveLength(0);
+    // tools and decisions are dropped, not seeded.
+    expect('tools' in p).toBe(false);
+    expect('decisions' in p).toBe(false);
     app.teardown();
   });
 
   it('migration is idempotent: re-running does not clobber populated fields', async () => {
     const populated = {
       id: 'P-POP', customer: 'Acme Industries', name: 'Pop',
-      goals: 'Drive revenue', pain_points: 'Stale data', decisions: 'Pricing',
-      information_needs: 'Daily ARR', tools: 'Salesforce', stakeholders: 'CEO',
+      goals: 'Drive revenue', pain_points: 'Stale data',
+      information_needs: 'Daily ARR', stakeholders: 'CEO',
       communication_prefs: 'Slack', business_questions: ['Q1?', 'Q2?'],
       metric_holdings: [], notes: '',
     };

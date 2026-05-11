@@ -4029,16 +4029,20 @@ const App = {
       if (!Array.isArray(m.actuals)) m.actuals = [];
 
       // RACI re-anchor: detect if raci is keyed by persona_id (legacy data) and move
-      // it to raci_defaults. This is one-shot and idempotent: once raci_defaults is
-      // present, we leave raci alone (it is already person-keyed).
+      // it to raci_defaults. Idempotent — once defaults are populated, raci is left alone
+      // (it is already person-keyed). Empty raci_defaults still triggers re-check so
+      // legacy datasets that haven't been migrated yet get processed even if a sibling
+      // shim already created an empty defaults map.
       const personaIds = new Set((data.personas || []).map(p => p.id));
       const personIds  = new Set((data.people  || []).map(p => p.id));
-      if (!m.raci_defaults) {
-        // If any raci role array contains an id that exists as a persona but not a person,
-        // assume the whole map is persona-keyed and migrate it into raci_defaults.
-        const allIds = []
-          .concat(m.raci.accountable || [], m.raci.responsible || [], m.raci.consulted || [], m.raci.informed || []);
-        const looksPersonaKeyed = allIds.length > 0 && allIds.every(id => personaIds.has(id));
+      const allRaciIds = []
+        .concat(m.raci.accountable || [], m.raci.responsible || [], m.raci.consulted || [], m.raci.informed || []);
+      const defaultsEmpty = !m.raci_defaults
+        || !['accountable','responsible','consulted','informed'].some(r => Array.isArray(m.raci_defaults[r]) && m.raci_defaults[r].length);
+      if (defaultsEmpty && allRaciIds.length > 0) {
+        // If every raci id resolves to a persona (and none to a person), treat raci as
+        // legacy persona-keyed and move into raci_defaults.
+        const looksPersonaKeyed = allRaciIds.every(id => personaIds.has(id) && !personIds.has(id));
         if (looksPersonaKeyed) {
           m.raci_defaults = {
             accountable: (m.raci.accountable || []).slice(),
@@ -4047,11 +4051,10 @@ const App = {
             informed:    (m.raci.informed    || []).slice(),
           };
           m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
-        } else {
-          m.raci_defaults = { accountable: [], responsible: [], consulted: [], informed: [] };
         }
       }
-      // Ensure shape is complete on raci_defaults
+      if (!m.raci_defaults) m.raci_defaults = { accountable: [], responsible: [], consulted: [], informed: [] };
+      // Ensure shape is complete.
       ['accountable','responsible','consulted','informed'].forEach(role => {
         if (!Array.isArray(m.raci_defaults[role])) m.raci_defaults[role] = [];
         if (!Array.isArray(m.raci[role])) m.raci[role] = [];
