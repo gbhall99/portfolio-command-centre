@@ -44,7 +44,7 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
 
   expect(seedResult.ok).toBeTruthy();
 
-  // Navigate to Strategy view — Objectives is the default tab; click Personas to verify it renders.
+  // Navigate to Strategy view — Metrics is the default tab; click Personas to verify it renders.
   await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toHaveClass(/active/);
   await page.click('.strategy-tabs button:has-text("Personas")');
