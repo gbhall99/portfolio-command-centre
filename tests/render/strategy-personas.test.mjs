@@ -21,9 +21,17 @@ describe('Strategy — Personas inventory', () => {
     expect(out).toContain('data-id="P2"');
     expect(out).toContain('CFO');
     expect(out).toContain('Regional GM — North');
+    // Columns added in 2026-05: Definition + R/A/C/I metric-pill columns;
+    // Holdings count column dropped.
+    expect(out).toContain('Definition');
+    expect(out).toContain('Responsible');
+    expect(out).toContain('Accountable');
+    expect(out).toContain('Consulted');
+    expect(out).toContain('Informed');
     expect(out).toContain('Held metrics');
     expect(out).toContain('Reports to');
     expect(out).toContain('View more');
+    expect(out).not.toContain('>Holdings<');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-personas.html');
     app.teardown();
   });

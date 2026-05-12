@@ -114,7 +114,9 @@ describe('Personas — tabular inventory', () => {
 });
 
 describe('Personas rich definition fields', () => {
-  const NEW_FIELDS_STR = ['goals', 'pain_points', 'information_needs', 'stakeholders', 'communication_prefs'];
+  // communication_prefs moved entirely to Person in 2026-05, so the migration
+  // no longer seeds it on the Persona record.
+  const NEW_FIELDS_STR = ['goals', 'pain_points', 'information_needs', 'stakeholders'];
 
   it('migration seeds the new string fields and business_questions array on legacy personas', async () => {
     const legacy = {

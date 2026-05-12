@@ -3,10 +3,10 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makePersona, makeMetric, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('Personas — detail modal body', () => {
-  // After the 2026-05 Person rework: tools, decisions, and the held-metrics
-  // display section have moved off the persona modal. Holdings still live on
-  // the persona; viewing per-Person targets is now via Person modals reached
-  // from the Roster section.
+  // After the 2026-05 Person rework: tools, decisions, the held-metrics
+  // display section, and communication_prefs have moved off the persona modal.
+  // Holdings still live on the persona; viewing per-Person targets is now via
+  // Person modals reached from the Assigned-people list.
   it('renders every documented section heading and the existing field values', async () => {
     resetIdSeq();
     const sarah = makePersona({
@@ -17,7 +17,6 @@ describe('Personas — detail modal body', () => {
       pain_points: 'Reports take 3 days to refresh.',
       information_needs: 'Daily cash position.',
       stakeholders: 'CEO; Audit committee.',
-      communication_prefs: 'Email + weekly steering meeting.',
       business_questions: ['What is our cash runway?', 'Which products lose money?'],
       notes: 'Prefers data over narrative.',
     });
@@ -38,8 +37,7 @@ describe('Personas — detail modal body', () => {
       'pain points',
       'Information needs',
       'business questions',
-      'communication',
-      'Roster',
+      'Assigned people',
       'RACI defaults',
       'Notes',
     ].forEach(label => {
@@ -49,6 +47,8 @@ describe('Personas — detail modal body', () => {
     // Sections explicitly removed in the rework — must NOT appear.
     expect(out.toLowerCase()).not.toContain('decisions owned');
     expect(out.toLowerCase()).not.toContain('held metrics');
+    // communication_prefs moved to Person; the persona modal no longer surfaces it.
+    expect(out).not.toMatch(/data-persona-field="communication_prefs"/);
     // Tools field was removed; "Tools & communication" heading should be gone.
     expect(out).not.toMatch(/data-persona-field="tools"/);
     expect(out).not.toMatch(/data-persona-field="decisions"/);
@@ -60,7 +60,6 @@ describe('Personas — detail modal body', () => {
     expect(out).toContain('Improve gross margin by 200bps.');
     expect(out).toContain('Reports take 3 days to refresh.');
     expect(out).toContain('Daily cash position.');
-    expect(out).toContain('Email + weekly steering meeting.');
     expect(out).toContain('What is our cash runway?');
     expect(out).toContain('Which products lose money?');
     expect(out).toContain('Prefers data over narrative.');

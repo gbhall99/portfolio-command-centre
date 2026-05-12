@@ -775,6 +775,15 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .persona-table .persona-tbl-chip-more { background: transparent; border-style: dashed; color: var(--text-muted); cursor: default; }
 .persona-table .persona-tbl-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
 .persona-table .persona-tbl-empty { font-size: var(--fs-xs); color: var(--text-faint); font-style: italic; }
+.persona-table .persona-tbl-def { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dark-secondary); font-size: var(--fs-xs); }
+.persona-table .persona-tbl-def-cell { max-width: 240px; }
+/* RACI-tinted metric pills — colour the left border so each cell signals
+   its role without losing the metric-group swatch inside. */
+.persona-table .persona-tbl-chip-raci { border-left-width: 3px; }
+.persona-table .persona-tbl-chip-raci.raci-R { border-left-color: var(--accent-blue); }
+.persona-table .persona-tbl-chip-raci.raci-A { border-left-color: var(--accent-violet); }
+.persona-table .persona-tbl-chip-raci.raci-C { border-left-color: var(--accent-teal); }
+.persona-table .persona-tbl-chip-raci.raci-I { border-left-color: var(--text-faint); }
 .persona-table .persona-raci-cluster { display: inline-flex; gap: 4px; }
 .persona-table .persona-raci-cluster .raci-letter { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 9px; font-size: 10px; font-weight: 700; color: white; }
 .persona-table .persona-raci-cluster .raci-letter small { font-weight: 600; font-size: 10px; opacity: 0.85; }
@@ -4160,8 +4169,11 @@ const App = {
     // Persona slim-down (2026-05 Person rework): drop fields that have moved to
     // either Person (per-individual identity) or have been deprecated outright.
     // Holdings stay on persona; per-Person target variation lives on Person.target_overrides.
+    // communication_prefs moved entirely to Person (per-individual). Personas
+    // are archetypes — comms prefs belong to the human filling the role, not
+    // the role itself.
     const PERSONA_STRING_FIELDS = ['goals', 'pain_points',
-      'information_needs', 'stakeholders', 'communication_prefs'];
+      'information_needs', 'stakeholders'];
     // Persona names should be archetype labels (role_title), never the assigned
     // Person's name — that creates duplication when both the persona and its
     // holder render side-by-side. Rewrite legacy datasets that stored the
@@ -9752,6 +9764,8 @@ const Personas = {
     };
 
     const metricChips = (persona) => {
+      // "Held metrics" column — metrics where the persona owns a holding (i.e.
+      // has set explicit targets/filter for them).
       const holdings = persona.metric_holdings || [];
       if (!holdings.length) return '<span class="persona-tbl-empty">No metrics</span>';
       const visible = holdings.slice(0, 3).map(h => {
@@ -9768,20 +9782,23 @@ const Personas = {
       return visible + overflow;
     };
 
-    const raciBadges = (personaId) => {
-      const counts = { A: 0, R: 0, C: 0, I: 0 };
-      Metrics.list().forEach(m => {
-        ['accountable','responsible','consulted','informed'].forEach(role => {
-          if (m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(personaId)) {
-            counts[role[0].toUpperCase()] += 1;
-          }
-        });
-      });
-      const total = counts.A + counts.R + counts.C + counts.I;
-      if (!total) return '<span class="persona-tbl-empty">—</span>';
-      return '<span class="persona-raci-cluster">' + ['A','R','C','I'].filter(l => counts[l] > 0).map(l =>
-        '<span class="raci-letter raci-' + l + '" title="' + counts[l] + ' as ' + l + '">' + l + '<small>' + counts[l] + '</small></span>'
-      ).join('') + '</span>';
+    // Per-role metric pills. Returns the chips for every metric where this
+    // persona sits in metric.raci_defaults[role].
+    const raciMetricsCell = (personaId, role, letter) => {
+      const matching = Metrics.list().filter(m =>
+        m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(personaId));
+      if (!matching.length) return '<span class="persona-tbl-empty">—</span>';
+      const visible = matching.slice(0, 3).map(m =>
+        '<span class="persona-tbl-chip persona-tbl-chip-raci raci-' + letter + '" '
+        + 'onclick="event.stopPropagation();App.navigate(\'metrics\');setTimeout(()=>Metrics._openDetail(\'' + esc(m.id) + '\'),60)" '
+        + 'title="' + esc(m.definition || '') + '">'
+        + '<span class="persona-tbl-swatch" style="background:' + groupSwatch(m.group_id) + '"></span>'
+        + esc(m.name) + '</span>'
+      ).join('');
+      const overflow = matching.length > 3
+        ? '<span class="persona-tbl-chip persona-tbl-chip-more">+' + (matching.length - 3) + '</span>'
+        : '';
+      return visible + overflow;
     };
 
     const parentChip = (persona) => {
@@ -9792,13 +9809,22 @@ const Personas = {
         + esc(par.id) + '\')">' + esc(par.name) + '</span>';
     };
 
+    const definitionCell = (persona) => {
+      const text = persona.definition || '';
+      if (!text) return '<span class="persona-tbl-empty">—</span>';
+      return '<span class="persona-tbl-def" title="' + esc(text) + '">' + esc(text) + '</span>';
+    };
+
     const head = '<thead><tr>'
       + '<th class="persona-tbl-th">Name</th>'
+      + '<th class="persona-tbl-th">Definition</th>'
       + '<th class="persona-tbl-th">Reports to</th>'
       + '<th class="persona-tbl-th">People</th>'
       + '<th class="persona-tbl-th">Held metrics</th>'
-      + '<th class="persona-tbl-th">RACI defaults</th>'
-      + '<th class="persona-tbl-th persona-tbl-th-right">Holdings</th>'
+      + '<th class="persona-tbl-th">Responsible</th>'
+      + '<th class="persona-tbl-th">Accountable</th>'
+      + '<th class="persona-tbl-th">Consulted</th>'
+      + '<th class="persona-tbl-th">Informed</th>'
       + '<th class="persona-tbl-th"></th>'
       + '</tr></thead>';
 
@@ -9806,15 +9832,17 @@ const Personas = {
       const role = p.role_title && p.role_title !== p.name
         ? '<div class="persona-tbl-sub">' + esc(p.role_title) + '</div>'
         : '';
-      const holdingCount = (p.metric_holdings || []).length;
       return '<tr class="persona-tbl-row" data-id="' + esc(p.id) + '" '
            +   'onclick="Personas._openDetail(\'' + esc(p.id) + '\')" tabindex="0" role="button">'
            +   '<td class="persona-tbl-name"><strong>' + esc(p.name) + '</strong>' + role + '</td>'
+           +   '<td class="persona-tbl-def-cell">' + definitionCell(p) + '</td>'
            +   '<td>' + parentChip(p) + '</td>'
            +   '<td>' + peopleChips(p.id) + '</td>'
            +   '<td>' + metricChips(p) + '</td>'
-           +   '<td>' + raciBadges(p.id) + '</td>'
-           +   '<td class="persona-tbl-th-right">' + holdingCount + '</td>'
+           +   '<td>' + raciMetricsCell(p.id, 'responsible', 'R') + '</td>'
+           +   '<td>' + raciMetricsCell(p.id, 'accountable', 'A') + '</td>'
+           +   '<td>' + raciMetricsCell(p.id, 'consulted',   'C') + '</td>'
+           +   '<td>' + raciMetricsCell(p.id, 'informed',    'I') + '</td>'
            +   '<td class="persona-tbl-actions">'
            +     '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._openDetail(\''
            +     esc(p.id) + '\')">View more</button>'
@@ -9982,7 +10010,6 @@ const Personas = {
     goals:               { label: 'Goals',                 multiline: true },
     pain_points:         { label: 'Pain points',           multiline: true },
     information_needs:   { label: 'Information needs',     multiline: true },
-    communication_prefs: { label: 'Communication preferences', multiline: false },
     notes:               { label: 'Notes',                 multiline: true },
   },
 
@@ -10021,8 +10048,9 @@ const Personas = {
            + '</label>';
     };
 
-    // Roster — list of People who hold this persona role for the active customer.
-    // Row click → opens the Person modal. Inactive count shown with a Show/Hide toggle.
+    // Assigned people — list of People who fill this persona role for the
+    // active customer. Row click → opens the Person modal. Inactive count
+    // shown with a Show/Hide toggle.
     const allPeople = (typeof Person !== 'undefined') ? Person.byPersonaId(personaId) : [];
     const showInactive = (App.uiStateGet && App.uiStateGet('persona.modal.roster.showInactive.' + personaId)) === true;
     const visiblePeople = allPeople.filter(prn => showInactive ? true : prn.active !== false);
@@ -10102,8 +10130,8 @@ const Personas = {
     // Build the body.
     // Note (2026-05 Person rework): tools, decisions, and the Held-metrics display
     // sections were removed. Holdings still live on the persona (they are the
-    // role-level template); to view who holds what, open a Person modal from the
-    // Roster below.
+    // role-level template); to view who holds what, open a Person modal from
+    // the Assigned-people list below.
     return '<div class="persona-modal-body">'
       // Section 1 — Identity
       + '<div class="sec" style="' + sectionStyle + '">'
@@ -10133,14 +10161,12 @@ const Personas = {
       +   '<div class="bq-list">' + bqHtml + '</div>'
       +   '<button type="button" class="btn btn-outline btn-sm" style="margin-top:6px" onclick="Personas._addBusinessQuestion(\'' + esc(personaId) + '\')">+ add question</button>'
       + '</div>'
-      // Section 5 — Communication
-      + '<div class="sec" style="' + sectionStyle + '">'
-      +   '<div style="' + caps + '">Communication</div>'
-      +   fieldHtml('communication_prefs')
-      + '</div>'
-      // Section 6 — Roster
+      // Communication preferences live on the Person, not the persona — see
+      // Person.renderDetailBody. The persona section below lists the people
+      // filling the role; click into one to set their comms prefs.
+      // Section 5 — Assigned people
       + '<div class="sec roster-section" style="' + sectionStyle + '">'
-      +   '<div style="' + caps + '">Roster &middot; ' + visiblePeople.length + ' active' + inactiveToggle + '</div>'
+      +   '<div style="' + caps + '">Assigned people &middot; ' + visiblePeople.length + ' active' + inactiveToggle + '</div>'
       +   '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
       +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Name</th>'
       +     '<th style="text-align:left;padding:6px;font-size:11px;color:var(--text-muted)">Role</th>'
@@ -10289,7 +10315,8 @@ const Personas = {
     this._refreshDetailModal(personaId);
   },
 
-  // Roster section — toggle whether inactive People show in the persona modal.
+  // Assigned-people section — toggle whether inactive People show in the
+  // persona modal.
   _toggleShowInactive(personaId) {
     const key = 'persona.modal.roster.showInactive.' + personaId;
     const cur = (App.uiStateGet && App.uiStateGet(key)) === true;

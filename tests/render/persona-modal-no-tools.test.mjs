@@ -31,7 +31,7 @@ describe('Persona modal — slim down (post-Person rework)', () => {
     expect(out).toContain('Goals');
     expect(out).toContain('Pain points');
     expect(out).toContain('Information needs');
-    expect(out).toContain('Roster');
+    expect(out).toContain('Assigned people');
     expect(out).toContain('RACI defaults');
     app.teardown();
   });

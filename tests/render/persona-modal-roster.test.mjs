@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makePersona, makePerson, resetIdSeq } from '../harness/fixtures.mjs';
 
-describe('Persona detail modal — Roster section', () => {
+describe('Persona detail modal — Assigned people section', () => {
   it('lists active People assigned to this persona, with click-through to Person modal', async () => {
     resetIdSeq();
     const persona = makePersona({ id: 'P1', name: 'CFO Persona' });
@@ -16,7 +16,10 @@ describe('Persona detail modal — Roster section', () => {
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Personas.renderDetailBody('P1');
 
+    // Section heading copy was renamed from "Roster" to "Assigned people"
+    // in 2026-05; the CSS class name (roster-section) is kept for back-compat.
     expect(out).toContain('roster-section');
+    expect(out).toContain('Assigned people');
     expect(out).toContain('Sarah Chen');
     expect(out).toContain('Priya Shah');
     // Inactive hidden by default.
