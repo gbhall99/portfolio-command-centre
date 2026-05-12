@@ -142,16 +142,24 @@ describe('Metrics inventory — single flat-table layout', () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       personas: [persona],
-      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+      // raci_defaults makes the persona Accountable so its pill renders in
+      // the cascade row's Accountable column (which is now the only place the
+      // persona name appears at cascade level — inherited cells are blank).
+      metrics: [makeMetric({ id: 'M1', name: 'Revenue',
+        raci_defaults: { accountable: ['P1'], responsible: [], consulted: [], informed: [] } })],
     }));
     app.App.activeCustomer = 'Acme Industries';
     // Collapsed: no cascade row.
     expect(app.Metrics.renderInventoryTab()).not.toContain('metric-cascade-row');
-    // Expanded: one cascade row mentioning the persona.
+    // Expanded: one cascade row exists and the persona pill renders in the
+    // Accountable column.
     app.Metrics._toggleExpand('M1');
     const expanded = app.Metrics.renderInventoryTab();
     expect(expanded).toContain('metric-cascade-row');
-    expect(expanded).toContain('CFO');
+    expect(expanded).toMatch(/raci-pill-A[^>]*>CFO/);
+    // Inherited cells (Name/Group/Definition/Status/Updated) are blank — the
+    // persona name lives only in the RACI pill.
+    expect(expanded).toContain('metric-cascade-blank');
     app.teardown();
   });
 });

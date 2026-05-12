@@ -768,8 +768,16 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .persona-table .persona-tbl-row { cursor: pointer; transition: background 0.12s; }
 .persona-table .persona-tbl-row:hover { background: var(--surface-hover); }
 .persona-table .persona-tbl-row:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
+.persona-table .persona-tbl-name { white-space: nowrap; }
 .persona-table .persona-tbl-name strong { color: var(--text-dark); font-weight: 700; }
 .persona-table .persona-tbl-sub { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; }
+/* "Persona" inline tag in the Name cell — mirrors the cascade-kind tag in
+   the Metrics cascade so entity type reads instantly across both tabs. */
+.persona-table .persona-tbl-kind { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; padding: 2px 6px; border-radius: 4px; color: white; background: var(--accent-violet); margin-right: 8px; vertical-align: middle; }
+/* Holding dot — flagged on a metric pill when the persona has explicit
+   targets (metric_holdings) for that metric. Replaces the dropped Held
+   metrics column so holdings info sits next to its RACI role. */
+.persona-table .persona-tbl-holding-dot { display: inline-block; color: rgba(255,255,255,0.9); font-size: 10px; line-height: 1; margin-left: 4px; }
 .persona-table .persona-tbl-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); padding: 2px 8px; border-radius: 12px; background: var(--surface-inset); color: var(--text-dark); border: 1px solid var(--border-dim); margin-right: 4px; margin-bottom: 2px; cursor: pointer; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .persona-table .persona-tbl-chip:hover { background: var(--surface-hover); border-color: var(--border-strong); }
 .persona-table .persona-tbl-chip-more { background: transparent; border-style: dashed; color: var(--text-muted); cursor: default; }
@@ -914,6 +922,9 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .metric-library-table .dim-chip small { color: var(--text-muted); font-weight: 400; }
 /* Dimensions cell meta line — surfaces holders/filtered/targets counts at parent level. */
 .metric-library-table .metric-cell-dims-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
+/* Cascade rows blank out cells that just repeat parent-row data. The blank
+   cell keeps the column geometry intact without drawing eye-attention. */
+.metric-library-table .metric-cascade-blank { background: transparent; }
 
 /* Parent RACI cells split People above Personas with a thin divider so users
    see which cells are real assignments vs role templates at a glance. */
@@ -9787,38 +9798,28 @@ const Personas = {
       return visible + overflow;
     };
 
-    const metricChips = (persona) => {
-      // "Held metrics" column — metrics where the persona owns a holding (i.e.
-      // has set explicit targets/filter for them).
-      const holdings = persona.metric_holdings || [];
-      if (!holdings.length) return '<span class="persona-tbl-empty">No metrics</span>';
-      const visible = holdings.slice(0, 3).map(h => {
-        const m = Metrics.byId(h.metric_id);
-        if (!m) return '';
-        return '<span class="persona-tbl-chip" onclick="event.stopPropagation();App.navigate(\'metrics\');setTimeout(()=>Metrics._openDetail(\''
-          + esc(m.id) + '\'),60)" title="' + esc(m.definition || '') + '">'
-          + '<span class="persona-tbl-swatch" style="background:' + groupSwatch(m.group_id) + '"></span>'
-          + esc(m.name) + '</span>';
-      }).join('');
-      const overflow = holdings.length > 3
-        ? '<span class="persona-tbl-chip persona-tbl-chip-more">+' + (holdings.length - 3) + '</span>'
-        : '';
-      return visible + overflow;
-    };
-
     // Per-role metric pills. Returns the chips for every metric where this
-    // persona sits in metric.raci_defaults[role].
-    const raciMetricsCell = (personaId, role, letter) => {
+    // persona sits in metric.raci_defaults[role]. The "Held metrics" column
+    // is gone — instead each metric pill carries a small target dot when
+    // the persona has a metric_holding for that metric (i.e. owns explicit
+    // targets / filter for it), so the holdings signal lives next to the
+    // RACI role it relates to rather than as a duplicated column.
+    const heldMetricIds = (persona) => new Set((persona.metric_holdings || []).map(h => h.metric_id));
+    const raciMetricsCell = (persona, role, letter) => {
       const matching = Metrics.list().filter(m =>
-        m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(personaId));
+        m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(persona.id));
       if (!matching.length) return '<span class="persona-tbl-empty">—</span>';
-      const visible = matching.slice(0, 3).map(m =>
-        '<span class="persona-tbl-chip persona-tbl-chip-raci raci-' + letter + '" '
-        + 'onclick="event.stopPropagation();App.navigate(\'metrics\');setTimeout(()=>Metrics._openDetail(\'' + esc(m.id) + '\'),60)" '
-        + 'title="' + esc(m.definition || '') + '">'
-        + '<span class="persona-tbl-swatch" style="background:' + groupSwatch(m.group_id) + '"></span>'
-        + esc(m.name) + '</span>'
-      ).join('');
+      const held = heldMetricIds(persona);
+      const visible = matching.slice(0, 3).map(m => {
+        const heldDot = held.has(m.id)
+          ? '<span class="persona-tbl-holding-dot" title="Persona holds explicit targets for this metric">●</span>'
+          : '';
+        return '<span class="persona-tbl-chip persona-tbl-chip-raci raci-' + letter + '" '
+          + 'onclick="event.stopPropagation();App.navigate(\'metrics\');setTimeout(()=>Metrics._openDetail(\'' + esc(m.id) + '\'),60)" '
+          + 'title="' + esc(m.definition || '') + (held.has(m.id) ? ' — persona holds targets' : '') + '">'
+          + '<span class="persona-tbl-swatch" style="background:' + groupSwatch(m.group_id) + '"></span>'
+          + esc(m.name) + heldDot + '</span>';
+      }).join('');
       const overflow = matching.length > 3
         ? '<span class="persona-tbl-chip persona-tbl-chip-more">+' + (matching.length - 3) + '</span>'
         : '';
@@ -9844,7 +9845,6 @@ const Personas = {
       + '<th class="persona-tbl-th">Definition</th>'
       + '<th class="persona-tbl-th">Reports to</th>'
       + '<th class="persona-tbl-th">People</th>'
-      + '<th class="persona-tbl-th">Held metrics</th>'
       + '<th class="persona-tbl-th">Responsible</th>'
       + '<th class="persona-tbl-th">Accountable</th>'
       + '<th class="persona-tbl-th">Consulted</th>'
@@ -9853,17 +9853,22 @@ const Personas = {
       + '</tr></thead>';
 
     const rows = sorted.map(p => {
+      // Name cell mirrors the Metrics tab Name cell pattern: violet accent
+      // tag (matching cascade-kind-persona) + bold name. Gives the column a
+      // consistent visual anchor and disambiguates entity type at a glance.
       return '<tr class="persona-tbl-row" data-id="' + esc(p.id) + '" '
            +   'onclick="Personas._openDetail(\'' + esc(p.id) + '\')" tabindex="0" role="button">'
-           +   '<td class="persona-tbl-name"><strong>' + esc(p.name) + '</strong></td>'
+           +   '<td class="persona-tbl-name">'
+           +     '<span class="persona-tbl-kind">Persona</span>'
+           +     '<strong>' + esc(p.name) + '</strong>'
+           +   '</td>'
            +   '<td class="persona-tbl-def-cell">' + definitionCell(p) + '</td>'
            +   '<td>' + parentChip(p) + '</td>'
            +   '<td>' + peopleChips(p.id) + '</td>'
-           +   '<td>' + metricChips(p) + '</td>'
-           +   '<td>' + raciMetricsCell(p.id, 'responsible', 'R') + '</td>'
-           +   '<td>' + raciMetricsCell(p.id, 'accountable', 'A') + '</td>'
-           +   '<td>' + raciMetricsCell(p.id, 'consulted',   'C') + '</td>'
-           +   '<td>' + raciMetricsCell(p.id, 'informed',    'I') + '</td>'
+           +   '<td>' + raciMetricsCell(p, 'responsible', 'R') + '</td>'
+           +   '<td>' + raciMetricsCell(p, 'accountable', 'A') + '</td>'
+           +   '<td>' + raciMetricsCell(p, 'consulted',   'C') + '</td>'
+           +   '<td>' + raciMetricsCell(p, 'informed',    'I') + '</td>'
            +   '<td class="persona-tbl-actions">'
            +     '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._openDetail(\''
            +     esc(p.id) + '\')">View more</button>'
@@ -12057,9 +12062,13 @@ const Metrics = {
         ).join(' ');
       };
 
+      // Inherited cells (Name, Group, Definition, Status, Updated) blank out
+      // in cascade rows so the cascade only carries what's level-specific:
+      // R/A/C/I (who fills the role) and Dimensions (the holder's filter
+      // override). All row interactions consolidate into the Name cell.
+      const blank = '<td class="metric-cascade-blank"></td>';
+
       const personRow = (person, holding) => {
-        // Person target_override resolution — if the person has an override
-        // for this (metric_id, same filter), mark the dimension chip.
         const overrides = Array.isArray(person.target_overrides) ? person.target_overrides : [];
         const sameFilter = (a, b) => {
           const ak = Object.keys(a || {}); const bk = Object.keys(b || {});
@@ -12070,40 +12079,25 @@ const Metrics = {
         const filterCell = dimsCellForHolding(holding) + (override
           ? ' <span class="dim-chip dim-chip-override" title="Person override on this filter">override</span>'
           : '');
-        const updated = m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—';
-        const statusClass = 'metric-status-' + (m.status || 'unknown');
-        return '<tr class="metric-cascade-row metric-cascade-row-person" data-parent="' + esc(m.id) + '" data-kind="person" '
-             +   'onclick="event.stopPropagation()">'
+        return '<tr class="metric-cascade-row metric-cascade-row-person" data-parent="' + esc(m.id) + '" data-kind="person">'
              +   '<td class="metric-cell-name metric-cascade-person-name">'
              +     '<span class="cascade-kind cascade-kind-person">Person</span>'
-             +     '<strong>' + esc(person.name) + '</strong>'
-             +     (person.role_title ? '<span class="metric-cascade-role"> · ' + esc(person.role_title) + '</span>' : '')
+             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
+             +       'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Person._openDetail(\'' + esc(person.id) + '\'),60)">View person</button>'
              +   '</td>'
-             +   '<td>' + esc(rowData.groupName) + '</td>'
-             +   '<td class="metric-cell-def"><span class="metric-cell-empty">—</span></td>'
+             +   blank   // Group inherits
+             +   blank   // Definition inherits
              +   '<td>' + personPillCell(person, 'R', 'responsible') + '</td>'
              +   '<td>' + personPillCell(person, 'A', 'accountable') + '</td>'
              +   '<td>' + personPillCell(person, 'C', 'consulted') + '</td>'
              +   '<td>' + personPillCell(person, 'I', 'informed') + '</td>'
              +   '<td class="metric-cell-dims">' + filterCell + '</td>'
-             +   '<td><span class="metric-status-pill ' + statusClass + '">'
-             +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span>'
-             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
-             +     'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Person._openDetail(\'' + esc(person.id) + '\'),60)">View person</button>'
-             +   '</td>'
-             +   '<td class="metric-cell-updated">' + updated + '</td>'
+             +   blank   // Status inherits
+             +   blank   // Updated inherits
              + '</tr>';
       };
 
       return rowData.holders.map(({ persona, holding }) => {
-        const updated = holding.updated_at
-          ? new Date(holding.updated_at).toISOString().slice(0, 10)
-          : (m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—');
-        const targetCount = (holding.targets || []).length;
-        const defText = targetCount
-          ? holding.targets.map(t => esc(t.period) + ' → ' + esc(String(t.value))).join(' · ')
-          : (holding.notes ? esc(holding.notes) : '');
-        const statusClass = 'metric-status-' + (m.status || 'unknown');
         const activePeople = (typeof Person !== 'undefined')
           ? Person.byPersonaId(persona.id).filter(p => p.active !== false)
           : [];
@@ -12117,27 +12111,23 @@ const Metrics = {
         const peopleCountChip = activePeople.length
           ? '<span class="metric-cascade-count">' + activePeople.length + ' ' + (activePeople.length === 1 ? 'person' : 'people') + '</span>'
           : '<span class="metric-cascade-count metric-cascade-count-empty">no people</span>';
-        let html = '<tr class="metric-cascade-row metric-cascade-row-persona' + (personaExpanded ? ' is-expanded' : '') + '" data-parent="' + esc(m.id) + '" data-kind="persona" '
-             +   'onclick="event.stopPropagation()">'
+        let html = '<tr class="metric-cascade-row metric-cascade-row-persona' + (personaExpanded ? ' is-expanded' : '') + '" data-parent="' + esc(m.id) + '" data-kind="persona">'
              +   '<td class="metric-cell-name metric-cascade-name">'
              +     innerTwisty
              +     '<span class="cascade-kind cascade-kind-persona">Persona</span>'
-             +     '<strong>' + esc(persona.name) + '</strong>'
              +     ' ' + peopleCountChip
+             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
+             +       'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">View persona</button>'
              +   '</td>'
-             +   '<td>' + esc(rowData.groupName) + '</td>'
-             +   '<td class="metric-cell-def">' + (defText ? '<span class="metric-definition" title="' + defText + '">' + defText + '</span>' : '<span class="metric-cell-empty">—</span>') + '</td>'
+             +   blank   // Group inherits
+             +   blank   // Definition inherits
              +   '<td>' + personaPillCell(persona, 'R', 'responsible') + '</td>'
              +   '<td>' + personaPillCell(persona, 'A', 'accountable') + '</td>'
              +   '<td>' + personaPillCell(persona, 'C', 'consulted') + '</td>'
              +   '<td>' + personaPillCell(persona, 'I', 'informed') + '</td>'
              +   '<td class="metric-cell-dims">' + dimsCellForHolding(holding) + '</td>'
-             +   '<td><span class="metric-status-pill ' + statusClass + '">'
-             +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span>'
-             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
-             +     'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">View persona</button>'
-             +   '</td>'
-             +   '<td class="metric-cell-updated">' + updated + '</td>'
+             +   blank   // Status inherits
+             +   blank   // Updated inherits
              + '</tr>';
         if (personaExpanded) html += activePeople.map(p => personRow(p, holding)).join('');
         return html;
