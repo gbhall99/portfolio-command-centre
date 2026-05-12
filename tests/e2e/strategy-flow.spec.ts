@@ -48,8 +48,8 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
   // under Governance. Strategy now holds Objectives only.
   await page.click('.nav-item[data-view="personas"]');
   await expect(page.locator('#viewPersonas')).toHaveClass(/active/);
-  const personaTree = page.locator('#viewPersonas .persona-tree');
-  await expect(personaTree).toContainText('E2E Sarah Chen');
+  const personasTable = page.locator('#viewPersonas .persona-table');
+  await expect(personasTable).toContainText('E2E Sarah Chen');
 
   await page.click('.nav-item[data-view="metrics"]');
   await expect(page.locator('#viewMetrics')).toContainText('E2E Total opex');

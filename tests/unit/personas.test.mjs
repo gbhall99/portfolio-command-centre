@@ -52,19 +52,20 @@ describe('Personas module', () => {
   });
 });
 
-describe('Personas — hierarchy inventory', () => {
-  // The Personas tab renders the reporting tree as nested persona-node rows.
-  // Each node carries data-id + data-depth so tests can verify the structure
-  // without coupling to internal layout choices.
+describe('Personas — tabular inventory', () => {
+  // The Personas tab renders as a flat .persona-table where each row carries
+  // data-id and a View more button that opens the detail modal. The data
+  // model still tracks parent_persona_id so the "Reports to" column can chip
+  // the parent persona.
   const extractIds = (html) => {
     const ids = [];
-    const re = /<div class="persona-node"[^>]*data-id="([^"]+)"/g;
+    const re = /<tr class="persona-tbl-row"[^>]*data-id="([^"]+)"/g;
     let m;
     while ((m = re.exec(html)) !== null) ids.push(m[1]);
     return ids;
   };
 
-  it('renders every persona as a node ordered by hierarchy', async () => {
+  it('renders every persona as a flat row, top-of-org first', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO', parent_persona_id: null });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -75,14 +76,14 @@ describe('Personas — hierarchy inventory', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     const html = app.Personas.renderInventoryTab();
-    // Order is depth-first from root: P1 then P2 then P3.
+    // Top-of-org rows first; children alphabetical after that.
     expect(extractIds(html)).toEqual(['P1', 'P2', 'P3']);
-    expect(html).toMatch(/data-id="P2"[^>]*data-depth="1"/);
-    expect(html).toMatch(/data-id="P3"[^>]*data-depth="2"/);
+    expect(html).toContain('persona-table');
+    expect(html).toContain('View more');
     app.teardown();
   });
 
-  it('search filter flattens the tree to matched nodes only', async () => {
+  it('search filter narrows the visible rows', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO' });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -96,22 +97,7 @@ describe('Personas — hierarchy inventory', () => {
     app.teardown();
   });
 
-  it('collapsing a parent hides its descendants in the rendered tree', async () => {
-    resetIdSeq();
-    const ceo = makePersona({ id: 'P1', name: 'CEO' });
-    const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
-    const finM = makePersona({ id: 'P3', name: 'Fin Mgr', parent_persona_id: 'P2' });
-    const app = await loadApp(makeDataset({
-      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      personas: [ceo, cfo, finM],
-    }));
-    app.App.activeCustomer = 'Acme Industries';
-    app.App.uiStateSet(app.Personas._COLLAPSED_KEY, ['P1']);
-    expect(extractIds(app.Personas.renderInventoryTab())).toEqual(['P1']);
-    app.teardown();
-  });
-
-  it('parent_persona_id data is preserved and _depthOf reflects hierarchy', async () => {
+  it('parent_persona_id data is preserved and the Reports-to cell links it', async () => {
     resetIdSeq();
     const ceo = makePersona({ id: 'P1', name: 'CEO' });
     const cfo = makePersona({ id: 'P2', name: 'CFO', parent_persona_id: 'P1' });
@@ -120,9 +106,9 @@ describe('Personas — hierarchy inventory', () => {
       personas: [ceo, cfo],
     }));
     app.App.activeCustomer = 'Acme Industries';
+    const html = app.Personas.renderInventoryTab();
+    expect(html).toMatch(/Personas\._openDetail\('P1'\)/);
     expect(app.Personas.byId('P2').parent_persona_id).toBe('P1');
-    expect(app.Personas._depthOf('P2')).toBe(1);
-    expect(app.Personas._depthOf('P1')).toBe(0);
     app.teardown();
   });
 });

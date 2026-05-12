@@ -3,7 +3,7 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makePersona, makeMetric, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('Strategy — Personas inventory', () => {
-  it('renders personas as a hierarchy with parent/child nesting', async () => {
+  it('renders personas as a flat table with rich columns', async () => {
     resetIdSeq();
     const cfo = makePersona({ id: 'P1', name: 'CFO', role_title: 'CFO', parent_persona_id: null });
     const gm  = makePersona({ id: 'P2', name: 'Regional GM — North', role_title: 'Regional GM — North', parent_persona_id: 'P1' });
@@ -16,18 +16,19 @@ describe('Strategy — Personas inventory', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Personas.renderInventoryTab();
-    expect(out).toContain('class="persona-tree"');
+    expect(out).toContain('persona-table');
     expect(out).toContain('data-id="P1"');
     expect(out).toContain('data-id="P2"');
-    expect(out).toMatch(/data-id="P2"[^>]*data-depth="1"/);
-    expect(out).toMatch(/data-id="P1"[^>]*data-depth="0"/);
     expect(out).toContain('CFO');
     expect(out).toContain('Regional GM — North');
+    expect(out).toContain('Held metrics');
+    expect(out).toContain('Reports to');
+    expect(out).toContain('View more');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-personas.html');
     app.teardown();
   });
 
-  it('shows "no people assigned" hint on personas with no holders', async () => {
+  it('shows "no people" hint on personas with no holders', async () => {
     resetIdSeq();
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
@@ -35,7 +36,7 @@ describe('Strategy — Personas inventory', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Personas.renderInventoryTab();
-    expect(out.toLowerCase()).toContain('no people assigned');
+    expect(out.toLowerCase()).toContain('no people');
     app.teardown();
   });
 });
