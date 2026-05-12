@@ -35,6 +35,18 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **Story points are integers** everywhere except statistics (velocity avg, days-per-SP). Use `App.toInteger(v)` to parse, `App.fmtPoints(n)` to render. `App.fmtAverage(n, decimals)` for sanctioned decimal statistics.
 - **R12 concurrent guard**: a member is never assigned to two overlapping deliveries unless both are in `concurrentOverlapAllowedSkills` (default: Req + UAT). Toggle via `enforceConcurrentSinglePerson`.
 
+## Strategy Entities — Persona vs Person
+
+The strategy model splits the role from the human that fills it. Get this split right or the cascade lies.
+
+- **Persona** owns the *role archetype*: `name` (archetype label like "CFO" — there is no separate `role_title`, the name IS the label), `parent_persona_id` (org hierarchy), `definition`, `key_responsibilities`, `stakeholders`, `goals`, `pain_points`, `information_needs`, `business_questions`, `metric_holdings` (role-owned targets), `notes` (role-level commentary — "vacant", "pending hire").
+- **Person** owns the *individual filling a seat*: `name` (real human name), `role_title` (their actual job title, may differ from the persona archetype), `email`, `department`, `region`, `persona_id` (which seat), `manager_id`, `active`, `target_overrides` (per-metric customisation against the persona's holdings), `communication_prefs` (per-individual), `notes` (individual history — "started Mar 2025", "on parental leave").
+- **RACI keying**:
+  - `metric.raci_defaults[role]` → array of persona IDs (the role template).
+  - `metric.raci[role]` → array of person IDs (the live assignments).
+  - `_seedRaciFromDefaults` populates `raci` from `raci_defaults` whenever a Person's persona changes; manual edits to `raci` diverge the individual from the template — divergences surface in the Metrics cascade.
+- **Held metrics resolution**: Persona's `metric_holdings` are the canonical role-level targets. `Person.effectiveHoldings()` overlays any matching `target_overrides` so per-person variation shows up without duplicating the holding.
+
 ## Coding Conventions
 - All UI rendering is string concatenation (innerHTML). No virtual DOM, no templates.
 - Use `Dashboard.esc()` for HTML escaping user content.

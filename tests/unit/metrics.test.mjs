@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
-import { makeDataset, makeMetric, makeMetricGroup, makePersona, resetIdSeq } from '../harness/fixtures.mjs';
+import { makeDataset, makeMetric, makeMetricGroup, makePersona, makePerson, resetIdSeq } from '../harness/fixtures.mjs';
 
 describe('MetricGroups module', () => {
   it('list() returns groups for the active customer', async () => {
@@ -152,6 +152,46 @@ describe('Metrics inventory — single flat-table layout', () => {
     const expanded = app.Metrics.renderInventoryTab();
     expect(expanded).toContain('metric-cascade-row');
     expect(expanded).toContain('CFO');
+    app.teardown();
+  });
+});
+
+// Two-level cascade: persona row carries its own twisty when active people
+// fill it. The composite expansion key (metricId|personaId) controls level 2.
+describe('Metrics cascade — level-2 people drill-in', () => {
+  it('expanding the metric and then the persona reveals person rows beneath', async () => {
+    const persona = makePersona({ id: 'P-CFO', name: 'CFO',
+      metric_holdings: [{ id: 'H1', metric_id: 'M-REV', filter: {}, targets: [] }],
+    });
+    const sarah = makePerson({ id: 'PRSN-1', name: 'Sarah Chen', role_title: 'CFO', persona_id: 'P-CFO' });
+    const inactive = makePerson({ id: 'PRSN-2', name: 'Old Hand', persona_id: 'P-CFO', active: false });
+    const m = makeMetric({
+      id: 'M-REV', name: 'Revenue',
+      raci_defaults: { accountable: ['P-CFO'], responsible: [], consulted: [], informed: [] },
+      raci: { accountable: ['PRSN-1'], responsible: [], consulted: [], informed: [] },
+    });
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
+      personas: [persona], people: [sarah, inactive], metrics: [m],
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+
+    // L1 only: persona twisty visible, no person rows yet.
+    app.Metrics._toggleExpand('M-REV');
+    let html = app.Metrics.renderInventoryTab();
+    expect(html).toMatch(/data-kind="persona"/);
+    expect(html).not.toMatch(/data-kind="person"/);
+    // Persona row carries the people-count chip.
+    expect(html).toMatch(/1 person/);
+
+    // L2: expand persona inside the metric. Sarah surfaces, Old Hand stays hidden.
+    app.Metrics._toggleExpand('M-REV|P-CFO');
+    html = app.Metrics.renderInventoryTab();
+    expect(html).toMatch(/data-kind="person"/);
+    expect(html).toContain('Sarah Chen');
+    expect(html).not.toContain('Old Hand');
+    // Sarah's Accountable RACI pill renders from the person-keyed metric.raci.
+    expect(html).toMatch(/raci-pill raci-pill-A[^>]*>Sarah Chen/);
     app.teardown();
   });
 });

@@ -8,15 +8,18 @@ describe('Settings — Personas tab', () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       personas: [
-        makePersona({ id: 'P1', name: 'Sarah Chen', role_title: 'CFO' }),
-        makePersona({ id: 'P2', name: 'Tom Lee',    role_title: 'Head Ops', parent_persona_id: 'P1' }),
+        // After 2026-05 cleanup, persona.name IS the archetype label.
+        makePersona({ id: 'P1', name: 'CFO' }),
+        makePersona({ id: 'P2', name: 'Head Ops', parent_persona_id: 'P1' }),
       ],
     }));
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Personas.renderSettingsTab();
-    expect(out).toContain('Sarah Chen');
-    expect(out).toContain('Tom Lee');
     expect(out).toContain('CFO');
+    expect(out).toContain('Head Ops');
+    // Settings table no longer carries a separate "Role" column —
+    // persona.name is the archetype.
+    expect(out).not.toContain('<th style="text-align:left;padding:6px">Role</th>');
     app.teardown();
   });
 });

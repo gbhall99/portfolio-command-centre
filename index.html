@@ -889,15 +889,38 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .metric-library-table .metric-row.is-expanded { background: var(--surface-inset); }
 
 /* Cascade sub-rows: lightly tinted, click navigates to the persona. */
-.metric-library-table .metric-cascade-row { background: var(--surface-2); cursor: pointer; transition: background 0.12s; font-size: var(--fs-xs); }
+.metric-library-table .metric-cascade-row { background: var(--surface-2); transition: background 0.12s; font-size: var(--fs-xs); cursor: default; }
 .metric-library-table .metric-cascade-row:hover { background: var(--surface-hover); }
 .metric-library-table .metric-cascade-row td { padding: 6px 10px; border-bottom: 1px solid var(--border-light); color: var(--text-dark-secondary); }
 .metric-library-table .metric-cascade-name { padding-left: 32px !important; }
-.metric-library-table .metric-cascade-leader { color: var(--text-faint); margin-right: 6px; font-weight: 400; }
-.metric-library-table .metric-cascade-role { color: var(--text-muted); font-weight: 400; margin-left: 4px; }
 .metric-library-table .metric-cascade-empty { padding: 12px; text-align: center; color: var(--text-faint); font-style: italic; }
+.metric-library-table .metric-cascade-role { color: var(--text-muted); font-weight: 400; margin-left: 4px; }
+/* Level-2 person rows: deeper indent + slightly distinct background. */
+.metric-library-table .metric-cascade-row-person { background: var(--surface-inset); }
+.metric-library-table .metric-cascade-row-person:hover { background: var(--surface-hover); }
+.metric-library-table .metric-cascade-person-name { padding-left: 64px !important; }
+/* Inline entity tags so each cascade row carries an explicit Persona/Person label. */
+.metric-library-table .cascade-kind { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; padding: 2px 6px; border-radius: 4px; color: white; margin-right: 8px; vertical-align: middle; }
+.metric-library-table .cascade-kind-persona { background: var(--accent-violet); }
+.metric-library-table .cascade-kind-person  { background: var(--accent-blue); }
+/* Inner twisty for L1 persona rows. */
+.metric-library-table .metric-twisty-inner { margin-right: 4px; color: var(--text-muted); }
+.metric-library-table .metric-twisty-leaf { cursor: default; color: var(--text-faint); }
+.metric-library-table .metric-cascade-count { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--surface-inset); color: var(--text-muted); margin-left: 6px; font-weight: 500; }
+.metric-library-table .metric-cascade-count-empty { color: var(--text-faint); font-style: italic; }
+.metric-library-table .metric-cascade-view-btn { font-size: 10px; padding: 2px 8px; margin-left: 8px; }
 .metric-library-table .dim-chip-filtered { background: var(--tint-amber-weak); color: var(--text-dark); border: 1px solid var(--border-dim); }
+.metric-library-table .dim-chip-override { background: var(--accent-violet); color: white; border: 0; font-weight: 700; }
 .metric-library-table .dim-chip small { color: var(--text-muted); font-weight: 400; }
+/* Dimensions cell meta line — surfaces holders/filtered/targets counts at parent level. */
+.metric-library-table .metric-cell-dims-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
+
+/* Parent RACI cells split People above Personas with a thin divider so users
+   see which cells are real assignments vs role templates at a glance. */
+.metric-library-table .raci-stack { display: flex; flex-direction: column; gap: 4px; max-width: 200px; }
+.metric-library-table .raci-pill-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.metric-library-table .raci-pill-divider { height: 1px; background: var(--border-dim); margin: 1px 0; }
+.metric-library-table .raci-pill-template { border: 1px dashed rgba(255,255,255,0.6); }
 
 /* Metric detail pane */
 .metric-detail { color: var(--text-dark); font-size: var(--fs-base); }
@@ -4192,11 +4215,15 @@ const App = {
       if ('tools' in p) delete p.tools;
       if ('decisions' in p) delete p.decisions;
       if ('decisions_owned' in p) delete p.decisions_owned;
-      // Re-archetype any persona that was named after one of its holders.
+      // role_title moved to Person only — persona's `name` IS the archetype
+      // label (e.g. "CFO", "Head of Operations"). Before dropping, use a
+      // surviving role_title to re-archetype any legacy persona that was
+      // still named after one of its holders.
       const holders = personaPeople.get(p.id) || [];
       if (p.role_title && holders.some(h => h.name === p.name)) {
         p.name = p.role_title;
       }
+      if ('role_title' in p) delete p.role_title;
     });
 
     // Person re-anchor of RACI (2026-05): existing metric.raci is keyed by persona_id.
@@ -4252,6 +4279,9 @@ const App = {
       if (typeof person.department !== 'string') person.department = '';
       if (typeof person.region !== 'string') person.region = '';
       if (typeof person.email !== 'string') person.email = '';
+      // communication_prefs lives on the Person (per-individual), restored
+      // 2026-05 after being briefly orphaned during the persona slim-down.
+      if (typeof person.communication_prefs !== 'string') person.communication_prefs = '';
       if (!('manager_id' in person)) person.manager_id = null;
       if (!('persona_id' in person)) person.persona_id = null;
     });
@@ -9380,10 +9410,9 @@ const Personas = {
   },
 
   _addPrompt() {
-    const name = (typeof prompt === 'function') ? prompt('Persona name:') : null;
+    const name = (typeof prompt === 'function') ? prompt('Persona name (archetype label, e.g. "Head of Finance"):') : null;
     if (!name || !name.trim()) return;
-    const role = (typeof prompt === 'function') ? (prompt('Role title (optional):') || '') : '';
-    this.add({ name: name.trim(), role_title: role.trim() });
+    this.add({ name: name.trim() });
     if (App.renderActiveView) App.renderActiveView();
   },
 
@@ -9464,7 +9493,6 @@ const Personas = {
       const parent = p.parent_persona_id ? this.byId(p.parent_persona_id) : null;
       return '<tr data-persona-id="' + Dashboard.esc(p.id) + '">'
            +   '<td><strong>' + Dashboard.esc(p.name) + '</strong></td>'
-           +   '<td>' + Dashboard.esc(p.role_title || '') + '</td>'
            +   '<td>' + (parent ? Dashboard.esc(parent.name) : '<span class="muted" style="color:var(--text-muted);font-style:italic">top of org</span>') + '</td>'
            +   '<td>' + (p.metric_holdings || []).length + ' held</td>'
            +   '<td><button class="btn btn-ghost btn-sm" onclick="Personas._edit(\'' + p.id + '\')">edit</button>'
@@ -9472,17 +9500,16 @@ const Personas = {
            + '</tr>';
     }).join('');
     return '<table class="personas-settings" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:2px solid var(--border-light)">'
-         + '<th style="text-align:left;padding:6px">Name</th><th style="text-align:left;padding:6px">Role</th>'
+         + '<th style="text-align:left;padding:6px">Name</th>'
          + '<th style="text-align:left;padding:6px">Parent</th><th style="text-align:left;padding:6px">Holdings</th><th></th>'
          + '</tr></thead><tbody>' + rows + '</tbody></table>'
          + '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="Personas._showAddForm()">+ Add persona</button>';
   },
 
   _showAddForm() {
-    const name = prompt('Persona name:');
+    const name = prompt('Persona name (archetype label, e.g. "Head of Finance"):');
     if (!name) return;
-    const role = prompt('Role title (optional):') || '';
-    this.add({ name: name.trim(), role_title: role.trim() });
+    this.add({ name: name.trim() });
     if (App.renderActiveView) App.renderActiveView();
   },
 
@@ -9535,7 +9562,7 @@ const Personas = {
       const q = filters.search.toLowerCase();
       list = list.filter(p =>
         (p.name || '').toLowerCase().includes(q) ||
-        (p.role_title || '').toLowerCase().includes(q));
+        (p.definition || '').toLowerCase().includes(q));
     }
     if (filters.status && filters.status !== 'all') {
       list = list.filter(p => (p.metric_holdings || []).some(h => {
@@ -9629,9 +9656,6 @@ const Personas = {
         return '<span style="' + padLeft + 'display:inline-flex;align-items:center"><strong>' + indent + Dashboard.esc(p.name) + '</strong></span>';
       },
       edit: { type: 'text', field: 'name' } },
-    { id: 'role_title', label: 'Role', width: 180, alwaysOn: true, sortable: true,
-      render: (p) => Dashboard.esc(p.role_title || '—'),
-      edit: { type: 'text', field: 'role_title' } },
     { id: 'parent_persona_id', label: 'Parent', width: 160, sortable: true,
       render: (p) => {
         if (!p.parent_persona_id) return '<span style="color:var(--text-muted)">—</span>';
@@ -9829,12 +9853,9 @@ const Personas = {
       + '</tr></thead>';
 
     const rows = sorted.map(p => {
-      const role = p.role_title && p.role_title !== p.name
-        ? '<div class="persona-tbl-sub">' + esc(p.role_title) + '</div>'
-        : '';
       return '<tr class="persona-tbl-row" data-id="' + esc(p.id) + '" '
            +   'onclick="Personas._openDetail(\'' + esc(p.id) + '\')" tabindex="0" role="button">'
-           +   '<td class="persona-tbl-name"><strong>' + esc(p.name) + '</strong>' + role + '</td>'
+           +   '<td class="persona-tbl-name"><strong>' + esc(p.name) + '</strong></td>'
            +   '<td class="persona-tbl-def-cell">' + definitionCell(p) + '</td>'
            +   '<td>' + parentChip(p) + '</td>'
            +   '<td>' + peopleChips(p.id) + '</td>'
@@ -9912,9 +9933,6 @@ const Personas = {
         + (isCollapsed ? '▸' : '▾')
         + '</button>'
       : '<span class="persona-twisty persona-twisty-leaf" aria-hidden="true">·</span>';
-    const role = p.role_title && p.role_title !== p.name
-      ? '<span class="persona-role">' + esc(p.role_title) + '</span>'
-      : '';
     const people = (typeof Person !== 'undefined') ? Person.byPersonaId(p.id) : [];
     const activePeople = people.filter(prn => prn.active !== false);
     const peopleChips = activePeople.slice(0, 4).map(prn =>
@@ -9950,7 +9968,6 @@ const Personas = {
          +     twisty
          +     '<div class="persona-identity">'
          +       '<span class="persona-name">' + esc(p.name) + '</span>'
-         +       role
          +     '</div>'
          +     '<div class="persona-meta">'
          +       '<span class="persona-meta-pill" title="Held metrics">' + holdings + ' metric' + (holdings === 1 ? '' : 's') + '</span>'
@@ -10002,7 +10019,6 @@ const Personas = {
   // persona's data; per-Person variation is on Person.target_overrides.
   _DETAIL_FIELDS: {
     name:                { label: 'Name',                  multiline: false },
-    role_title:          { label: 'Role title',            multiline: false },
     parent_persona_id:   { label: 'Parent persona',        kind: 'parent_picker' },
     definition:          { label: 'Definition',            multiline: true },
     key_responsibilities:{ label: 'Key responsibilities',  multiline: true },
@@ -10010,7 +10026,9 @@ const Personas = {
     goals:               { label: 'Goals',                 multiline: true },
     pain_points:         { label: 'Pain points',           multiline: true },
     information_needs:   { label: 'Information needs',     multiline: true },
-    notes:               { label: 'Notes',                 multiline: true },
+    // "Role notes" disambiguates from Person.notes (individual history). Same
+    // field, different scope: role-level context like 'vacant', 'pending hire'.
+    notes:               { label: 'Role notes',            multiline: true },
   },
 
   // Public helper — returns the inner markup of the detail modal body for a
@@ -10137,7 +10155,6 @@ const Personas = {
       + '<div class="sec" style="' + sectionStyle + '">'
       +   '<div style="' + caps + '">Identity</div>'
       +   fieldHtml('name')
-      +   fieldHtml('role_title')
       +   fieldHtml('parent_persona_id')
       +   fieldHtml('definition')
       + '</div>'
@@ -10453,6 +10470,7 @@ const Person = {
       target_overrides: [],
       role_title: '', department: '', region: '', email: '',
       manager_id: null, persona_id: null, notes: '',
+      communication_prefs: '',
       ...person,
       customer: person.customer || App.activeCustomer,
     };
@@ -10852,7 +10870,6 @@ const Person = {
         + inheritedField('Pain points', persona.pain_points || '')
         + inheritedField('Information needs', persona.information_needs || '')
         + inheritedField('Stakeholders', persona.stakeholders || '')
-        + inheritedField('Communication', persona.communication_prefs || '')
         + (Array.isArray(persona.business_questions) && persona.business_questions.length
             ? '<div style="margin-bottom:6px"><div style="' + caps + '">Business questions</div>'
               + '<ul style="margin:0;padding-left:18px;font-size:12px">'
@@ -10925,12 +10942,19 @@ const Person = {
       +   '</label>'
       +   checkbox('active', 'Active')
       + '</div>'
-      // Section 2 — Inherited from persona
+      // Section 2 — Communication preferences (per-individual, not inherited).
+      + '<div class="sec" style="' + sectionStyle + '">'
+      +   '<div style="' + caps + '">Communication preferences</div>'
+      +   '<textarea class="field-input" data-person-field="communication_prefs" rows="2" '
+      +     'placeholder="e.g. Slack mornings, email after 2pm, no calls on Fridays" '
+      +     'style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(prn.communication_prefs || '') + '</textarea>'
+      + '</div>'
+      // Section 3 — Inherited from persona (role-level context, read-only).
       + '<div class="sec" style="' + sectionStyle + '">'
       +   '<div style="' + caps + '">Inherited from persona</div>'
       +   inherited
       + '</div>'
-      // Section 3 — Held metrics (derived from persona, with target overrides)
+      // Section 4 — Held metrics (derived from persona, with target overrides)
       + '<div class="sec" style="' + sectionStyle + '">'
       +   '<div style="' + caps + '">Held metrics</div>'
       +   '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border-light)">'
@@ -10940,15 +10964,18 @@ const Person = {
       +     '<th></th>'
       +   '</tr></thead><tbody>' + holdRows + '</tbody></table>'
       + '</div>'
-      // Section 4 — RACI
+      // Section 5 — RACI
       + '<div class="sec" style="' + sectionStyle + '">'
       +   '<div style="' + caps + '">RACI assignments</div>'
       +   raciSection
       + '</div>'
-      // Section 5 — Notes
+      // Section 6 — Individual notes (person history, distinct from role notes
+      // on the persona).
       + '<div class="sec" style="margin-bottom:8px">'
-      +   '<div style="' + caps + '">Notes</div>'
-      +   '<textarea class="field-input" data-person-field="notes" rows="3" style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(prn.notes || '') + '</textarea>'
+      +   '<div style="' + caps + '">Individual notes</div>'
+      +   '<textarea class="field-input" data-person-field="notes" rows="3" '
+      +     'placeholder="Individual history — e.g. \'started Mar 2025\', \'on parental leave\'" '
+      +     'style="display:block;margin-top:4px;width:100%;font-family:inherit">' + esc(prn.notes || '') + '</textarea>'
       + '</div>'
       + '</div>';
   },
@@ -11879,23 +11906,28 @@ const Metrics = {
     const esc = Dashboard.esc;
 
     // Compute per-row enrichment up front (rollup once per metric). Each RACI
-    // slot is a flat list of {kind:'person'|'persona', id, name, role}.
+    // slot is a {people, personas} pair so the parent row can render them as
+    // two stacked groups (Active Assignments + Persona Templates) rather than
+    // a single flat pill list. The kind subscript is gone in favour of layout.
     const enriched = metrics.map(m => {
       const r = this.rollup(m.id);
-      const slot = (peopleList, personaList) => [
-        ...peopleList.map(p => ({ kind: 'person',  id: p.id, name: p.name, role: p.role_title || '' })),
-        ...personaList.map(p => ({ kind: 'persona', id: p.id, name: p.name, role: p.role_title || '' })),
-      ];
+      const peopleSlot  = (list) => list.map(p => ({ id: p.id, name: p.name, role: p.role_title || '' }));
+      const personaSlot = (list) => list.map(p => ({ id: p.id, name: p.name, role: '' }));
+      const filteredHolders = (r.holders || []).filter(h => h.holding && Object.keys(h.holding.filter || {}).length > 0);
+      const targetCount = (r.holders || []).reduce((acc, h) => acc + ((h.holding && h.holding.targets) || []).length, 0);
       return {
         m,
         groupName: groupName(m.group_id),
         dimensions: m.dimensions || [],
         definition: m.definition || '',
-        R: slot(r.raci_people.responsible, r.raci_personas.responsible),
-        A: slot(r.raci_people.accountable, r.raci_personas.accountable),
-        C: slot(r.raci_people.consulted,   r.raci_personas.consulted),
-        I: slot(r.raci_people.informed,    r.raci_personas.informed),
+        R: { people: peopleSlot(r.raci_people.responsible), personas: personaSlot(r.raci_personas.responsible) },
+        A: { people: peopleSlot(r.raci_people.accountable), personas: personaSlot(r.raci_personas.accountable) },
+        C: { people: peopleSlot(r.raci_people.consulted),   personas: personaSlot(r.raci_personas.consulted) },
+        I: { people: peopleSlot(r.raci_people.informed),    personas: personaSlot(r.raci_personas.informed) },
         holders: r.holders,
+        holderCount: (r.holders || []).length,
+        filteredCount: filteredHolders.length,
+        targetCount,
       };
     });
 
@@ -11926,33 +11958,63 @@ const Metrics = {
            +   esc(label) + (key ? sortChevron(key) : '') + '</th>';
     };
 
-    // Pill renderer per RACI slot. Persona pills show a small "P" subscript so
-    // they're visually distinguishable from named people.
-    const pillsCell = (entries, letter) => {
-      if (!entries.length) return '<span class="metric-cell-empty">—</span>';
-      return '<div class="raci-stack raci-stack-' + letter + '">' + entries.map(e => {
-        const onClick = e.kind === 'person'
-          ? "event.stopPropagation();Person._openDetail('" + e.id + "')"
-          : "event.stopPropagation();App.navigate('personas');setTimeout(()=>Personas._openDetail('" + e.id + "'),60)";
-        const personaMark = e.kind === 'persona' ? '<sub class="raci-persona-mark">P</sub>' : '';
-        return '<span class="raci-pill raci-pill-' + letter + '" title="'
-             + esc(e.role || '') + (e.kind === 'persona' ? ' (persona archetype)' : '')
-             + '" onclick="' + onClick + '">' + esc(e.name) + personaMark + '</span>';
-      }).join('') + '</div>';
+    // Two-group pill renderer per RACI slot. People pills (named, solid colour)
+    // sit above a thin divider; persona-template pills (P-marked, dashed
+    // border) sit below. Empty groups suppress their row so a slot with only
+    // persona templates doesn't render an empty People row, and vice versa.
+    const pillsCell = (slot, letter) => {
+      if (!slot.people.length && !slot.personas.length) return '<span class="metric-cell-empty">—</span>';
+      const peopleRow = slot.people.length
+        ? '<div class="raci-pill-group raci-pill-group-people">' + slot.people.map(e =>
+            '<span class="raci-pill raci-pill-' + letter + '" title="' + esc(e.role || '') + '" '
+            + 'onclick="event.stopPropagation();Person._openDetail(\'' + esc(e.id) + '\')">'
+            + esc(e.name) + '</span>'
+          ).join('') + '</div>'
+        : '';
+      const personaRow = slot.personas.length
+        ? '<div class="raci-pill-group raci-pill-group-personas">' + slot.personas.map(e =>
+            '<span class="raci-pill raci-pill-' + letter + ' raci-pill-template" title="persona archetype" '
+            + 'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(e.id) + '\'),60)">'
+            + esc(e.name) + '<sub class="raci-persona-mark">P</sub></span>'
+          ).join('') + '</div>'
+        : '';
+      const divider = (slot.people.length && slot.personas.length)
+        ? '<div class="raci-pill-divider" aria-hidden="true"></div>'
+        : '';
+      return '<div class="raci-stack raci-stack-' + letter + '">' + peopleRow + divider + personaRow + '</div>';
     };
-    const dimsCell = (dims) => dims.length
-      ? dims.map(d => '<span class="dim-chip">' + esc(d) + '</span>').join(' ')
-      : '<span class="metric-cell-empty">—</span>';
+    // Dimensions cell carries the metric dimensions chip stack plus a compact
+    // meta line (holders / filters / targets) so users see the cascade is
+    // worth opening even before they click the twisty.
+    const dimsCellWithMeta = (rowData) => {
+      const dims = rowData.dimensions || [];
+      const dimChips = dims.length
+        ? dims.map(d => '<span class="dim-chip">' + esc(d) + '</span>').join(' ')
+        : '<span class="metric-cell-empty">—</span>';
+      const meta = [];
+      if (rowData.holderCount)   meta.push(rowData.holderCount + ' holder' + (rowData.holderCount === 1 ? '' : 's'));
+      if (rowData.filteredCount) meta.push(rowData.filteredCount + ' filtered');
+      if (rowData.targetCount)   meta.push(rowData.targetCount + ' target' + (rowData.targetCount === 1 ? '' : 's'));
+      const metaLine = meta.length
+        ? '<div class="metric-cell-dims-meta">' + esc(meta.join(' · ')) + '</div>'
+        : '';
+      return dimChips + metaLine;
+    };
     const definitionCell = (text) => {
       if (!text) return '<span class="metric-cell-empty">—</span>';
       return '<span class="metric-definition" title="' + esc(text) + '">' + esc(text) + '</span>';
     };
 
     const cascadeRows = (rowData) => {
-      // Cascade rows mirror the top-level column structure so users can compare
-      // each holder's RACI + dimension scope side-by-side with the parent metric.
-      // Per-holder dimensions = the holding.filter overrides; everything else
-      // (group, definition, status, updated) is inherited from the parent.
+      // Cascade rows mirror the top-level column structure so users can
+      // compare each holder's RACI + dimension scope side-by-side with the
+      // parent metric. Two levels:
+      //   L1: persona (the role archetype holding the metric)
+      //   L2: people (the individuals filling that persona)
+      // L1 carries its own twisty when L2 has any active people; L2 only
+      // renders when the (metricId|personaId) key is in the expanded set.
+      // Bare row click is a no-op; explicit "View persona/person" buttons
+      // navigate to the corresponding detail modal.
       const m = rowData.m;
       const colCount = 10;
       if (!rowData.holders.length) {
@@ -11961,21 +12023,31 @@ const Metrics = {
              + '</tr>';
       }
 
-      // Build a pill for a single persona in the matching R/A/C/I column.
-      const personaPillsCell = (persona, letter, role) => {
+      // Pill renderer for a single persona at L1 (single pill in the role
+      // the persona occupies in raci_defaults).
+      const personaPillCell = (persona, letter, role) => {
         const isInRole = m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(persona.id);
         if (!isInRole) return '<span class="metric-cell-empty">—</span>';
         return '<div class="raci-stack raci-stack-' + letter + '">'
-             +   '<span class="raci-pill raci-pill-' + letter + '" title="' + esc(persona.role_title || '') + ' (persona archetype)" '
-             +   'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">'
+             +   '<span class="raci-pill raci-pill-' + letter + ' raci-pill-template" title="persona archetype">'
              +   esc(persona.name) + '<sub class="raci-persona-mark">P</sub></span>'
+             + '</div>';
+      };
+      // Pill renderer for a single person at L2 (real RACI letters from
+      // metric.raci, which is person-keyed). A person may diverge from
+      // their persona's default — those divergences become visible here.
+      const personPillCell = (person, letter, role) => {
+        const isInRole = m.raci && Array.isArray(m.raci[role]) && m.raci[role].includes(person.id);
+        if (!isInRole) return '<span class="metric-cell-empty">—</span>';
+        return '<div class="raci-stack raci-stack-' + letter + '">'
+             +   '<span class="raci-pill raci-pill-' + letter + '" title="' + esc(person.role_title || '') + '">'
+             +   esc(person.name) + '</span>'
              + '</div>';
       };
 
       const dimsCellForHolding = (holding) => {
         const entries = Object.entries(holding.filter || {});
         if (!entries.length) {
-          // Inherits the parent dimensions if no filter is set.
           return (m.dimensions || []).length
             ? (m.dimensions || []).map(d => '<span class="dim-chip">' + esc(d) + '<small> · all</small></span>').join(' ')
             : '<span class="metric-cell-empty">—</span>';
@@ -11983,6 +12055,44 @@ const Metrics = {
         return entries.map(([k, v]) =>
           '<span class="dim-chip dim-chip-filtered">' + esc(k) + ': ' + esc(String(v)) + '</span>'
         ).join(' ');
+      };
+
+      const personRow = (person, holding) => {
+        // Person target_override resolution — if the person has an override
+        // for this (metric_id, same filter), mark the dimension chip.
+        const overrides = Array.isArray(person.target_overrides) ? person.target_overrides : [];
+        const sameFilter = (a, b) => {
+          const ak = Object.keys(a || {}); const bk = Object.keys(b || {});
+          if (ak.length !== bk.length) return false;
+          return ak.every(k => a[k] === b[k]);
+        };
+        const override = overrides.find(o => o.metric_id === m.id && sameFilter(o.filter, holding.filter));
+        const filterCell = dimsCellForHolding(holding) + (override
+          ? ' <span class="dim-chip dim-chip-override" title="Person override on this filter">override</span>'
+          : '');
+        const updated = m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—';
+        const statusClass = 'metric-status-' + (m.status || 'unknown');
+        return '<tr class="metric-cascade-row metric-cascade-row-person" data-parent="' + esc(m.id) + '" data-kind="person" '
+             +   'onclick="event.stopPropagation()">'
+             +   '<td class="metric-cell-name metric-cascade-person-name">'
+             +     '<span class="cascade-kind cascade-kind-person">Person</span>'
+             +     '<strong>' + esc(person.name) + '</strong>'
+             +     (person.role_title ? '<span class="metric-cascade-role"> · ' + esc(person.role_title) + '</span>' : '')
+             +   '</td>'
+             +   '<td>' + esc(rowData.groupName) + '</td>'
+             +   '<td class="metric-cell-def"><span class="metric-cell-empty">—</span></td>'
+             +   '<td>' + personPillCell(person, 'R', 'responsible') + '</td>'
+             +   '<td>' + personPillCell(person, 'A', 'accountable') + '</td>'
+             +   '<td>' + personPillCell(person, 'C', 'consulted') + '</td>'
+             +   '<td>' + personPillCell(person, 'I', 'informed') + '</td>'
+             +   '<td class="metric-cell-dims">' + filterCell + '</td>'
+             +   '<td><span class="metric-status-pill ' + statusClass + '">'
+             +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span>'
+             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
+             +     'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Person._openDetail(\'' + esc(person.id) + '\'),60)">View person</button>'
+             +   '</td>'
+             +   '<td class="metric-cell-updated">' + updated + '</td>'
+             + '</tr>';
       };
 
       return rowData.holders.map(({ persona, holding }) => {
@@ -11994,29 +12104,48 @@ const Metrics = {
           ? holding.targets.map(t => esc(t.period) + ' → ' + esc(String(t.value))).join(' · ')
           : (holding.notes ? esc(holding.notes) : '');
         const statusClass = 'metric-status-' + (m.status || 'unknown');
-        return '<tr class="metric-cascade-row" data-parent="' + esc(m.id) + '" '
-             +   'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">'
+        const activePeople = (typeof Person !== 'undefined')
+          ? Person.byPersonaId(persona.id).filter(p => p.active !== false)
+          : [];
+        const personaKey = m.id + '|' + persona.id;
+        const personaExpanded = expandedSet.has(personaKey) && activePeople.length > 0;
+        const innerChevron = personaExpanded ? '▾' : '▸';
+        const innerTwisty = activePeople.length
+          ? '<button type="button" class="metric-twisty metric-twisty-inner" aria-label="' + (personaExpanded ? 'Collapse people' : 'Expand people') + '" '
+            + 'onclick="event.stopPropagation();Metrics._toggleExpand(\'' + esc(personaKey) + '\')">' + innerChevron + '</button>'
+          : '<span class="metric-twisty metric-twisty-inner metric-twisty-leaf" aria-hidden="true">·</span>';
+        const peopleCountChip = activePeople.length
+          ? '<span class="metric-cascade-count">' + activePeople.length + ' ' + (activePeople.length === 1 ? 'person' : 'people') + '</span>'
+          : '<span class="metric-cascade-count metric-cascade-count-empty">no people</span>';
+        let html = '<tr class="metric-cascade-row metric-cascade-row-persona' + (personaExpanded ? ' is-expanded' : '') + '" data-parent="' + esc(m.id) + '" data-kind="persona" '
+             +   'onclick="event.stopPropagation()">'
              +   '<td class="metric-cell-name metric-cascade-name">'
-             +     '<span class="metric-cascade-leader">↳</span>'
+             +     innerTwisty
+             +     '<span class="cascade-kind cascade-kind-persona">Persona</span>'
              +     '<strong>' + esc(persona.name) + '</strong>'
-             +     '<span class="metric-cascade-role"> · ' + esc(persona.role_title || '') + '</span>'
+             +     ' ' + peopleCountChip
              +   '</td>'
              +   '<td>' + esc(rowData.groupName) + '</td>'
              +   '<td class="metric-cell-def">' + (defText ? '<span class="metric-definition" title="' + defText + '">' + defText + '</span>' : '<span class="metric-cell-empty">—</span>') + '</td>'
-             +   '<td>' + personaPillsCell(persona, 'R', 'responsible') + '</td>'
-             +   '<td>' + personaPillsCell(persona, 'A', 'accountable') + '</td>'
-             +   '<td>' + personaPillsCell(persona, 'C', 'consulted') + '</td>'
-             +   '<td>' + personaPillsCell(persona, 'I', 'informed') + '</td>'
+             +   '<td>' + personaPillCell(persona, 'R', 'responsible') + '</td>'
+             +   '<td>' + personaPillCell(persona, 'A', 'accountable') + '</td>'
+             +   '<td>' + personaPillCell(persona, 'C', 'consulted') + '</td>'
+             +   '<td>' + personaPillCell(persona, 'I', 'informed') + '</td>'
              +   '<td class="metric-cell-dims">' + dimsCellForHolding(holding) + '</td>'
              +   '<td><span class="metric-status-pill ' + statusClass + '">'
-             +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span></td>'
+             +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span>'
+             +     ' <button type="button" class="btn btn-ghost btn-sm metric-cascade-view-btn" '
+             +     'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">View persona</button>'
+             +   '</td>'
              +   '<td class="metric-cell-updated">' + updated + '</td>'
              + '</tr>';
+        if (personaExpanded) html += activePeople.map(p => personRow(p, holding)).join('');
+        return html;
       }).join('');
     };
 
     const rowHtml = (rowData) => {
-      const { m, groupName: gName, R, A, C, I, dimensions, definition } = rowData;
+      const { m, groupName: gName, R, A, C, I, definition } = rowData;
       const updated = m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—';
       const statusClass = 'metric-status-' + (m.status || 'unknown');
       const isExpanded = expandedSet.has(m.id);
@@ -12034,7 +12163,7 @@ const Metrics = {
         +   '<td>' + pillsCell(A, 'A') + '</td>'
         +   '<td>' + pillsCell(C, 'C') + '</td>'
         +   '<td>' + pillsCell(I, 'I') + '</td>'
-        +   '<td class="metric-cell-dims">' + dimsCell(dimensions) + '</td>'
+        +   '<td class="metric-cell-dims">' + dimsCellWithMeta(rowData) + '</td>'
         +   '<td><span class="metric-status-pill ' + statusClass + '">'
         +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span></td>'
         +   '<td class="metric-cell-updated">' + updated + '</td>'

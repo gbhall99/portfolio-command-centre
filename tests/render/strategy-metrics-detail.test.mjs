@@ -5,8 +5,8 @@ import { makeDataset, makeMetric, makePersona, makeObjective, resetIdSeq } from 
 describe('Strategy — Metrics detail pane', () => {
   it('renders definition, pseudo_logic, RACI, and cascade table', async () => {
     resetIdSeq();
-    const sarah = makePersona({ id: 'PS', name: 'Sarah Chen', role_title: 'CFO' });
-    const diane = makePersona({ id: 'PD', name: 'Diane Yuen', role_title: 'GM N' });
+    const sarah = makePersona({ id: 'PS', name: 'CFO' });
+    const diane = makePersona({ id: 'PD', name: 'Regional GM — North' });
     sarah.metric_holdings = [{ id: 'H1', metric_id: 'M1', filter: {},                  targets: [{ period: '2026', value: 400, period_type: 'annual' }] }];
     diane.metric_holdings = [{ id: 'H2', metric_id: 'M1', filter: { region: 'North' }, targets: [{ period: '2026', value: 200, period_type: 'annual' }] }];
     const obj = makeObjective({ id: 'O1', name: 'Grow regional revenue 12%' });
@@ -28,8 +28,8 @@ describe('Strategy — Metrics detail pane', () => {
     expect(out).toContain('Snowflake');
     expect(out).toContain('region');
     expect(out).toContain('Grow regional revenue 12%');
-    expect(out).toContain('Sarah Chen');
-    expect(out).toContain('Diane Yuen');
+    expect(out).toContain('CFO');
+    expect(out).toContain('Regional GM — North');
     expect(out).toContain('region: North');
     expect(out).toContain('£400');
     expect(out).toContain('200');

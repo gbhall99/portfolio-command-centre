@@ -9,8 +9,11 @@ describe('Personas — detail modal body', () => {
   // Person modals reached from the Assigned-people list.
   it('renders every documented section heading and the existing field values', async () => {
     resetIdSeq();
+    // 2026-05: role_title moved entirely off Persona. The archetype label IS
+    // the persona.name (e.g. "CFO"), and Person.role_title carries the
+    // individual's actual job title (e.g. "Sarah Chen" → "Chief Financial Officer").
     const sarah = makePersona({
-      id: 'P1', name: 'Sarah Chen', role_title: 'CFO',
+      id: 'P1', name: 'CFO',
       definition: 'Owns finance for the group.',
       key_responsibilities: 'Quarterly close; FP&A; Treasury.',
       goals: 'Improve gross margin by 200bps.',
@@ -39,7 +42,7 @@ describe('Personas — detail modal body', () => {
       'business questions',
       'Assigned people',
       'RACI defaults',
-      'Notes',
+      'Role notes',
     ].forEach(label => {
       expect(out.toLowerCase()).toContain(label.toLowerCase());
     });
@@ -49,12 +52,14 @@ describe('Personas — detail modal body', () => {
     expect(out.toLowerCase()).not.toContain('held metrics');
     // communication_prefs moved to Person; the persona modal no longer surfaces it.
     expect(out).not.toMatch(/data-persona-field="communication_prefs"/);
+    // role_title is gone from Persona entirely — the persona name IS the
+    // archetype label, so there's no separate role_title field on the modal.
+    expect(out).not.toMatch(/data-persona-field="role_title"/);
     // Tools field was removed; "Tools & communication" heading should be gone.
     expect(out).not.toMatch(/data-persona-field="tools"/);
     expect(out).not.toMatch(/data-persona-field="decisions"/);
 
     // Existing values are rendered into the form.
-    expect(out).toContain('Sarah Chen');
     expect(out).toContain('CFO');
     expect(out).toContain('Owns finance for the group.');
     expect(out).toContain('Improve gross margin by 200bps.');

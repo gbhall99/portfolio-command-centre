@@ -12,7 +12,6 @@ describe('Person — detail modal body', () => {
       pain_points: 'Slow close.',
       information_needs: 'Daily cash.',
       stakeholders: 'CEO',
-      communication_prefs: 'Email + steering',
       business_questions: ['Cash runway?'],
       metric_holdings: [{ id: 'H1', metric_id: 'M1', filter: { region: 'North' }, targets: [{ period: '2026', value: 100, period_type: 'annual' }] }],
     });
@@ -20,6 +19,7 @@ describe('Person — detail modal body', () => {
       id: 'PRSN-1', name: 'Sarah Chen', email: 'sc@ex.com',
       role_title: 'CFO', department: 'Finance', region: 'North',
       persona_id: 'P1', notes: 'Prefers data over narrative.',
+      communication_prefs: 'Slack mornings, email afternoons',
       target_overrides: [{ metric_id: 'M1', filter: { region: 'North' }, targets: [{ period: '2026', value: 220, period_type: 'annual' }] }],
     });
     const m = makeMetric({
@@ -35,10 +35,11 @@ describe('Person — detail modal body', () => {
 
     [
       'Identity',
+      'Communication preferences',  // Section restored on Person 2026-05.
       'Inherited from persona',
       'Held metrics',
       'RACI assignments',
-      'Notes',
+      'Individual notes',           // Renamed from "Notes" to disambiguate from Persona.notes.
     ].forEach(label => expect(out).toContain(label));
 
     // Identity values
@@ -46,6 +47,9 @@ describe('Person — detail modal body', () => {
     expect(out).toContain('sc@ex.com');
     expect(out).toContain('CFO');
     expect(out).toContain('Finance');
+    // Communication preferences — now editable on the Person, not inherited.
+    expect(out).toMatch(/data-person-field="communication_prefs"/);
+    expect(out).toContain('Slack mornings, email afternoons');
     // From-persona attribution
     expect(out).toContain('CFO Persona');
     expect(out).toContain('Owns finance for the group.');
