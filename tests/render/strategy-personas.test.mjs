@@ -32,8 +32,10 @@ describe('Strategy — Personas inventory', () => {
     expect(out).toContain('View more');
     expect(out).not.toContain('>Held metrics<');
     expect(out).not.toContain('>Holdings<');
-    // Name cell carries the "Persona" inline tag (mirrors Metrics tab style).
-    expect(out).toContain('persona-tbl-kind');
+    // Column header reads "Persona Title" — the entity context lives in the
+    // header, so no per-row "Persona" tag chip next to each name.
+    expect(out).toContain('>Persona Title<');
+    expect(out).not.toContain('persona-tbl-kind');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-personas.html');
     app.teardown();
   });

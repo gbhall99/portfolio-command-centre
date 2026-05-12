@@ -61,7 +61,12 @@ test('Person flow — create person, seed RACI, override target, matrix drill + 
   await expect(page.locator('#viewPersonas')).toContainText('E2E Diane');
 
   // The Accountable column on the metric's row should carry the person's pill.
+  // RACI view defaults to "Persona" — flip to "Person" so the named individual
+  // pills surface instead of the persona archetype templates.
   await page.click('.nav-item[data-view="metrics"]');
+  const toggleBtn = page.locator('#viewMetrics .metric-raci-view-btn').filter({ hasText: /^Person$/ });
+  await toggleBtn.click();
+  await expect(toggleBtn).toHaveClass(/is-active/);
   const metricRow = page.locator(`#viewMetrics tr[data-metric-id="${seed.metricId}"]`).first();
   await expect(metricRow).toBeVisible();
   await expect(metricRow.locator('.raci-pill-A', { hasText: 'E2E Diane' })).toHaveCount(1);

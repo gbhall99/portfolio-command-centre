@@ -11,8 +11,9 @@ describe('Strategy — Metrics library tabular view', () => {
     });
     const sarah = makePerson({ id: 'PRSN-1', name: 'Sarah Chen', persona_id: 'P1' });
     const m1 = makeMetric({
-      id: 'M1', name: 'Revenue', group_id: 'performance',
+      id: 'M1', name: 'Revenue', group_id: 'performance', unit: '£',
       raci: { accountable: ['PRSN-1'], responsible: [], consulted: [], informed: [] },
+      raci_defaults: { accountable: ['P1'], responsible: [], consulted: [], informed: [] },
     });
     const m2 = makeMetric({
       id: 'M2', name: 'Customer NPS', group_id: 'customer', status: 'draft',
@@ -26,14 +27,19 @@ describe('Strategy — Metrics library tabular view', () => {
 
     // Tabular structure markers.
     expect(out).toContain('metric-library-table');
-    // R/A/C/I now live as separate columns; counts/owner columns are gone.
-    ['Name', 'Group', 'Definition', 'Responsible', 'Accountable', 'Consulted', 'Informed', 'Dimensions', 'Status', 'Updated']
+    // R/A/C/I + new Targets column live as separate columns.
+    ['Name', 'Group', 'Definition', 'Responsible', 'Accountable', 'Consulted', 'Informed', 'Dimensions', 'Targets', 'Status', 'Updated']
       .forEach(label => expect(out).toContain(label));
     // Both metrics rendered as rows.
     expect(out).toContain('Revenue');
     expect(out).toContain('Customer NPS');
-    // Accountable person pill resolves in the A column.
-    expect(out).toMatch(/raci-pill-A[^>]*>[^<]*Sarah Chen/);
+    // Persona/Person toggle in the toolbar — defaults to Persona.
+    expect(out).toContain('metric-raci-view-toggle');
+    expect(out).toMatch(/metric-raci-view-btn is-active[^>]*>Persona</);
+    // In the default Persona view, the persona pill resolves in the A column.
+    expect(out).toMatch(/raci-stack-A[\s\S]*?CFO Persona/);
+    // Canonical target chip surfaces — £100 (period 2026).
+    expect(out).toMatch(/metric-target-chip[\s\S]*?2026[\s\S]*?£100/);
 
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-metrics-library-table.html');
     app.teardown();
