@@ -99,12 +99,10 @@ describe('Metrics module', () => {
   });
 });
 
-// 2026-05: the Library / RACI matrix view toggle was removed in favour of a
-// single flat table with R/A/C/I as separate columns and inline cascade
-// expansion. The state key + helpers still exist for legacy callers but no
-// longer change the rendering output.
-describe('Metrics inventory — single flat-table layout', () => {
-  it('renderInventoryTab renders the flat library table regardless of view state', async () => {
+// 2026-05: cascade expansion replaced by a Department filter. The metrics
+// table is now a flat list; users filter by department to scope the view.
+describe('Metrics inventory — flat table + department filter', () => {
+  it('renderInventoryTab renders the flat library table with no cascade twisty', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
       metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
@@ -112,86 +110,41 @@ describe('Metrics inventory — single flat-table layout', () => {
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Metrics.renderInventoryTab();
     expect(out).toContain('metric-library-table');
-    // RACI matrix view + toggle no longer surface in the inventory tab.
-    expect(out).not.toContain('raci-matrix');
-    expect(out).not.toContain('RACI matrix');
-    expect(out).not.toContain('>Library<');
-    app.App.uiStateSet('strategy.metric.view', 'raci');
-    const out2 = app.Metrics.renderInventoryTab();
-    expect(out2).toContain('metric-library-table');
-    expect(out2).not.toContain('raci-matrix');
+    // Cascade artefacts must NOT surface.
+    expect(out).not.toContain('metric-twisty');
+    expect(out).not.toContain('metric-cascade-row');
+    expect(out).not.toContain('Expand all');
+    expect(out).not.toContain('Collapse all');
     app.teardown();
   });
 
-  it('exposes Expand all / Collapse all controls', async () => {
+  it('defaults to ELT department and filters out non-ELT metrics', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      metrics: [makeMetric({ id: 'M1', name: 'Revenue' })],
+      metrics: [
+        makeMetric({ id: 'M1', name: 'Revenue',  department: 'ELT' }),
+        makeMetric({ id: 'M2', name: 'Defects',  department: 'Quality' }),
+      ],
     }));
     app.App.activeCustomer = 'Acme Industries';
-    const out = app.Metrics.renderInventoryTab();
-    expect(out).toContain('Expand all');
-    expect(out).toContain('Collapse all');
+    // Default ELT view: Revenue visible, Defects hidden.
+    const eltOut = app.Metrics.renderInventoryTab();
+    expect(eltOut).toContain('Revenue');
+    expect(eltOut).not.toContain('Defects');
+    // Switch to Quality: Defects visible, Revenue hidden.
+    app.Metrics._setDepartment('Quality');
+    const qualityOut = app.Metrics.renderInventoryTab();
+    expect(qualityOut).toContain('Defects');
+    expect(qualityOut).not.toContain('Revenue');
     app.teardown();
   });
 
-  it('expanding a metric reveals an inline cascade row per holder', async () => {
-    const persona = makePersona({ id: 'P1', name: 'CFO',
-      metric_holdings: [{ id: 'H1', metric_id: 'M1', filter: {}, targets: [{ period: '2026', value: 100, period_type: 'annual' }] }],
-    });
+  it('legacy metrics without a department default to ELT via migration', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      personas: [persona],
-      // raci_defaults makes the persona Accountable so its pill renders in
-      // the cascade row's Accountable column (which is now the only place the
-      // persona name appears at cascade level — inherited cells are blank).
-      metrics: [makeMetric({ id: 'M1', name: 'Revenue',
-        raci_defaults: { accountable: ['P1'], responsible: [], consulted: [], informed: [] } })],
+      metrics: [{ id: 'M1', customer: 'Acme Industries', name: 'Revenue', group_id: 'performance' }],
     }));
-    app.App.activeCustomer = 'Acme Industries';
-    // Collapsed: no cascade row.
-    expect(app.Metrics.renderInventoryTab()).not.toContain('metric-cascade-row');
-    // Expanded: one cascade row exists and the persona pill renders in the
-    // Accountable column.
-    app.Metrics._toggleExpand('M1');
-    const expanded = app.Metrics.renderInventoryTab();
-    expect(expanded).toContain('metric-cascade-row');
-    // Persona pill carries the name + sits in an Accountable stack.
-    expect(expanded).toMatch(/raci-stack-A[\s\S]*?CFO/);
-    // Inherited cells (Name/Group/Definition/Status/Updated) are blank — the
-    // persona name lives only in the RACI pill.
-    expect(expanded).toContain('metric-cascade-blank');
-    app.teardown();
-  });
-});
-
-// Cascade is single-level (persona holders). The previous L2 person drill-in
-// has been removed — the Name cell on cascade rows is now blank, with the
-// persona pill in the matching RACI column serving as both identity and
-// click-through to the persona detail modal.
-describe('Metrics cascade — persona pill is the click target', () => {
-  it('the persona pill onclick routes to Personas._openDetail', async () => {
-    const persona = makePersona({ id: 'P-CFO', name: 'CFO',
-      metric_holdings: [{ id: 'H1', metric_id: 'M-REV', filter: {}, targets: [] }],
-    });
-    const m = makeMetric({
-      id: 'M-REV', name: 'Revenue',
-      raci_defaults: { accountable: ['P-CFO'], responsible: [], consulted: [], informed: [] },
-    });
-    const app = await loadApp(makeDataset({
-      customers: [{ name: 'Acme Industries', color: '#6366f1', staleThreshold: 14 }],
-      personas: [persona], metrics: [m],
-    }));
-    app.App.activeCustomer = 'Acme Industries';
-    app.Metrics._toggleExpand('M-REV');
-    const html = app.Metrics.renderInventoryTab();
-    // The cascade Name cell is blank — no twisty/tag/View button artefacts.
-    expect(html).not.toMatch(/cascade-kind-persona/);
-    expect(html).not.toMatch(/metric-cascade-view-btn/);
-    expect(html).not.toMatch(/metric-twisty-inner/);
-    // The persona pill in the Accountable column carries the click handler
-    // that opens the persona detail modal.
-    expect(html).toMatch(/raci-stack-A[\s\S]*?Personas\._openDetail\('P-CFO'\)/);
+    expect(app.Metrics.byId('M1').department).toBe('ELT');
     app.teardown();
   });
 });

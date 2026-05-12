@@ -27,9 +27,14 @@ describe('Strategy — Metrics library tabular view', () => {
 
     // Tabular structure markers.
     expect(out).toContain('metric-library-table');
-    // R/A/C/I + new Targets column live as separate columns.
-    ['Name', 'Group', 'Definition', 'Responsible', 'Accountable', 'Consulted', 'Informed', 'Dimensions', 'Targets', 'Status', 'Updated']
+    // 2026-05 columns include Department (between Group and Definition).
+    ['Name', 'Group', 'Department', 'Definition', 'Responsible', 'Accountable', 'Consulted', 'Informed', 'Dimensions', 'Targets', 'Status', 'Updated']
       .forEach(label => expect(out).toContain(label));
+    // Department filter renders in the toolbar with ELT selected by default.
+    expect(out).toMatch(/Metrics\._setDepartment/);
+    // Each metric row carries a department chip; ELT (default) uses the
+    // violet variant.
+    expect(out).toContain('metric-dept-chip');
     // Both metrics rendered as rows.
     expect(out).toContain('Revenue');
     expect(out).toContain('Customer NPS');

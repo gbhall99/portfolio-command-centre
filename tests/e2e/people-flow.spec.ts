@@ -67,11 +67,9 @@ test('Person flow — create person, seed RACI, override target, matrix drill + 
   const toggleBtn = page.locator('#viewMetrics .metric-raci-view-btn').filter({ hasText: /^Person$/ });
   await toggleBtn.click();
   await expect(toggleBtn).toHaveClass(/is-active/);
+  // New metrics default to department=ELT via migration, so the metric is
+  // visible under the default ELT department filter without any further toggle.
   const metricRow = page.locator(`#viewMetrics tr[data-metric-id="${seed.metricId}"]`).first();
   await expect(metricRow).toBeVisible();
   await expect(metricRow.locator('.raci-pill-A', { hasText: 'E2E Diane' })).toHaveCount(1);
-
-  // Expanding the row reveals the cascade (the holding persona).
-  await metricRow.locator('.metric-twisty').click();
-  await expect(page.locator(`#viewMetrics .metric-cascade-row[data-parent="${seed.metricId}"]`).first()).toBeVisible();
 });

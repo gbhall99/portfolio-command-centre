@@ -911,40 +911,14 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .metric-library-table .raci-pill-I { background: var(--text-faint); }
 .metric-library-table .raci-persona-mark { font-size: 9px; font-weight: 700; opacity: 0.75; margin-left: 1px; vertical-align: super; }
 
-/* Twisty toggle in the Name cell — click to expand the cascade rows. */
-.metric-library-table .metric-twisty { background: transparent; border: 0; color: var(--text-muted); font-size: 12px; line-height: 1; padding: 2px 4px; margin-right: 4px; cursor: pointer; font-family: inherit; border-radius: var(--radius-sm); }
-.metric-library-table .metric-twisty:hover { background: var(--surface-hover); color: var(--text-dark); }
-.metric-library-table .metric-row.is-expanded { background: var(--surface-inset); }
-
-/* Cascade sub-rows: lightly tinted, click navigates to the persona. */
-.metric-library-table .metric-cascade-row { background: var(--surface-2); transition: background 0.12s; font-size: var(--fs-xs); cursor: default; }
-.metric-library-table .metric-cascade-row:hover { background: var(--surface-hover); }
-.metric-library-table .metric-cascade-row td { padding: 6px 10px; border-bottom: 1px solid var(--border-light); color: var(--text-dark-secondary); }
-.metric-library-table .metric-cascade-name { padding-left: 32px !important; }
-.metric-library-table .metric-cascade-empty { padding: 12px; text-align: center; color: var(--text-faint); font-style: italic; }
-.metric-library-table .metric-cascade-role { color: var(--text-muted); font-weight: 400; margin-left: 4px; }
-/* Level-2 person rows: deeper indent + slightly distinct background. */
-.metric-library-table .metric-cascade-row-person { background: var(--surface-inset); }
-.metric-library-table .metric-cascade-row-person:hover { background: var(--surface-hover); }
-.metric-library-table .metric-cascade-person-name { padding-left: 64px !important; }
-/* Inline entity tags so each cascade row carries an explicit Persona/Person label. */
-.metric-library-table .cascade-kind { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; padding: 2px 6px; border-radius: 4px; color: white; margin-right: 8px; vertical-align: middle; }
-.metric-library-table .cascade-kind-persona { background: var(--accent-violet); }
-.metric-library-table .cascade-kind-person  { background: var(--accent-blue); }
-/* Inner twisty for L1 persona rows. */
-.metric-library-table .metric-twisty-inner { margin-right: 4px; color: var(--text-muted); }
-.metric-library-table .metric-twisty-leaf { cursor: default; color: var(--text-faint); }
-.metric-library-table .metric-cascade-count { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--surface-inset); color: var(--text-muted); margin-left: 6px; font-weight: 500; }
-.metric-library-table .metric-cascade-count-empty { color: var(--text-faint); font-style: italic; }
-.metric-library-table .metric-cascade-view-btn { font-size: 10px; padding: 2px 8px; margin-left: 8px; }
 .metric-library-table .dim-chip-filtered { background: var(--tint-amber-weak); color: var(--text-dark); border: 1px solid var(--border-dim); }
-.metric-library-table .dim-chip-override { background: var(--accent-violet); color: white; border: 0; font-weight: 700; }
 .metric-library-table .dim-chip small { color: var(--text-muted); font-weight: 400; }
-/* Dimensions cell meta line — surfaces holders/filtered/targets counts at parent level. */
+/* Dimensions cell meta line — surfaces holders/filtered/targets counts. */
 .metric-library-table .metric-cell-dims-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
-/* Cascade rows blank out cells that just repeat parent-row data. The blank
-   cell keeps the column geometry intact without drawing eye-attention. */
-.metric-library-table .metric-cascade-blank { background: transparent; }
+/* Department chip — bold tag in the Department column so the scope reads
+   quickly even when the filter is on "All departments". */
+.metric-library-table .metric-dept-chip { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; background: var(--surface-inset); color: var(--text-dark); border: 1px solid var(--border-dim); white-space: nowrap; }
+.metric-library-table .metric-dept-chip.metric-dept-elt { background: var(--accent-violet); color: white; border-color: var(--accent-violet); }
 
 /* Parent RACI cells split People above Personas with a thin divider so users
    see which cells are real assignments vs role templates at a glance. */
@@ -4288,6 +4262,10 @@ const App = {
       if (!Array.isArray(m.objective_ids)) m.objective_ids = [];
       if (!m.raci) m.raci = { accountable: [], responsible: [], consulted: [], informed: [] };
       if (!Array.isArray(m.actuals)) m.actuals = [];
+      // Department scope (2026-05): ELT is the top-level / leadership view.
+      // Other departments map to Person.department values so the Metrics
+      // page can filter "show me Finance KPIs".
+      if (typeof m.department !== 'string' || !m.department) m.department = 'ELT';
 
       // RACI re-anchor: detect if raci is keyed by persona_id (legacy data) and move
       // it to raci_defaults. Idempotent — once defaults are populated, raci is left alone
@@ -11717,7 +11695,7 @@ const Metrics = {
       source: '', status: 'draft', dimensions: [], objective_ids: [],
       raci: { accountable: [], responsible: [], consulted: [], informed: [] },
       raci_defaults: { accountable: [], responsible: [], consulted: [], informed: [] },
-      actuals: [], notes: '',
+      actuals: [], notes: '', department: 'ELT',
       ...metric,
       customer: cust, group_id: groupId,
     };
@@ -11943,11 +11921,14 @@ const Metrics = {
     });
     const toolbar = this._renderUnifiedToolbar(raciView);
 
-    const metrics = this.list();
+    const activeDepartment = this._department();
+    const allMetrics = this.list();
+    const metrics = activeDepartment === 'ALL'
+      ? allMetrics
+      : allMetrics.filter(m => (m.department || 'ELT') === activeDepartment);
     const groups  = MetricGroups.list();
     const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
     const groupSwatch = (id) => { const g = groups.find(x => x.id === id); return g ? g.swatch : '#888'; };
-    const expandedSet = this._expandedSet();
     const sort = (App.uiStateGet ? App.uiStateGet('strategy.metric.sort') : null) || { by: 'name', dir: 'asc' };
     const esc = Dashboard.esc;
 
@@ -12006,14 +11987,16 @@ const Metrics = {
     });
 
     const cmp = (a, b) => {
-      const av = (sort.by === 'group')   ? a.groupName
-              : (sort.by === 'status')   ? (a.m.status || '')
-              : (sort.by === 'updated')  ? (a.m.updated_at || '')
-              :                            (a.m.name || '');
-      const bv = (sort.by === 'group')   ? b.groupName
-              : (sort.by === 'status')   ? (b.m.status || '')
-              : (sort.by === 'updated')  ? (b.m.updated_at || '')
-              :                            (b.m.name || '');
+      const av = (sort.by === 'group')      ? a.groupName
+              : (sort.by === 'department')   ? (a.m.department || 'ELT')
+              : (sort.by === 'status')       ? (a.m.status || '')
+              : (sort.by === 'updated')      ? (a.m.updated_at || '')
+              :                                (a.m.name || '');
+      const bv = (sort.by === 'group')      ? b.groupName
+              : (sort.by === 'department')   ? (b.m.department || 'ELT')
+              : (sort.by === 'status')       ? (b.m.status || '')
+              : (sort.by === 'updated')      ? (b.m.updated_at || '')
+              :                                (b.m.name || '');
       const r = String(av).localeCompare(String(bv));
       return sort.dir === 'desc' ? -r : r;
     };
@@ -12104,153 +12087,23 @@ const Metrics = {
       }).join('') + '</div>';
     };
 
-    const cascadeRows = (rowData) => {
-      // Cascade rows mirror the top-level column structure so users can
-      // compare each holder's RACI + dimension scope side-by-side with the
-      // parent metric. Two levels:
-      //   L1: persona (the role archetype holding the metric)
-      //   L2: people (the individuals filling that persona)
-      // L1 carries its own twisty when L2 has any active people; L2 only
-      // renders when the (metricId|personaId) key is in the expanded set.
-      // Bare row click is a no-op; explicit "View persona/person" buttons
-      // navigate to the corresponding detail modal.
-      const m = rowData.m;
-      const colCount = 10;
-      if (!rowData.holders.length) {
-        return '<tr class="metric-cascade-row" data-parent="' + esc(m.id) + '">'
-             +   '<td colspan="' + colCount + '" class="metric-cascade-empty">No personas hold this metric yet.</td>'
-             + '</tr>';
-      }
-
-      // Pill renderer for a single persona in the cascade (single pill in the
-      // role the persona occupies in raci_defaults). Clicking opens the
-      // persona detail modal — this IS the cascade row's navigation, since
-      // the Name/Group/etc. cells render blank.
-      const personaPillCell = (persona, letter, role) => {
-        const isInRole = m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(persona.id);
-        if (!isInRole) return '<span class="metric-cell-empty">—</span>';
-        return '<div class="raci-stack raci-stack-' + letter + '">'
-             +   '<span class="raci-pill raci-pill-' + letter + ' raci-pill-template" title="persona archetype" '
-             +   'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(persona.id) + '\'),60)">'
-             +   esc(persona.name) + '<sub class="raci-persona-mark">P</sub></span>'
-             + '</div>';
-      };
-      // Pill renderer for a single person in the cascade — reads the live
-      // person-keyed metric.raci. A person may diverge from their persona's
-      // default; the divergence becomes visible here.
-      const personPillCell = (person, letter, role) => {
-        const isInRole = m.raci && Array.isArray(m.raci[role]) && m.raci[role].includes(person.id);
-        if (!isInRole) return '<span class="metric-cell-empty">—</span>';
-        return '<div class="raci-stack raci-stack-' + letter + '">'
-             +   '<span class="raci-pill raci-pill-' + letter + '" title="' + esc(person.role_title || '') + '" '
-             +   'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Person._openDetail(\'' + esc(person.id) + '\'),60)">'
-             +   esc(person.name) + '</span>'
-             + '</div>';
-      };
-
-      const dimsCellForHolding = (holding) => {
-        const entries = Object.entries(holding.filter || {});
-        if (!entries.length) {
-          return (m.dimensions || []).length
-            ? (m.dimensions || []).map(d => '<span class="dim-chip">' + esc(d) + '<small> · all</small></span>').join(' ')
-            : '<span class="metric-cell-empty">—</span>';
-        }
-        return entries.map(([k, v]) =>
-          '<span class="dim-chip dim-chip-filtered">' + esc(k) + ': ' + esc(String(v)) + '</span>'
-        ).join(' ');
-      };
-
-      // Cascade carries only level-specific data. Every cell that simply
-      // inherits from the parent metric (Name, Group, Definition, Status,
-      // Updated) renders blank. The RACI pill in the matching column IS the
-      // row's identity AND its click target.
-      // raciView determines the cascade unit: in 'persona' mode each row is
-      // a holding persona; in 'person' mode we iterate the active people
-      // filling each holding persona, showing each person's actual RACI on
-      // the parent metric (from metric.raci).
-      const blank = '<td class="metric-cascade-blank"></td>';
-      const holdingTargetsCell = (holding) => {
-        const ts = (holding && holding.targets) || [];
-        if (!ts.length) return '<span class="metric-cell-empty">—</span>';
-        const unit = m.unit || '';
-        return '<div class="metric-targets-stack">' + ts.map(t =>
-          '<span class="metric-target-chip metric-target-chip-cascade" title="' + esc(t.period || '') + (t.period_type ? ' (' + esc(t.period_type) + ')' : '') + '">'
-          + '<span class="metric-target-period">' + esc(t.period || '') + '</span>'
-          + '<span class="metric-target-value">' + esc(fmtTargetValue(t.value, unit)) + '</span>'
-          + '</span>'
-        ).join('') + '</div>';
-      };
-      const personRow = (person, holding) => {
-        const overrides = Array.isArray(person.target_overrides) ? person.target_overrides : [];
-        const sameFilter = (a, b) => {
-          const ak = Object.keys(a || {}); const bk = Object.keys(b || {});
-          if (ak.length !== bk.length) return false;
-          return ak.every(k => a[k] === b[k]);
-        };
-        const override = overrides.find(o => o.metric_id === m.id && sameFilter(o.filter, holding.filter));
-        const filterCell = dimsCellForHolding(holding) + (override
-          ? ' <span class="dim-chip dim-chip-override" title="Person override on this filter">override</span>'
-          : '');
-        // When a person has an override for this filter, their personal target
-        // takes precedence — show that in the Targets cell. Otherwise fall back
-        // to the holding's targets.
-        const targetsForRow = (override && override.targets && override.targets.length)
-          ? { targets: override.targets }
-          : holding;
-        return '<tr class="metric-cascade-row metric-cascade-row-person" data-parent="' + esc(m.id) + '" data-kind="person">'
-             +   blank + blank + blank
-             +   '<td>' + personPillCell(person, 'R', 'responsible') + '</td>'
-             +   '<td>' + personPillCell(person, 'A', 'accountable') + '</td>'
-             +   '<td>' + personPillCell(person, 'C', 'consulted') + '</td>'
-             +   '<td>' + personPillCell(person, 'I', 'informed') + '</td>'
-             +   '<td class="metric-cell-dims">' + filterCell + '</td>'
-             +   '<td class="metric-cell-targets">' + holdingTargetsCell(targetsForRow) + '</td>'
-             +   blank + blank
-             + '</tr>';
-      };
-      return rowData.holders.flatMap(({ persona, holding }) => {
-        if (raciView === 'person') {
-          const activePeople = (typeof Person !== 'undefined')
-            ? Person.byPersonaId(persona.id).filter(p => p.active !== false)
-            : [];
-          if (!activePeople.length) {
-            return ['<tr class="metric-cascade-row metric-cascade-row-vacant" data-parent="' + esc(m.id) + '" data-kind="vacant">'
-              + blank + blank + blank
-              + '<td colspan="4" class="metric-cell-empty">No active person fills <strong>' + esc(persona.name) + '</strong></td>'
-              + '<td class="metric-cell-dims">' + dimsCellForHolding(holding) + '</td>'
-              + '<td class="metric-cell-targets">' + holdingTargetsCell(holding) + '</td>'
-              + blank + blank
-              + '</tr>'];
-          }
-          return activePeople.map(p => personRow(p, holding));
-        }
-        return ['<tr class="metric-cascade-row metric-cascade-row-persona" data-parent="' + esc(m.id) + '" data-kind="persona">'
-             +   blank + blank + blank
-             +   '<td>' + personaPillCell(persona, 'R', 'responsible') + '</td>'
-             +   '<td>' + personaPillCell(persona, 'A', 'accountable') + '</td>'
-             +   '<td>' + personaPillCell(persona, 'C', 'consulted') + '</td>'
-             +   '<td>' + personaPillCell(persona, 'I', 'informed') + '</td>'
-             +   '<td class="metric-cell-dims">' + dimsCellForHolding(holding) + '</td>'
-             +   '<td class="metric-cell-targets">' + holdingTargetsCell(holding) + '</td>'
-             +   blank + blank
-             + '</tr>'];
-      }).join('');
-    };
+    // Cascade expansion was removed 2026-05 — the per-metric drill-in is
+    // replaced by a department filter in the toolbar. Inherited holdings
+    // still live in Personas / the metric detail modal.
 
     const rowHtml = (rowData) => {
       const { m, groupName: gName, R, A, C, I, definition } = rowData;
       const updated = m.updated_at ? new Date(m.updated_at).toISOString().slice(0, 10) : '—';
       const statusClass = 'metric-status-' + (m.status || 'unknown');
-      const isExpanded = expandedSet.has(m.id);
-      const chevron = isExpanded ? '▾' : '▸';
-      let html = '<tr class="metric-row' + (isExpanded ? ' is-expanded' : '') + '" data-metric-id="' + esc(m.id) + '" '
-        +   'onclick="Metrics._toggleExpand(\'' + esc(m.id) + '\')" '
+      const department = m.department || 'ELT';
+      return '<tr class="metric-row" data-metric-id="' + esc(m.id) + '" '
+        +   'onclick="Metrics._openDetail(\'' + esc(m.id) + '\')" '
         +   'tabindex="0" role="button">'
-        +   '<td class="metric-cell-name"><button type="button" class="metric-twisty" aria-label="' + (isExpanded ? 'Collapse' : 'Expand') + '" '
-        +     'onclick="event.stopPropagation();Metrics._toggleExpand(\'' + esc(m.id) + '\')">' + chevron + '</button>'
+        +   '<td class="metric-cell-name">'
         +     '<span class="metric-accent" style="background:' + groupSwatch(m.group_id) + '"></span>'
         +     '<strong>' + esc(m.name) + '</strong></td>'
         +   '<td>' + esc(gName) + '</td>'
+        +   '<td><span class="metric-dept-chip metric-dept-' + esc((department || '').toLowerCase().replace(/\s+/g, '-')) + '">' + esc(department) + '</span></td>'
         +   '<td class="metric-cell-def">' + definitionCell(definition) + '</td>'
         +   '<td>' + pillsCell(R, 'R') + '</td>'
         +   '<td>' + pillsCell(A, 'A') + '</td>'
@@ -12262,13 +12115,12 @@ const Metrics = {
         +     '<span class="metric-status-dot"></span>' + esc(m.status || '—') + '</span></td>'
         +   '<td class="metric-cell-updated">' + updated + '</td>'
         + '</tr>';
-      if (isExpanded) html += cascadeRows(rowData);
-      return html;
     };
 
     const tableHead = '<thead><tr>'
       + th('name',     'Name')
       + th('group',    'Group')
+      + th('department', 'Department')
       + th(null,       'Definition')
       + th(null,       'Responsible')
       + th(null,       'Accountable')
@@ -12282,25 +12134,12 @@ const Metrics = {
 
     const tableBody = enriched.length
       ? '<tbody>' + enriched.map(rowHtml).join('') + '</tbody>'
-      : '<tbody><tr><td colspan="11" class="metric-empty">No metrics defined yet for this customer.</td></tr></tbody>';
+      : '<tbody><tr><td colspan="12" class="metric-empty">No metrics in <strong>' + esc(activeDepartment) + '</strong> for this customer.</td></tr></tbody>';
 
     return header + toolbar
          + '<div class="metric-library-wrap">'
          +   '<table class="metric-library-table">' + tableHead + tableBody + '</table>'
          + '</div>';
-  },
-
-  _expandedSet() {
-    const arr = (App.uiStateGet ? App.uiStateGet('strategy.metric.expanded') : null) || [];
-    return new Set(Array.isArray(arr) ? arr : []);
-  },
-
-  _toggleExpand(metricId) {
-    const set = this._expandedSet();
-    if (set.has(metricId)) set.delete(metricId);
-    else set.add(metricId);
-    if (App.uiStateSet) App.uiStateSet('strategy.metric.expanded', set.size ? Array.from(set) : null);
-    if (App.renderActiveView) App.renderActiveView();
   },
 
   _renderUnifiedToolbar(raciView) {
@@ -12313,12 +12152,30 @@ const Metrics = {
       + seg('persona', 'Persona')
       + seg('person',  'Person')
       + '</div>';
+    const activeDept = this._department();
+    // Build the department list from existing metric.department values plus
+    // Person.department values for the active customer. ELT is always first.
+    const deptSet = new Set(['ELT']);
+    this.list().forEach(m => { if (m.department) deptSet.add(m.department); });
+    if (typeof Person !== 'undefined') {
+      Person.list().forEach(p => { if (p.department) deptSet.add(p.department); });
+    }
+    const departments = ['ALL', ...Array.from(deptSet).sort((a, b) => {
+      if (a === 'ELT') return -1;
+      if (b === 'ELT') return 1;
+      return a.localeCompare(b);
+    })];
+    const deptOptions = departments.map(d => {
+      const label = d === 'ALL' ? 'All departments' : d;
+      return '<option value="' + Dashboard.esc(d) + '"' + (d === activeDept ? ' selected' : '') + '>' + Dashboard.esc(label) + '</option>';
+    }).join('');
     return Strategy._renderToolbar({
       searchPlaceholder: null,
-      filters: [],
-      actions: toggle
-        + '<button type="button" class="btn btn-ghost btn-sm" onclick="Metrics._setAllExpanded(true)" title="Expand all">Expand all</button>'
-        + '<button type="button" class="btn btn-ghost btn-sm" onclick="Metrics._setAllExpanded(false)" title="Collapse all">Collapse all</button>',
+      filters: [
+        { label: 'Department', onChange: 'Metrics._setDepartment(this.value)',
+          options: departments.map(d => ({ value: d, label: d === 'ALL' ? 'All departments' : d, selected: d === activeDept })) },
+      ],
+      actions: toggle,
     });
   },
 
@@ -12334,13 +12191,15 @@ const Metrics = {
     if (App.renderActiveView) App.renderActiveView();
   },
 
-  _setAllExpanded(expand) {
+  // Department filter — 'ELT' is the default (top-level). Pick another
+  // department to scope the metrics table to that group's KPIs.
+  _department() {
+    const v = App.uiStateGet ? App.uiStateGet('strategy.metric.department') : null;
+    return v || 'ELT';
+  },
+  _setDepartment(dept) {
     if (!App.uiStateSet) return;
-    if (expand) {
-      App.uiStateSet('strategy.metric.expanded', this.list().map(m => m.id));
-    } else {
-      App.uiStateSet('strategy.metric.expanded', null);
-    }
+    App.uiStateSet('strategy.metric.department', dept === 'ELT' ? null : dept);
     if (App.renderActiveView) App.renderActiveView();
   },
 

@@ -15,16 +15,19 @@ describe('Strategy — Metrics inventory list', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     const out = app.Metrics.renderInventoryTab();
+    // Default department filter is ELT — migration defaults each metric to
+    // ELT when no department is set, so both rows surface in the default view.
     expect(out).toContain('Revenue');
     expect(out).toContain('Customer NPS');
     // Dimensions render as compact chips in the new flat table.
     expect(out).toContain('region');
-    // Metric rows expose the twisty + R/A/C/I columns.
-    expect(out).toContain('metric-twisty');
+    // R/A/C/I + Department columns are present; cascade twisty is gone.
+    expect(out).not.toContain('metric-twisty');
     expect(out).toContain('Responsible');
     expect(out).toContain('Accountable');
     expect(out).toContain('Consulted');
     expect(out).toContain('Informed');
+    expect(out).toContain('Department');
     await expect(out).toMatchFileSnapshot('./__snapshots__/strategy-metrics-list.html');
     app.teardown();
   });
