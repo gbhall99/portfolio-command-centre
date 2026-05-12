@@ -2773,6 +2773,25 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   .wt-cust { display: none; }
 }
 .wt-section-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+/* Milestone review — surfaces project dates + customer-named milestones so
+   the team can confirm/adjust each during the walkthrough. */
+.wt-milestones { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.wt-milestones h6 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin: 0 0 7px 0; display: flex; align-items: center; gap: 6px; }
+.wt-milestones h6 .count { background: #e2e8f0; color: #475569; font-size: 9px; padding: 0 5px; border-radius: 999px; font-weight: 700; }
+.wt-ms-row { display: grid; grid-template-columns: 1fr 110px 110px 130px 1fr; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 11.5px; }
+.wt-ms-row:first-child { border-top: 0; }
+.wt-ms-row-fixed { grid-template-columns: 1fr 110px 110px; }
+.wt-ms-name { color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-ms-date { color: #64748b; font-variant-numeric: tabular-nums; font-size: 11px; }
+.wt-ms-chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; white-space: nowrap; justify-self: start; }
+.wt-ms-green { background: #dcfce7; color: #166534; }
+.wt-ms-amber { background: #fef3c7; color: #92400e; }
+.wt-ms-red   { background: #fee2e2; color: #991b1b; }
+.wt-ms-undated { background: #f1f5f9; color: #64748b; }
+.wt-ms-status-sel { font-size: 11px; padding: 3px 6px; border: 1px solid #e2e8f0; border-radius: 6px; background: white; color: #0f172a; }
+.wt-ms-notes { color: #64748b; font-size: 11px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wt-ms-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+.wt-ms-empty { color: #94a3b8; font-size: 11px; padding: 4px 0; font-style: italic; }
 .wt-list-block { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
 .wt-list-block h6 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #64748b; margin: 0 0 7px 0; display: flex; align-items: center; gap: 6px; }
 .wt-list-block h6 .count { background: #e2e8f0; color: #475569; font-size: 9px; padding: 0 5px; border-radius: 999px; font-weight: 700; }
@@ -2902,13 +2921,13 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="10" height="4" rx="1"/><rect x="7" y="11" width="10" height="4" rx="1"/><rect x="11" y="17" width="10" height="4" rx="1"/></svg>
         Roadmap
       </div>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Sprint Management</div>
       <div class="nav-item" data-view="backlog" onclick="App.navigate('backlog')" title="Backlog buckets — Unrefined / Refined / Parked">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
         <span>Backlog</span>
       </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Sprint Management</div>
       <div class="nav-item" data-view="sprint" onclick="App.navigate('sprint')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 4 21 10 15 10"/></svg>
         Sprint Planning
@@ -23533,10 +23552,103 @@ const Walkthrough = {
     host.innerHTML = headerHtml +
       '<div data-wt-prompts>' + promptsHtml + '</div>' +
       '<div data-wt-grid class="wt-grid">' + healthHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
+      '<div data-wt-milestones></div>' +
       '<div data-wt-open-lists></div>' +
       '<div data-wt-capture></div>';
+    this._renderMilestones(project);
     this._renderOpenLists(project);
     this._renderCapture(project);
+  },
+
+  // Milestone review — surfaces every dated commitment a project carries so
+  // the team can confirm/adjust each during the walkthrough. Sources:
+  // - project.target_date / hard_deadline / product_release_date
+  // - project.data_sourcing.uat_release_date / go_live_date
+  // - project.customer_milestones[] (per-row status is editable inline)
+  _renderMilestones(project) {
+    const host = document.querySelector('[data-wt-milestones]'); if (!host) return;
+    const esc = Dashboard.esc;
+    const upcoming = App.computeProjectUpcoming(project.id) || {};
+    const ds = project.data_sourcing || {};
+
+    const stateChip = (item) => {
+      if (!item) return '';
+      const cls = 'wt-ms-chip wt-ms-' + (item.state || 'green');
+      const label = item.days_to >= 0 ? 'in ' + item.days_to + 'd' : (-item.days_to) + 'd overdue';
+      return '<span class="' + cls + '">' + label + '</span>';
+    };
+    const dayOf = (iso) => {
+      if (!iso) return null;
+      const t = new Date(iso).getTime();
+      if (isNaN(t)) return null;
+      const days_to = Math.ceil((t - Date.now()) / 86400000);
+      let state = 'green';
+      if (days_to < 0) state = 'red';
+      else if (days_to <= 7) state = 'red';
+      else if (days_to <= 14) state = 'amber';
+      return { iso, days_to, state };
+    };
+
+    const dateRow = (label, item, kind) => {
+      if (!item) return '';
+      return '<div class="wt-ms-row wt-ms-row-fixed" data-wt-ms-kind="' + kind + '">'
+        +   '<span class="wt-ms-name">' + esc(label) + '</span>'
+        +   '<span class="wt-ms-date">' + esc(item.iso) + '</span>'
+        +   stateChip(item)
+        + '</div>';
+    };
+
+    const milestones = project.customer_milestones || [];
+    const statuses = ['Planned', 'Achieved', 'Missed', 'At risk'];
+    const customerRow = (m, idx) => {
+      const item = dayOf(m.date);
+      const stateChipHtml = item ? stateChip(item) : '<span class="wt-ms-chip wt-ms-undated">no date</span>';
+      const statusOpts = statuses.map(s =>
+        '<option value="' + esc(s) + '"' + (s === (m.status || 'Planned') ? ' selected' : '') + '>' + esc(s) + '</option>'
+      ).join('');
+      const notes = m.notes
+        ? '<div class="wt-ms-notes" title="' + esc(m.notes) + '">' + esc(m.notes) + '</div>'
+        : '';
+      return '<div class="wt-ms-row wt-ms-row-cust" data-wt-ms-idx="' + idx + '">'
+        +   '<span class="wt-ms-name"><strong>' + esc(m.name || '(unnamed)') + '</strong></span>'
+        +   '<span class="wt-ms-date">' + esc(m.date || '—') + '</span>'
+        +   stateChipHtml
+        +   '<select class="wt-ms-status-sel" onchange="Walkthrough._setMilestoneStatus(\'' + esc(project.id) + '\',' + idx + ', this.value)">'
+        +     statusOpts
+        +   '</select>'
+        +   notes
+        + '</div>';
+    };
+
+    const fixedBlock = dateRow('Target date',       upcoming.target_date,         'target_date')
+                     + dateRow('Hard deadline',     upcoming.hard_deadline,       'hard_deadline')
+                     + dateRow('Product release',   upcoming.product_release_date,'product_release_date')
+                     + dateRow('Data UAT release',  dayOf(ds.uat_release_date),   'ds_uat_release')
+                     + dateRow('Data go-live',      dayOf(ds.go_live_date),       'ds_go_live');
+    const fixedCount = (fixedBlock.match(/wt-ms-row-fixed/g) || []).length;
+    const customerBlock = milestones.length
+      ? milestones.map(customerRow).join('')
+      : '<div class="wt-ms-empty">No customer milestones yet — add them in the project detail panel under Delivery.</div>';
+
+    host.innerHTML = '<div class="wt-milestones">'
+      + '<h6><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:5px"><polygon points="12 2 15 8.5 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 9 8.5 12 2"/></svg>Milestone review <span class="count">' + (fixedCount + milestones.length) + '</span></h6>'
+      + (fixedBlock || '<div class="wt-ms-empty">No fixed dates on this project.</div>')
+      + (milestones.length || !fixedBlock ? '<div class="wt-ms-divider"></div>' : '')
+      + customerBlock
+      + '</div>';
+  },
+
+  _setMilestoneStatus(projectId, idx, status) {
+    const project = App.data && App.data.projects.find(p => p.id === projectId);
+    if (!project || !Array.isArray(project.customer_milestones)) return;
+    const milestone = project.customer_milestones[idx];
+    if (!milestone) return;
+    App.pushUndo && App.pushUndo('Walkthrough milestone status: ' + (milestone.name || '(unnamed)'));
+    milestone.status = status;
+    project.last_updated = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+    this._renderMilestones(project);
   },
 
   _renderOpenLists(project) {
