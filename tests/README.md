@@ -1,4 +1,4 @@
-# Portfolio Command Centre — Tests
+# Velocity — Tests
 
 Automated suite for the single-file `index.html` app. Three layers, all run from npm.
 

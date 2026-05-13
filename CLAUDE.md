@@ -1,4 +1,6 @@
-# Portfolio Command Centre
+# Velocity
+
+*Authored by Gareth Hall and Claude. (Formerly "Portfolio Command Centre" — renamed 2026-05-13. The repo path and localStorage keys are unchanged to preserve existing sessions.)*
 
 ## What This Is
 A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across multiple customer accounts. Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. Every view is **customer-scoped** — a customer must always be selected; there is no "All" option. Demo data ships with three fictional customers (Acme Industries, Globex, Initech); rename or replace them in Settings → Customers.

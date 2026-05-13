@@ -1,6 +1,10 @@
-# Portfolio Command Centre
+# Velocity
+
+*Authored by Gareth Hall and Claude.*
 
 A single-file, zero-dependency portfolio management app for small data/analytics teams running multiple customer accounts. Runs entirely in the browser. No server, no build step, no signup.
+
+*(Formerly "Portfolio Command Centre". The repo path and localStorage keys are unchanged so existing sessions keep their data; user-facing name is "Velocity" everywhere.)*
 
 ## What it does
 
