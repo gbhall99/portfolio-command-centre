@@ -18146,6 +18146,33 @@ const DetailPanel = {
     }
   },
 
+  // Slot D — lifecycle stage banner (advance-stage select + button). Lives on
+  // the Detail panel Overview tab; previously was bundled inside renderEvmStrip
+  // but extracted because EVM moved to the Walkthrough.
+  renderLifecycleBanner(p) {
+    if (!p) return '';
+    const esc = Dashboard.esc;
+    const stageBannerCopy = {
+      'Idea':      'Captured as an Idea — promote to Discovery to start exploring.',
+      'Discovery': 'Currently in Discovery — set or update the baseline when scope is firm enough to track.',
+      'POC':       'Currently a POC — set or update the baseline when scope is firm enough to track.',
+      'Run/BAU':   'Running — excluded from active scoring views.'
+    };
+    const stageMsg = stageBannerCopy[p.lifecycle_stage] || '';
+    if (!stageMsg) return '';
+    const stageOpts = App.LIFECYCLE_STAGES
+      .filter(s => s !== p.lifecycle_stage)
+      .map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>')
+      .join('');
+    return '<div class="panel-section dp-lifecycle-banner">' +
+      '<div style="background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:8px 12px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span>' + esc(stageMsg) + '</span>' +
+        '<select id="advanceStageSelect-' + esc(p.id) + '" class="field-input" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"><option value="">Advance to…</option>' + stageOpts + '</select>' +
+        '<button class="btn btn-primary btn-sm" onclick="DetailPanel.confirmAdvanceStage(\'' + esc(p.id) + '\')" style="font-size:10px;padding:3px 8px">Advance stage</button>' +
+      '</div>' +
+    '</div>';
+  },
+
   renderEvmStrip(p) {
     if (typeof Forecast === 'undefined' || !p) return '';
     const ev = Forecast.earnedValue(p);
@@ -18184,13 +18211,9 @@ const DetailPanel = {
       .filter(s => s !== p.lifecycle_stage)
       .map(s => '<option value="' + esc(s) + '">' + esc(s) + '</option>')
       .join('');
-    const conversionBanner = stageMsg
-      ? '<div class="evm-banner evm-banner-info" style="grid-column:1/-1;background:#fef3c7;border:1px solid #f59e0b40;border-radius:var(--radius-sm);padding:6px 10px;font-size:11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">' +
-          '<span>' + esc(stageMsg) + '</span>' +
-          '<select id="advanceStageSelect-' + esc(p.id) + '" class="field-input" style="font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)"><option value="">Advance to…</option>' + stageOpts + '</select>' +
-          '<button class="btn btn-primary btn-sm" onclick="DetailPanel.confirmAdvanceStage(\'' + esc(p.id) + '\')" style="font-size:10px;padding:3px 8px">Advance stage</button>' +
-        '</div>'
-      : '';
+    // Slot D — conversion banner extracted to its own helper renderLifecycleBanner;
+    // it lives on the Detail panel even though EVM relocated to the Walkthrough.
+    const conversionBanner = '';
     const tbdEntries = ((p.delivery_config && p.delivery_config.phase_order) || [])
       .filter(e => e && typeof e === 'object' && e.status === 'tbd');
     const tbdBanner = tbdEntries.length
@@ -19144,8 +19167,11 @@ const DetailPanel = {
     // Item 3 — Overview Identity strip removed. Information is in the sticky
     // header (customer chip) and the new sponsor pill (see _refreshStickyMeta).
     // The full editable Identity section remains on Scope & Value.
-
-    overviewSections.push(this.renderEvmStrip(p));
+    // Slot D / Item 2-half — EVM strip moved to the Walkthrough (Health / EVM tile).
+    // Slot D — lifecycle stage banner (advance-stage select) stays on the
+    // Detail panel since it is a project control, not an EVM stat.
+    const lifecycleBanner = this.renderLifecycleBanner(p);
+    if (lifecycleBanner) overviewSections.push(lifecycleBanner);
     overviewSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Status &amp; Health</div>' +
@@ -25123,6 +25149,15 @@ const Overview = {
     }
   },
 
+  // Slot D — shared EVM strip renderer. Walkthrough calls this; DetailPanel
+  // is no longer responsible for EVM on Overview (moved out per Item 2-half).
+  renderEvmStrip(p) {
+    if (typeof DetailPanel !== 'undefined' && typeof DetailPanel.renderEvmStrip === 'function') {
+      return DetailPanel.renderEvmStrip(p);
+    }
+    return '';
+  },
+
   // Phase 6 / AC-6.2: PO weekly caption / narrative headline — single field.
   // Replaces Walkthrough._narrativeHeadlineChange.
   onPoCaptionChange(projectId, val, walkthroughId) {
@@ -25189,6 +25224,19 @@ const RAID = {
         if (App.saveToLocalStorage) App.saveToLocalStorage();
       }
     }
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) {
+      Walkthrough._renderCenter();
+    }
+  },
+
+  // Slot D / Item 7 — close an issue from the walkthrough open-issues tile.
+  closeIssue(projectId, idx) {
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project || !Array.isArray(project.issues_register) || !project.issues_register[idx]) return;
+    project.issues_register[idx].status = 'closed';
+    project.issues_register[idx].resolution_date = project.issues_register[idx].resolution_date || new Date().toISOString().slice(0, 10);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
     if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) {
       Walkthrough._renderCenter();
     }
@@ -25593,6 +25641,9 @@ const Walkthrough = {
       '<select class="wt-status-sel" onchange="App.updateProjectStatus(\'' + esc(project.id) + '\', this.value, \'' + esc(this._activeWalkthroughId) + '\');Walkthrough._renderCenter();">' +
         ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'].map(s => '<option' + (project.status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
       '</select></div>';
+    // Slot D / Item 2-half — EVM tile moved to the Walkthrough.
+    const evmStripHtml = (typeof Overview.renderEvmStrip === 'function') ? Overview.renderEvmStrip(project) : '';
+    const evmHtml = '<div class="wt-tile wt-tile-wide" data-wt-tile="evm"><h6>Earned value</h6>' + evmStripHtml + '</div>';
 
     // Trajectory tile
     const trajectoryHtml = '<div class="wt-tile" data-wt-tile="trajectory"><h6>Delivery trajectory</h6><div class="wt-traj-wrap">' +
@@ -25608,12 +25659,80 @@ const Walkthrough = {
     host.innerHTML = headerHtml +
       '<div data-wt-prompts>' + promptsHtml + '</div>' +
       '<div data-wt-grid class="wt-grid">' + healthHtml + statusHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
+      evmHtml +
+      '<div data-wt-scope-effort></div>' +
       '<div data-wt-milestones></div>' +
       '<div data-wt-open-lists></div>' +
       '<div data-wt-capture></div>';
+    this._renderScopeEffort(project);
     this._renderMilestones(project);
     this._renderOpenLists(project);
     this._renderCapture(project);
+  },
+
+  // Slot D / Item 9 — scope/effort adjustment tile. Renders size_total + per-phase
+  // points editable inline. Edits route through DetailPanel's _captureChangeReason
+  // (Phase 5 / AC-5.3) so each change creates an auto-Decision tagged scope-change.
+  _renderScopeEffort(project) {
+    const host = document.querySelector('[data-wt-scope-effort]'); if (!host) return;
+    if (!project) { host.innerHTML = ''; return; }
+    const esc = Dashboard.esc;
+    const sizeFields = [
+      { key: 'size_requirements', label: 'Requirements' },
+      { key: 'size_engineering',  label: 'Data Engineering' },
+      { key: 'size_data_science', label: 'Data Science' },
+      { key: 'size_tableau',      label: 'Tableau' },
+      { key: 'size_uat_adoption', label: 'UAT' }
+    ];
+    const total = sizeFields.reduce((s, f) => s + (Number(project[f.key]) || 0), 0);
+    const baseline = project.estimate_baseline
+      ? sizeFields.reduce((s, f) => s + (Number(project.estimate_baseline[f.key]) || 0), 0)
+      : null;
+    const delta = baseline !== null ? (total - baseline) : null;
+    const deltaChip = delta !== null && delta !== 0
+      ? '<span class="wt-scope-delta" style="font-size:10px;color:' + (delta > 0 ? 'var(--status-amber)' : 'var(--status-green)') + ';font-weight:600">' + (delta > 0 ? '+' : '') + delta + ' SP vs baseline</span>'
+      : '';
+    const rowHtml = (f) => '<div class="wt-scope-row" data-wt-scope-row data-skill="' + esc(f.key) + '" style="display:flex;align-items:center;gap:8px;padding:3px 0">' +
+      '<span class="wt-scope-label" style="flex:1;font-size:11px">' + esc(f.label) + '</span>' +
+      '<input type="number" min="0" step="1" class="wt-scope-input" data-skill="' + esc(f.key) + '" value="' + (Number(project[f.key]) || 0) + '" onchange="Walkthrough._onScopeEffortChange(this)" style="width:60px;font-size:11px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);text-align:right">' +
+      '<span style="font-size:10px;color:var(--text-muted);min-width:18px">SP</span>' +
+    '</div>';
+    host.innerHTML = '<div class="wt-tile wt-tile-wide" data-wt-tile="scope-effort">' +
+      '<h6>Scope &amp; effort</h6>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">' +
+        '<span style="font-size:14px;font-weight:700;color:var(--text-dark)">' + total + ' <span style="font-size:10px;font-weight:400;color:var(--text-muted)">SP total</span></span>' +
+        deltaChip +
+      '</div>' +
+      sizeFields.map(rowHtml).join('') +
+    '</div>';
+  },
+
+  _onScopeEffortChange(input) {
+    if (!this.activeProjectId) return;
+    const project = App.data.projects.find(p => p.id === this.activeProjectId);
+    if (!project) return;
+    const skill = input.dataset.skill;
+    const newValue = Math.max(0, parseInt(input.value, 10) || 0);
+    const oldValue = Number(project[skill]) || 0;
+    if (newValue === oldValue) return;
+    // Apply optimistically; capture reason via DetailPanel's modal — on cancel
+    // the field reverts; on confirm an auto-Decision tagged scope-change is logged.
+    project[skill] = newValue;
+    project.size_total = (project.size_requirements || 0) + (project.size_tableau || 0) +
+      (project.size_engineering || 0) + (project.size_data_science || 0) + (project.size_uat_adoption || 0);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (typeof DetailPanel !== 'undefined' && typeof DetailPanel._captureChangeReason === 'function' && project.estimate_baseline) {
+      DetailPanel._captureChangeReason({
+        projectId: project.id,
+        field: skill,
+        oldValue,
+        newValue,
+        tag: 'scope-change',
+        el: input
+      });
+    }
+    this._renderScopeEffort(project);
   },
 
   // Milestone review — surfaces every dated commitment a project carries so
@@ -25665,6 +25784,11 @@ const Walkthrough = {
       const notes = m.notes
         ? '<div class="wt-ms-notes" title="' + esc(m.notes) + '">' + esc(m.notes) + '</div>'
         : '';
+      // Slot D / Item 5 — Mark-reviewed affordance per milestone row. Shows the
+      // reviewed-stamp once set; stamps reviewed_at + reviewed_by_walkthrough_id.
+      const reviewedBadge = m.reviewed_at
+        ? '<span class="wt-ms-reviewed" title="Reviewed ' + esc(m.reviewed_at) + '" style="font-size:9px;color:var(--status-green);font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(16,185,129,0.12)">reviewed</span>'
+        : '<button class="wt-ms-review-btn" data-wt-ms-review="' + idx + '" onclick="Walkthrough._markMilestoneReviewed(\'' + esc(project.id) + '\',' + idx + ')" style="font-size:10px;padding:2px 7px;border:1px solid var(--border-light);border-radius:8px;background:var(--surface);color:var(--text-dark-secondary);cursor:pointer">Mark reviewed</button>';
       return '<div class="wt-ms-row wt-ms-row-cust" data-wt-ms-idx="' + idx + '">'
         +   '<span class="wt-ms-name"><strong>' + esc(m.name || '(unnamed)') + '</strong></span>'
         +   '<span class="wt-ms-date">' + esc(m.date || '—') + '</span>'
@@ -25672,6 +25796,7 @@ const Walkthrough = {
         +   '<select class="wt-ms-status-sel" onchange="Delivery.setMilestoneStatus(\'' + esc(project.id) + '\',' + idx + ', this.value)">'
         +     statusOpts
         +   '</select>'
+        +   reviewedBadge
         +   notes
         + '</div>';
     };
@@ -25684,14 +25809,59 @@ const Walkthrough = {
     const fixedCount = (fixedBlock.match(/wt-ms-row-fixed/g) || []).length;
     const customerBlock = milestones.length
       ? milestones.map(customerRow).join('')
-      : '<div class="wt-ms-empty">No customer milestones yet — add them in the project detail panel under Delivery.</div>';
+      : '<div class="wt-ms-empty">No customer milestones yet.</div>';
+    // Slot D / Item 5 — add milestone affordance in the walkthrough.
+    const addRow = '<div class="wt-ms-add-row" style="display:flex;gap:6px;align-items:center;margin-top:8px">' +
+      '<input type="text" placeholder="New milestone name" id="wtMsAddName" style="flex:1;font-size:11px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">' +
+      '<input type="date" id="wtMsAddDate" style="font-size:11px;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm)">' +
+      '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="Walkthrough._addMilestoneFromWalkthrough(\'' + esc(project.id) + '\')">+ Add milestone</button>' +
+    '</div>';
 
     host.innerHTML = '<div class="wt-milestones">'
       + '<h6><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:5px"><polygon points="12 2 15 8.5 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 9 8.5 12 2"/></svg>Milestone review <span class="count">' + (fixedCount + milestones.length) + '</span></h6>'
       + (fixedBlock || '<div class="wt-ms-empty">No fixed dates on this project.</div>')
       + (milestones.length || !fixedBlock ? '<div class="wt-ms-divider"></div>' : '')
       + customerBlock
+      + addRow
       + '</div>';
+  },
+
+  // Slot D / Item 5 — add milestone via walkthrough (same store as Delivery).
+  _addMilestoneFromWalkthrough(projectId) {
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const nameEl = document.getElementById('wtMsAddName');
+    const dateEl = document.getElementById('wtMsAddDate');
+    const name = nameEl ? (nameEl.value || '').trim() : '';
+    const date = dateEl ? (dateEl.value || '').trim() : '';
+    if (!name) {
+      if (App && App.toast) App.toast('Milestone name required', 'error');
+      return;
+    }
+    if (!Array.isArray(project.customer_milestones)) project.customer_milestones = [];
+    project.customer_milestones.push({
+      id: 'ms-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      name,
+      date: date || null,
+      status: 'Planned',
+      external_commitment: false,
+      notes: ''
+    });
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    this._renderMilestones(project);
+  },
+
+  // Slot D / Item 5 — mark milestone reviewed (walkthrough-only affordance).
+  _markMilestoneReviewed(projectId, idx) {
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project || !Array.isArray(project.customer_milestones) || !project.customer_milestones[idx]) return;
+    const m = project.customer_milestones[idx];
+    m.reviewed_at = new Date().toISOString();
+    m.reviewed_by_walkthrough_id = this._activeWalkthroughId || null;
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    this._renderMilestones(project);
   },
 
   // Phase 6 / AC-6.2: _setMilestoneStatus deleted — see Delivery.setMilestoneStatus.
@@ -25726,12 +25896,27 @@ const Walkthrough = {
           '<button onclick="RAID.deferAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Defer</button>' +
           '<button onclick="RAID.doneAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Done</button>' +
         '</div></div>';
+    // Slot D / Item 7 — Issues in the walkthrough. Same row pattern as risks.
+    const openIssues = (project.issues_register || [])
+      .map((iss, idx) => Object.assign({ idx }, iss))
+      .filter(iss => (iss.status || 'open') !== 'closed' && (iss.status || 'open') !== 'resolved');
+    const issueRow = iss => '<div class="wt-row" data-wt-issue-idx="' + iss.idx + '">' +
+        '<span class="due">' + esc(iss.resolution_date || '') + '</span>' +
+        '<div class="desc"><strong>' + esc(iss.description || '') + '</strong></div>' +
+        '<span class="meta">@' + esc(iss.owner || '') + '</span>' +
+        '<div class="qact">' +
+          '<button onclick="RAID.closeIssue(\'' + esc(project.id) + '\',' + iss.idx + ')">Close</button>' +
+        '</div>' +
+      '</div>';
     host.innerHTML =
-      '<div class="wt-section-row">' +
-        '<div class="wt-list-block"><h6>Open risks <span class="count">' + openRisks.length + '</span></h6>' +
+      '<div class="wt-section-row" data-wt-tile="open-lists">' +
+        '<div class="wt-list-block" data-wt-tile="open-risks"><h6>Open risks <span class="count">' + openRisks.length + '</span></h6>' +
           (openRisks.length ? openRisks.map(riskRow).join('') : '<div style="color:var(--text-muted);font-size:11px">None</div>') +
         '</div>' +
-        '<div class="wt-list-block"><h6>Open actions <span class="count">' + openActions.length + '</span></h6>' +
+        '<div class="wt-list-block" data-wt-tile="open-issues"><h6>Open issues <span class="count">' + openIssues.length + '</span></h6>' +
+          (openIssues.length ? openIssues.map(issueRow).join('') : '<div style="color:var(--text-muted);font-size:11px">None</div>') +
+        '</div>' +
+        '<div class="wt-list-block" data-wt-tile="open-actions"><h6>Open actions <span class="count">' + openActions.length + '</span></h6>' +
           (openActions.length ? openActions.map(actionRow).join('') : '<div style="color:var(--text-muted);font-size:11px">None</div>') +
         '</div>' +
       '</div>';
@@ -25818,7 +26003,34 @@ const Walkthrough = {
       '<div class="wt-cust-section"><div class="lbl">Customer-visible risks</div>' +
         (openRisks.length ? openRisks.map((r, i) => riskTag(r, (project.risks_register || []).indexOf(r))).join('') : '<div style="font-size:11px;color:#a78bfa">No open risks.</div>') +
       '</div>' +
-      '<div class="wt-cust-gen" onclick="Walkthrough._openPackPicker()"><strong>Open pack</strong><br><span style="font-size:9.5px">Customer · Meeting · Sponsor</span></div>';
+      // Slot D / Item 8 — select pack type before clicking. Button disabled until selection.
+      '<div class="wt-cust-pack-select" data-wt-pack-row style="display:flex;flex-direction:column;gap:6px;padding:8px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:var(--surface);margin-top:8px">' +
+        '<label style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Open pack</label>' +
+        '<select data-wt-pack-select id="wtPackSelect" onchange="Walkthrough._onPackSelectChange()" style="font-size:11px;padding:5px 7px;border:1px solid var(--border-light);border-radius:var(--radius-sm);width:100%">' +
+          '<option value="">Choose a pack type…</option>' +
+          '<option value="customer">Customer Pack</option>' +
+          '<option value="sponsor">Sponsor Pack</option>' +
+          '<option value="meeting">Meeting Pack</option>' +
+          '<option value="portfolio">Portfolio Pack</option>' +
+        '</select>' +
+        '<button type="button" id="wtPackOpenBtn" data-wt-pack-open onclick="Walkthrough._openPackFromSelection()" disabled style="font-size:11px;padding:5px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:var(--accent-blue);color:white;cursor:pointer;opacity:0.5">Open pack</button>' +
+      '</div>';
+  },
+
+  // Slot D / Item 8 — enable Open-pack button only after a pack type is picked.
+  _onPackSelectChange() {
+    const sel = document.getElementById('wtPackSelect');
+    const btn = document.getElementById('wtPackOpenBtn');
+    if (!sel || !btn) return;
+    const hasValue = !!sel.value;
+    btn.disabled = !hasValue;
+    btn.style.opacity = hasValue ? '1' : '0.5';
+  },
+
+  _openPackFromSelection() {
+    const sel = document.getElementById('wtPackSelect');
+    if (!sel || !sel.value) return;
+    this._openPackPicker(sel.value);
   },
 
   // Phase 6 / AC-6.2: _narrativeHeadlineChange deleted — see Overview.onPoCaptionChange.
@@ -25857,10 +26069,16 @@ const Walkthrough = {
     this._renderCustomerPanel();
   },
 
-  _openPackPicker() {
-    const choice = (typeof prompt === 'function') ? prompt('Open pack — type one of:\n  customer\n  meeting\n  sponsor', 'customer') : null;
-    if (!choice) return;
-    const c = String(choice).trim().toLowerCase();
+  _openPackPicker(packType) {
+    // Slot D / Item 8: pack type now comes from the select dropdown instead
+    // of a prompt(). When called without an argument (legacy), fall back to
+    // reading the new <select> value.
+    let c = String(packType || '').trim().toLowerCase();
+    if (!c) {
+      const sel = document.getElementById('wtPackSelect');
+      c = sel ? String(sel.value || '').trim().toLowerCase() : '';
+    }
+    if (!c) return;
     if (c === 'customer') {
       if (Report && typeof Report.exportCustomerPack === 'function') Report.exportCustomerPack(App.activeCustomer);
     } else if (c === 'sponsor' && this.activeProjectId) {
@@ -25878,6 +26096,8 @@ const Walkthrough = {
       } else {
         App.toast('No governance meeting linked to this project', 'warn');
       }
+    } else if (c === 'portfolio') {
+      if (Report && typeof Report.exportPortfolioPack === 'function') Report.exportPortfolioPack(App.activeCustomer);
     }
   },
 

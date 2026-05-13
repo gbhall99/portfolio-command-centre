@@ -69,11 +69,14 @@ describe('R0 / AC-R0.2 — Format.* preset happy / empty / edge', () => {
   it('dateDaysLeft: today / past / future', async () => {
     const app = await bootEmpty();
     expect(app.Format.dateDaysLeft(null)).toBe('—');
-    const today = new Date().toISOString().slice(0, 10);
+    // Pass a Date object so the call doesn't go through ISO-string parsing
+    // (which can drift to ±1d across UTC vs local-midnight boundaries).
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
     expect(app.Format.dateDaysLeft(today)).toBe('today');
-    const past = new Date(Date.now() - 86400000 * 5).toISOString().slice(0, 10);
+    const past = new Date(Date.now() - 86400000 * 5);
     expect(app.Format.dateDaysLeft(past)).toMatch(/overdue/);
-    const future = new Date(Date.now() + 86400000 * 5).toISOString().slice(0, 10);
+    const future = new Date(Date.now() + 86400000 * 5);
     expect(app.Format.dateDaysLeft(future)).toMatch(/in \d+d/);
     app.teardown();
   });
