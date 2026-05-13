@@ -1113,15 +1113,102 @@ html[data-theme="dark"] .why-rank-btn { background: var(--surface); color: var(-
 .panel-close:hover { background: var(--bg-content); color: var(--text-dark); }
 
 .panel-body { flex: 1; overflow-y: auto; padding: 20px; }
-.panel-sticky-meta { padding: 4px 20px 8px; font-size: var(--fs-sm); color: var(--text-muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--border-dim); background: var(--surface); position: sticky; top: 0; z-index: 4; }
+.panel-sticky-meta { padding: 4px 20px 4px; font-size: var(--fs-sm); color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; border-bottom: 1px solid var(--border-dim); background: var(--surface); position: sticky; top: 0; z-index: 4; }
+.panel-sticky-meta .psm-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.panel-sticky-meta .psm-row-2 { padding-bottom: 4px; }
 .panel-sticky-meta .psm-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); font-weight: 600; color: var(--text-dark); }
 .panel-sticky-meta .psm-rag { display: inline-flex; gap: 4px; }
 .panel-sticky-meta .psm-rag .rag-dot { width: 8px; height: 8px; border-radius: 50%; }
+/* Phase 2 / AC-2.1: row 2 collapses to a single chip on narrow viewports.
+   Uses the native <details>/<summary> pattern so the disclosure is keyboard-
+   accessible by default. Above 540 px both rows are always visible; below,
+   the row collapses to "<sprint id> · X/Y SP" and tap reveals the full row. */
+.panel-sticky-meta .psm-collapse { padding: 0; margin: 0; }
+.panel-sticky-meta .psm-collapse > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.panel-sticky-meta .psm-collapse > summary::-webkit-details-marker { display: none; }
+.panel-sticky-meta .psm-collapse > summary > .psm-chip { background: var(--surface-2); }
+.panel-sticky-meta .psm-collapse > summary > .psm-chip::after { content: ' \25BE'; opacity: 0.5; font-size: 10px; }
+.panel-sticky-meta .psm-collapse[open] > summary > .psm-chip::after { content: ' \25B4'; }
+.panel-sticky-meta .psm-collapse > .psm-row-2 { padding-top: 6px; }
+@media (min-width: 540px) {
+  .panel-sticky-meta .psm-collapse > summary { display: none; }
+  .panel-sticky-meta .psm-collapse > .psm-row-2 { display: flex; padding-top: 0; }
+}
+@media (max-width: 539px) {
+  .panel-sticky-meta .psm-collapse:not([open]) > .psm-row-2 { display: none; }
+}
 .panel-toolbar { display: flex; gap: 6px; align-items: center; padding: 6px 20px; border-bottom: 1px solid var(--border-dim); background: var(--surface); position: sticky; top: 42px; z-index: 3; }
 .panel-toolbar-btn { background: transparent; border: 1px solid var(--border-dim); color: var(--text-dark-secondary); font-size: var(--fs-xs); font-weight: 600; padding: 3px 10px; border-radius: var(--radius-sm); cursor: pointer; letter-spacing: 0.2px; }
 .panel-toolbar-btn:hover { background: var(--surface-hover); color: var(--text-dark); }
 .panel-toolbar-spacer { flex: 1; }
 .panel-toolbar-jump { background: var(--surface); color: var(--text-dark); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); font-size: var(--fs-xs); padding: 3px 6px; max-width: 180px; }
+/* Phase 2 / AC-2.2 + AC-2.3: inline-edit pattern.
+   Resting state — input renders as text with a subtle dotted underline + no border.
+   Hover — tinted background reveals the affordance is editable.
+   Focus — full input border + solid background, behaves like a normal field.
+   Computed/derived fields (EVM cells, WSJF chip, read-only sprint-window divs)
+   do NOT carry the class so they read as static text by construction. */
+input.dp-inline-edit, textarea.dp-inline-edit {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  border-bottom: 1px dotted var(--border-dim) !important;
+  padding: 3px 6px !important;
+  border-radius: 4px !important;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+input.dp-inline-edit:hover:not(:focus), textarea.dp-inline-edit:hover:not(:focus) {
+  background: var(--surface-2) !important;
+  border-bottom-color: var(--border-light) !important;
+}
+input.dp-inline-edit:focus, textarea.dp-inline-edit:focus {
+  border: 1px solid var(--accent-blue) !important;
+  background: var(--surface) !important;
+  outline: none !important;
+}
+/* Phase 2 / AC-2.2 + AC-2.4: undo toast container. 8-second persistence is
+   driven by JS — CSS just handles position, layering, and the slide-in. */
+.dp-undo-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-dark, #1e293b);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: var(--fs-sm, 13px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  max-width: 90vw;
+  animation: dp-undo-toast-in 0.18s ease-out;
+}
+@keyframes dp-undo-toast-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.dp-undo-toast .dp-undo-toast-msg { flex: 1; }
+.dp-undo-toast .dp-undo-toast-btn {
+  background: transparent;
+  color: var(--accent-blue, #60a5fa);
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.dp-undo-toast .dp-undo-toast-btn:hover { background: rgba(255,255,255,0.08); }
+.dp-undo-toast .dp-undo-toast-close {
+  background: transparent;
+  color: rgba(255,255,255,0.6);
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.dp-undo-toast .dp-undo-toast-close:hover { color: white; }
+
 /* Phase 0 / AC-0.1: chip-row TOC replaces the "Jump to…" select.
    Renders horizontally-scrollable chips, one per visible panel-section.
    Active chip (scroll-spy target) gets aria-current="location" styling. */
@@ -3489,7 +3576,111 @@ const App = {
     'In Progress': ['priority', 'target_date', 'manager'],
     'At Risk':     ['priority', 'target_date', 'manager']
   },
-  SCHEMA_VERSION: '1.2',
+  SCHEMA_VERSION: '1.3',
+
+  // Phase 1 / AC-1.1 + AC-1.4: outcomes migration helpers. up() lifts benefits[]
+  // + success_criteria[] into outcomes[] with `type` field; legacy_* deep-clones
+  // are kept for 2 schema versions per §11.3 AC-mig.e so a future down() can
+  // restore the originals losslessly. The originals (p.benefits, p.success_criteria)
+  // also stay in place during Phase 1 so the existing UI continues to render —
+  // Phase 3 swaps the rendering in and only THEN are the originals retired.
+  _outcomeFromBenefit(b, idx) {
+    return {
+      // Deterministic id so up→down→up round-trips produce identical output (AC-1.4).
+      // If the source benefit ever gains an id of its own, prefer that.
+      id: b.id || ('outcome-b-' + idx),
+      type: 'benefit',
+      description: b.description || '',
+      target: b.amount != null ? String(b.amount) : '',
+      unit: b.units || b.currency || '',
+      measurement_date: b.measurement_date || null,
+      baseline: b.baseline != null ? String(b.baseline) : null,
+      actual: b.actual != null ? String(b.actual) : null,
+      status: b.status || 'Forecast',
+      last_checked_at: b.last_checked_at || null,
+      _source_idx: idx
+    };
+  },
+
+  _outcomeFromSuccessCriterion(s, idx) {
+    return {
+      id: s.id || ('outcome-s-' + idx),
+      type: 'success_criterion',
+      description: s.name || s.description || '',
+      target: s.target != null ? String(s.target) : '',
+      unit: s.measure || '',
+      measurement_date: s.achieve_by || s.measurement_date || null,
+      baseline: s.baseline != null ? String(s.baseline) : null,
+      actual: s.actual != null ? String(s.actual) : null,
+      status: s.status || 'Forecast',
+      last_checked_at: s.last_checked_at || null,
+      _source_idx: idx
+    };
+  },
+
+  _migrateUpOutcomes(p) {
+    if (!p) return;
+    // Idempotent: only build if not already present. Re-running on already-migrated
+    // data is a no-op (per §11.3 AC-mig.a).
+    if (!Array.isArray(p.outcomes)) {
+      const fromBenefits = (Array.isArray(p.benefits) ? p.benefits : []).map((b, i) => this._outcomeFromBenefit(b, i));
+      const fromSC = (Array.isArray(p.success_criteria) ? p.success_criteria : []).map((s, i) => this._outcomeFromSuccessCriterion(s, i));
+      p.outcomes = fromBenefits.concat(fromSC);
+    }
+    if (!Array.isArray(p.legacy_benefits)) {
+      p.legacy_benefits = Array.isArray(p.benefits) ? JSON.parse(JSON.stringify(p.benefits)) : [];
+    }
+    if (!Array.isArray(p.legacy_success_criteria)) {
+      p.legacy_success_criteria = Array.isArray(p.success_criteria) ? JSON.parse(JSON.stringify(p.success_criteria)) : [];
+    }
+  },
+
+  _migrateDownOutcomes(p) {
+    if (!p) return;
+    delete p.outcomes;
+    delete p.legacy_benefits;
+    delete p.legacy_success_criteria;
+  },
+
+  // Phase 1 / AC-1.3: readiness gate per §3.6. Three stages each accumulate the
+  // missing-field list so the chip popover can deep-link to whatever's blocking
+  // the next gate. Pure derivation — never mutates the project.
+  computeReadiness(p) {
+    if (!p) return { backlog: false, planning: false, steerco: false, missing: ['project'] };
+    const missing = [];
+    // Stage 1: ready for backlog — name + customer + MoSCoW (or "unranked") + lifecycle stage.
+    if (!p.name || !String(p.name).trim()) missing.push('name');
+    if (!p.customer || !String(p.customer).trim()) missing.push('customer');
+    if (!('moscow' in p) || (p.moscow === null || p.moscow === undefined)) missing.push('moscow_or_unranked');
+    if (!p.lifecycle_stage || !String(p.lifecycle_stage).trim()) missing.push('lifecycle_stage');
+    const backlog = missing.length === 0;
+    // Stage 2: ready for sprint planning — backlog + per-phase points + target_date + manager.
+    const planningMissing = missing.slice();
+    const ptFields = ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'];
+    const totalPts = ptFields.reduce((s, k) => s + (typeof p[k] === 'number' ? p[k] : 0), 0);
+    if (totalPts <= 0) planningMissing.push('phase_points');
+    if (!p.target_date) planningMissing.push('target_date');
+    if (!p.manager || !String(p.manager).trim()) planningMissing.push('manager');
+    const planning = planningMissing.length === 0;
+    // Stage 3: ready for steerco — planning + sponsor + governance forum + ≥1 outcome + RAG triplet not null.
+    const steercoMissing = planningMissing.slice();
+    if (!p.sponsor || !String(p.sponsor).trim()) steercoMissing.push('sponsor');
+    if (!p.governance_forum || !String(p.governance_forum).trim()) steercoMissing.push('governance_forum');
+    const outcomeCount = Array.isArray(p.outcomes) ? p.outcomes.length : ((Array.isArray(p.benefits) ? p.benefits.length : 0) + (Array.isArray(p.success_criteria) ? p.success_criteria.length : 0));
+    if (outcomeCount === 0) steercoMissing.push('outcome');
+    if (!p.rag_schedule || !p.rag_resourcing || !p.rag_scope) steercoMissing.push('rag_triplet');
+    const steerco = steercoMissing.length === 0;
+    // Final `missing` reflects the next gate that isn't met. If steerco is met, the
+    // project is fully ready and `missing` is empty; otherwise we surface whichever
+    // gate is closest to being met (smallest unmet missing list).
+    let finalMissing;
+    if (!backlog) finalMissing = missing;
+    else if (!planning) finalMissing = planningMissing.filter(k => !missing.includes(k));
+    else if (!steerco) finalMissing = steercoMissing.filter(k => !planningMissing.includes(k));
+    else finalMissing = [];
+    return { backlog, planning, steerco, missing: finalMissing };
+  },
+
   storageAvailable: true,
   undoStack: [],
   redoStack: [],
@@ -3650,6 +3841,14 @@ const App = {
       entry.run_label = this._currentRunLabel;
     }
     this.data.audit_log.push(entry);
+    // Phase 1 / AC-1.2: stamp last_edited_at + last_edited_in on the project itself.
+    // Source normalisation: anything walkthrough-flavoured collapses to 'walkthrough';
+    // everything else (manual, user, drag, auto-prioritise, integrity, …) collapses to
+    // 'detail' so downstream code only has to compare two values.
+    if (project) {
+      project.last_edited_at = entry.timestamp;
+      project.last_edited_in = (typeof entry.source === 'string' && entry.source.indexOf('walkthrough') === 0) ? 'walkthrough' : 'detail';
+    }
     // Persistent archive — when the live log exceeds 1000 entries, move surplus
     // rows into audit_log_archive instead of dropping them. Lets us run forensic
     // reports later without losing year-old entries.
@@ -3988,6 +4187,15 @@ const App = {
       p.customer_milestones.forEach(m => {
         if (typeof m.external_commitment !== 'boolean') m.external_commitment = false;
       });
+      // Phase 1 / AC-1.1: merge benefits[] + success_criteria[] into a single
+      // outcomes[] register. The originals stay in place so the existing UI keeps
+      // working until Phase 3 swaps the rendering in; legacy_* deep clones give
+      // the down-migration a clean rollback target (AC-1.4 / §11.3 AC-mig.e).
+      App._migrateUpOutcomes(p);
+      // Phase 1 / AC-1.2: surface last-edited metadata. Defaults null so the
+      // computeReadiness() check can rely on the keys existing.
+      if (!('last_edited_at' in p)) p.last_edited_at = null;
+      if (!('last_edited_in' in p)) p.last_edited_in = null;
     });
 
     // Always-run (Project Details Overhaul, 2026-05): seed customer.sponsors from project sponsors,
@@ -17483,6 +17691,11 @@ const DetailPanel = {
     this._restoreCollapsedState();
     this._refreshStickyMeta();
     this._buildJumpMenu();
+    // Phase 2 / AC-2.2 + AC-2.4: apply the inline-edit affordance to every editable
+    // input/textarea, then install the focus/change capture pair that powers the
+    // undo toast. Both calls are idempotent — repeat-renders during open are safe.
+    this._applyInlineEditAffordance();
+    this._installInlineEditCapture();
     const panel = document.getElementById('detailPanel');
     panel.classList.add('open');
     panel.setAttribute('aria-modal', 'true');
@@ -18511,18 +18724,54 @@ const DetailPanel = {
       const isoTitle = 'Last reviewed ' + p.last_reviewed_at + (wt ? ' in ' + wt.customer + ' walkthrough (' + (wt.id || '') + ')' : '');
       reviewedLabel = '<span class="psm-chip" title="' + esc(isoTitle) + '" style="background:transparent;padding:0;color:var(--text-muted)">Reviewed <strong style="color:var(--text-dark)">' + esc(App.timeAgo(new Date(p.last_reviewed_at))) + '</strong>' + (wt ? ' <span style="color:var(--text-muted);font-weight:normal">in ' + esc(wtName) + '</span>' : '') + '</span>';
     }
-    el.innerHTML =
-      '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>' +
-      '<span class="psm-chip">' + esc(p.id) + '</span>' +
-      '<span class="psm-chip">' + esc(p.status || '—') + '</span>' +
+    // Phase 2 / AC-2.1: 2-row sticky header. Row 1 = identity (customer, id,
+    // status, RAG triplet, readiness, last-reviewed, last-updated). Row 2 =
+    // sprint context (current sprint, committed/completed SP, manager, target
+    // date). Row 2 collapses to a single chip on <540 px via a <details>
+    // element so the tab strip below doesn't get pushed off-screen.
+    const row1Parts = [
+      '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>',
+      '<span class="psm-chip">' + esc(p.id) + '</span>',
+      '<span class="psm-chip">' + esc(p.status || '—') + '</span>',
       '<span class="psm-rag" title="Schedule / Resource / Scope health">' +
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_schedule) + '" style="background:' + ragColor(p.rag_schedule) + '"></span>' +
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_resourcing) + '" style="background:' + ragColor(p.rag_resourcing) + '"></span>' +
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" style="background:' + ragColor(p.rag_scope) + '"></span>' +
-      '</span>' +
-      (p.manager ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Manager: <strong style="color:var(--text-dark)">' + esc(p.manager) + '</strong></span>' : '') +
-      updatedLabel +
-      reviewedLabel;
+      '</span>',
+      reviewedLabel,
+      updatedLabel
+    ].filter(Boolean);
+    // Sprint context for row 2 — current sprint id (stripped of CY prefix) + committed/completed SP.
+    const win = (typeof App.computeSprintWindow === 'function') ? App.computeSprintWindow(p) : { start: null, end: null };
+    const currentSprintId = (p.current_sprint || (win.start && win.start.sprint_id) || '');
+    const sprintShort = currentSprintId ? currentSprintId.replace(/^CY\d+-/, '') : '';
+    let committed = 0, completed = 0;
+    if (currentSprintId && p.skill_splits && typeof p.skill_splits === 'object') {
+      Object.values(p.skill_splits).forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(sp => {
+          if (sp && sp.sprint === currentSprintId) {
+            committed += (typeof sp.points === 'number') ? sp.points : 0;
+            completed += (sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0));
+          }
+        });
+      });
+    }
+    const sprintChipText = sprintShort ? (sprintShort + (committed > 0 ? ' · ' + completed + '/' + committed + ' SP' : '')) : '—';
+    const sprintChipLabel = esc(sprintChipText);
+    const row2Parts = [
+      currentSprintId
+        ? '<span class="psm-chip" title="Current sprint">' + sprintChipLabel + '</span>'
+        : '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">No active sprint</span>',
+      p.target_date ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Target: <strong style="color:var(--text-dark)">' + esc(p.target_date) + '</strong></span>' : '',
+      p.manager ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Manager: <strong style="color:var(--text-dark)">' + esc(p.manager) + '</strong></span>' : ''
+    ].filter(Boolean);
+    el.innerHTML =
+      '<div class="psm-row psm-row-1">' + row1Parts.join('') + '</div>' +
+      '<details class="psm-collapse" open>' +
+        '<summary><span class="psm-chip" aria-label="Toggle sprint context">' + sprintChipLabel + '</span></summary>' +
+        '<div class="psm-row psm-row-2">' + row2Parts.join('') + '</div>' +
+      '</details>';
   },
 
   // Phase 0 / AC-0.1: chip-row TOC replaces the "Jump to…" select.
@@ -18583,6 +18832,110 @@ const DetailPanel = {
     if (active && active.scrollIntoView) {
       try { active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); } catch (_e) {}
     }
+  },
+
+  // Phase 2 / AC-2.2 + AC-2.3: apply the .dp-inline-edit class to every
+  // genuinely editable input/textarea inside the panel body. Computed/derived
+  // displays (EVM cells, WSJF chip, sprint-window <div class="field-input">
+  // readonly displays) are exempt — they're not <input>/<textarea>, so they
+  // don't pick up the class. Called once after every renderBody.
+  _applyInlineEditAffordance() {
+    const body = document.getElementById('panelBody');
+    if (!body) return;
+    const inputs = body.querySelectorAll('input, textarea');
+    inputs.forEach(el => {
+      // Skip checkboxes/radios — the inline-edit affordance doesn't apply.
+      if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio' || el.type === 'hidden')) return;
+      el.classList.add('dp-inline-edit');
+    });
+  },
+
+  // Phase 2 / AC-2.2 + AC-2.4: capture the pre-edit value on focusin, so the
+  // on-change handler can compare against it for the undo toast.
+  _installInlineEditCapture() {
+    if (this._inlineEditCaptureInstalled) return;
+    const body = document.getElementById('panelBody');
+    if (!body) return;
+    body.addEventListener('focusin', (e) => {
+      const t = e.target;
+      if (!t || !t.classList || !t.classList.contains('dp-inline-edit')) return;
+      // Remember the value at focus time so we can offer an undo on blur if it
+      // changed. Stored as a data attribute to survive React-style re-renders
+      // and to keep the capture serializable.
+      const v = (t.type === 'checkbox') ? (t.checked ? 'true' : 'false') : (t.value || '');
+      t.dataset.preEditValue = v;
+    });
+    body.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || !t.classList || !t.classList.contains('dp-inline-edit')) return;
+      const before = t.dataset.preEditValue;
+      if (before === undefined) return;
+      const after = (t.type === 'checkbox') ? (t.checked ? 'true' : 'false') : (t.value || '');
+      if (before === after) return;
+      const fieldLabel = (function() {
+        // Best-effort human label for the toast — look for a sibling
+        // .field-label / .risk-field-label / preceding-label text.
+        const wrap = t.closest('.field-group, .risk-fields, label');
+        if (wrap) {
+          const lbl = wrap.querySelector('.field-label, .risk-field-label, .col-picker-row span');
+          if (lbl && lbl.textContent) return lbl.textContent.trim();
+        }
+        return t.dataset.field || t.name || 'Field';
+      })();
+      DetailPanel.showUndoToast(fieldLabel + ' changed', () => {
+        if (t.type === 'checkbox') t.checked = (before === 'true');
+        else t.value = before;
+        // Dispatch a change event so the existing onchange handler persists the revert.
+        t.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      // Clear the capture so re-blurring without further edit doesn't re-fire.
+      delete t.dataset.preEditValue;
+    }, true);
+    this._inlineEditCaptureInstalled = true;
+  },
+
+  // Phase 2 / AC-2.2 + AC-2.4: show a single undo toast. New toasts replace the
+  // previous (no stacking — the user's most-recent action is the most useful).
+  // Auto-dismisses after 8 seconds; clicking Undo invokes the callback then
+  // dismisses. The X button dismisses without undoing.
+  _undoToastEl: null,
+  _undoToastTimer: null,
+  showUndoToast(message, onUndo) {
+    this._dismissUndoToast();
+    const toast = document.createElement('div');
+    toast.className = 'dp-undo-toast';
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    const msg = document.createElement('span');
+    msg.className = 'dp-undo-toast-msg';
+    msg.textContent = message;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dp-undo-toast-btn';
+    btn.textContent = 'Undo';
+    btn.addEventListener('click', () => {
+      try { if (typeof onUndo === 'function') onUndo(); } catch (e) { console.warn('[PCC] undo callback failed', e); }
+      this._dismissUndoToast();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'dp-undo-toast-close';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.textContent = '×';
+    close.addEventListener('click', () => this._dismissUndoToast());
+    toast.appendChild(msg);
+    toast.appendChild(btn);
+    toast.appendChild(close);
+    document.body.appendChild(toast);
+    this._undoToastEl = toast;
+    this._undoToastTimer = setTimeout(() => this._dismissUndoToast(), 8000);
+  },
+  _dismissUndoToast() {
+    if (this._undoToastTimer) { clearTimeout(this._undoToastTimer); this._undoToastTimer = null; }
+    if (this._undoToastEl && this._undoToastEl.parentNode) {
+      try { this._undoToastEl.parentNode.removeChild(this._undoToastEl); } catch (_e) {}
+    }
+    this._undoToastEl = null;
   },
 
   _setupScrollSpy(sections) {
