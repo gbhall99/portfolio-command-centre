@@ -3701,6 +3701,41 @@ const App = {
     return { backlog, planning, steerco, missing: finalMissing };
   },
 
+  // Slot F / Item 14 — locked location list. Country names are the canonical
+  // identifier (display label and storage value). India is the only entry with
+  // sub-locations. Capacity logic uses these for holiday filtering.
+  LOCATIONS: [
+    { country: 'UK',          sub_locations: [] },
+    { country: 'US',          sub_locations: [] },
+    { country: 'India',       sub_locations: ['Hyderabad', 'Bangalore'] },
+    { country: 'Netherlands', sub_locations: [] },
+    { country: 'Canada',      sub_locations: [] },
+    { country: 'Malaysia',    sub_locations: [] }
+  ],
+  _subLocationsForCountry(country) {
+    const loc = (this.LOCATIONS || []).find(l => l.country === country);
+    return loc ? loc.sub_locations.slice() : [];
+  },
+  // Slot F / Item 14 — set a team member's country (+ optional sub-location).
+  // Validates country against the locked list; clears sub_location when invalid.
+  setMemberCountry(memberName, country, sub_location) {
+    if (!this.data || !Array.isArray(this.data.team_members)) return null;
+    const countryNames = this.LOCATIONS.map(l => l.country);
+    if (countryNames.indexOf(country) < 0) {
+      if (this.toast) this.toast('Country must be one of: ' + countryNames.join(', '), 'error');
+      return null;
+    }
+    const tm = this.data.team_members.find(m => m && m.name === memberName);
+    if (!tm) return null;
+    tm.country = country;
+    const subs = this._subLocationsForCountry(country);
+    if (sub_location && subs.indexOf(sub_location) >= 0) tm.sub_location = sub_location;
+    else tm.sub_location = '';
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return { country: tm.country, sub_location: tm.sub_location };
+  },
+
   // Phase 8 / AC-8.4: snapshot the in-flight projects that pre-date the
   // readiness gate so they're not retroactively skipped by the Solver. Run
   // once on schema version bump (idempotent); callers can re-run safely.
@@ -4576,6 +4611,14 @@ const App = {
     // Legacy Hypercare cleanup for project-level fields now lives at the top of migrateSchema (always-run).
     // Annual holidays (REQ-CAP-02)
     if (!data.annual_holidays) data.annual_holidays = [];
+    // Slot F / Item 14 — default country='UK' on legacy team_members + annual_holidays
+    // that pre-date the country attribute. Idempotent: only sets when missing.
+    (data.team_members || []).forEach(tm => {
+      if (tm && !tm.country) tm.country = 'UK';
+    });
+    (data.annual_holidays || []).forEach(ah => {
+      if (ah && !('country' in ah)) ah.country = 'UK';
+    });
     // Multi-named baselines (D2.2). Back-fill from legacy project.allocation_baseline where present.
     if (!Array.isArray(data.baselines)) data.baselines = [];
     if (!data.baselines.length) {
@@ -9676,12 +9719,25 @@ const App = {
     const scope = (scopeRaw || '').split(',').map(s => s.trim()).filter(Boolean);
     const unknown = scope.filter(c => customers.indexOf(c) < 0);
     if (unknown.length) { App.toast('These customer names don\u2019t exist yet: ' + unknown.join(', ') + '. Add them in Configuration \u203A Customers first, then re-add the holiday.', 'error'); return; }
+    // Slot F / Item 14 — capture country + sub-location.
+    const countryNames = (this.LOCATIONS || []).map(l => l.country);
+    const countryRaw = await App.prompt({ title: 'Country', body: 'Which country does this holiday apply to? One of: ' + countryNames.join(', '), placeholder: 'UK' });
+    let country = (countryRaw || 'UK').trim();
+    if (countryNames.indexOf(country) < 0) country = 'UK';
+    let sub_location = '';
+    const subs = this._subLocationsForCountry(country);
+    if (subs.length) {
+      const subRaw = await App.prompt({ title: 'Sub-location (optional)', body: 'Leave blank for the whole country. Or one of: ' + subs.join(', '), placeholder: 'Blank for all' });
+      sub_location = (subRaw || '').trim();
+      if (sub_location && subs.indexOf(sub_location) < 0) sub_location = '';
+    }
     this.pushUndo('Add annual holiday');
-    this.data.annual_holidays.push({ name: name.trim(), date, recurring, customers: scope });
+    this.data.annual_holidays.push({ name: name.trim(), date, recurring, customers: scope, country, sub_location });
     this.markDirty();
     this.saveToLocalStorage();
     this.renderConfig();
-    App.toast('Annual holiday added' + (scope.length ? ' (' + scope.join(', ') + ' only)' : ' (all customers)'), 'success');
+    const scopeMsg = country + (sub_location ? ' / ' + sub_location : '') + (scope.length ? ' · ' + scope.join(', ') : '');
+    App.toast('Annual holiday added (' + scopeMsg + ')', 'success');
   },
 
   async removeAnnualHoliday(idx) {
@@ -26539,12 +26595,26 @@ const Sprint = {
       }
     });
 
-    // Annual holidays (scoped)
+    // Annual holidays (scoped).
+    // Item 14 — country/sub-location filter applies on top of legacy customer scope.
+    // A holiday with `country` set applies only to members whose country matches.
+    // A holiday with `sub_location` set is further restricted to members in that
+    // sub-location (e.g. India / Bangalore). Missing country = legacy global behaviour.
+    const memberCountry = tm.country || 'UK';
+    const memberSubLocation = tm.sub_location || '';
     let annualHols = (App.data && App.data.annual_holidays) || [];
     annualHols = annualHols.filter(ah => {
-      if (!ah.customers || !Array.isArray(ah.customers) || ah.customers.length === 0) return true;
-      if (!customerScope) return true;
-      return ah.customers.indexOf(customerScope) >= 0;
+      // Legacy customer-scope filter.
+      if (ah.customers && Array.isArray(ah.customers) && ah.customers.length > 0) {
+        if (customerScope && ah.customers.indexOf(customerScope) < 0) return false;
+      }
+      // Country filter (Item 14).
+      if (ah.country) {
+        if (ah.country !== memberCountry) return false;
+        // Sub-location: if the holiday is sub-location-scoped, member must match.
+        if (ah.sub_location && ah.sub_location !== memberSubLocation) return false;
+      }
+      return true;
     });
     annualHols.forEach(ah => {
       if (!ah.date) return;
