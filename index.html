@@ -3683,6 +3683,70 @@ const App = {
     return { backlog, planning, steerco, missing: finalMissing };
   },
 
+  // Phase 8 / AC-8.4: snapshot the in-flight projects that pre-date the
+  // readiness gate so they're not retroactively skipped by the Solver. Run
+  // once on schema version bump (idempotent); callers can re-run safely.
+  applyReadinessGrandfathering(opts) {
+    opts = opts || {};
+    if (!this.data || !Array.isArray(this.data.projects)) return { marked: 0 };
+    const inFlight = new Set(['In Progress', 'On Hold', 'At Risk', 'Blocked']);
+    let marked = 0;
+    this.data.projects.forEach(p => {
+      if (!p) return;
+      if (p.legacy_grandfathered === true) return;
+      if (!inFlight.has(p.status)) return;
+      p.legacy_grandfathered = true;
+      p._grandfathered_at = opts.at || new Date().toISOString();
+      marked++;
+    });
+    if (marked > 0 && this.markDirty) this.markDirty();
+    return { marked };
+  },
+
+  // Phase 8 / AC-8.2: count of projects in the active (or supplied) customer
+  // that are NOT steerco-ready. Drives the "N project(s) need setup" weekly-
+  // review banner.
+  weeklyReviewSetupGapCount(customer) {
+    const cust = customer || this.activeCustomer;
+    if (!cust || !this.data || !Array.isArray(this.data.projects)) return 0;
+    let count = 0;
+    this.data.projects.forEach(p => {
+      if (!p || p.customer !== cust) return;
+      if (p.legacy_grandfathered === true) return;
+      const r = this.computeReadiness(p);
+      if (!r || !r.steerco) count++;
+    });
+    return count;
+  },
+
+  // Returns the projects that contribute to the weekly-review banner count.
+  weeklyReviewSetupGapProjects(customer) {
+    const cust = customer || this.activeCustomer;
+    if (!cust || !this.data || !Array.isArray(this.data.projects)) return [];
+    return this.data.projects.filter(p => {
+      if (!p || p.customer !== cust) return false;
+      if (p.legacy_grandfathered === true) return false;
+      const r = this.computeReadiness(p);
+      return r && !r.steerco;
+    });
+  },
+
+  renderWeeklyReviewBanner(customer) {
+    const cust = customer || this.activeCustomer;
+    const n = this.weeklyReviewSetupGapCount(cust);
+    if (n === 0) return '';
+    return '<div class="dp-weekly-review-banner" data-customer="' + (cust || '').replace(/"/g, '&quot;') + '" data-setup-gap-count="' + n + '" role="status">' +
+      '<strong>' + n + ' project' + (n === 1 ? '' : 's') + '</strong> need setup before steerco. ' +
+      '<a href="#" onclick="event.preventDefault();App._openWeeklyReviewSetupList()" class="dp-weekly-review-link">Review the list →</a>' +
+    '</div>';
+  },
+
+  _openWeeklyReviewSetupList() {
+    // Surface as a toast for now — a dedicated modal lands with §9 R8 (Reports view).
+    const gaps = this.weeklyReviewSetupGapProjects();
+    if (this.toast) this.toast(gaps.length + ' project(s) need setup', 'info');
+  },
+
   storageAvailable: true,
   undoStack: [],
   redoStack: [],
@@ -5105,6 +5169,12 @@ const App = {
     data = this.migrateSchema(data);
     this.data = data;
     this.isDirty = false;
+    // Phase 8 / AC-8.4: any project that was already in-flight at load time gets
+    // grandfathered so the readiness gate doesn't retroactively skip it. Safe to
+    // run repeatedly — the helper is idempotent (no-op when already flagged).
+    if (typeof this.applyReadinessGrandfathering === 'function') {
+      try { this.applyReadinessGrandfathering(); } catch (_e) {}
+    }
     this.onDataLoaded();
     return true;
   },
@@ -17951,6 +18021,64 @@ const DetailPanel = {
     ).join('') + '</div>';
   },
 
+  // Phase 8 / AC-8.5: readiness chip popover. Click on the sticky-header chip
+  // opens a list of missing fields; each entry deep-links into the owning tab
+  // (and, where the field has a discrete section anchor, the panel scrolls there).
+  READINESS_FIELD_ROUTES: {
+    name: { tab: 'scope', section: '' },
+    customer: { tab: 'scope', section: '' },
+    moscow_or_unranked: { tab: 'scope', section: '' },
+    lifecycle_stage: { tab: 'scope', section: '' },
+    phase_points: { tab: 'delivery', section: '' },
+    target_date: { tab: 'delivery', section: '' },
+    manager: { tab: 'delivery', section: '' },
+    sponsor: { tab: 'scope', section: '' },
+    governance_forum: { tab: 'scope', section: '' },
+    outcome: { tab: 'scope', section: '' },
+    rag_triplet: { tab: 'overview', section: '' }
+  },
+  _openReadinessPopover(projectId) {
+    const existing = document.getElementById('dpReadinessPopover');
+    if (existing) { existing.remove(); return; }
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return;
+    const r = App.computeReadiness(p) || { missing: [] };
+    const esc = Dashboard.esc;
+    const items = (r.missing || []).map(field => {
+      const route = this.READINESS_FIELD_ROUTES[field] || { tab: 'overview', section: '' };
+      const label = field.replace(/_/g, ' ');
+      return '<li><a href="#" data-readiness-field="' + esc(field) + '" data-readiness-tab="' + route.tab + '" data-readiness-section="' + (route.section || '') + '" onclick="event.preventDefault();DetailPanel._jumpToReadinessField(\'' + esc(projectId) + '\',\'' + esc(field) + '\')" style="color:var(--accent-blue);text-decoration:underline">' + esc(label) + '</a></li>';
+    }).join('');
+    const pop = document.createElement('div');
+    pop.id = 'dpReadinessPopover';
+    pop.className = 'dp-readiness-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-modal', 'false');
+    pop.style.cssText = 'position:absolute;top:48px;right:16px;z-index:50;background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:10px 14px;min-width:220px;max-width:320px;font-size:11px';
+    pop.innerHTML = '<div style="font-weight:600;margin-bottom:6px">' +
+        'Backlog ' + (r.backlog ? '✓' : '✗') + ' · Planning ' + (r.planning ? '✓' : '✗') + ' · Steerco ' + (r.steerco ? '✓' : '✗') +
+      '</div>' +
+      (items
+        ? '<div style="color:var(--text-dark-secondary);margin-bottom:4px">Missing fields (click to jump):</div><ul style="margin:0;padding-left:18px">' + items + '</ul>'
+        : '<div style="color:var(--text-muted)">All readiness gates met.</div>') +
+      '<div style="margin-top:8px;text-align:right"><button type="button" class="btn btn-ghost btn-sm" onclick="DetailPanel._closeReadinessPopover()">Close</button></div>';
+    const panel = document.getElementById('detailPanel');
+    if (panel) panel.appendChild(pop);
+    else document.body.appendChild(pop);
+  },
+  _closeReadinessPopover() {
+    const o = document.getElementById('dpReadinessPopover');
+    if (o) o.remove();
+  },
+  _jumpToReadinessField(projectId, field) {
+    const route = this.READINESS_FIELD_ROUTES[field] || { tab: 'overview', section: '' };
+    this._closeReadinessPopover();
+    this.switchTab(route.tab);
+    if (route.section && typeof this.jumpToSection === 'function') {
+      try { this.jumpToSection(route.section); } catch (_e) {}
+    }
+  },
+
   // Phase 7 / AC-7.1 + AC-7.2 + AC-7.3: Gate reviews + Sponsor sign-off log.
   // Gate names locked per §8 of the plan (2026-05-13).
   GATE_NAMES: ['Discovery', 'Design', 'Build', 'UAT', 'Live', 'Hypercare'],
@@ -19236,19 +19364,19 @@ const DetailPanel = {
     // sprint context (current sprint, committed/completed SP, manager, target
     // date). Row 2 collapses to a single chip on <540 px via a <details>
     // element so the tab strip below doesn't get pushed off-screen.
-    // Phase 4 / AC-4.1: readiness chip — sources App.computeReadiness(p).
-    // Format: "Ready: backlog ✓ · planning ✗ · steerco ✗". Tooltip lists missing fields.
+    // Phase 4 / AC-4.1 + Phase 8 / AC-8.5: readiness chip — clickable, opens a
+    // popover that lists the missing fields with deep-links into their owning tab.
     let readinessLabel = '';
     if (typeof App.computeReadiness === 'function') {
       const r = App.computeReadiness(p) || {};
       const mark = (ok) => ok ? '✓' : '✗';
       const tip = r.missing && r.missing.length
-        ? 'Missing: ' + r.missing.join(', ')
+        ? 'Missing: ' + r.missing.join(', ') + ' — click for details'
         : 'All readiness gates met';
-      readinessLabel = '<span class="psm-chip dp-readiness-chip" title="' + esc(tip) + '" style="background:transparent;padding:0;color:var(--text-muted)">' +
+      readinessLabel = '<button type="button" class="psm-chip dp-readiness-chip" data-project-id="' + esc(p.id) + '" title="' + esc(tip) + '" onclick="DetailPanel._openReadinessPopover(\'' + esc(p.id) + '\')" style="background:transparent;padding:0;color:var(--text-muted);border:none;cursor:pointer">' +
         'Ready: backlog <strong style="color:var(--text-dark)">' + mark(r.backlog) + '</strong> · ' +
         'planning <strong style="color:var(--text-dark)">' + mark(r.planning) + '</strong> · ' +
-        'steerco <strong style="color:var(--text-dark)">' + mark(r.steerco) + '</strong></span>';
+        'steerco <strong style="color:var(--text-dark)">' + mark(r.steerco) + '</strong></button>';
     }
     const row1Parts = [
       '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>',
@@ -24889,7 +25017,14 @@ const Walkthrough = {
     cards.forEach(c => {
       const isActive = c.project.id === this.activeProjectId;
       const isDone = (wt.section_status || {})['proj:' + c.project.id] === 'reviewed';
-      const cls = 'wt-list-item' + (isActive ? ' active' : '') + (isDone ? ' done' : '');
+      // Phase 8 / AC-8.1: setup-incomplete chip — surfaced when steerco-readiness
+      // fails AND the project isn't a grandfathered legacy in-flight project.
+      const readiness = (typeof App.computeReadiness === 'function') ? App.computeReadiness(c.project) : null;
+      const setupIncomplete = readiness && !readiness.steerco && c.project.legacy_grandfathered !== true;
+      const incompleteChip = setupIncomplete
+        ? '<span class="wt-list-setup-chip" data-setup-incomplete="true" title="Setup incomplete — missing: ' + esc((readiness.missing || []).join(', ')) + '" style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(245,158,11,0.15);color:#b45309;font-weight:600;text-transform:uppercase;letter-spacing:0.3px">setup</span>'
+        : '';
+      const cls = 'wt-list-item' + (isActive ? ' active' : '') + (isDone ? ' done' : '') + (setupIncomplete ? ' wt-list-item-setup-incomplete' : '');
       html += '<div class="' + cls + '" data-wt-list-pid="' + esc(c.project.id) + '" onclick="Walkthrough.selectProject(\'' + esc(c.project.id) + '\')">' +
         '<div class="wt-list-check">' + (isDone ? '✓' : '') + '</div>' +
         '<div class="wt-list-rags">' +
@@ -24898,6 +25033,7 @@ const Walkthrough = {
           '<div class="d" style="background:' + App.ragColor(c.ragSummary.scope) + '"></div>' +
         '</div>' +
         '<div class="wt-list-name" title="' + esc(c.project.name) + '">' + esc(c.project.name) + '</div>' +
+        incompleteChip +
         '<span class="wt-list-att">' + c.attentionScore + '</span>' +
       '</div>';
     });
@@ -31448,12 +31584,30 @@ const Solver = {
     }
 
     // Get allocatable projects
+    // Phase 8 / AC-8.3 + AC-8.4: readiness-gate enforcement. Skip projects that
+    // aren't planning-ready (computeReadiness(p).planning === false) UNLESS the
+    // project is `legacy_grandfathered` (status was already in-flight when the
+    // gate first shipped). Toggle off via `settings.enforceReadinessGate = false`.
+    const enforceReadinessGate = settings.enforceReadinessGate !== false;
+    const readinessSkips = [];
     let projects = allProjects.filter(p => {
       if (p.customer !== customer) return false;
       if (lockedIds.has(p.id)) return false;
       if (settings.lockCompleted && (p.status === 'Complete' || p.status === 'Closed')) return false;
       if (settings.lockInProgress && p.status === 'In Progress') return false;
+      if (enforceReadinessGate && typeof App !== 'undefined' && typeof App.computeReadiness === 'function') {
+        if (p.legacy_grandfathered === true) return true;
+        const r = App.computeReadiness(p);
+        if (!r.planning) {
+          readinessSkips.push({ p, missing: r.missing });
+          return false;
+        }
+      }
       return true;
+    });
+    readinessSkips.forEach(({ p, missing }) => {
+      this._warn(warnings, 'readiness_gate', p, null, null,
+        p.name + ': setup incomplete — missing: ' + (missing || []).join(', '));
     });
 
     // Detect circular dependencies
