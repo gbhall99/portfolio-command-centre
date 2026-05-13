@@ -54,32 +54,32 @@ The original user-numbered list had duplicates (two "5"s, two "10"s) — items r
 
 ---
 
-## 3. Remove Identity section; add sponsor pill at the top
+## 3. Drop the Overview Identity strip; add sponsor pill at the top
 
 **User wording:** *"The Identity section of the project should be removed, because all the identity information is at the top title area — simply just add a sponsor pill at the top as its the only info missing."*
 
+**User clarification (2026-05-13):** *"I don't want that dropped, I just want the display dropped from the overview section as it's already in the scope and value section and at the top of the project page."*
+
 **Current state:**
 - Overview tab has a read-only `dp-identity-strip` (customer / sponsor / forum) — added in Phase 3 AC-3.5.
-- Scope & Value tab has a full editable Identity section (name / customer / category / sponsor / manager / forum / DevOps / WFA links).
+- Scope & Value tab has the full editable Identity section — **stays as-is**.
 - Sticky header row 1 already shows customer chip + status + RAG + readiness — no sponsor.
 
-**Fix:**
-- Delete the Overview `dp-identity-strip` block.
-- Move the **editable** fields that aren't already on the title bar (sponsor, manager, category, visibility, DevOps link, WFA link, lifecycle stage) out of the Identity section into individual fields elsewhere — proposal:
-  - Sponsor → keep here only as a pill in row 1 (clickable opens the edit modal).
-  - Manager → moves to Delivery > Stakeholders (already a Stakeholders section).
-  - Category / Visibility / DevOps / WFA / Lifecycle → fold into a single "Project meta" sub-block on Scope tab (compact 6-field grid, no header bloat).
-- Add a `dp-sponsor-pill` to `_refreshStickyMeta` row 1; click → small edit popover or jumps to the meta block.
+**Fix (scope reduced after clarification):**
+- Delete the Overview `dp-identity-strip` block only.
+- Add a `dp-sponsor-pill` to `_refreshStickyMeta` row 1 showing the project's sponsor name.
+- Scope & Value tab's Identity section: untouched.
+- Manager / Category / Visibility / DevOps / WFA / Lifecycle stage all stay where they are.
 
 **AC:**
-- **AC-3.1** No `.dp-identity-strip` element renders in the panel body.
-- **AC-3.2** Scope tab has no panel-section with title "Identity"; the prior fields appear under a single "Project meta" sub-block (or are moved per the map above — table-tested).
-- **AC-3.3** Sticky header row 1 renders a `.dp-sponsor-pill` with the project's sponsor name; click opens an edit affordance.
-- **AC-3.4** Section migration map: every field previously in Identity has a new documented home in the test (zero orphans).
+- **AC-3.1** No `.dp-identity-strip` element renders inside `[data-dp-tab="overview"]`.
+- **AC-3.2** Scope tab still renders the full editable Identity section (snapshot test verifies the existing field grid is intact).
+- **AC-3.3** Sticky header row 1 renders a `.dp-sponsor-pill` with the project's sponsor name; click jumps to Scope > Identity > Sponsor input.
+- **AC-3.4** When `project.sponsor` is empty, the pill renders "Sponsor: —" (consistent with other empty chips).
 
-**Files:** `index.html` — `renderBody`, `_refreshStickyMeta`.
+**Files:** `index.html` — drop the `overviewSections.push((function() { … dp-identity-strip … })())` block in `renderBody`, add the pill to `_refreshStickyMeta`.
 
-**Risk:** The §3.13 section migration map in `plans/detail-panel-ia-refactor.md` will need a footnote. Cross-reference both plans before merging.
+**Risk:** trivial — Phase 3's AC-3.5 test will need its assertion flipped from "strip exists" to "strip does not exist on Overview".
 
 ---
 
@@ -103,24 +103,27 @@ The original user-numbered list had duplicates (two "5"s, two "10"s) — items r
 
 ---
 
-## 5. Milestone reviews + status changes belong in the Walkthrough
+## 5. Milestone management on both surfaces (Project page AND Walkthrough)
 
 **User wording:** *"Milestone reviews and status changes should be in the walkthrough."*
 
-**Current state:** Customer Milestones is a fully editable register on Delivery (`renderBody` line ~18876) AND on Walkthrough (`Walkthrough._renderMilestones`, line 25370 — already wired with status edit via `Delivery.setMilestoneStatus`).
+**User clarification (2026-05-13):** *"Allow adding milestones in the project page and in the walkthrough, allow status edits in both too."*
 
-**Fix:**
-- Demote Delivery's Customer Milestones to **read-only** (status badge per row, no inline edit, plus an "Open in Walkthrough" link per milestone).
-- Walkthrough remains the primary editing surface for milestone status + reviews.
-- "Review milestone" button per row in the walkthrough → opens a small modal capturing `reviewed_at` + `reviewed_by_walkthrough_id` (similar to project-level `bumpProjectReviewed`).
+**Current state:** Customer Milestones is fully editable on Delivery (`renderBody` line ~18876) AND on Walkthrough (`Walkthrough._renderMilestones`, line 25370 — already wired with status edit via `Delivery.setMilestoneStatus`).
+
+**Fix (revised):**
+- Both surfaces remain **equal-priority editing surfaces** — no demotion to read-only.
+- Confirm both call the same `Delivery.setMilestoneStatus` / `addCustomerMilestone` flow so edits in either surface immediately appear in the other.
+- Add a **"Mark reviewed"** affordance on the Walkthrough row only (this is the walkthrough-specific bit) — stamps `milestone.reviewed_at` + `milestone.reviewed_by_walkthrough_id` analogous to project-level `bumpProjectReviewed`. The Delivery row displays the reviewed-state badge but doesn't initiate the review.
 
 **AC:**
-- **AC-5.1** Delivery tab's Customer Milestones rows render as text (no `<select>` or `<input>` inside `.customer-milestone-row`).
-- **AC-5.2** Each Delivery milestone row has an "Edit in Walkthrough" link that opens the walkthrough overlay and scrolls to milestones.
-- **AC-5.3** Walkthrough milestone rows have a new "Mark reviewed" button that stamps `milestone.reviewed_at` and `milestone.reviewed_by_walkthrough_id`.
-- **AC-5.4** Round-trip: review in Walkthrough → returns to Delivery → reviewed_at is visible on the row.
+- **AC-5.1** Adding a milestone on the Delivery tab makes it visible in the Walkthrough's milestones tile on next render (no walkthrough refresh required).
+- **AC-5.2** Adding a milestone in the Walkthrough makes it visible in Delivery > Customer Milestones on next render.
+- **AC-5.3** Changing milestone status in either surface persists and is visible on the other surface.
+- **AC-5.4** Walkthrough milestone rows have a "Mark reviewed" button that stamps `milestone.reviewed_at` + `milestone.reviewed_by_walkthrough_id`.
+- **AC-5.5** Delivery rows render a `reviewed` badge when `milestone.reviewed_at` is set (read-only display of the walkthrough-emitted stamp).
 
-**Files:** `index.html` — `renderCustomerMilestones` (in DetailPanel), `Walkthrough._renderMilestones`, new `App.markMilestoneReviewed`.
+**Files:** `index.html` — `Walkthrough._renderMilestones` (add review button + add-milestone form), `App.markMilestoneReviewed` (new), no breaking changes to Delivery's milestone register.
 
 ---
 
@@ -229,26 +232,35 @@ The Health tile shrinks back to RAG-only (its original role).
 
 ---
 
-## 11. Governance forum: no actions / decisions outside the project itself
+## 11. Governance forum: remove the add-action / add-decision UI entirely
 
 **User wording:** *"When building out a governance forum, don't have separate actions or decisions outside the project itself."*
 
-**Current state:**
-- `Governance.addAction` (~line 32778) creates actions with optional `projectId` — orphans allowed.
-- `Governance.addDecision` (~line 33014) requires explicit `linkedProjects[]` selection but still allows zero.
+**User clarification (2026-05-13):** *"Don't allow these to be added here, only allow them to be added in the project areas that already exist."*
 
-**Fix:**
-- Require `projectId` (action) and at least one `linkedProjects[]` entry (decision) at create time.
-- On save, refuse with a toast `Pick a project first` if missing.
-- Migration: existing orphaned rows get an audit-log row and a synthetic `_unscoped` flag so they're visible but flagged for cleanup.
+**Current state:**
+- `Governance.addAction` (~line 32778) — creates actions inside the forum view.
+- `Governance.addDecision` (~line 33014) — creates decisions inside the forum view.
+- Both are reachable from forum-row "+ Add action" / "+ Add decision" controls in the Governance view.
+- Project areas already have RAID > Decisions (Detail panel) and forum-linked actions visible there.
+
+**Fix (revised — stricter than original):**
+- **Remove** the "+ Add action" / "+ Add decision" controls from the Governance forum view entirely.
+- Keep `Governance.addAction` / `addDecision` as functions for back-compat (used by R5/R6 migration code + walkthrough capture), but no UI button surfaces them in the forum view.
+- The Governance view becomes a **read-only display** of project-authored items, filtered by forum.
+- Detail panel RAID > Decisions stays as the authoring surface.
+- Add a new project-scoped "Meeting actions" affordance to RAID alongside Decisions (where users currently can't author them from inside a project). If the project already supports this via the Walkthrough quick-add (Phase 6 / R6), confirm that flow is the canonical one and link to it from the Governance row instead.
 
 **AC:**
-- **AC-11.1** `Governance.addAction({ projectId: null })` returns `null` and surfaces an error toast.
-- **AC-11.2** `Governance.addDecision({ linkedProjects: [] })` returns `null` similarly.
-- **AC-11.3** The add-action / add-decision UI hides the "Save" button until a project is picked.
-- **AC-11.4** Migration pass on a fixture with 5 orphan actions writes 5 `migration_applied` rows tagging the orphans `_unscoped: true`; no data deleted.
+- **AC-11.1** Governance forum view DOES NOT render any "+ Add action" or "+ Add decision" buttons (grep `governance-add-action` / `governance-add-decision` returns zero in rendered HTML).
+- **AC-11.2** Existing forum actions / decisions remain visible in the Governance view — read-only display preserved.
+- **AC-11.3** Every action and decision in the rendered Governance forum list has a `projectId` (or `linkedProjects[]` with ≥1 entry) — orphan rows are surfaced with a `_unscoped` badge + a one-time toast on first load post-migration explaining where to re-author them.
+- **AC-11.4** Detail panel RAID > Decisions can author Decisions tagged with a governance forum (existing) — verified by smoke test.
+- **AC-11.5** Walkthrough capture (RAID quick-add Decision / Action) still works and tags with `forum_id` where appropriate.
 
-**Files:** `index.html` — `Governance.addAction`, `Governance.addDecision`, new migration in `App.migrateSchema`.
+**Files:** `index.html` — Governance view render: remove the add controls; keep functions; new migration to flag orphans; toast on first post-migration load.
+
+**Risk:** users with existing in-forum authoring habits will need a redirect. Mitigated by: (a) keeping read-only display in place; (b) adding a small "Add via project" link on the forum row that opens the Detail panel RAID tab; (c) one-time toast.
 
 ---
 
@@ -292,35 +304,55 @@ The Health tile shrinks back to RAG-only (its original role).
 
 ---
 
-## 14. Country-scoped holidays + member country
+## 14. Country-scoped holidays + member country (with sub-locations for India)
 
 **User wording:** *"When setting a team holiday, assign it to a country and ensure each team member has a country assigned to it."*
+
+**User clarification (2026-05-13):** *"US, UK, India, Netherlands, Canada, Malaysia. Have sub locations for India too, Hyderabad and Bangalore."*
 
 **Current state:**
 - `App.data.annual_holidays[]` rows shape: `{ name, date, recurring, customers: [] }` — scoped by customer, not country.
 - `team_member` rows have **no** `country` field today.
 - `calcMemberCapacityForSprint` filters annual holidays by `customers` membership.
 
+**Country list (locked):**
+```js
+const LOCATIONS = [
+  { country: 'UK',          code: 'GB', sub_locations: [] },
+  { country: 'US',          code: 'US', sub_locations: [] },
+  { country: 'India',       code: 'IN', sub_locations: ['Hyderabad', 'Bangalore'] },
+  { country: 'Netherlands', code: 'NL', sub_locations: [] },
+  { country: 'Canada',      code: 'CA', sub_locations: [] },
+  { country: 'Malaysia',    code: 'MY', sub_locations: [] }
+];
+```
+Default country on migration: `UK` (preserves prior behaviour for the existing fixture team).
+
 **Fix:**
 - **Schema additions:**
-  - `team_member.country` (ISO 2-letter code, default `GB`)
-  - `annual_holidays[i].country` (ISO 2-letter code)
-- **Migration:** add `country: 'GB'` to every existing member + holiday; preserve `customers[]` on holidays for back-compat for 2 versions.
-- **Capacity logic:** `calcMemberCapacityForSprint` now applies a holiday to a member iff `holiday.country === member.country`. Fallback: if holiday has no country, behave as before (back-compat).
-- **UI:** add country `<select>` (use ISO list — start with GB / US / IE / IN / AU and a "Custom…" entry) on:
-  - Settings → Holidays form
-  - Settings → Team Members form
+  - `team_member.country` (one of the 6 names above)
+  - `team_member.sub_location` (optional; only valid when `country === 'India'`)
+  - `annual_holidays[i].country` (one of the 6)
+  - `annual_holidays[i].sub_location` (optional; same constraint as members)
+- **Migration:** add `country: 'UK'` to every existing member + holiday; preserve `customers[]` on holidays for back-compat for 2 versions.
+- **Capacity logic:** `calcMemberCapacityForSprint` applies a holiday to a member iff `holiday.country === member.country` AND (holiday has no `sub_location`, OR `holiday.sub_location === member.sub_location`). A national India holiday (no sub_location) hits both Hyderabad + Bangalore; a Bangalore-only holiday hits Bangalore members only.
+- **UI:**
+  - Settings → Team Members: country `<select>` + (conditional) sub-location `<select>` shown only when country = India.
+  - Settings → Holidays: same conditional dropdown pair.
 
 **AC:**
-- **AC-14.1** Schema version bump; `team_member.country` defaults to `'GB'` on load for any row missing the field.
-- **AC-14.2** `annual_holidays[i].country` populated on migration; legacy `customers[]` retained.
-- **AC-14.3** Capacity calc: a `GB` holiday is not applied to a `US`-country member (test verifies a US member's available SP is unchanged on that day).
-- **AC-14.4** Settings UI exposes country pickers on both forms.
-- **AC-14.5** Down-migration round-trip preserves everything.
+- **AC-14.1** `LOCATIONS` constant exposes the 6 entries in the order specified; India entry includes the 2 sub-locations.
+- **AC-14.2** Schema migration: every existing member without a `country` field defaults to `'UK'` on load; same for holidays.
+- **AC-14.3** Capacity calc: a UK holiday is not applied to a US-country member (US member's available SP for that day is unchanged).
+- **AC-14.4** Capacity calc: a Bangalore-scoped India holiday IS applied to a Bangalore India member and IS NOT applied to a Hyderabad India member.
+- **AC-14.5** Capacity calc: a country-only India holiday (no sub_location) applies to both Hyderabad AND Bangalore members.
+- **AC-14.6** Settings UI shows sub-location picker only when the selected country = India (the picker is hidden / disabled otherwise).
+- **AC-14.7** Down-migration round-trip preserves country + sub_location.
+- **AC-14.8** Solver tests using existing fixtures keep passing (no `country` field on legacy data → defaults applied → no behavioural change).
 
-**Files:** `index.html` — schema migration, `calcMemberCapacityForSprint`, two Settings render methods.
+**Files:** `index.html` — `LOCATIONS` constant, schema migration step, `calcMemberCapacityForSprint`, two Settings render methods (Team Members + Holidays).
 
-**Risk:** medium — touches capacity math. Mitigated by tight unit tests against the existing solver fixtures.
+**Risk:** medium — touches capacity math. Mitigated by tight unit tests for the 4 location/sub-location matrix cells (UK vs IN-Hyd, IN-Hyd vs IN-Bglr, country-only India, US vs UK).
 
 ---
 
@@ -432,12 +464,14 @@ Each row independently shippable. Tests written alongside.
 
 ---
 
-## Open questions for the user
+## Decisions resolved (2026-05-13)
 
-Before starting Slot C / D / E, please confirm:
+All 5 open questions answered by the user:
 
-1. **Item 3 (Identity removal):** The plan moves Manager → Stakeholders, Category/Visibility/etc → a "Project meta" sub-block on Scope tab. Acceptable, or do you want those fields dropped entirely?
-2. **Item 5 (milestone reviews in walkthrough):** Should Delivery's read-only milestone rows be completely view-only, or keep "Add milestone" / "Delete milestone" on Delivery and lock status edits to walkthrough only?
-3. **Item 11 (governance scoping):** Hard-fail orphans (refuse to save) or soft-warn (allow with a toast + flag)? My default is hard-fail going forward, soft-flag existing orphans.
-4. **Item 14 (country):** Which ISO countries should the picker support out of the gate? My default is GB / US / IE / IN / AU + "Other" free-text — confirm or extend.
-5. **Item 17 (status visualization):** "Subtle but clear" — confirm the diagonal-stripe / inset-border treatment matches your taste, or describe a different style.
+1. **Item 3 (Identity):** Don't restructure. Just drop the Overview Identity strip; keep the Scope & Value Identity section intact. Sticky-header sponsor pill is the only addition. *(Plan updated above — Item 3 scope reduced.)*
+2. **Item 5 (Milestones):** Both Delivery AND Walkthrough are equal-priority editing surfaces (add + status edit on both). Walkthrough adds a "Mark reviewed" affordance on top. *(Plan updated above.)*
+3. **Item 11 (Governance scoping):** Stricter than the original proposal — **remove** the add-action / add-decision controls from the Governance forum view entirely. Forum becomes read-only display. Authoring moves to project areas only. *(Plan updated above.)*
+4. **Item 14 (Country):** Locked country list = `UK / US / India / Netherlands / Canada / Malaysia`. India has sub-locations: Hyderabad, Bangalore. *(Plan updated above with the full `LOCATIONS` constant.)*
+5. **Item 17 (Status visualization):** Approved — diagonal stripe for in-progress, inset darker border for complete, flat for not-started.
+
+Plan ready to execute.
