@@ -68,7 +68,8 @@ describe('Detail Panel — four-tab IA', () => {
     const scope = app.window.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.window.document.querySelector('[data-dp-tab="raid"]');
     expect(overview.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
-    expect(overview.querySelector('.dp-identity-strip')).not.toBeNull();
+    // Slot C — Identity strip dropped from Overview; sponsor pill lives in the sticky header.
+    expect(overview.querySelector('.dp-identity-strip')).toBeNull();
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
     expect(delivery.innerHTML).toMatch(/Sprint window/);
     expect(scope.innerHTML).toMatch(/Identity/);

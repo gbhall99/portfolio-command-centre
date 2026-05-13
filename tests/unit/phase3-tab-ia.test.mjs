@@ -85,8 +85,10 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     const scope = app.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
 
-    // Overview holds: Identity strip, EVM strip, Status & Health, Strategy
-    expect(overview.querySelector('.dp-identity-strip')).toBeTruthy();
+    // Overview holds: EVM strip, Status & Health, Strategy.
+    // Note: Slot C removed the read-only Identity strip from Overview — identity
+    // info is now in the title bar + a sponsor pill in the sticky header.
+    expect(overview.querySelector('.dp-identity-strip')).toBeFalsy();
     expect(overview.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Strategy</);
 
@@ -193,28 +195,21 @@ describe('Phase 3 / AC-3.4 — hash routing round-trips', () => {
   });
 });
 
-describe('Phase 3 / AC-3.5 — read-only Identity strip on Overview', () => {
-  it('renders customer + sponsor + governance forum even when active tab is not Overview', async () => {
+describe('Phase 3 / AC-3.5 — superseded by Slot C (Identity strip dropped; sponsor pill in sticky header)', () => {
+  it('Overview no longer renders a .dp-identity-strip (Slot C)', async () => {
     const { app } = await bootWithProject({ sponsor: 'Ada Lovelace', governance_forum: 'Acme Weekly' });
     app.DetailPanel.open('P-T3', { tab: 'raid' });
     expect(app.DetailPanel.activeTab).toBe('raid');
-    // Identity strip still in DOM under the Overview panel.
-    const strip = app.document.querySelector('[data-dp-tab="overview"] .dp-identity-strip');
-    expect(strip).toBeTruthy();
-    expect(strip.textContent).toContain('Acme Industries');
-    expect(strip.textContent).toContain('Ada Lovelace');
-    expect(strip.textContent).toContain('Acme Weekly');
-    // Strip is marked read-only (it points to Scope & Value → Identity for edits).
-    expect(strip.getAttribute('data-readonly')).toBe('true');
+    expect(app.document.querySelector('[data-dp-tab="overview"] .dp-identity-strip')).toBeFalsy();
     app.teardown();
   });
 
-  it('handles empty sponsor + forum with a dash placeholder', async () => {
-    const { app } = await bootWithProject();
+  it('sticky header sponsor pill shows the sponsor name in lieu of the strip', async () => {
+    const { app } = await bootWithProject({ sponsor: 'Ada Lovelace' });
     app.DetailPanel.open('P-T3');
-    const strip = app.document.querySelector('[data-dp-tab="overview"] .dp-identity-strip');
-    expect(strip.textContent).toContain('Sponsor: —');
-    expect(strip.textContent).toContain('Forum: —');
+    const pill = app.document.querySelector('#panelStickyMeta .dp-sponsor-pill');
+    expect(pill).toBeTruthy();
+    expect(pill.textContent).toContain('Ada Lovelace');
     app.teardown();
   });
 });

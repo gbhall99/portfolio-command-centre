@@ -17906,11 +17906,12 @@ const DetailPanel = {
       id: o.id, name: o.name, subtitle: '',
     }));
 
+    // Item 4 — Objectives presented before Metrics whenever shown together.
     return '<div class="strategy-section">'
-         +   renderPicker('metric_ids',    'Metrics',    metricOpts,    selectedMetricIds, [])
          +   renderPicker('objective_ids', 'Objectives', objectiveOpts, selectedObjectiveIds,
                 derivedObjectives.map(({ obj, viaMetricNames }) => ({ id: obj.id, name: obj.name,
                   via: 'via ' + viaMetricNames.join(', ') })))
+         +   renderPicker('metric_ids',    'Metrics',    metricOpts,    selectedMetricIds, [])
          +   renderPicker('persona_ids',   'Personas',   personaOpts,   selectedPersonaIds, [])
          + '</div>';
   },
@@ -18233,6 +18234,18 @@ const DetailPanel = {
         '<div class="evm-sub">' + c.sub + '</div>' +
       '</div>'
     ).join('') + '</div>';
+  },
+
+  // Item 3 — jump from the sticky sponsor pill to Scope > Identity > Sponsor input.
+  _jumpToSponsorEdit() {
+    this.switchTab('scope');
+    setTimeout(() => {
+      const el = document.querySelector('[data-dp-tab="scope"] select[data-field="sponsor"]');
+      if (el && typeof el.focus === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus();
+      }
+    }, 60);
   },
 
   // Item 13: field-help popover. Reusable for any project-settings field — first
@@ -19128,21 +19141,9 @@ const DetailPanel = {
     const raidSections = [];
     const deliverySections = [];
 
-    // Phase 3 / AC-3.5: read-only Identity strip on Overview. Renders customer
-    // chip + sponsor + governance forum even when the active tab is not Overview
-    // (always present in DOM, hidden only by panelDiv display toggling).
-    overviewSections.push((function() {
-      const customerChip = '<span class="dp-identity-chip" data-field="customer">' + Dashboard.esc(p.customer || '—') + '</span>';
-      const sponsorChip = '<span class="dp-identity-chip" data-field="sponsor">Sponsor: ' + Dashboard.esc(p.sponsor || '—') + '</span>';
-      const forumChip = '<span class="dp-identity-chip" data-field="governance_forum">Forum: ' + Dashboard.esc(p.governance_forum || '—') + '</span>';
-      return '<div class="panel-section dp-identity-strip" data-readonly="true">' +
-        '<div class="panel-section-title">Identity</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--text-dark-secondary)">' +
-          customerChip + sponsorChip + forumChip +
-        '</div>' +
-        '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Edit on Scope &amp; Value &rarr; Identity</div>' +
-      '</div>';
-    })());
+    // Item 3 — Overview Identity strip removed. Information is in the sticky
+    // header (customer chip) and the new sponsor pill (see _refreshStickyMeta).
+    // The full editable Identity section remains on Scope & Value.
 
     overviewSections.push(this.renderEvmStrip(p));
     overviewSections.push(
@@ -19206,13 +19207,7 @@ const DetailPanel = {
         inner +
       '</div>';
     })());
-    raidSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
-        '<div id="assumptionListInner">' + this.renderAssumptions(p) + '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Log Assumption</button>' +
-      '</div>'
-    );
+    // Item 2 — RAID order: Risks → Assumptions → Issues → Decisions.
     raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
@@ -19229,6 +19224,22 @@ const DetailPanel = {
           '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'resource-constraint\')">Resource constraint</button>' +
           '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="DetailPanel.addRiskFromTemplate(\'third-party-delay\')">Third-party delay</button>' +
         '</div>' +
+      '</div>'
+    );
+    raidSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
+        '<div id="assumptionListInner">' + this.renderAssumptions(p) + '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Log Assumption</button>' +
+      '</div>'
+    );
+    raidSections.push(
+      '<div class="panel-section">' +
+        '<div class="panel-section-title">Issues <span class="risk-count" id="issueCount">' + ((p.issues_register || []).length || 0) + '</span></div>' +
+        '<div class="risk-list" id="issueList">' +
+        this.renderIssues(p) +
+        '</div>' +
+        '<button class="risk-add-btn" onclick="DetailPanel.addIssue()">+ Add Issue</button>' +
       '</div>'
     );
     raidSections.push(
@@ -19571,15 +19582,8 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addCustomerMilestone()">+ Add milestone</button>' +
       '</div>'
     );
-    raidSections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Issues <span class="risk-count" id="issueCount">' + ((p.issues_register || []).length || 0) + '</span></div>' +
-        '<div class="risk-list" id="issueList">' +
-        this.renderIssues(p) +
-        '</div>' +
-        '<button class="risk-add-btn" onclick="DetailPanel.addIssue()">+ Add Issue</button>' +
-      '</div>'
-    );
+    // Item 2 — duplicate Issues push removed; Issues is now pushed earlier in
+    // the canonical RAID order (R → A → I → D).
 
     // Phase 3 / AC-3.1: 4-tab strip with role=tablist + per-tab aria-selected + aria-controls.
     const tabPanelId = (id) => 'dpTabPanel-' + id;
@@ -19733,6 +19737,9 @@ const DetailPanel = {
         'planning <strong style="color:var(--text-dark)">' + mark(r.planning) + '</strong> · ' +
         'steerco <strong style="color:var(--text-dark)">' + mark(r.steerco) + '</strong></button>';
     }
+    // Item 3 — sponsor pill in the sticky header (replaces the dropped Overview Identity strip).
+    // Click jumps to Scope & Value > Identity > Sponsor input.
+    const sponsorPill = '<button type="button" class="psm-chip dp-sponsor-pill" data-field="sponsor" onclick="DetailPanel._jumpToSponsorEdit()" style="background:transparent;padding:0;color:var(--text-muted);border:none;cursor:pointer">Sponsor: <strong style="color:var(--text-dark)">' + esc(p.sponsor || '—') + '</strong></button>';
     const row1Parts = [
       '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>',
       '<span class="psm-chip">' + esc(p.id) + '</span>',
@@ -19742,6 +19749,7 @@ const DetailPanel = {
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_resourcing) + '" style="background:' + ragColor(p.rag_resourcing) + '"></span>' +
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" style="background:' + ragColor(p.rag_scope) + '"></span>' +
       '</span>',
+      sponsorPill,
       readinessLabel,
       reviewedLabel,
       updatedLabel
