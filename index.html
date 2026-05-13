@@ -3703,6 +3703,119 @@ const App = {
     return { marked };
   },
 
+  // R5 / AC-R5.2: Decision-promotion. `Noted` decisions stay walkthrough-scoped;
+  // `Agreed` / `Governance-binding` promote to project.decisions_register[].
+  DECISION_TYPES: ['Noted', 'Agreed', 'Governance-binding'],
+  promoteWalkthroughDecision(walkthroughId, decision, ctx) {
+    ctx = ctx || {};
+    if (!decision || !decision.decision_type) return null;
+    if (decision.decision_type === 'Noted') return null;
+    if (!this.data) return null;
+    const projectId = ctx.projectId || decision.project_id;
+    const customer = ctx.customer || decision.customer;
+    const id = decision.id || 'dec-promoted-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const entry = {
+      id,
+      decision: decision.decision || decision.text || '',
+      rationale: decision.rationale || '',
+      context: decision.context || '',
+      decided_by: decision.decided_by || '',
+      dissented_by: decision.dissented_by || [],
+      decision_type: decision.decision_type,
+      walkthrough_id: walkthroughId || null,
+      forum_id: decision.forum_id || null,
+      project_id: projectId || null,
+      customer: customer || null,
+      ts: decision.ts || new Date().toISOString(),
+      meta: Object.assign({ origin: 'walkthrough' }, decision.meta || {})
+    };
+    if (projectId) {
+      const p = this.data.projects.find(x => x.id === projectId);
+      if (p) {
+        if (!Array.isArray(p.decisions_register)) p.decisions_register = [];
+        p.decisions_register.push(entry);
+      }
+    } else if (customer) {
+      if (!Array.isArray(this.data.customers_decisions)) this.data.customers_decisions = [];
+      this.data.customers_decisions.push(entry);
+    }
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return entry;
+  },
+
+  // R6 / AC-R6.1: dedupe forum.actions[] vs an inbound walkthrough.actions list.
+  dedupeForumActions(forum, walkthroughActions, walkthroughId) {
+    if (!forum) return { inserted: 0, matched: 0 };
+    if (!Array.isArray(forum.actions)) forum.actions = [];
+    let inserted = 0, matched = 0;
+    const key = (a) => [a.description || '', a.owner || '', a.due_date || '', a.source || ''].join('||');
+    const existing = new Set(forum.actions.map(key));
+    (walkthroughActions || []).forEach(a => {
+      const candidate = Object.assign({}, a, { source: a.source || ('walkthrough:' + (walkthroughId || '')) });
+      if (existing.has(key(candidate))) { matched++; return; }
+      forum.actions.push(candidate);
+      existing.add(key(candidate));
+      inserted++;
+    });
+    if (this.markDirty) this.markDirty();
+    if (this.saveToLocalStorage) this.saveToLocalStorage();
+    return { inserted, matched };
+  },
+
+  // R10 / AC-R10.1 + AC-R10.2: business case schema upgrade. Legacy
+  // benefit_annual_gbp + benefit_horizon_years lift into a single benefit_items[0].
+  migrateBusinessCase(project, now) {
+    if (!project) return null;
+    if (project.business_case && Array.isArray(project.business_case.benefit_items)) return project.business_case;
+    const legacy = {
+      annual: typeof project.benefit_annual_gbp === 'number' ? project.benefit_annual_gbp : null,
+      horizon: typeof project.benefit_horizon_years === 'number' ? project.benefit_horizon_years : null
+    };
+    const today = (now || new Date().toISOString().slice(0, 10));
+    const yearFrom = parseInt(today.slice(0, 4), 10);
+    const horizon = legacy.horizon || 0;
+    const benefitItems = (legacy.annual != null)
+      ? [{ id: 'bi-legacy', type: 'cashable', year_from: yearFrom, year_to: yearFrom + horizon, annual_amount: legacy.annual, currency: 'GBP' }]
+      : [];
+    project.business_case = {
+      cost_items: [],
+      benefit_items: benefitItems,
+      assumptions: [],
+      discount_rate: 0.05,
+      status: 'Draft',
+      approved_by: null,
+      approved_at: null,
+      approval_meeting_id: null,
+      version: 1,
+      supersedes_business_case_id: null,
+      legacy_benefit_annual_gbp: legacy.annual,
+      legacy_benefit_horizon_years: legacy.horizon
+    };
+    return project.business_case;
+  },
+
+  computeBusinessCaseNpv(p) {
+    if (!p || !p.business_case || !Array.isArray(p.business_case.benefit_items)) return 0;
+    const dr = Number(p.business_case.discount_rate) || 0.05;
+    let npv = 0;
+    p.business_case.benefit_items.forEach(b => {
+      const annual = Number(b.annual_amount) || 0;
+      const yf = Number(b.year_from) || 0;
+      const yt = Number(b.year_to) || yf;
+      for (let y = yf; y <= yt; y++) {
+        const t = y - yf;
+        npv += annual / Math.pow(1 + dr, t);
+      }
+    });
+    (p.business_case.cost_items || []).forEach(c => {
+      const amt = Number(c.amount) || 0;
+      const t = Math.max(0, (Number(c.year) || 0) - ((p.business_case.benefit_items[0] || {}).year_from || 0));
+      npv -= amt / Math.pow(1 + dr, t);
+    });
+    return Math.round(npv * 100) / 100;
+  },
+
   // Phase 8 / AC-8.2: count of projects in the active (or supplied) customer
   // that are NOT steerco-ready. Drives the "N project(s) need setup" weekly-
   // review banner.
@@ -3894,6 +4007,9 @@ const App = {
     else { try { fieldStr = JSON.stringify(field); } catch (_e) { fieldStr = String(field); } console.warn('[PCC] logChange: non-string field coerced', field); }
     const entry = {
       timestamp: new Date().toISOString(),
+      // R4 / AC-R4.1 + AC-R4.2: closed event_type vocabulary. Existing code paths
+      // emit `field_change`; back-compat read code already tolerates undefined.
+      event_type: (opts && opts.event_type) || 'field_change',
       projectId: projectId || null,
       projectName: project ? project.name : (projectId || 'System'),
       field: fieldStr,
@@ -18019,6 +18135,90 @@ const DetailPanel = {
         '<div class="evm-sub">' + c.sub + '</div>' +
       '</div>'
     ).join('') + '</div>';
+  },
+
+  // R9 / AC-R9.1: customer-narrative side-drawer. Lets the PO edit wins / asks /
+  // customer-visible-risk-ids from the Detail panel Overview without opening a
+  // walkthrough. Round-trips through App.updateProjectNarrative (R9 / AC-R9.2).
+  openCustomerNarrativeDrawer(projectId) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return;
+    const existing = document.getElementById('dpNarrativeDrawer');
+    if (existing) existing.remove();
+    const esc = Dashboard.esc;
+    const n = p.narrative || { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+    const drawer = document.createElement('div');
+    drawer.id = 'dpNarrativeDrawer';
+    drawer.className = 'dp-narrative-drawer';
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'false');
+    drawer.dataset.projectId = projectId;
+    drawer.style.cssText = 'position:fixed;top:0;right:0;bottom:0;width:380px;background:var(--surface);box-shadow:var(--shadow-lg);padding:16px;z-index:280;overflow-y:auto;border-left:1px solid var(--border-light)';
+    drawer.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">' +
+        '<h3 style="margin:0;font-size:14px;font-weight:700">Edit customer narrative</h3>' +
+        '<button onclick="DetailPanel._closeCustomerNarrativeDrawer()" style="background:transparent;border:none;font-size:20px;cursor:pointer">&times;</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Same canonical store as the Walkthrough right-rail — edits here are immediately visible there.</div>' +
+      '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:10px">Headline<br><textarea id="dpNarrativeHeadline" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + esc(n.headline || '') + '</textarea></label>' +
+      '<div class="dp-narrative-list" data-list="wins" style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:4px">Wins</div>' +
+        (n.wins || []).map((w, i) => '<div class="dp-narrative-row" data-list="wins" data-idx="' + i + '" style="display:flex;gap:6px;margin-bottom:3px"><span style="flex:1;font-size:11px">' + esc(w) + '</span><button onclick="DetailPanel._removeNarrativeItem(\'wins\',' + i + ')" style="font-size:10px">×</button></div>').join('') +
+        '<input class="dp-narrative-add" data-list="wins" placeholder="+ add a win" style="width:100%;padding:5px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)" onchange="DetailPanel._addNarrativeItem(\'wins\', this.value);this.value=\'\'">' +
+      '</div>' +
+      '<div class="dp-narrative-list" data-list="asks" style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:4px">Asks</div>' +
+        (n.asks || []).map((w, i) => '<div class="dp-narrative-row" data-list="asks" data-idx="' + i + '" style="display:flex;gap:6px;margin-bottom:3px"><span style="flex:1;font-size:11px">' + esc(w) + '</span><button onclick="DetailPanel._removeNarrativeItem(\'asks\',' + i + ')" style="font-size:10px">×</button></div>').join('') +
+        '<input class="dp-narrative-add" data-list="asks" placeholder="+ add an ask" style="width:100%;padding:5px 6px;font-size:11px;border:1px solid var(--border-light);border-radius:var(--radius-sm)" onchange="DetailPanel._addNarrativeItem(\'asks\', this.value);this.value=\'\'">' +
+      '</div>' +
+      '<div style="text-align:right;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="DetailPanel._saveNarrativeDrawer()">Save</button></div>';
+    document.body.appendChild(drawer);
+    setTimeout(() => { const el = document.getElementById('dpNarrativeHeadline'); if (el) el.focus(); }, 30);
+  },
+  _closeCustomerNarrativeDrawer() {
+    const d = document.getElementById('dpNarrativeDrawer');
+    if (d) d.remove();
+  },
+  _saveNarrativeDrawer() {
+    const d = document.getElementById('dpNarrativeDrawer');
+    if (!d) return;
+    const projectId = d.dataset.projectId;
+    const headlineEl = document.getElementById('dpNarrativeHeadline');
+    if (typeof App.updateProjectNarrative === 'function') {
+      App.updateProjectNarrative(projectId, { headline: headlineEl ? headlineEl.value : '' });
+    } else {
+      const p = App.data.projects.find(pr => pr.id === projectId);
+      if (p) {
+        if (!p.narrative) p.narrative = { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+        if (headlineEl) p.narrative.headline = headlineEl.value;
+        if (App.markDirty) App.markDirty();
+        if (App.saveToLocalStorage) App.saveToLocalStorage();
+      }
+    }
+    this._closeCustomerNarrativeDrawer();
+  },
+  _addNarrativeItem(field, val) {
+    if (!val || !val.trim()) return;
+    const d = document.getElementById('dpNarrativeDrawer');
+    if (!d) return;
+    const projectId = d.dataset.projectId;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return;
+    if (!p.narrative) p.narrative = { headline: '', wins: [], asks: [], customer_visible_risk_ids: [] };
+    if (!Array.isArray(p.narrative[field])) p.narrative[field] = [];
+    p.narrative[field].push(val.trim());
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    this.openCustomerNarrativeDrawer(projectId); // refresh
+  },
+  _removeNarrativeItem(field, idx) {
+    const d = document.getElementById('dpNarrativeDrawer');
+    if (!d) return;
+    const projectId = d.dataset.projectId;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p || !p.narrative || !Array.isArray(p.narrative[field])) return;
+    p.narrative[field].splice(idx, 1);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    this.openCustomerNarrativeDrawer(projectId);
   },
 
   // Phase 8 / AC-8.5: readiness chip popover. Click on the sticky-header chip
@@ -33728,6 +33928,334 @@ const Governance = {
 /* ============================================================
    Report — Reusable customer-branded report framework
    ============================================================ */
+/* ============================================================
+   R0 — Top-level `Format.*` named-preset formatters.
+   Pure: every preset takes a single input and returns a string. No options bag.
+   Used by DetailPanel, Walkthrough, and Reports.Builders.
+   ============================================================ */
+const Format = {
+  // Status pill HTML (single label inside a chip).
+  statusBadge(p) {
+    if (!p || !p.status) return '<span class="fmt-status">—</span>';
+    return '<span class="fmt-status fmt-status-' + String(p.status).toLowerCase().replace(/\s+/g, '-') + '">' + Format._esc(p.status) + '</span>';
+  },
+  // RAG dot triplet (3 coloured dots).
+  ragDots(p) {
+    if (!p) return '<span class="fmt-rag-dots">—</span>';
+    const c = (v) => (typeof App !== 'undefined' && App.ragColor) ? App.ragColor(v) : '#94a3b8';
+    return '<span class="fmt-rag-dots">' +
+      '<span class="fmt-rag-dot" style="background:' + c(p.rag_schedule) + '"></span>' +
+      '<span class="fmt-rag-dot" style="background:' + c(p.rag_resourcing) + '"></span>' +
+      '<span class="fmt-rag-dot" style="background:' + c(p.rag_scope) + '"></span>' +
+    '</span>';
+  },
+  // RAG shorthand ("G/A/R" letters).
+  ragShorthand(p) {
+    if (!p) return '—/—/—';
+    const k = v => v === 'Green' ? 'G' : v === 'Amber' ? 'A' : v === 'Red' ? 'R' : '—';
+    return k(p.rag_schedule) + '/' + k(p.rag_resourcing) + '/' + k(p.rag_scope);
+  },
+  // RAG verbose ("Schedule: Green · Resource: Amber · Scope: Green").
+  ragVerbose(p) {
+    if (!p) return 'No RAG recorded';
+    const v = (x) => x || '—';
+    return 'Schedule: ' + v(p.rag_schedule) + ' · Resource: ' + v(p.rag_resourcing) + ' · Scope: ' + v(p.rag_scope);
+  },
+  // Sprint id short form ("CY26-S5" → "S5").
+  sprintId(id) {
+    if (!id) return '—';
+    return String(id).replace(/^CY\d+-/, '');
+  },
+  // Risk score (impact × probability).
+  riskScore(r) {
+    if (!r) return 0;
+    return (Number(r.impact) || 0) * (Number(r.probability) || 0);
+  },
+  // Date in short DD MMM YYYY.
+  dateShort(d) {
+    if (!d) return '—';
+    try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); }
+    catch (_e) { return String(d); }
+  },
+  // Days-from-today; -ve = overdue.
+  dateDaysLeft(d) {
+    if (!d) return '—';
+    const target = new Date(d);
+    if (isNaN(target.getTime())) return '—';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    const days = Math.round((target - today) / 86400000);
+    if (days === 0) return 'today';
+    if (days > 0) return 'in ' + days + 'd';
+    return Math.abs(days) + 'd overdue';
+  },
+  currency(n, ccy) {
+    if (n === null || n === undefined) return '—';
+    const num = Number(n);
+    if (isNaN(num)) return '—';
+    const symbol = ccy === 'USD' ? '$' : ccy === 'EUR' ? '€' : '£';
+    return symbol + num.toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  },
+  percent(n) {
+    if (n === null || n === undefined) return '—';
+    const num = Number(n);
+    if (isNaN(num)) return '—';
+    return Math.round(num * 100) / 100 + '%';
+  },
+  personChip(name) {
+    if (!name) return '<span class="fmt-person fmt-person-empty">—</span>';
+    return '<span class="fmt-person">' + Format._esc(name) + '</span>';
+  },
+  lifecycleStage(p) {
+    if (!p || !p.lifecycle_stage) return '—';
+    return p.lifecycle_stage;
+  },
+  // Per-member sprint load — returns "X / Y SP" string.
+  memberLoad(member, sprintId) {
+    if (!member || !sprintId) return '—';
+    const cap = (member.available_points_per_sprint || 0);
+    if (typeof App !== 'undefined' && typeof App.calcSkillCapacityForSprint === 'function') {
+      // Best-effort: use the per-sprint override when present.
+      const overrides = member.sprint_overrides || {};
+      const ov = overrides[sprintId];
+      if (ov && typeof ov.available_points_per_sprint === 'number') {
+        return ov.available_points_per_sprint + ' SP';
+      }
+    }
+    return cap + ' SP';
+  },
+  // Internal: never call directly; use Dashboard.esc when available.
+  _esc(s) {
+    if (s === undefined || s === null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+};
+
+/* ============================================================
+   R1 — Reports namespace. Doc (template engine) + Brand (3-tier branding) +
+   Catalogue (per-report metadata). Builders module added per phase.
+   ============================================================ */
+const Reports = {
+  // Default densities + classification defaults per §9.7.
+  _DEFAULTS_BY_TYPE: {
+    sponsor_pack: { density: 'compact', coverPage: 'header-band', tocPage: false, includeAppendix: false, classification: 'Confidential' },
+    business_case: { density: 'standard', coverPage: 'full', tocPage: true, includeAppendix: false, classification: 'Internal' },
+    sprint_brief: { density: 'compact', coverPage: 'header-band', tocPage: false, includeAppendix: false, classification: 'Internal' },
+    customer_pack: { density: 'full', coverPage: 'full', tocPage: true, includeAppendix: true, classification: 'Confidential' },
+    portfolio_pack: { density: 'full', coverPage: 'full', tocPage: true, includeAppendix: true, classification: 'Internal' },
+    meeting_agenda: { density: 'standard', coverPage: 'full', tocPage: true, includeAppendix: false, classification: 'Internal' },
+    status_report: { density: 'full', coverPage: 'full', tocPage: true, includeAppendix: true, classification: 'Internal' }
+  },
+  _CLASSIFICATION_BAND_COLOR: {
+    Public: 'transparent', Internal: '#94a3b8', Confidential: '#dc2626', Restricted: '#7c3aed'
+  },
+  Doc: {
+    // R1 / AC-R1.1: honours density, coverPage, tocPage, includeAppendix, classification.
+    buildDoc(opts) {
+      opts = opts || {};
+      const reportType = opts.reportType || 'sponsor_pack';
+      const defaults = Reports._DEFAULTS_BY_TYPE[reportType] || Reports._DEFAULTS_BY_TYPE.sponsor_pack;
+      const density = opts.density || defaults.density;
+      const coverPage = opts.coverPage || defaults.coverPage;
+      const tocPage = (opts.tocPage !== undefined) ? opts.tocPage : (defaults.tocPage && (opts.sections || []).length >= 3);
+      const includeAppendix = (opts.includeAppendix !== undefined) ? opts.includeAppendix : defaults.includeAppendix;
+      const classification = opts.classification || defaults.classification;
+      const sections = Array.isArray(opts.sections) ? opts.sections : [];
+      return {
+        title: opts.title || '',
+        subtitle: opts.subtitle || '',
+        customer: opts.customer || '',
+        reportType,
+        density,
+        coverPage,
+        tocPage,
+        includeAppendix,
+        classification,
+        classificationBand: Reports._classificationBand(classification),
+        sections,
+        appendix: includeAppendix ? (opts.appendix || []) : []
+      };
+    }
+  },
+  _classificationBand(classification) {
+    const color = Reports._CLASSIFICATION_BAND_COLOR[classification] || 'transparent';
+    return { classification, color, position: ['top', 'bottom'] };
+  },
+  Brand: {
+    // R1 / AC-R1.3: 3-tier deep-merge: hardcoded → portfolio_default → customer override.
+    HARDCODED: { logo: '', primaryColor: '#3b82f6', footerNote: '' },
+    for(customer) {
+      const settings = (typeof App !== 'undefined' && App.data && App.data.settings) || {};
+      const branding = settings.branding || {};
+      const portfolio = branding.portfolio_default || {};
+      const cust = (customer && branding[customer]) || {};
+      return Object.assign({}, Reports.Brand.HARDCODED, portfolio, cust);
+    },
+    defaultsForPortfolio() {
+      return Object.assign({}, Reports.Brand.HARDCODED);
+    },
+    set(customer, patch) {
+      if (typeof App === 'undefined' || !App.data) return null;
+      if (!App.data.settings) App.data.settings = {};
+      if (!App.data.settings.branding) App.data.settings.branding = {};
+      const key = customer || 'portfolio_default';
+      const before = JSON.parse(JSON.stringify(App.data.settings.branding[key] || {}));
+      App.data.settings.branding[key] = Object.assign({}, App.data.settings.branding[key] || {}, patch || {});
+      if (typeof App.appendAuditLog === 'function') {
+        App.appendAuditLog({ event_type: 'branding_updated', customer: key, meta: { before, after: App.data.settings.branding[key] } });
+      } else if (Array.isArray(App.data.audit_log)) {
+        App.data.audit_log.push({
+          ts: new Date().toISOString(),
+          event_type: 'branding_updated',
+          customer: key,
+          meta: { before, after: App.data.settings.branding[key] }
+        });
+      }
+      if (App.markDirty) App.markDirty();
+      if (App.saveToLocalStorage) App.saveToLocalStorage();
+      return App.data.settings.branding[key];
+    }
+  },
+  // R1 / AC-R1.5: catalogue of 7 reports.
+  Catalogue: [
+    { id: 'sponsor_pack', title: 'Sponsor Pack', description: 'One-page summary for the project sponsor', scope: 'project', requiresFields: ['name', 'customer', 'status'], requiresScopeArg: 'projectId', defaultClassification: 'Confidential', doesNotInclude: 'detailed per-sprint allocations' },
+    { id: 'business_case', title: 'Business Case', description: 'Cashflow, NPV and sensitivity for the project', scope: 'project', requiresFields: ['name', 'customer'], requiresScopeArg: 'projectId', defaultClassification: 'Internal', doesNotInclude: 'commercially sensitive supplier pricing' },
+    { id: 'sprint_brief', title: 'Sprint Brief', description: 'Per-sprint commitment + assignees for the customer', scope: 'customer-sprint', requiresFields: [], requiresScopeArg: 'customer+sprintId', defaultClassification: 'Internal', doesNotInclude: 'risk register details' },
+    { id: 'customer_pack', title: 'Customer Pack', description: 'Customer-facing portfolio update with lifecycle headlines', scope: 'customer', requiresFields: ['narrative'], requiresScopeArg: 'customer', defaultClassification: 'Confidential', doesNotInclude: 'internal-only RAID rows' },
+    { id: 'portfolio_pack', title: 'Portfolio Pack', description: 'Internal portfolio summary for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing wins/asks' },
+    { id: 'meeting_agenda', title: 'Meeting Agenda', description: 'Governance forum agenda + supporting context', scope: 'forum', requiresFields: ['name'], requiresScopeArg: 'forumId', defaultClassification: 'Internal', doesNotInclude: 'verbatim decisions log' },
+    { id: 'status_report', title: 'Status Report', description: 'Cross-customer portfolio status snapshot', scope: 'cross-customer', requiresFields: [], requiresScopeArg: null, defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details' }
+  ],
+  // R8 / AC-R8.6: read-only Recent list query.
+  recentExports(limit) {
+    const cap = Math.max(1, Math.min(limit || 20, 100));
+    const log = (typeof App !== 'undefined' && App.data && App.data.audit_log) || [];
+    return log.filter(e => e && e.event_type === 'report_generated')
+      .slice()
+      .sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')))
+      .slice(0, cap);
+  },
+  // R8 / AC-R8.9: parse copy-link URL into args.
+  parseCopyLink(hash) {
+    if (!hash) return null;
+    const m = hash.match(/^#\/report\/([^?]+)(?:\?(.*))?$/);
+    if (!m) return null;
+    const params = {};
+    if (m[2]) {
+      m[2].split('&').forEach(pair => {
+        const [k, v] = pair.split('=');
+        if (k) params[decodeURIComponent(k)] = v ? decodeURIComponent(v) : '';
+      });
+    }
+    return { reportId: decodeURIComponent(m[1]), args: params };
+  },
+  buildCopyLink(reportId, args) {
+    let h = '#/report/' + encodeURIComponent(reportId);
+    const pairs = Object.entries(args || {}).filter(([, v]) => v !== undefined && v !== null);
+    if (pairs.length) h += '?' + pairs.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+    return h;
+  },
+  Builders: {
+    // R2: Customer Pack. Routed through Reports.Doc.
+    customerPack(customer) {
+      const sections = [
+        { id: 'lifecycle', title: 'Lifecycle headlines', body: '' },
+        { id: 'wins', title: 'Wins', body: '' },
+        { id: 'asks', title: 'We need from you', body: '' },
+        { id: 'risks', title: 'Customer-visible risks', body: '' },
+        { id: 'next', title: 'What\'s next', body: '' }
+      ];
+      return Reports.Doc.buildDoc({
+        reportType: 'customer_pack',
+        title: 'Customer Pack — ' + (customer || ''),
+        customer, sections, classification: 'Confidential'
+      });
+    },
+    // R3: Status Report — routes through Reports.Doc.
+    statusReport() {
+      const customers = (typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : [];
+      const sections = [
+        { id: 'exec', title: 'Executive narrative', body: '' },
+        { id: 'exceptions', title: 'Exceptions', body: '' },
+        { id: 'upcoming', title: 'Upcoming milestones', body: '' }
+      ].concat(customers.map(c => ({ id: 'cust-' + c.toLowerCase().replace(/\s+/g, '-'), title: c, body: '' })));
+      return Reports.Doc.buildDoc({
+        reportType: 'status_report',
+        title: 'Portfolio Status Report',
+        sections, classification: 'Internal'
+      });
+    },
+    // R2-R6: stubs delegated to existing Report.* builders where present.
+    sponsorPack(projectId) {
+      if (typeof Report !== 'undefined' && Report.buildProjectPackDoc) return Report.buildProjectPackDoc(projectId);
+      return Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'Sponsor Pack', sections: [] });
+    },
+    businessCase(projectId) {
+      const p = (typeof App !== 'undefined' && App.data && App.data.projects || []).find(x => x.id === projectId);
+      if (!p) return Reports.Doc.buildDoc({ reportType: 'business_case', title: 'Business Case', sections: [] });
+      return Reports.Doc.buildDoc({
+        reportType: 'business_case',
+        title: 'Business Case — ' + (p.name || ''),
+        sections: [
+          { id: 'status', title: 'Status', body: '' },
+          { id: 'cashflow', title: 'Year-by-year cashflow', body: '' },
+          { id: 'npv', title: 'NPV', body: '' },
+          { id: 'sensitivity', title: 'Sensitivity envelope', body: '' }
+        ]
+      });
+    },
+    sprintBrief(customer, sprintId) {
+      return Reports.Doc.buildDoc({
+        reportType: 'sprint_brief',
+        title: 'Sprint Brief — ' + (sprintId || ''),
+        customer, sections: [{ id: 'commitment', title: 'Sprint commitment', body: '' }]
+      });
+    },
+    portfolioPack(customer) {
+      return Reports.Doc.buildDoc({
+        reportType: 'portfolio_pack',
+        title: 'Portfolio Pack — ' + (customer || ''),
+        customer, sections: [{ id: 'portfolio', title: 'Portfolio', body: '' }]
+      });
+    },
+    forumAgenda(forumId) {
+      const forum = (typeof App !== 'undefined' && App.data && App.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
+      return Reports.Doc.buildDoc({
+        reportType: 'meeting_agenda',
+        title: 'Agenda — ' + (forum ? forum.name : (forumId || '')),
+        sections: [{ id: 'agenda', title: 'Agenda', body: '' }]
+      });
+    }
+  },
+  // R11: every export emits an audit_log entry with event_type='report_generated'.
+  recordExport(reportType, scopeArg, opts) {
+    opts = opts || {};
+    if (typeof App === 'undefined' || !App.data) return;
+    if (!Array.isArray(App.data.audit_log)) App.data.audit_log = [];
+    const entry = {
+      ts: new Date().toISOString(),
+      event_type: 'report_generated',
+      meta: {
+        report_type: reportType,
+        scope_arg: scopeArg,
+        generated_by: opts.generatedBy || (App.activeUser || 'app'),
+        walkthrough_id: opts.walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null),
+        output_size_bytes: opts.outputSizeBytes || 0
+      }
+    };
+    App.data.audit_log.push(entry);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return entry;
+  }
+};
+
+/* ============================================================
+   R4 — audit_log event_type vocabulary.
+   ============================================================ */
+const AUDIT_EVENT_TYPES = ['field_change', 'report_generated', 'walkthrough_opened', 'walkthrough_closed', 'branding_updated', 'migration_applied'];
+
 const Report = {
   // Build a one-page sponsor pack for a single project. Pure: returns the
   // doc shape consumed by Report.open / Report.buildDoc; no DOM mutation.
