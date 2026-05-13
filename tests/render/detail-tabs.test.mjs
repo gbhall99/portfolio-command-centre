@@ -1,13 +1,13 @@
-// Issue 9 — Detail Panel three-tab redesign.
-// renderBody must wrap its sections in three tabs: Setup / Health / Delivery.
-// The Health tab is the default; switching tabs updates which panel is active.
+// Phase 3 — Detail Panel four-tab IA flip (Overview / Delivery / Scope & Value / RAID).
+// renderBody now wraps its sections in 4 tabs; legacy `setup` / `health` tab keys
+// map to `scope` / `overview` via DetailPanel._legacyTabAlias for callsite back-compat.
 
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
 import { makeProject, makeSprintSequence, makeMember, makeDataset, resetIdSeq } from '../harness/fixtures.mjs';
 
-describe('Detail Panel — three-tab redesign', () => {
-  it('renders the three tabs (Setup / Health / Delivery) with Health active by default', async () => {
+describe('Detail Panel — four-tab IA', () => {
+  it('renders the four tabs (Overview / Delivery / Scope / RAID) with Overview active by default', async () => {
     resetIdSeq();
     const proj = makeProject({ name: 'P1', status: 'In Progress' });
     proj.size_total = 10;
@@ -17,15 +17,15 @@ describe('Detail Panel — three-tab redesign', () => {
     app.App.activeCustomer = 'Acme Industries';
     app.DetailPanel.open(proj.id);
     const html = app.window.document.getElementById('panelBody').innerHTML;
-    expect(html).toMatch(/data-dp-tab-trigger="setup"/);
-    expect(html).toMatch(/data-dp-tab-trigger="health"/);
+    expect(html).toMatch(/data-dp-tab-trigger="overview"/);
     expect(html).toMatch(/data-dp-tab-trigger="delivery"/);
-    // Default active tab = health.
-    expect(app.DetailPanel.activeTab).toBe('health');
-    // Each tab panel exists.
-    expect(html).toMatch(/data-dp-tab="setup"/);
-    expect(html).toMatch(/data-dp-tab="health"/);
+    expect(html).toMatch(/data-dp-tab-trigger="scope"/);
+    expect(html).toMatch(/data-dp-tab-trigger="raid"/);
+    expect(app.DetailPanel.activeTab).toBe('overview');
+    expect(html).toMatch(/data-dp-tab="overview"/);
     expect(html).toMatch(/data-dp-tab="delivery"/);
+    expect(html).toMatch(/data-dp-tab="scope"/);
+    expect(html).toMatch(/data-dp-tab="raid"/);
     app.teardown();
   });
 
@@ -38,19 +38,22 @@ describe('Detail Panel — three-tab redesign', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     app.DetailPanel.open(proj.id);
-    expect(app.DetailPanel.activeTab).toBe('health');
+    expect(app.DetailPanel.activeTab).toBe('overview');
+    app.DetailPanel.switchTab('scope');
+    expect(app.DetailPanel.activeTab).toBe('scope');
+    const scopePanel = app.window.document.querySelector('[data-dp-tab="scope"]');
+    const overviewPanel = app.window.document.querySelector('[data-dp-tab="overview"]');
+    expect(scopePanel).not.toBeNull();
+    expect(overviewPanel).not.toBeNull();
+    expect(scopePanel.classList.contains('dp-tab-active')).toBe(true);
+    expect(overviewPanel.classList.contains('dp-tab-active')).toBe(false);
+    // Legacy tab key 'setup' should alias to 'scope' for back-compat.
     app.DetailPanel.switchTab('setup');
-    expect(app.DetailPanel.activeTab).toBe('setup');
-    const setupPanel = app.window.document.querySelector('[data-dp-tab="setup"]');
-    const healthPanel = app.window.document.querySelector('[data-dp-tab="health"]');
-    expect(setupPanel).not.toBeNull();
-    expect(healthPanel).not.toBeNull();
-    expect(setupPanel.classList.contains('dp-tab-active')).toBe(true);
-    expect(healthPanel.classList.contains('dp-tab-active')).toBe(false);
+    expect(app.DetailPanel.activeTab).toBe('scope');
     app.teardown();
   });
 
-  it('Setup tab carries identity + plan fields; Health tab carries RAG + EVM; Delivery tab carries phase points', async () => {
+  it('Overview carries Status & Health + Identity strip; Delivery carries phase points + sprint window; Scope carries Identity + Benefits; RAID carries Risks + Issues', async () => {
     resetIdSeq();
     const proj = makeProject({ name: 'P1' });
     proj.size_total = 10;
@@ -60,16 +63,19 @@ describe('Detail Panel — three-tab redesign', () => {
     }));
     app.App.activeCustomer = 'Acme Industries';
     app.DetailPanel.open(proj.id);
-    const setup = app.window.document.querySelector('[data-dp-tab="setup"]');
-    const health = app.window.document.querySelector('[data-dp-tab="health"]');
+    const overview = app.window.document.querySelector('[data-dp-tab="overview"]');
     const delivery = app.window.document.querySelector('[data-dp-tab="delivery"]');
-    expect(setup.innerHTML).toMatch(/Identity/);
-    // Timeline section was removed in T9 — Start/End sprint now live in Delivery as a
-    // read-only Sprint window (auto-populated by the solver).
-    expect(setup.innerHTML).not.toMatch(/panel-section-title">Timeline</);
-    expect(health.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
+    const scope = app.window.document.querySelector('[data-dp-tab="scope"]');
+    const raid = app.window.document.querySelector('[data-dp-tab="raid"]');
+    expect(overview.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
+    expect(overview.querySelector('.dp-identity-strip')).not.toBeNull();
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
     expect(delivery.innerHTML).toMatch(/Sprint window/);
+    expect(scope.innerHTML).toMatch(/Identity/);
+    expect(scope.innerHTML).toMatch(/Benefits/);
+    expect(raid.innerHTML).toMatch(/Risks/);
+    expect(raid.innerHTML).toMatch(/Issues/);
+    expect(raid.innerHTML).toMatch(/Decisions/);
     app.teardown();
   });
 });

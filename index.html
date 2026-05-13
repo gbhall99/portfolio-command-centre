@@ -3649,9 +3649,11 @@ const App = {
     if (!p) return { backlog: false, planning: false, steerco: false, missing: ['project'] };
     const missing = [];
     // Stage 1: ready for backlog — name + customer + MoSCoW (or "unranked") + lifecycle stage.
+    // A null/empty moscow value is treated as implicit "unranked"; only a genuinely
+    // absent key (e.g. legacy data prior to the field's introduction) is missing.
     if (!p.name || !String(p.name).trim()) missing.push('name');
     if (!p.customer || !String(p.customer).trim()) missing.push('customer');
-    if (!('moscow' in p) || (p.moscow === null || p.moscow === undefined)) missing.push('moscow_or_unranked');
+    if (!('moscow' in p)) missing.push('moscow_or_unranked');
     if (!p.lifecycle_stage || !String(p.lifecycle_stage).trim()) missing.push('lifecycle_stage');
     const backlog = missing.length === 0;
     // Stage 2: ready for sprint planning — backlog + per-phase points + target_date + manager.
@@ -17642,11 +17644,24 @@ const DetailPanel = {
     if (App.notifyDataChange) App.notifyDataChange();
   },
 
-  // Issue 9: three-tab redesign — Setup (once-off), Health (weekly review),
-  // Delivery (daily ops). Default tab = Health, the most common reason to open.
-  activeTab: 'health',
-  switchTab(tab) {
-    if (tab !== 'setup' && tab !== 'health' && tab !== 'delivery') return;
+  // Phase 3 / AC-3.1: four-tab IA — Overview / Delivery / Scope & Value / RAID.
+  // Default tab is entry-point-aware (see open()'s entryPoint param + ENTRY_TAB_MAP).
+  // Legacy `setup` and `health` tab keys are auto-mapped on switchTab for back-compat
+  // with any callsite that still passes the old names.
+  TABS: ['overview', 'delivery', 'scope', 'raid'],
+  TAB_LABELS: { overview: 'Overview', delivery: 'Delivery', scope: 'Scope & Value', raid: 'RAID' },
+  ENTRY_TAB_MAP: {
+    dashboard: 'overview', walkthrough: 'overview', share: 'overview',
+    cmdk: 'overview', notification: 'overview',
+    projects: 'delivery', backlog: 'delivery', roadmap: 'delivery',
+    strategy: 'scope', personas: 'scope', metrics: 'scope'
+  },
+  _legacyTabAlias: { setup: 'scope', health: 'overview' },
+  activeTab: 'overview',
+  switchTab(tab, opts) {
+    opts = opts || {};
+    if (this._legacyTabAlias[tab]) tab = this._legacyTabAlias[tab];
+    if (this.TABS.indexOf(tab) === -1) return;
     this.activeTab = tab;
     const body = document.getElementById('panelBody');
     if (!body) return;
@@ -17656,8 +17671,56 @@ const DetailPanel = {
       panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
     });
     body.querySelectorAll('[data-dp-tab-trigger]').forEach(btn => {
-      btn.classList.toggle('dp-tab-trigger-active', btn.dataset.dpTabTrigger === tab);
+      const isActive = btn.dataset.dpTabTrigger === tab;
+      btn.classList.toggle('dp-tab-trigger-active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      btn.setAttribute('tabindex', isActive ? '0' : '-1');
     });
+    // Rebuild the chip TOC so it tracks the now-visible tab's sub-blocks.
+    if (typeof this._buildChipRow === 'function') this._buildChipRow();
+    if (!opts.silent) this._writeHash();
+  },
+
+  // Phase 3 / AC-3.4: hash routing `#/p/<id>/<tab>[#<section>]`.
+  // Writing the hash updates URL; reload lands on same tab+section.
+  _hashFor(projectId, tab, section) {
+    let h = '#/p/' + encodeURIComponent(projectId) + '/' + (tab || this.activeTab || 'overview');
+    if (section) h += '#' + encodeURIComponent(section);
+    return h;
+  },
+  _writeHash() {
+    if (!this.currentId) return;
+    try {
+      const newHash = this._hashFor(this.currentId, this.activeTab);
+      if (typeof window !== 'undefined' && window.location && window.location.hash !== newHash) {
+        // Use replaceState so tab switches don't pollute history.
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', newHash);
+        } else {
+          window.location.hash = newHash;
+        }
+      }
+    } catch (_e) {}
+  },
+  // Parse current hash. Returns { projectId, tab, section } or null.
+  _parseHash(hash) {
+    if (!hash) return null;
+    const m = hash.match(/^#\/p\/([^/]+)\/([a-z-]+)(?:#(.+))?$/);
+    if (!m) return null;
+    let tab = m[2];
+    if (this._legacyTabAlias[tab]) tab = this._legacyTabAlias[tab];
+    if (this.TABS.indexOf(tab) === -1) return null;
+    return {
+      projectId: decodeURIComponent(m[1]),
+      tab,
+      section: m[3] ? decodeURIComponent(m[3]) : ''
+    };
+  },
+  _routeFromHash() {
+    try {
+      if (typeof window === 'undefined' || !window.location) return null;
+      return this._parseHash(window.location.hash);
+    } catch (_e) { return null; }
   },
   get CUSTOMERS() { return App.getCustomers(); },
   OWNERSHIPS: ['Lead & Delivery', 'Delivery'],
@@ -17679,11 +17742,32 @@ const DetailPanel = {
 
   _triggerEl: null,
 
-  open(projectId) {
+  open(projectId, opts) {
     const p = App.data.projects.find(pr => pr.id === projectId);
     if (!p) return;
+    opts = opts || {};
     this._triggerEl = document.activeElement;
     this.currentId = projectId;
+    // Phase 3 / AC-3.3 + AC-3.4: resolve active tab. Priority order:
+    //   1. opts.tab (explicit override)
+    //   2. URL hash for this project (if present + matches)
+    //   3. opts.entryPoint mapped via ENTRY_TAB_MAP
+    //   4. default 'overview'
+    let resolvedTab = null;
+    let resolvedSection = '';
+    if (opts.tab && this.TABS.indexOf(opts.tab) >= 0) {
+      resolvedTab = opts.tab;
+    } else {
+      const parsed = this._routeFromHash();
+      if (parsed && parsed.projectId === projectId) {
+        resolvedTab = parsed.tab;
+        resolvedSection = parsed.section || '';
+      } else if (opts.entryPoint && this.ENTRY_TAB_MAP[opts.entryPoint]) {
+        resolvedTab = this.ENTRY_TAB_MAP[opts.entryPoint];
+      }
+    }
+    if (!resolvedTab) resolvedTab = 'overview';
+    this.activeTab = resolvedTab;
     document.getElementById('panelId').textContent = p.id;
     document.getElementById('panelTitle').textContent = p.name;
     this.renderBody(p);
@@ -17691,6 +17775,11 @@ const DetailPanel = {
     this._restoreCollapsedState();
     this._refreshStickyMeta();
     this._buildJumpMenu();
+    this._writeHash();
+    if (resolvedSection) {
+      // Defer to ensure renderBody DOM exists before scrolling.
+      setTimeout(() => { try { this.jumpToSection(resolvedSection); } catch (_e) {} }, 50);
+    }
     // Phase 2 / AC-2.2 + AC-2.4: apply the inline-edit affordance to every editable
     // input/textarea, then install the focus/change capture pair that powers the
     // undo toast. Both calls are idempotent — repeat-renders during open are safe.
@@ -18218,12 +18307,33 @@ const DetailPanel = {
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.saveAsTemplate()" title="Save delivery config as template"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save as Template</button>' +
       '</div>';
 
-    // ===== HEALTH tab — weekly review surface =====
-    const healthSections = [];
-    healthSections.push(this.renderEvmStrip(p));
-    healthSections.push(
+    // Phase 3 / AC-3.2: 4 tab section arrays. Health/Setup section bodies are
+    // distributed across these per the §3.13 migration map.
+    const overviewSections = [];
+    const scopeSections = [];
+    const raidSections = [];
+    const deliverySections = [];
+
+    // Phase 3 / AC-3.5: read-only Identity strip on Overview. Renders customer
+    // chip + sponsor + governance forum even when the active tab is not Overview
+    // (always present in DOM, hidden only by panelDiv display toggling).
+    overviewSections.push((function() {
+      const customerChip = '<span class="dp-identity-chip" data-field="customer">' + Dashboard.esc(p.customer || '—') + '</span>';
+      const sponsorChip = '<span class="dp-identity-chip" data-field="sponsor">Sponsor: ' + Dashboard.esc(p.sponsor || '—') + '</span>';
+      const forumChip = '<span class="dp-identity-chip" data-field="governance_forum">Forum: ' + Dashboard.esc(p.governance_forum || '—') + '</span>';
+      return '<div class="panel-section dp-identity-strip" data-readonly="true">' +
+        '<div class="panel-section-title">Identity</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--text-dark-secondary)">' +
+          customerChip + sponsorChip + forumChip +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Edit on Scope &amp; Value &rarr; Identity</div>' +
+      '</div>';
+    })());
+
+    overviewSections.push(this.renderEvmStrip(p));
+    overviewSections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Status & Health</div>' +
+        '<div class="panel-section-title">Status &amp; Health</div>' +
         '<div class="field-grid">' +
           '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
           ragSel('Schedule Health', 'rag_schedule', p.rag_schedule) +
@@ -18232,23 +18342,20 @@ const DetailPanel = {
         '</div>' +
       '</div>'
     );
-    // Completion date moved to Delivery > Dates as a read-only badge (Project Details Overhaul, T8).
-    healthSections.push(
+    overviewSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy</div>' +
         this.renderStrategySection(p) +
       '</div>'
     );
-    // Notes section was removed from the Health tab — narrative belongs on
-    // the project's narrative blocks, not duplicated under strategy.
-    healthSections.push(
+    raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
         '<div id="assumptionListInner">' + this.renderAssumptions(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addAssumption()">+ Log Assumption</button>' +
       '</div>'
     );
-    healthSections.push(
+    raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Risks <span class="risk-count" id="riskCount">' + ((p.risks_register || []).length || 0) + '</span></div>' +
         '<div class="risk-list" id="riskList">' +
@@ -18266,7 +18373,7 @@ const DetailPanel = {
         '</div>' +
       '</div>'
     );
-    healthSections.push(
+    raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Decisions <span class="risk-count" id="decisionCount">' + ((p.decisions_register || []).length || 0) + '</span></div>' +
         '<div id="decisionListInner">' + this.renderDecisions(p) + '</div>' +
@@ -18284,7 +18391,7 @@ const DetailPanel = {
         });
       });
       if (linkedDecisions.length) {
-        healthSections.push(
+        raidSections.push(
           '<div class="panel-section">' +
             '<div class="panel-section-title">Governance Decisions <span class="risk-count">' + linkedDecisions.length + '</span></div>' +
             linkedDecisions.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(d =>
@@ -18311,7 +18418,7 @@ const DetailPanel = {
       });
       if (linkedActions.length) {
         const todayStr = new Date().toISOString().split('T')[0];
-        healthSections.push(
+        raidSections.push(
           '<div class="panel-section">' +
             '<div class="panel-section-title">Meeting Actions <span class="risk-count">' + linkedActions.length + '</span></div>' +
             linkedActions.map(a => {
@@ -18332,9 +18439,9 @@ const DetailPanel = {
       }
     })();
 
-    // ===== SETUP tab — once-off configuration =====
-    const setupSections = [];
-    setupSections.push(
+    // Setup/Health tabs collapsed into the 4-tab IA. Each push targets the
+    // tab from §3.13 migration map.
+    scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Identity</div>' +
         '<div class="field-grid">' +
@@ -18357,7 +18464,7 @@ const DetailPanel = {
         '</div>' +
       '</div>'
     );
-    setupSections.push(
+    scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Prioritisation</div>' +
         '<div class="field-grid">' +
@@ -18401,7 +18508,7 @@ const DetailPanel = {
         })() +
       '</div>'
     );
-    setupSections.push((function() {
+    deliverySections.push((function() {
       const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: [] };
       if (dc.include_req === undefined) dc.include_req = true;
       if (dc.include_uat === undefined) dc.include_uat = true;
@@ -18449,34 +18556,34 @@ const DetailPanel = {
         '</div>' +
       '</div>';
     })());
-    setupSections.push(
+    deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Dependencies</div>' +
         '<div id="depList">' + this.renderDependencies(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addDependency()">+ Add Dependency</button>' +
       '</div>'
     );
-    setupSections.push(
+    deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
         '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
       '</div>'
     );
-    setupSections.push(
+    scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy linkage</div>' +
         this.renderStrategyEditFields(p) +
       '</div>'
     );
-    setupSections.push(
+    scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits || []).length || 0) + '</span></div>' +
         '<div id="benefitListInner">' + this.renderBenefits(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
       '</div>'
     );
-    setupSections.push(
+    scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Success criteria <span class="risk-count" id="successCriteriaCount">' + ((p.success_criteria || []).length || 0) + '</span></div>' +
         '<div id="successCriteriaListInner">' + this.renderSuccessCriteria(p) + '</div>' +
@@ -18484,8 +18591,7 @@ const DetailPanel = {
       '</div>'
     );
 
-    // ===== DELIVERY tab — daily ops =====
-    const deliverySections = [];
+    // Delivery (daily ops) — Dates, Sprint window, Delivery Phases, Customer Milestones.
     deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Dates</div>' +
@@ -18586,7 +18692,7 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addCustomerMilestone()">+ Add milestone</button>' +
       '</div>'
     );
-    deliverySections.push(
+    raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Issues <span class="risk-count" id="issueCount">' + ((p.issues_register || []).length || 0) + '</span></div>' +
         '<div class="risk-list" id="issueList">' +
@@ -18596,24 +18702,29 @@ const DetailPanel = {
       '</div>'
     );
 
-    // Tab strip + three panels.
+    // Phase 3 / AC-3.1: 4-tab strip with role=tablist + per-tab aria-selected + aria-controls.
+    const tabPanelId = (id) => 'dpTabPanel-' + id;
     const tab = (id, label, hint) => {
       const active = this.activeTab === id;
-      return '<button type="button" class="dp-tab-trigger' + (active ? ' dp-tab-trigger-active' : '') + '" data-dp-tab-trigger="' + id + '" onclick="DetailPanel.switchTab(\'' + id + '\')" title="' + Dashboard.esc(hint) + '">' + Dashboard.esc(label) + '</button>';
+      return '<button type="button" role="tab" id="dpTabTrigger-' + id + '" class="dp-tab-trigger' + (active ? ' dp-tab-trigger-active' : '') + '" ' +
+        'data-dp-tab-trigger="' + id + '" aria-selected="' + (active ? 'true' : 'false') + '" aria-controls="' + tabPanelId(id) + '" tabindex="' + (active ? '0' : '-1') + '" ' +
+        'onclick="DetailPanel.switchTab(\'' + id + '\')" title="' + Dashboard.esc(hint) + '">' + Dashboard.esc(label) + '</button>';
     };
     const tabsStrip =
       '<div class="dp-tabs" role="tablist" aria-label="Project detail sections">' +
-        tab('setup', 'Setup', 'Once-off configuration: identity, classification, plan, structure') +
-        tab('health', 'Health', 'Weekly review surface: RAG, status, EVM, top risks, recent activity') +
-        tab('delivery', 'Delivery', 'Daily ops: phase points, sprint allocation, issues') +
+        tab('overview', this.TAB_LABELS.overview, 'Read-mostly: what is this project right now?') +
+        tab('delivery', this.TAB_LABELS.delivery, 'How are we executing? Daily ops surface.') +
+        tab('scope', this.TAB_LABELS.scope, 'What are we delivering and why?') +
+        tab('raid', this.TAB_LABELS.raid, 'Risks · Assumptions · Issues · Decisions') +
       '</div>';
     const panelDiv = (id, sectionsHtml) =>
-      '<div class="dp-tab-panel' + (this.activeTab === id ? ' dp-tab-active' : '') + '" data-dp-tab="' + id + '" role="tabpanel" aria-hidden="' + (this.activeTab === id ? 'false' : 'true') + '">' + sectionsHtml + '</div>';
+      '<div class="dp-tab-panel' + (this.activeTab === id ? ' dp-tab-active' : '') + '" id="' + tabPanelId(id) + '" data-dp-tab="' + id + '" role="tabpanel" aria-labelledby="dpTabTrigger-' + id + '" aria-hidden="' + (this.activeTab === id ? 'false' : 'true') + '">' + sectionsHtml + '</div>';
 
     const html = headerHtml + tabsStrip +
-      panelDiv('setup', setupSections.join('')) +
-      panelDiv('health', healthSections.join('')) +
+      panelDiv('overview', overviewSections.join('')) +
       panelDiv('delivery', deliverySections.join('')) +
+      panelDiv('scope', scopeSections.join('')) +
+      panelDiv('raid', raidSections.join('')) +
       this.renderAuditLog(p.id);
 
     document.getElementById('panelBody').innerHTML = html;
@@ -18729,6 +18840,20 @@ const DetailPanel = {
     // sprint context (current sprint, committed/completed SP, manager, target
     // date). Row 2 collapses to a single chip on <540 px via a <details>
     // element so the tab strip below doesn't get pushed off-screen.
+    // Phase 4 / AC-4.1: readiness chip — sources App.computeReadiness(p).
+    // Format: "Ready: backlog ✓ · planning ✗ · steerco ✗". Tooltip lists missing fields.
+    let readinessLabel = '';
+    if (typeof App.computeReadiness === 'function') {
+      const r = App.computeReadiness(p) || {};
+      const mark = (ok) => ok ? '✓' : '✗';
+      const tip = r.missing && r.missing.length
+        ? 'Missing: ' + r.missing.join(', ')
+        : 'All readiness gates met';
+      readinessLabel = '<span class="psm-chip dp-readiness-chip" title="' + esc(tip) + '" style="background:transparent;padding:0;color:var(--text-muted)">' +
+        'Ready: backlog <strong style="color:var(--text-dark)">' + mark(r.backlog) + '</strong> · ' +
+        'planning <strong style="color:var(--text-dark)">' + mark(r.planning) + '</strong> · ' +
+        'steerco <strong style="color:var(--text-dark)">' + mark(r.steerco) + '</strong></span>';
+    }
     const row1Parts = [
       '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>',
       '<span class="psm-chip">' + esc(p.id) + '</span>',
@@ -18738,6 +18863,7 @@ const DetailPanel = {
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_resourcing) + '" style="background:' + ragColor(p.rag_resourcing) + '"></span>' +
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" style="background:' + ragColor(p.rag_scope) + '"></span>' +
       '</span>',
+      readinessLabel,
       reviewedLabel,
       updatedLabel
     ].filter(Boolean);
@@ -20401,10 +20527,11 @@ const DetailPanel = {
   quickAdd(templateId) {
     if (!App.data) return;
 
-    // D6: no templateId → always open the creation wizard (template pick + timeline mode).
-    // The wizard collects name, template, size, and either a priority slot or manual dates.
+    // D6 + Phase 4: no templateId → open the 3-step create wizard. Step 1 is
+    // mandatory (name + customer + size); Steps 2/3 are optional with a single
+    // "Add details later →" shortcut.
     if (templateId === undefined) {
-      this._openQuickAddWizard();
+      this._openCreateWizard();
       return;
     }
 
@@ -20761,6 +20888,363 @@ const DetailPanel = {
       '</div>';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
+  },
+
+  // Phase 4 / AC-4.1 – AC-4.4: 3-step create wizard. Step 1 (name + customer +
+  // size) is mandatory; Steps 2/3 are optional and offer per-field "Add later"
+  // affordances. Template selection in Step 2 auto-fills MoSCoW / phase flow /
+  // governance forum / strategy linkage with an explicit "Suggested" label.
+  _cwState: null,
+  _openCreateWizard() {
+    const existing = document.getElementById('createWizard');
+    if (existing) existing.remove();
+
+    this._cwState = { step: 1, skippedFields: {}, suggestedFields: {} };
+
+    const templates = App.data.project_templates || [];
+    const defaultCust = App.activeCustomer || App.getCustomers()[0] || '';
+    const customers = App.getCustomers() || [];
+
+    const custOpts = customers.map(c => '<option value="' + Dashboard.esc(c) + '"' + (c === defaultCust ? ' selected' : '') + '>' + Dashboard.esc(c) + '</option>').join('');
+    const tplOpts = '<option value="">— No template —</option>' +
+      templates.map(t => '<option value="' + Dashboard.esc(t.id) + '">' + Dashboard.esc(t.name) + '</option>').join('');
+    const lifeOpts = App.LIFECYCLE_STAGES.map(s => '<option value="' + Dashboard.esc(s) + '"' + (s === App.LIFECYCLE_STAGE_DEFAULT ? ' selected' : '') + '>' + Dashboard.esc(s) + '</option>').join('');
+    const moscowOpts = ['', 'Must', 'Should', 'Could', 'Won’t'].map(m => '<option value="' + Dashboard.esc(m) + '">' + (m || 'unranked') + '</option>').join('');
+    const forumOpts = '<option value="">— None —</option>' +
+      (App.data.governance_forums || []).filter(f => f.customer === defaultCust).map(f =>
+        '<option value="' + Dashboard.esc(f.name) + '">' + Dashboard.esc(f.name) + '</option>'
+      ).join('');
+
+    const skipBtn = (field) =>
+      '<button type="button" class="wiz-skip-field" data-wiz-skip="' + field + '" onclick="DetailPanel._toggleWizardSkip(\'' + field + '\')" title="Add later">Add later</button>';
+    const suggestedLabel = (field) =>
+      '<span class="wiz-suggested-label" data-wiz-suggested="' + field + '" style="display:none;font-size:10px;color:var(--accent-violet);font-weight:600;margin-left:6px">Suggested</span>';
+
+    const overlay = document.createElement('div');
+    overlay.id = 'createWizard';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'cwTitle');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
+
+    const stepPill = (n, label, active) =>
+      '<span class="wiz-step" data-wiz-step-pill="' + n + '" style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:' + (active ? 'rgba(59,130,246,0.15)' : '#f1f5f9') + ';color:' + (active ? 'var(--accent-blue)' : 'var(--text-muted)') + '">' + n + '. ' + Dashboard.esc(label) + '</span>';
+
+    overlay.innerHTML =
+      '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:640px;width:100%;max-height:90vh;overflow:auto;color:var(--text-dark)">' +
+        '<div style="padding:16px 20px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+          '<div>' +
+            '<h3 id="cwTitle" style="margin:0;font-size:15px;font-weight:700">New project</h3>' +
+            '<div style="display:flex;gap:6px;margin-top:8px" class="wiz-step-indicator">' +
+              stepPill(1, 'Identify', true) +
+              stepPill(2, 'Scope & value', false) +
+              stepPill(3, 'Delivery shape', false) +
+            '</div>' +
+          '</div>' +
+          '<button onclick="DetailPanel._closeCreateWizard()" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)" aria-label="Close">&times;</button>' +
+        '</div>' +
+
+        '<div class="wiz-body" style="padding:16px 20px">' +
+
+          // ===== Step 1 — Identify (mandatory) =====
+          '<div data-wiz-step="1" class="wiz-step-content">' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mandatory fields. Pick "Add details later →" to skip Steps 2 + 3 and finish now.</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+              '<label style="font-size:11px;font-weight:600">Name *<br><input type="text" id="cwName" placeholder="New project name" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              '<label style="font-size:11px;font-weight:600">Customer *<br><select id="cwCustomer" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
+              '<label style="font-size:11px;font-weight:600">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              '<label style="font-size:11px;font-weight:600">Lifecycle stage<br><select id="cwLifecycle" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + lifeOpts + '</select></label>' +
+            '</div>' +
+          '</div>' +
+
+          // ===== Step 2 — Scope & value (skippable) =====
+          '<div data-wiz-step="2" class="wiz-step-content" style="display:none">' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">All fields optional. Pick a template to auto-fill MoSCoW, phase flow, governance forum, and strategy linkage as <strong>Suggested</strong>.</div>' +
+            '<div class="wiz-field-row" data-wiz-field="template" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Template' + suggestedLabel('template') + '<br><select id="cwTemplate" onchange="DetailPanel._applyTemplateSuggestions(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
+              skipBtn('template') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="moscow" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">MoSCoW' + suggestedLabel('moscow') + '<br><select id="cwMoscow" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + moscowOpts + '</select></label>' +
+              skipBtn('moscow') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="sponsor" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Sponsor' + suggestedLabel('sponsor') + '<br><input type="text" id="cwSponsor" placeholder="Sponsor name" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              skipBtn('sponsor') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="target_date" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Target date' + suggestedLabel('target_date') + '<br><input type="date" id="cwTargetDate" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              skipBtn('target_date') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="strategy_link" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Strategy linkage' + suggestedLabel('strategy_link') + '<br><input type="text" id="cwStrategyLink" placeholder="Metric / Objective IDs" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              skipBtn('strategy_link') +
+            '</div>' +
+          '</div>' +
+
+          // ===== Step 3 — Delivery shape (skippable) =====
+          '<div data-wiz-step="3" class="wiz-step-content" style="display:none">' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">All fields optional. Defaults applied to omitted fields.</div>' +
+            '<div class="wiz-field-row" data-wiz-field="data_sourcing" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Data sourcing' + suggestedLabel('data_sourcing') + '<br><select id="cwDataSourcing" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+                ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '">' + v + '</option>').join('') +
+              '</select></label>' +
+              skipBtn('data_sourcing') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="phase_flow" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Phase flow' + suggestedLabel('phase_flow') + '<br><input type="text" id="cwPhaseFlow" placeholder="e.g. Requirements → Data Engineering → Tableau → UAT" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              skipBtn('phase_flow') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="hard_deadline" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Hard deadline' + suggestedLabel('hard_deadline') + '<br><input type="date" id="cwHardDeadline" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              skipBtn('hard_deadline') +
+            '</div>' +
+            '<div class="wiz-field-row" data-wiz-field="governance_forum" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
+              '<label style="flex:1;font-size:11px;font-weight:600">Governance forum' + suggestedLabel('governance_forum') + '<br><select id="cwGovernanceForum" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + forumOpts + '</select></label>' +
+              skipBtn('governance_forum') +
+            '</div>' +
+          '</div>' +
+
+        '</div>' +
+
+        '<div class="wiz-footer" style="padding:14px 20px;border-top:1px solid var(--border-light);display:flex;justify-content:space-between;gap:8px">' +
+          '<button id="cwPrev" type="button" class="btn btn-ghost btn-sm" onclick="DetailPanel._wizardPrev()" style="visibility:hidden">&larr; Back</button>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+            '<button id="cwAddLater" type="button" class="btn btn-outline btn-sm wiz-add-later" onclick="DetailPanel._addDetailsLater()" title="Create now with just Step 1; finish details on the project page">Add details later &rarr;</button>' +
+            '<button id="cwNext" type="button" class="btn btn-primary btn-sm" onclick="DetailPanel._wizardNext()">Next &rarr;</button>' +
+            '<button id="cwCreate" type="button" class="btn btn-primary btn-sm" onclick="DetailPanel._confirmCreateWizard()" style="display:none">Create project</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) this._closeCreateWizard(); });
+    document.body.appendChild(overlay);
+    setTimeout(() => { const el = document.getElementById('cwName'); if (el) el.focus(); }, 30);
+  },
+
+  _closeCreateWizard() {
+    const o = document.getElementById('createWizard');
+    if (o) o.remove();
+    this._cwState = null;
+  },
+
+  // Move forward through the steps. Validates Step 1 before advancing.
+  _wizardNext() {
+    if (!this._cwState) return;
+    if (this._cwState.step === 1) {
+      const name = (document.getElementById('cwName') || {}).value || '';
+      const cust = (document.getElementById('cwCustomer') || {}).value || '';
+      const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
+      if (!name.trim()) { App.toast('Project name is required', 'error'); return; }
+      if (!cust) { App.toast('Customer is required', 'error'); return; }
+      if (size <= 0) { App.toast('Total size must be greater than zero', 'error'); return; }
+    }
+    if (this._cwState.step >= 3) return;
+    this._cwState.step += 1;
+    this._showWizardStep(this._cwState.step);
+  },
+
+  _wizardPrev() {
+    if (!this._cwState || this._cwState.step <= 1) return;
+    this._cwState.step -= 1;
+    this._showWizardStep(this._cwState.step);
+  },
+
+  _showWizardStep(n) {
+    const root = document.getElementById('createWizard');
+    if (!root) return;
+    root.querySelectorAll('[data-wiz-step]').forEach(el => {
+      el.style.display = (el.dataset.wizStep === String(n)) ? '' : 'none';
+    });
+    root.querySelectorAll('[data-wiz-step-pill]').forEach(el => {
+      const active = el.dataset.wizStepPill === String(n);
+      el.style.background = active ? 'rgba(59,130,246,0.15)' : '#f1f5f9';
+      el.style.color = active ? 'var(--accent-blue)' : 'var(--text-muted)';
+    });
+    const prev = document.getElementById('cwPrev');
+    const next = document.getElementById('cwNext');
+    const addLater = document.getElementById('cwAddLater');
+    const create = document.getElementById('cwCreate');
+    if (prev) prev.style.visibility = n === 1 ? 'hidden' : 'visible';
+    if (addLater) addLater.style.display = n === 1 ? '' : 'none';
+    if (n === 3) {
+      if (next) next.style.display = 'none';
+      if (create) create.style.display = '';
+    } else {
+      if (next) next.style.display = '';
+      if (create) create.style.display = 'none';
+    }
+  },
+
+  // Phase 4 / AC-4.4: per-field skip toggle. Greys the field's inputs and
+  // records the field as skipped so the final create call honours the omission.
+  _toggleWizardSkip(field) {
+    if (!this._cwState) return;
+    const row = document.querySelector('#createWizard [data-wiz-field="' + field + '"]');
+    if (!row) return;
+    const skipped = !this._cwState.skippedFields[field];
+    this._cwState.skippedFields[field] = skipped;
+    row.querySelectorAll('input, select, textarea').forEach(el => {
+      el.disabled = skipped;
+      el.style.opacity = skipped ? '0.45' : '';
+    });
+    const btn = row.querySelector('[data-wiz-skip]');
+    if (btn) btn.textContent = skipped ? 'Add it' : 'Add later';
+  },
+
+  // Phase 4 / AC-4.3: applying a template populates downstream fields with
+  // explicit Suggested labels. Each filled field shows the badge until the user
+  // edits it manually.
+  _applyTemplateSuggestions(tplId) {
+    if (!this._cwState) return;
+    const templates = App.data.project_templates || [];
+    const tpl = tplId ? templates.find(t => t.id === tplId) : null;
+    const showSuggested = (field, show) => {
+      const lbl = document.querySelector('[data-wiz-suggested="' + field + '"]');
+      if (lbl) lbl.style.display = show ? '' : 'none';
+      this._cwState.suggestedFields[field] = !!show;
+    };
+    const fields = ['moscow', 'phase_flow', 'governance_forum', 'strategy_link'];
+    if (!tpl) {
+      fields.forEach(f => showSuggested(f, false));
+      return;
+    }
+    const moscow = document.getElementById('cwMoscow');
+    if (moscow && tpl.moscow) { moscow.value = tpl.moscow; showSuggested('moscow', true); }
+    const phaseFlow = document.getElementById('cwPhaseFlow');
+    if (phaseFlow && tpl.delivery_config && Array.isArray(tpl.delivery_config.phase_order)) {
+      phaseFlow.value = tpl.delivery_config.phase_order.join(' → ');
+      showSuggested('phase_flow', true);
+    }
+    const forum = document.getElementById('cwGovernanceForum');
+    if (forum && tpl.governance_forum) {
+      const opt = Array.from(forum.options).find(o => o.value === tpl.governance_forum);
+      if (!opt) {
+        const o = document.createElement('option');
+        o.value = tpl.governance_forum;
+        o.textContent = tpl.governance_forum;
+        forum.appendChild(o);
+      }
+      forum.value = tpl.governance_forum;
+      showSuggested('governance_forum', true);
+    }
+    const strat = document.getElementById('cwStrategyLink');
+    if (strat && (tpl.metric_ids || tpl.objective_ids || tpl.persona_ids)) {
+      const ids = [].concat(tpl.metric_ids || [], tpl.objective_ids || [], tpl.persona_ids || []);
+      strat.value = ids.join(', ');
+      showSuggested('strategy_link', true);
+    }
+  },
+
+  // Phase 4 / AC-4.1 + AC-4.2: "Add details later →" shortcut. Persists Step 1
+  // and skips Steps 2/3. The created project carries readiness gaps on the
+  // sticky-header chip; the user finishes setup inline on the Overview tab.
+  _addDetailsLater() {
+    if (!this._cwState) return;
+    this._cwState.step = 1;
+    this._buildAndCreateProject({ onlyStep1: true });
+  },
+
+  _confirmCreateWizard() {
+    this._buildAndCreateProject({ onlyStep1: false });
+  },
+
+  _buildAndCreateProject({ onlyStep1 }) {
+    if (!this._cwState) return;
+    const name = (document.getElementById('cwName') || {}).value || '';
+    const cust = (document.getElementById('cwCustomer') || {}).value || '';
+    const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
+    const lifecycle = (document.getElementById('cwLifecycle') || {}).value || App.LIFECYCLE_STAGE_DEFAULT;
+    if (!name.trim() || !cust || size <= 0) {
+      App.toast('Step 1 fields are mandatory: name, customer, size', 'error');
+      this._cwState.step = 1;
+      this._showWizardStep(1);
+      return;
+    }
+
+    const skipped = this._cwState.skippedFields || {};
+    const val = (id, field) => (!onlyStep1 && !skipped[field]) ? (document.getElementById(id) || {}).value || '' : '';
+    const tplId = val('cwTemplate', 'template');
+    const moscow = val('cwMoscow', 'moscow');
+    const sponsor = val('cwSponsor', 'sponsor');
+    const targetDate = val('cwTargetDate', 'target_date');
+    const strategyLink = val('cwStrategyLink', 'strategy_link');
+    const hardDeadline = val('cwHardDeadline', 'hard_deadline');
+    const governanceForum = val('cwGovernanceForum', 'governance_forum');
+    const dataSourcing = val('cwDataSourcing', 'data_sourcing') || 'Internal';
+
+    const templates = App.data.project_templates || [];
+    const tpl = tplId ? templates.find(t => t.id === tplId) : null;
+    const id = App.generateId(cust);
+
+    const newProject = {
+      id, name: name.trim(), customer: cust,
+      ownership: 'Lead & Delivery',
+      category: (tpl && tpl.category) || 'General',
+      lifecycle_stage: lifecycle,
+      visibility: 'Internal',
+      sponsor: sponsor || '',
+      manager: '',
+      teams_involved: [],
+      moscow: moscow || null,
+      assumptions: '',
+      rag_schedule: null, rag_resourcing: null, rag_scope: null,
+      rag_manual_override: {},
+      size_requirements: 0, size_tableau: 0, size_engineering: 0, size_data_science: 0, size_uat_adoption: 0, size_total: 0,
+      start_date: null, target_date: targetDate || null,
+      hard_deadline: hardDeadline || null, actual_date: null,
+      baseline_start: null, baseline_end: null,
+      current_sprint: null, target_sprint: null,
+      priority: null,
+      status: 'Not Started',
+      governance_forum: governanceForum || '',
+      dependencies: [],
+      delivery_config: tpl && tpl.delivery_config
+        ? JSON.parse(JSON.stringify(tpl.delivery_config))
+        : { data_sourcing_type: dataSourcing, include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: ['Requirements', 'Data Engineering', 'Tableau', 'UAT'] },
+      notes: '', last_updated: new Date().toISOString(), devops_link: '',
+      risks_register: [], issues_register: [],
+      data_sourcing: { type: dataSourcing, team: '', uat_release_date: null, go_live_date: null },
+      skill_splits: {},
+      stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
+    };
+
+    // Strategy link parse — accept comma-separated metric/objective/persona ids.
+    if (strategyLink) {
+      const ids = strategyLink.split(',').map(s => s.trim()).filter(Boolean);
+      newProject.metric_ids = ids.filter(s => /^metric/i.test(s));
+      newProject.objective_ids = ids.filter(s => /^obj/i.test(s));
+      newProject.persona_ids = ids.filter(s => /^per/i.test(s));
+    }
+
+    // Apply template sizing if provided; otherwise split the manual size evenly across enabled phases.
+    if (tpl) {
+      if (tpl.size_requirements) newProject.size_requirements = tpl.size_requirements;
+      if (tpl.size_tableau) newProject.size_tableau = tpl.size_tableau;
+      if (tpl.size_engineering) newProject.size_engineering = tpl.size_engineering;
+      if (tpl.size_data_science) newProject.size_data_science = tpl.size_data_science;
+      if (tpl.size_uat_adoption) newProject.size_uat_adoption = tpl.size_uat_adoption;
+    } else {
+      const phases = (newProject.delivery_config.phase_order || []).slice();
+      const psm = Solver.PHASE_SKILL_MAP;
+      const phaseSkills = phases.map(ph => psm[ph]).filter(Boolean);
+      const even = phaseSkills.length ? Math.floor(size / phaseSkills.length) : 0;
+      let leftover = size - even * phaseSkills.length;
+      phaseSkills.forEach(sk => { newProject[sk] = even + (leftover > 0 ? 1 : 0); if (leftover > 0) leftover--; });
+    }
+    newProject.size_total = (newProject.size_requirements || 0) + (newProject.size_tableau || 0) + (newProject.size_engineering || 0) + (newProject.size_data_science || 0) + (newProject.size_uat_adoption || 0);
+    if (newProject.size_total === 0) newProject.size_total = size;
+
+    App.pushUndo('Create project');
+    newProject.priority = App.data.projects.filter(pp => pp.customer === cust).length + 1;
+
+    this._closeCreateWizard();
+    App.addProject(newProject);
+    if (typeof Dashboard !== 'undefined') {
+      try { Dashboard.populateFilters(); Dashboard.applyFilters(); Dashboard.renderSummaryCards(); } catch (_e) {}
+    }
+    // Phase 4 / AC-4.1: land on Overview with the readiness chip visible.
+    this.open(newProject.id, { tab: 'overview' });
   },
 
   _confirmWizard() {
