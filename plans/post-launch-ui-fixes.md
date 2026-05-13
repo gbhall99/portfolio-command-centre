@@ -473,7 +473,7 @@ After items 19 + 20 below land, the "Risks" inner tab is removed entirely (it mo
 - So Strategy lives in Portfolio; Metrics + Personas live in Governance. The three are functionally related (Strategy = objectives + cascade; Metrics = measurement; Personas = roles & people) but visually scattered.
 
 **Fix:**
-- **Group name: "Strategy & People"** (recommended) — captures Strategy (objectives), Metrics (measurement), Personas (people / roles). Alternative considered: "Strategy" (single sub-header with the three as child items) — simpler but less expressive.
+- **Group name: "Business Context"** — locked 2026-05-13 (user confirmed). Captures Strategy (objectives), Metrics (measurement), and Personas (people / roles).
 - **Sidebar restructure:**
   ```
   Portfolio
@@ -489,7 +489,7 @@ After items 19 + 20 below land, the "Risks" inner tab is removed entirely (it mo
     My Actions
 
   Governance
-    Strategy & People
+    Business Context
       Strategy       (existing strategy view)
       Metrics        (existing metrics view)
       Personas       (existing personas view)
@@ -498,19 +498,19 @@ After items 19 + 20 below land, the "Risks" inner tab is removed entirely (it mo
   Activity
   System Settings
   ```
-- "Strategy & People" is a **collapsible sub-group** inside the Governance section, not a separate view route. The three child nav items remain as separate routes (`/strategy`, `/metrics`, `/personas`) — no view consolidation, just visual grouping under a sub-header.
-- Strategy nav item moves from Portfolio section to under "Strategy & People".
+- "Business Context" is a **collapsible sub-group** inside the Governance section, not a separate view route. The three child nav items remain as separate routes (`/strategy`, `/metrics`, `/personas`) — no view consolidation, just visual grouping under a sub-header.
+- Strategy nav item moves from Portfolio section to under "Business Context".
 - The sub-group header is a non-clickable label (same styling as the current `.nav-section-label`, indented one level).
 
 **AC:**
 - **AC-19.1** Strategy nav item no longer appears under Portfolio section.
-- **AC-19.2** Strategy, Metrics, and Personas nav items all appear in the Governance section under a "Strategy & People" sub-header (or whichever name finalises).
+- **AC-19.2** Strategy, Metrics, and Personas nav items all appear in the Governance section under a "Business Context" sub-header.
 - **AC-19.3** Clicking each of the three still navigates to its existing view (no routing changes).
 - **AC-19.4** Alt-key shortcut bindings preserved (Alt-1..Alt-6).
 
 **Files:** `index.html` — sidebar HTML at lines 2986–3027; consider a small CSS tweak for the indented sub-header.
 
-**Open question:** Confirm the group name. Options: "Strategy & People", "Strategy", "Business Context", or your suggestion. Default applied below: **Strategy & People**.
+**Group name confirmed:** Business Context (2026-05-13).
 
 ---
 
@@ -547,7 +547,9 @@ After items 19 + 20 below land, the "Risks" inner tab is removed entirely (it mo
 
 ---
 
-## 21. Tinder-style backlog refinement UX
+## 21. Tinder-style backlog refinement UX — **DEFERRED** (2026-05-13)
+
+**Status:** Deferred per user decision 2026-05-13. The design below is preserved for when it comes back into scope. Slot I drops out of the immediate build sequence.
 
 **User wording:** *"Plan out a much more interactive and user friendly backlog process that actually gets updates made and refined in such an easy way — think a tinder swipe left/right kind of UI that promotes decision making, updates and enhancements to the backlog."*
 
@@ -644,10 +646,10 @@ Each row independently shippable. Tests written alongside.
 | **E** | 11 | "feat(governance): require project scope on every action + decision" | medium | Has migration; gate via `enforceProjectScope` setting flag, default ON |
 | **F** | 14 | "feat(team): country-scoped holidays + member country attribute" | medium | Schema + capacity math — test against existing solver fixtures |
 | **G** | 15, 16, 17 | "feat(gantt): milestone diamonds + unallocated viz + label + status" | medium | Three Gantt-render changes; one combined visual-snapshot test |
-| **H** | 18, 19, 20 | "feat(nav): RAID top-level view + Strategy/Metrics/Personas grouped under Governance + rename Meetings" | medium | RAID is the biggest piece — new cross-portfolio view + 4 aggregators. Nav restructure is pure HTML. Land together so sidebar isn't reorganised twice. |
-| **I** | 21 | "feat(backlog): Refinement Deck (Tinder-style swipe UX)" | medium-high | New significant UI surface; isolated from other slots so it can ship later without blocking. |
+| **H** | 18, 19, 20 | "feat(nav): RAID top-level view + Business Context grouping + rename Meetings" | medium | RAID is the biggest piece — new cross-portfolio view + 4 aggregators. Nav restructure is pure HTML. Land together so sidebar isn't reorganised twice. |
+| ~~I~~ | ~~21~~ | ~~Refinement Deck~~ | — | **Deferred 2026-05-13** — design preserved in §21 for future revival. |
 
-**Estimated test deltas:** ~75 new AC tests across the 9 slots (Slots H + I add ~35 between them). Existing 548 unit + 56 e2e tests must stay green.
+**Estimated test deltas:** ~60 new AC tests across the 8 active slots (A–H). Existing 548 unit + 56 e2e tests must stay green.
 
 ---
 
@@ -662,8 +664,7 @@ Each row independently shippable. Tests written alongside.
 | Slot G #17 fix changes the visual look of every Gantt bar | medium | Take a screenshot snapshot of the current Gantt against `portfolio-data.json` before edit; manual sign-off on the new render before merging Slot G. |
 | Slot H #20 RAID view aggregator misses rows when `assumptions_register` / `issues_register` / `decisions_register` schemas drift across projects | medium | Use defensive `Array.isArray(p.X || [])` reads; write a smoke test against the demo fixture asserting total-row counts per category equal `Σ project rows`. |
 | Slot H #19 nav restructure breaks deep links / saved bookmarks if URL hash changed | low | View IDs (`metrics`, `personas`, `strategy`) preserved; only visual grouping changes. No hash change. |
-| Slot I #21 swipe gesture conflicts with browser-native pull-to-refresh on mobile | low | Overlay sets `touch-action: none` on the card stack; existing app is laptop-first so mobile is best-effort. |
-| Slot I #21 immediate-promote on swipe right surprises users who expected batch-confirm | medium | Undo is one click away; end-of-deck summary recaps. If the "Open question" in item 21 flips to batch-confirm, the implementation supports both with a settings flag. |
+| ~~Slot I risks~~ | — | **Removed 2026-05-13** — Slot I deferred; risks moot until revisited. |
 
 ---
 
@@ -677,11 +678,12 @@ All 5 open questions answered by the user:
 4. **Item 14 (Country):** Locked country list = `UK / US / India / Netherlands / Canada / Malaysia`. India has sub-locations: Hyderabad, Bangalore. *(Plan updated above with the full `LOCATIONS` constant.)*
 5. **Item 17 (Status visualization):** Approved — diagonal stripe for in-progress, inset darker border for complete, flat for not-started.
 
-## Open questions (added 2026-05-13, second pass)
+## Decisions resolved (second pass, 2026-05-13)
 
-Items 18–21 were added later — two of them need confirmation before they ship:
+6. **Item 19 (Business Context grouping):** Name **locked = "Business Context"**.
+7. **Item 21 (Refinement Deck):** **Deferred** — design preserved for future revival; Slot I drops out of the build sequence.
 
-6. **Item 19 (Strategy/Metrics/Personas grouping):** Proposed sub-header name = **"Strategy & People"**. Alternatives: "Strategy", "Business Context", or your suggestion. Confirm.
-7. **Item 21 (Refinement Deck — swipe right):** Default = **immediate-promote** (Tinder mental model; undo available). Alternative: batch-confirm at session end. Confirm.
+All open questions answered. Plan covers 20 active items across **8 slots (A–H)** plus 1 deferred item (#21).
 
-Plan ready to execute. Slots A–G are unblocked; Slot H needs answer to Q6; Slot I needs answer to Q7.
+Slot order recommended for execution:
+**A → B → C → D → E → F → G → H** — but each slot is independently shippable, so they can be reordered without breakage. Slot A (CSS-only quick wins) is the lowest-risk starting point.
