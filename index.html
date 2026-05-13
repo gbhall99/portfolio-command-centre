@@ -17951,6 +17951,335 @@ const DetailPanel = {
     ).join('') + '</div>';
   },
 
+  // Phase 7 / AC-7.1 + AC-7.2 + AC-7.3: Gate reviews + Sponsor sign-off log.
+  // Gate names locked per §8 of the plan (2026-05-13).
+  GATE_NAMES: ['Discovery', 'Design', 'Build', 'UAT', 'Live', 'Hypercare'],
+  GATE_DECISIONS: ['Go', 'No-Go', 'Conditional'],
+  SPONSOR_SIGN_OFF_STATUSES: ['Approved', 'Conditional', 'Rejected'],
+
+  addGateReview(projectId, entry) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return null;
+    if (!Array.isArray(p.gate_reviews)) p.gate_reviews = [];
+    const gateName = entry && entry.gate_name;
+    if (this.GATE_NAMES.indexOf(gateName) === -1) {
+      if (App && App.toast) App.toast('Gate name must be one of: ' + this.GATE_NAMES.join(', '), 'error');
+      return null;
+    }
+    const id = (entry && entry.id) || 'gate-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const row = {
+      id,
+      gate_name: gateName,
+      planned_date: entry.planned_date || null,
+      actual_date: entry.actual_date || null,
+      decision: entry.decision || null,
+      sign_off_by: entry.sign_off_by || '',
+      evidence_link: entry.evidence_link || ''
+    };
+    p.gate_reviews.push(row);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return row;
+  },
+
+  removeGateReview(projectId, gateId) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p || !Array.isArray(p.gate_reviews)) return false;
+    const before = p.gate_reviews.length;
+    p.gate_reviews = p.gate_reviews.filter(g => g.id !== gateId);
+    if (p.gate_reviews.length === before) return false;
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return true;
+  },
+
+  // Phase 7 / AC-7.2: rollup for the Overview chip. last = max(actual_date where
+  // decision !== null); next = min(planned_date where actual_date is null).
+  computeGateRollup(p) {
+    if (!p || !Array.isArray(p.gate_reviews) || !p.gate_reviews.length) return { last: null, next: null };
+    let last = null;
+    let next = null;
+    p.gate_reviews.forEach(g => {
+      if (!g) return;
+      if (g.actual_date && g.decision) {
+        if (!last || (g.actual_date > last.actual_date)) last = g;
+      }
+      if (!g.actual_date && g.planned_date) {
+        if (!next || (g.planned_date < next.planned_date)) next = g;
+      }
+    });
+    return { last, next };
+  },
+
+  renderGateReviews(p) {
+    const gates = Array.isArray(p.gate_reviews) ? p.gate_reviews : [];
+    const esc = Dashboard.esc;
+    const namePicker = (cur, id) => '<select class="field-input dp-gate-name-select" data-gate-id="' + esc(id) + '" data-gate-field="gate_name" onchange="DetailPanel.onGateReviewChange(this)" style="font-size:11px">' +
+      this.GATE_NAMES.map(n => '<option value="' + n + '"' + (n === cur ? ' selected' : '') + '>' + n + '</option>').join('') +
+    '</select>';
+    const decPicker = (cur, id) => '<select class="field-input" data-gate-id="' + esc(id) + '" data-gate-field="decision" onchange="DetailPanel.onGateReviewChange(this)" style="font-size:11px">' +
+      ['', ...this.GATE_DECISIONS].map(d => '<option value="' + d + '"' + (d === (cur || '') ? ' selected' : '') + '>' + (d || '— pending —') + '</option>').join('') +
+    '</select>';
+    const rows = gates.length
+      ? gates.map(g => '<div class="dp-gate-row" data-gate-id="' + esc(g.id) + '" style="display:grid;grid-template-columns:120px 110px 110px 120px 1fr auto;gap:6px;align-items:center;font-size:11px;padding:4px 0;border-bottom:1px solid #f1f5f9">' +
+          namePicker(g.gate_name, g.id) +
+          '<input type="date" class="field-input" data-gate-id="' + esc(g.id) + '" data-gate-field="planned_date" value="' + esc(g.planned_date || '') + '" onchange="DetailPanel.onGateReviewChange(this)">' +
+          '<input type="date" class="field-input" data-gate-id="' + esc(g.id) + '" data-gate-field="actual_date" value="' + esc(g.actual_date || '') + '" onchange="DetailPanel.onGateReviewChange(this)">' +
+          decPicker(g.decision, g.id) +
+          '<input type="text" class="field-input" data-gate-id="' + esc(g.id) + '" data-gate-field="evidence_link" value="' + esc(g.evidence_link || '') + '" placeholder="Evidence link" onchange="DetailPanel.onGateReviewChange(this)">' +
+          '<button class="risk-remove" onclick="DetailPanel.removeGateReview(\'' + esc(p.id) + '\', \'' + esc(g.id) + '\');DetailPanel.renderBody(App.data.projects.find(x=>x.id===\'' + esc(p.id) + '\'))" title="Remove gate">×</button>' +
+        '</div>').join('')
+      : '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No gate reviews logged. <button class="risk-add-btn" onclick="DetailPanel._addEmptyGateReview()">+ Log first gate →</button></div>';
+    return rows + (gates.length ? '<button class="risk-add-btn" onclick="DetailPanel._addEmptyGateReview()">+ Add gate review</button>' : '');
+  },
+
+  _addEmptyGateReview() {
+    const projectId = this.currentId;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return;
+    this.addGateReview(projectId, { gate_name: 'Discovery', planned_date: null, decision: null });
+    this.renderBody(p);
+  },
+
+  onGateReviewChange(el) {
+    const gateId = el.dataset.gateId;
+    const field = el.dataset.gateField;
+    const p = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!p || !Array.isArray(p.gate_reviews)) return;
+    const g = p.gate_reviews.find(x => x.id === gateId);
+    if (!g) return;
+    g[field] = el.value || (field === 'planned_date' || field === 'actual_date' ? null : '');
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+  },
+
+  // Phase 7 / AC-7.3: Sponsor sign-off log. Stored under p.stakeholders with
+  // type='sponsor_sign_off' so it round-trips through JSON.{stringify,parse}.
+  addSponsorSignOff(projectId, entry) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return null;
+    if (!Array.isArray(p.stakeholders)) p.stakeholders = [];
+    const status = entry && entry.status;
+    if (this.SPONSOR_SIGN_OFF_STATUSES.indexOf(status) === -1) {
+      if (App && App.toast) App.toast('Status must be one of: ' + this.SPONSOR_SIGN_OFF_STATUSES.join(', '), 'error');
+      return null;
+    }
+    const row = {
+      id: (entry && entry.id) || 'so-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      type: 'sponsor_sign_off',
+      date: entry.date || new Date().toISOString().slice(0, 10),
+      scope_version: entry.scope_version || '',
+      sponsor: entry.sponsor || '',
+      status,
+      evidence_link: entry.evidence_link || ''
+    };
+    p.stakeholders.push(row);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return row;
+  },
+
+  renderSponsorSignOffLog(p) {
+    const rows = (Array.isArray(p.stakeholders) ? p.stakeholders : []).filter(s => s && s.type === 'sponsor_sign_off');
+    const esc = Dashboard.esc;
+    if (!rows.length) return '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No sponsor sign-offs logged.</div>';
+    return '<div class="dp-sponsor-signoff-log">' +
+      rows.map(r => '<div class="dp-sponsor-signoff-row" data-signoff-id="' + esc(r.id) + '" style="display:grid;grid-template-columns:100px 110px 1fr 110px;gap:6px;align-items:center;font-size:11px;padding:4px 0;border-bottom:1px solid #f1f5f9">' +
+        '<span>' + esc(r.date) + '</span>' +
+        '<span>' + esc(r.scope_version) + '</span>' +
+        '<span>' + esc(r.sponsor) + '</span>' +
+        '<span style="font-weight:600">' + esc(r.status) + '</span>' +
+      '</div>').join('') +
+    '</div>';
+  },
+
+  // Phase 5 / AC-5.2 + AC-5.3 + AC-5.4: shared reason-capture modal. Used by both
+  // re-prioritisation (WSJF / MoSCoW / priority) and scope-change (size_*) paths.
+  // On confirm: auto-logs a Decision tagged with `ctx.tag` and shows an undo
+  // toast that reverts BOTH the field change AND the auto-Decision. On cancel:
+  // reverts the field value to oldValue without logging.
+  PRIORITISATION_FIELDS: ['business_value', 'time_criticality', 'risk_reduction_opportunity', 'moscow', 'priority'],
+  _captureCtx: null,
+  _captureChangeReason(ctx) {
+    if (this._captureCtx) return;
+    this._captureCtx = ctx;
+    this._openReasonModal({
+      title: ctx.title || (ctx.tag === 'scope-change' ? 'Scope change reason' : 'Re-prioritisation reason'),
+      message: ctx.message || ('Why are you changing ' + ctx.field + '?')
+    });
+  },
+  _openReasonModal({ title, message }) {
+    const existing = document.getElementById('reasonModalOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'reasonModalOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:340;background:rgba(15,23,42,0.55);display:flex;align-items:center;justify-content:center';
+    const modal = document.createElement('div');
+    modal.id = 'reasonModal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'reasonModalTitle');
+    modal.style.cssText = 'background:var(--surface);border-radius:var(--radius-lg);padding:18px 22px;max-width:440px;width:100%;box-shadow:var(--shadow-lg)';
+    const ti = document.createElement('h3');
+    ti.id = 'reasonModalTitle';
+    ti.style.cssText = 'margin:0 0 8px;font-size:14px;font-weight:700';
+    ti.textContent = title;
+    const ms = document.createElement('p');
+    ms.style.cssText = 'margin:0 0 10px;font-size:12px;color:var(--text-dark-secondary)';
+    ms.textContent = message;
+    const inp = document.createElement('input');
+    inp.id = 'reasonInput';
+    inp.type = 'text';
+    inp.placeholder = 'One-line reason (required)';
+    inp.style.cssText = 'width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-bottom:12px';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-ghost btn-sm';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => this._cancelReasonModal());
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-primary btn-sm';
+    confirmBtn.textContent = 'Confirm';
+    confirmBtn.addEventListener('click', () => this._confirmReasonModal());
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    modal.appendChild(ti);
+    modal.appendChild(ms);
+    modal.appendChild(inp);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    setTimeout(() => { inp.focus(); }, 30);
+  },
+  _confirmReasonModal() {
+    const ctx = this._captureCtx;
+    if (!ctx) return;
+    const reasonEl = document.getElementById('reasonInput');
+    const reason = reasonEl ? (reasonEl.value || '').trim() : '';
+    if (!reason) {
+      if (App && App.toast) App.toast('Reason is required', 'error');
+      return;
+    }
+    const meta = ctx.tag === 'scope-change'
+      ? { delta: (Number(ctx.newValue) || 0) - (Number(ctx.oldValue) || 0), field: ctx.field }
+      : { field: ctx.field, from: ctx.oldValue, to: ctx.newValue };
+    const decision = this._autoLogDecision({
+      projectId: ctx.projectId,
+      tag: ctx.tag,
+      rationale: reason,
+      meta
+    });
+    const onUndo = () => {
+      this._removeDecision(ctx.projectId, decision && decision.id);
+      App.updateProject(ctx.projectId, ctx.field, ctx.oldValue);
+      if (ctx.el) ctx.el.value = ctx.oldValue == null ? '' : String(ctx.oldValue);
+    };
+    this._closeReasonModal();
+    if (typeof this.showUndoToast === 'function') {
+      this.showUndoToast(ctx.tag === 'scope-change' ? 'Scope change logged' : 'Re-prioritisation logged', onUndo);
+    }
+    return decision;
+  },
+  _cancelReasonModal() {
+    const ctx = this._captureCtx;
+    if (ctx) {
+      App.updateProject(ctx.projectId, ctx.field, ctx.oldValue);
+      if (ctx.el) ctx.el.value = ctx.oldValue == null ? '' : String(ctx.oldValue);
+    }
+    this._closeReasonModal();
+  },
+  _closeReasonModal() {
+    const o = document.getElementById('reasonModalOverlay');
+    if (o) o.remove();
+    this._captureCtx = null;
+  },
+  // Phase 5 / AC-5.2: append a Decision register entry tagged with the source.
+  _autoLogDecision({ projectId, tag, rationale, meta }) {
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return null;
+    if (!Array.isArray(p.decisions_register)) p.decisions_register = [];
+    const id = 'dec-auto-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const entry = {
+      id,
+      date: new Date().toISOString().slice(0, 10),
+      decision: '[' + tag + '] ' + rationale,
+      tag,
+      rationale,
+      meta: meta || {}
+    };
+    p.decisions_register.push(entry);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return entry;
+  },
+  _removeDecision(projectId, decisionId) {
+    if (!decisionId) return false;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p || !Array.isArray(p.decisions_register)) return false;
+    const before = p.decisions_register.length;
+    p.decisions_register = p.decisions_register.filter(d => d.id !== decisionId);
+    if (p.decisions_register.length === before) return false;
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    return true;
+  },
+  // Phase 5 / AC-5.1: inline quick-add risk from the Phase tracker. Pushes to
+  // risks_register and re-renders so the new row surfaces in RAID + Overview
+  // blockers strip without a page reload.
+  addPhaseTrackerRisk(description, opts) {
+    opts = opts || {};
+    const projectId = opts.projectId || this.currentId;
+    const p = App.data.projects.find(pr => pr.id === projectId);
+    if (!p) return null;
+    if (!Array.isArray(p.risks_register)) p.risks_register = [];
+    const id = 'risk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const risk = {
+      id,
+      description: String(description || '').trim(),
+      action: '',
+      owner: '',
+      resolution_date: null,
+      impact: opts.impact != null ? opts.impact : 4,
+      probability: opts.probability != null ? opts.probability : 4,
+      source: 'phase-tracker',
+      created_at: new Date().toISOString()
+    };
+    p.risks_register.push(risk);
+    p.last_updated = new Date().toISOString();
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    // Re-render full body so the new risk shows in RAID Risks AND the Overview
+    // blockers strip simultaneously.
+    if (this.currentId === projectId && typeof this.renderBody === 'function') {
+      this.renderBody(p);
+    }
+    return risk;
+  },
+
+  // Phase 5 / AC-5.1: open/close/submit handlers for the inline Phase tracker
+  // risk form. The form is rendered (display:none) by renderBody on Delivery.
+  _openPhaseTrackerRiskForm() {
+    const form = document.getElementById('phaseTrackerRiskForm');
+    if (!form) return;
+    form.style.display = 'flex';
+    const input = document.getElementById('phaseTrackerRiskInput');
+    if (input) { input.value = ''; setTimeout(() => input.focus(), 30); }
+  },
+  _closePhaseTrackerRiskForm() {
+    const form = document.getElementById('phaseTrackerRiskForm');
+    if (form) form.style.display = 'none';
+  },
+  _submitPhaseTrackerRisk() {
+    const input = document.getElementById('phaseTrackerRiskInput');
+    if (!input) return;
+    const v = (input.value || '').trim();
+    if (!v) { if (App && App.toast) App.toast('Describe the risk first', 'error'); return; }
+    this.addPhaseTrackerRisk(v);
+  },
+
   // H8: prompt for scope-change reason when total size changes by >20%.
   _scopeChangePromptActive: false,
   _promptScopeChangeReason(projectId, fieldChanged, oldTotal, newTotal) {
@@ -18305,6 +18634,8 @@ const DetailPanel = {
       '<div style="display:flex;gap:6px;margin-bottom:12px">' +
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.cloneProject()" title="Clone this project"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Clone Project</button>' +
         '<button class="btn btn-outline btn-sm" onclick="DetailPanel.saveAsTemplate()" title="Save delivery config as template"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save as Template</button>' +
+        // Phase 6 / AC-6.6: Open in Walkthrough — switches to the walkthrough overlay with this project pre-selected.
+        '<button class="btn btn-outline btn-sm dp-open-in-walkthrough" data-project-id="' + Dashboard.esc(p.id) + '" onclick="Overview.openInWalkthrough(\'' + Dashboard.esc(p.id) + '\')" title="Open in Walkthrough"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg> Open in Walkthrough</button>' +
       '</div>';
 
     // Phase 3 / AC-3.2: 4 tab section arrays. Health/Setup section bodies are
@@ -18348,6 +18679,50 @@ const DetailPanel = {
         this.renderStrategySection(p) +
       '</div>'
     );
+
+    // Phase 7 / AC-7.2: Last gate / Next gate chip on Overview. Sources from
+    // computeGateRollup. Renders both fields side-by-side; em-dash when no data.
+    overviewSections.push((function() {
+      const rollup = DetailPanel.computeGateRollup(p);
+      const lastTxt = rollup.last
+        ? rollup.last.gate_name + ' · ' + (rollup.last.actual_date || '') + (rollup.last.decision ? ' (' + rollup.last.decision + ')' : '')
+        : '—';
+      const nextTxt = rollup.next
+        ? rollup.next.gate_name + ' · ' + (rollup.next.planned_date || '')
+        : '—';
+      return '<div class="panel-section dp-gate-chip-strip" data-readonly="true">' +
+        '<div class="panel-section-title">Gates</div>' +
+        '<div style="display:flex;gap:14px;font-size:11px;color:var(--text-dark-secondary)">' +
+          '<span class="dp-gate-chip dp-gate-chip-last"><strong style="color:var(--text-dark)">Last gate:</strong> ' + Dashboard.esc(lastTxt) + '</span>' +
+          '<span class="dp-gate-chip dp-gate-chip-next"><strong style="color:var(--text-dark)">Next gate:</strong> ' + Dashboard.esc(nextTxt) + '</span>' +
+        '</div>' +
+      '</div>';
+    })());
+
+    // Phase 5 / AC-5.1: Blockers + Top-3 risks strip on Overview. Filters
+    // risks_register and issues_register for blocking/at-risk/red items so the
+    // new risk logged via the Phase tracker chip surfaces here without reload.
+    overviewSections.push((function() {
+      const risks = Array.isArray(p.risks_register) ? p.risks_register : [];
+      const blockers = risks.filter(r => {
+        if (!r) return false;
+        const score = (Number(r.impact) || 0) * (Number(r.probability) || 0);
+        return score >= 12 || r.status === 'blocking' || r.severity === 'red';
+      }).slice(0, 3);
+      const inner = blockers.length
+        ? '<ul class="dp-blockers-list" style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px">' +
+          blockers.map(r =>
+            '<li class="dp-blocker-item" data-risk-id="' + Dashboard.esc(r.id || '') + '" style="font-size:11px;display:flex;gap:8px;align-items:center">' +
+              '<span style="width:8px;height:8px;border-radius:50%;background:var(--status-red);flex:0 0 8px"></span>' +
+              '<span>' + Dashboard.esc(r.description || '(no description)') + '</span>' +
+            '</li>'
+          ).join('') + '</ul>'
+        : '<div style="font-size:11px;color:var(--text-muted)">No active blockers</div>';
+      return '<div class="panel-section dp-blockers-strip">' +
+        '<div class="panel-section-title">Blockers</div>' +
+        inner +
+      '</div>';
+    })());
     raidSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Assumptions <span class="risk-count" id="assumptionCount">' + ((p.assumptions_register || []).length || 0) + '</span></div>' +
@@ -18570,6 +18945,13 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
       '</div>'
     );
+    // Phase 7 / AC-7.3: Sponsor sign-off log co-located with Stakeholders on Delivery.
+    deliverySections.push(
+      '<div class="panel-section dp-sponsor-signoff-section">' +
+        '<div class="panel-section-title">Sponsor sign-off log <span class="risk-count">' + ((p.stakeholders || []).filter(s => s && s.type === 'sponsor_sign_off').length) + '</span></div>' +
+        '<div id="sponsorSignOffList">' + this.renderSponsorSignOffLog(p) + '</div>' +
+      '</div>'
+    );
     scopeSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy linkage</div>' +
@@ -18588,6 +18970,15 @@ const DetailPanel = {
         '<div class="panel-section-title">Success criteria <span class="risk-count" id="successCriteriaCount">' + ((p.success_criteria || []).length || 0) + '</span></div>' +
         '<div id="successCriteriaListInner">' + this.renderSuccessCriteria(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addSuccessCriterion()">+ Add success criterion</button>' +
+      '</div>'
+    );
+
+    // Phase 7 / AC-7.1: Gate reviews register on Scope & Value (collapsed by
+    // default). 6 gate names locked: Discovery / Design / Build / UAT / Live / Hypercare.
+    scopeSections.push(
+      '<div class="panel-section dp-gate-reviews-section collapsed">' +
+        '<div class="panel-section-title">Gate reviews <span class="risk-count" id="gateReviewCount">' + ((p.gate_reviews || []).length || 0) + '</span></div>' +
+        '<div id="gateReviewList">' + this.renderGateReviews(p) + '</div>' +
       '</div>'
     );
 
@@ -18627,7 +19018,12 @@ const DetailPanel = {
     })();
     deliverySections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Delivery Phases</div>' +
+        '<div class="panel-section-title">Delivery Phases <span class="dp-phase-tracker-chips" style="float:right"><button type="button" class="dp-phase-tracker-chip dp-phase-tracker-log-risk" onclick="DetailPanel._openPhaseTrackerRiskForm()" title="Log a risk from this phase tracker" style="font-size:10px;padding:2px 8px;border:1px solid var(--border-light);border-radius:999px;background:var(--surface);cursor:pointer">+ Log risk</button></span></div>' +
+        '<div class="dp-phase-tracker-risk-form" id="phaseTrackerRiskForm" style="display:none;margin:6px 0 8px;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);background:var(--bg-content);font-size:11px;display:flex;gap:6px;align-items:center">' +
+          '<input id="phaseTrackerRiskInput" type="text" placeholder="Risk description (one line)" style="flex:1;padding:4px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px">' +
+          '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="DetailPanel._submitPhaseTrackerRisk()">Save</button>' +
+          '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="DetailPanel._closePhaseTrackerRiskForm()">Cancel</button>' +
+        '</div>' +
         '<div class="stage-tracker">' +
         (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; return order.length ? DetailPanel.PHASES.filter(ph => order.includes(ph.name)).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
@@ -24107,10 +24503,281 @@ const Gantt = {
    (centre), project-narrative panel (right). Every interactive
    control writes through to the project record via App.* helpers.
    ============================================================ */
+/* ============================================================
+   Phase 6 / AC-6.1 + AC-6.2: shared render functions used by BOTH
+   DetailPanel and Walkthrough. Single source of truth — every parallel
+   widget in the old Walkthrough module now routes through these.
+   ============================================================ */
+
+const Overview = {
+  // Phase 6 / AC-6.1: byte-identical RAG triplet renderer. Called from Walkthrough._renderCenter
+  // and (in the future) DetailPanel ragSel — both surfaces produce the same DOM.
+  renderRagTriplet(p) {
+    if (!p) return '';
+    const esc = Dashboard.esc;
+    const dims = ['rag_schedule', 'rag_resourcing', 'rag_scope'];
+    const dot = (dim) => '<div class="wt-rag-w" data-rag-dim="' + dim + '" data-project-id="' + esc(p.id) + '" onclick="Overview.cycleRag(\'' + esc(p.id) + '\',\'' + dim + '\')">' +
+      '<div class="dot" style="background:' + App.ragColor(p[dim]) + '"></div>' +
+      dim.replace('rag_', '') +
+    '</div>';
+    return '<div class="wt-rags-row dp-rag-triplet" data-shared-rag-triplet="true">' +
+      dims.map(dot).join('') +
+    '</div>';
+  },
+
+  // Phase 6 / AC-6.2: cycle the RAG value Green → Amber → Red → Green. Single
+  // implementation, callable from any surface; replaces Walkthrough._cycleRag.
+  cycleRag(projectId, dim, walkthroughId) {
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project) return;
+    const next = project[dim] === 'Green' ? 'Amber' : project[dim] === 'Amber' ? 'Red' : 'Green';
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    if (typeof App.updateProjectRag === 'function') {
+      App.updateProjectRag(projectId, dim, next, wtId, '');
+    } else {
+      project[dim] = next;
+      if (App.markDirty) App.markDirty();
+      if (App.saveToLocalStorage) App.saveToLocalStorage();
+    }
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._render === 'function' && Walkthrough.activeProjectId) {
+      Walkthrough._render(App.activeCustomer);
+    }
+  },
+
+  // Phase 6 / AC-6.2: PO weekly caption / narrative headline — single field.
+  // Replaces Walkthrough._narrativeHeadlineChange.
+  onPoCaptionChange(projectId, val, walkthroughId) {
+    if (!projectId) return;
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    if (typeof App.updateProjectNarrative === 'function') {
+      App.updateProjectNarrative(projectId, { headline: val, po_caption: val }, wtId);
+    }
+  },
+
+  // Phase 6 / AC-6.6: jump from the Detail panel into the Walkthrough overlay
+  // with the project pre-selected. Falls back gracefully when walkthrough is not
+  // initialised in test environments.
+  openInWalkthrough(projectId) {
+    if (typeof Walkthrough === 'undefined') return false;
+    if (typeof Walkthrough.openForProject === 'function') {
+      return Walkthrough.openForProject(projectId);
+    }
+    if (typeof App.navigate === 'function') App.navigate('walkthrough');
+    Walkthrough.activeProjectId = projectId;
+    if (typeof Walkthrough._render === 'function') Walkthrough._render(App.activeCustomer);
+    return true;
+  }
+};
+
+const RAID = {
+  // Phase 6: locked risk templates list, single source for both DetailPanel
+  // (current chips) and Walkthrough (the parallel 6-button row that is now gone).
+  RISK_TEMPLATES: [
+    { id: 'sme-unavailable', label: 'SME unavailable', description: 'Subject-matter expert unavailable for the planned window' },
+    { id: 'data-quality', label: 'Data quality', description: 'Source data quality issues block downstream work' },
+    { id: 'scope-creep', label: 'Scope creep', description: 'Scope expanded without re-planning' },
+    { id: 'dependency-slip', label: 'Dependency slip', description: 'Upstream dependency delayed' },
+    { id: 'resource-constraint', label: 'Resource constraint', description: 'Capacity below committed plan' },
+    { id: 'third-party-delay', label: 'Third-party delay', description: 'External vendor or partner delay' }
+  ],
+
+  closeRisk(projectId, idx, walkthroughId) {
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    if (typeof App.updateRiskFromWalkthrough === 'function') {
+      App.updateRiskFromWalkthrough(projectId, idx, 'closed', wtId, '');
+    } else {
+      const project = App.data.projects.find(p => p.id === projectId);
+      if (project && project.risks_register && project.risks_register[idx]) {
+        project.risks_register[idx].status = 'closed';
+        if (App.markDirty) App.markDirty();
+        if (App.saveToLocalStorage) App.saveToLocalStorage();
+      }
+    }
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) {
+      Walkthrough._renderCenter();
+    }
+  },
+
+  acceptRisk(projectId, idx, walkthroughId) {
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    if (typeof App.updateRiskFromWalkthrough === 'function') {
+      App.updateRiskFromWalkthrough(projectId, idx, 'accepted', wtId, '');
+    } else {
+      const project = App.data.projects.find(p => p.id === projectId);
+      if (project && project.risks_register && project.risks_register[idx]) {
+        project.risks_register[idx].status = 'accepted';
+        if (App.markDirty) App.markDirty();
+        if (App.saveToLocalStorage) App.saveToLocalStorage();
+      }
+    }
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) {
+      Walkthrough._renderCenter();
+    }
+  },
+
+  doneAction(forumId, actionId, walkthroughId) {
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    if (typeof App.completeForumAction === 'function') App.completeForumAction(forumId, actionId, wtId);
+    if (typeof Walkthrough !== 'undefined') {
+      if (typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) Walkthrough._renderCenter();
+      if (typeof Walkthrough._renderBottomBar === 'function') Walkthrough._renderBottomBar();
+    }
+  },
+
+  deferAction(forumId, actionId, walkthroughId, newDate) {
+    const wtId = walkthroughId || (typeof Walkthrough !== 'undefined' ? Walkthrough._activeWalkthroughId : null);
+    const date = newDate || ((typeof prompt === 'function') ? prompt('New due date (YYYY-MM-DD):') : null);
+    if (!date) return;
+    if (typeof App.deferForumAction === 'function') App.deferForumAction(forumId, actionId, date, wtId);
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderCenter === 'function' && Walkthrough.activeProjectId) {
+      Walkthrough._renderCenter();
+    }
+  },
+
+  setCaptureTab(tab) {
+    if (typeof Walkthrough === 'undefined') return;
+    Walkthrough._captureTab = tab;
+    const project = App.data && App.data.projects.find(p => p.id === Walkthrough.activeProjectId);
+    if (project && typeof Walkthrough._renderCapture === 'function') Walkthrough._renderCapture(project);
+  }
+};
+
+const Delivery = {
+  setMilestoneStatus(projectId, idx, status) {
+    const project = App.data && App.data.projects.find(p => p.id === projectId);
+    if (!project || !Array.isArray(project.customer_milestones)) return;
+    const milestone = project.customer_milestones[idx];
+    if (!milestone) return;
+    if (App.pushUndo) App.pushUndo('Walkthrough milestone status: ' + (milestone.name || '(unnamed)'));
+    milestone.status = status;
+    project.last_updated = new Date().toISOString();
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (typeof Walkthrough !== 'undefined' && typeof Walkthrough._renderMilestones === 'function') {
+      Walkthrough._renderMilestones(project);
+    }
+  }
+};
+
 const Walkthrough = {
   activeProjectId: null,
   _activeWalkthroughId: null,
   _captureTab: 'Decision',
+  // Phase 6 / AC-6.4: snapshot of the project at the moment the overlay opened
+  // (or last refreshed). Used to detect concurrent edits from the Detail panel.
+  _openSnapshots: {},
+
+  // Phase 6 / AC-6.6: programmatic open. Sets the active project and triggers
+  // a re-render. Returns true on success, false when the project does not exist.
+  openForProject(projectId) {
+    if (!App.data) return false;
+    const project = App.data.projects.find(p => p.id === projectId);
+    if (!project) return false;
+    if (typeof App.navigate === 'function') {
+      try { App.navigate('walkthrough'); } catch (_e) {}
+    }
+    this.activeProjectId = projectId;
+    this._snapshotProject(project);
+    if (typeof this._render === 'function') this._render(App.activeCustomer);
+    return true;
+  },
+
+  _snapshotProject(project) {
+    if (!project) return;
+    this._openSnapshots[project.id] = {
+      name: project.name,
+      last_edited_at: project.last_edited_at || null,
+      rag_schedule: project.rag_schedule,
+      rag_resourcing: project.rag_resourcing,
+      rag_scope: project.rag_scope
+    };
+  },
+
+  // Phase 6 / AC-6.4: returns true if the project has been edited outside the
+  // walkthrough since `openForProject` (or `_snapshotProject`) was last called.
+  // Fires a conflict toast via DetailPanel.showUndoToast when called and stale.
+  checkForConflict(projectId) {
+    const project = App.data && App.data.projects.find(p => p.id === projectId);
+    const snap = this._openSnapshots[projectId];
+    if (!project || !snap) return false;
+    const conflict = snap.last_edited_at && project.last_edited_at && project.last_edited_at !== snap.last_edited_at;
+    if (conflict && typeof DetailPanel !== 'undefined' && typeof DetailPanel.showUndoToast === 'function') {
+      DetailPanel.showUndoToast('Project updated outside walkthrough — reload to sync', () => {
+        this._snapshotProject(project);
+        if (typeof this._render === 'function') this._render(App.activeCustomer);
+      });
+    }
+    return !!conflict;
+  },
+
+  // Phase 6 / AC-6.5: sub-section deep-links from Walkthrough back into Detail.
+  // `section` accepts: 'risks' (→ raid#risks), 'prioritisation' (→ scope#prioritisation),
+  // 'milestones' (→ delivery#customer-milestones), default → overview.
+  _SECTION_ROUTES: {
+    risks: { tab: 'raid', section: 'risks' },
+    'risk-row': { tab: 'raid', section: 'risks' },
+    issues: { tab: 'raid', section: 'issues' },
+    decisions: { tab: 'raid', section: 'decisions' },
+    prioritisation: { tab: 'scope', section: 'prioritisation' },
+    're-prioritise': { tab: 'scope', section: 'prioritisation' },
+    'scope-change': { tab: 'scope', section: 'prioritisation' },
+    milestones: { tab: 'delivery', section: 'customer-milestones' },
+    overview: { tab: 'overview', section: '' }
+  },
+  openDetailAt(opts) {
+    if (!opts || !opts.projectId) return;
+    const route = this._SECTION_ROUTES[opts.section] || this._SECTION_ROUTES.overview;
+    if (typeof DetailPanel !== 'undefined' && typeof DetailPanel.open === 'function') {
+      DetailPanel.open(opts.projectId, { tab: route.tab, section: route.section, entryPoint: 'walkthrough' });
+    }
+  },
+
+  // Phase 6 / AC-6.3: keyboard shortcuts. `j`/`k` cycle project selection;
+  // `r` marks reviewed + advances; `n` advances without marking; `g o`/`g d`/
+  // `g s`/`g r` open the Detail panel on the matching tab; `/` focuses the
+  // left-rail search input. Implemented as a single dispatcher so tests can
+  // invoke it directly without simulating DOM keydown events.
+  _gPrefix: false,
+  handleKey(e) {
+    if (!e || typeof e.key === 'undefined') return false;
+    const key = e.key;
+    // `g x` two-stroke sequence.
+    if (this._gPrefix) {
+      this._gPrefix = false;
+      const tabFromKey = { o: 'overview', d: 'delivery', s: 'scope', r: 'raid' }[key];
+      if (tabFromKey && this.activeProjectId) {
+        this.openDetailAt({ projectId: this.activeProjectId, section: tabFromKey === 'raid' ? 'risks' : (tabFromKey === 'scope' ? 'prioritisation' : 'overview') });
+        return true;
+      }
+      return false;
+    }
+    if (key === 'g') { this._gPrefix = true; return true; }
+    if (key === 'j') { this._cycleSelection(1); return true; }
+    if (key === 'k') { this._cycleSelection(-1); return true; }
+    if (key === 'r' && this.activeProjectId) {
+      if (typeof this.markProjectReviewed === 'function') this.markProjectReviewed(this.activeProjectId);
+      this._cycleSelection(1);
+      return true;
+    }
+    if (key === 'n') { this._cycleSelection(1); return true; }
+    if (key === '/') {
+      const el = document.querySelector('[data-wt-search-input]') || document.querySelector('input[type="search"]');
+      if (el && typeof el.focus === 'function') el.focus();
+      return true;
+    }
+    return false;
+  },
+  _cycleSelection(delta) {
+    if (!App.data) return;
+    const projects = App.data.projects.filter(p => p.customer === App.activeCustomer);
+    if (!projects.length) return;
+    let idx = projects.findIndex(p => p.id === this.activeProjectId);
+    if (idx < 0) idx = 0;
+    idx = (idx + delta + projects.length) % projects.length;
+    this.activeProjectId = projects[idx].id;
+    this._snapshotProject(projects[idx]);
+    if (typeof this._render === 'function') this._render(App.activeCustomer);
+  },
 
   open(customer) {
     if (!App.data) return;
@@ -24329,14 +24996,13 @@ const Walkthrough = {
     '</div>';
 
     // Health tile
-    const ragSel = (dim, val) => '<div class="wt-rag-w" onclick="Walkthrough._cycleRag(\'' + esc(project.id) + '\',\'' + dim + '\')"><div class="dot" style="background:' + App.ragColor(val) + '"></div>' + dim.replace('rag_', '') + '</div>';
-    const healthHtml = '<div class="wt-tile" data-wt-tile="health"><h6>Health</h6><div class="wt-rags-row">' +
-      ragSel('rag_schedule', project.rag_schedule) +
-      ragSel('rag_resourcing', project.rag_resourcing) +
-      ragSel('rag_scope', project.rag_scope) +
+    // Phase 6 / AC-6.1: route the RAG triplet through the shared Overview.renderRagTriplet
+    // so that DetailPanel and Walkthrough produce byte-identical DOM.
+    const sharedRagTriplet = Overview.renderRagTriplet(project);
+    const healthHtml = '<div class="wt-tile" data-wt-tile="health"><h6>Health</h6>' + sharedRagTriplet +
       '<select class="wt-status-sel" onchange="App.updateProjectStatus(\'' + esc(project.id) + '\', this.value, \'' + esc(this._activeWalkthroughId) + '\');Walkthrough._renderCenter();">' +
         ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'].map(s => '<option' + (project.status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
-      '</select></div></div>';
+      '</select></div>';
 
     // Trajectory tile
     const trajectoryHtml = '<div class="wt-tile" data-wt-tile="trajectory"><h6>Delivery trajectory</h6><div class="wt-traj-wrap">' +
@@ -24413,7 +25079,7 @@ const Walkthrough = {
         +   '<span class="wt-ms-name"><strong>' + esc(m.name || '(unnamed)') + '</strong></span>'
         +   '<span class="wt-ms-date">' + esc(m.date || '—') + '</span>'
         +   stateChipHtml
-        +   '<select class="wt-ms-status-sel" onchange="Walkthrough._setMilestoneStatus(\'' + esc(project.id) + '\',' + idx + ', this.value)">'
+        +   '<select class="wt-ms-status-sel" onchange="Delivery.setMilestoneStatus(\'' + esc(project.id) + '\',' + idx + ', this.value)">'
         +     statusOpts
         +   '</select>'
         +   notes
@@ -24438,18 +25104,7 @@ const Walkthrough = {
       + '</div>';
   },
 
-  _setMilestoneStatus(projectId, idx, status) {
-    const project = App.data && App.data.projects.find(p => p.id === projectId);
-    if (!project || !Array.isArray(project.customer_milestones)) return;
-    const milestone = project.customer_milestones[idx];
-    if (!milestone) return;
-    App.pushUndo && App.pushUndo('Walkthrough milestone status: ' + (milestone.name || '(unnamed)'));
-    milestone.status = status;
-    project.last_updated = new Date().toISOString();
-    App.markDirty();
-    App.saveToLocalStorage();
-    this._renderMilestones(project);
-  },
+  // Phase 6 / AC-6.2: _setMilestoneStatus deleted — see Delivery.setMilestoneStatus.
 
   _renderOpenLists(project) {
     const host = document.querySelector('[data-wt-open-lists]'); if (!host) return;
@@ -24470,16 +25125,16 @@ const Walkthrough = {
       return '<div class="wt-row"><span class="' + cls + '">' + score + '</span>' +
         '<div class="desc"><strong>' + esc(r.description || '') + '</strong></div>' +
         '<div class="qact">' +
-          '<button onclick="Walkthrough._closeRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Close</button>' +
-          '<button onclick="Walkthrough._acceptRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Accept</button>' +
+          '<button onclick="RAID.closeRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Close</button>' +
+          '<button onclick="RAID.acceptRisk(\'' + esc(project.id) + '\',' + r.idx + ')">Accept</button>' +
         '</div></div>';
     };
     const actionRow = a => '<div class="wt-row"><span class="due">' + esc(a.due_date || '') + '</span>' +
         '<div class="desc">' + esc(a.description || '') + '</div>' +
         '<span class="meta">@' + esc(a.owner || '') + '</span>' +
         '<div class="qact">' +
-          '<button onclick="Walkthrough._deferAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Defer</button>' +
-          '<button onclick="Walkthrough._doneAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Done</button>' +
+          '<button onclick="RAID.deferAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Defer</button>' +
+          '<button onclick="RAID.doneAction(\'' + esc(a.forumId) + '\',\'' + esc(a.id || a.description || '') + '\')">Done</button>' +
         '</div></div>';
     host.innerHTML =
       '<div class="wt-section-row">' +
@@ -24492,44 +25147,8 @@ const Walkthrough = {
       '</div>';
   },
 
-  _closeRisk(projectId, idx) {
-    if (typeof App.updateRiskFromWalkthrough === 'function') {
-      App.updateRiskFromWalkthrough(projectId, idx, 'closed', this._activeWalkthroughId, '');
-    } else {
-      const project = App.data.projects.find(p => p.id === projectId);
-      if (project && project.risks_register && project.risks_register[idx]) {
-        project.risks_register[idx].status = 'closed';
-        App.markDirty(); App.saveToLocalStorage();
-      }
-    }
-    this._renderCenter();
-  },
-
-  _acceptRisk(projectId, idx) {
-    if (typeof App.updateRiskFromWalkthrough === 'function') {
-      App.updateRiskFromWalkthrough(projectId, idx, 'accepted', this._activeWalkthroughId, '');
-    } else {
-      const project = App.data.projects.find(p => p.id === projectId);
-      if (project && project.risks_register && project.risks_register[idx]) {
-        project.risks_register[idx].status = 'accepted';
-        App.markDirty(); App.saveToLocalStorage();
-      }
-    }
-    this._renderCenter();
-  },
-
-  _doneAction(forumId, actionId) {
-    App.completeForumAction(forumId, actionId, this._activeWalkthroughId);
-    this._renderCenter();
-    this._renderBottomBar();
-  },
-
-  _deferAction(forumId, actionId) {
-    const newDate = (typeof prompt === 'function') ? prompt('New due date (YYYY-MM-DD):') : null;
-    if (!newDate) return;
-    App.deferForumAction(forumId, actionId, newDate, this._activeWalkthroughId);
-    this._renderCenter();
-  },
+  // Phase 6 / AC-6.2: _closeRisk / _acceptRisk / _doneAction / _deferAction
+  // deleted — see RAID.{closeRisk,acceptRisk,doneAction,deferAction}.
 
   _renderCapture(project) {
     const host = document.querySelector('[data-wt-capture]'); if (!host) return;
@@ -24537,7 +25156,7 @@ const Walkthrough = {
     const tabs = ['Decision', 'Action', 'Risk'];
     const active = this._captureTab || 'Decision';
     const tabsHtml = tabs.map(t =>
-      '<button class="wt-cap-tab' + (t === active ? ' on' : '') + '" data-wt-cap-tab onclick="Walkthrough._setCaptureTab(\'' + t + '\')">+ ' + t + '</button>'
+      '<button class="wt-cap-tab' + (t === active ? ' on' : '') + '" data-wt-cap-tab onclick="RAID.setCaptureTab(\'' + t + '\')">+ ' + t + '</button>'
     ).join('');
     let body = '';
     if (active === 'Decision') {
@@ -24554,11 +25173,7 @@ const Walkthrough = {
     host.innerHTML = '<div class="wt-capture"><div class="wt-cap-tabs">' + tabsHtml + '</div>' + body + '</div>';
   },
 
-  _setCaptureTab(tab) {
-    this._captureTab = tab;
-    const project = App.data.projects.find(p => p.id === this.activeProjectId);
-    if (project) this._renderCapture(project);
-  },
+  // Phase 6 / AC-6.2: _setCaptureTab deleted — see RAID.setCaptureTab.
 
   _submitCapture(projectId) {
     const wid = this._activeWalkthroughId;
@@ -24577,13 +25192,7 @@ const Walkthrough = {
     this._render(App.activeCustomer);
   },
 
-  _cycleRag(projectId, dim) {
-    const project = App.data.projects.find(p => p.id === projectId);
-    if (!project) return;
-    const next = project[dim] === 'Green' ? 'Amber' : project[dim] === 'Amber' ? 'Red' : 'Green';
-    App.updateProjectRag(projectId, dim, next, this._activeWalkthroughId, '');
-    this._render(App.activeCustomer);
-  },
+  // Phase 6 / AC-6.2: _cycleRag deleted — see Overview.cycleRag.
 
   _renderCustomerPanel() {
     const host = document.querySelector('[data-wt-cust]'); if (!host) return;
@@ -24604,7 +25213,7 @@ const Walkthrough = {
       '<div class="wt-cust-h"><span class="ttl">Project narrative</span></div>' +
       '<p class="wt-cust-sub">Feeds: customer · meeting · sponsor packs</p>' +
       '<div class="wt-cust-section"><div class="lbl">Headline <span class="for">→ pack</span></div>' +
-        '<textarea class="wt-cust-input" data-narrative-field="headline" onchange="Walkthrough._narrativeHeadlineChange(this.value)" placeholder="One line for the pack">' + esc(n.headline || '') + '</textarea>' +
+        '<textarea class="wt-cust-input" data-narrative-field="headline" onchange="Overview.onPoCaptionChange(Walkthrough.activeProjectId, this.value)" placeholder="One line for the pack">' + esc(n.headline || '') + '</textarea>' +
       '</div>' +
       '<div class="wt-cust-section"><div class="lbl">Wins <span class="for">→ "good news" slide</span></div>' +
         '<div class="wt-cust-list">' + (n.wins || []).map(winRow).join('') +
@@ -24622,10 +25231,7 @@ const Walkthrough = {
       '<div class="wt-cust-gen" onclick="Walkthrough._openPackPicker()"><strong>Open pack</strong><br><span style="font-size:9.5px">Customer · Meeting · Sponsor</span></div>';
   },
 
-  _narrativeHeadlineChange(val) {
-    if (!this.activeProjectId) return;
-    App.updateProjectNarrative(this.activeProjectId, { headline: val }, this._activeWalkthroughId);
-  },
+  // Phase 6 / AC-6.2: _narrativeHeadlineChange deleted — see Overview.onPoCaptionChange.
 
   _narrativeAddListItem(field, val) {
     if (!val || !this.activeProjectId) return;
