@@ -1940,6 +1940,14 @@ html[data-theme="dark"] .gantt-phase-status-dot.pending { background: var(--surf
 .gantt-hoverable { transition: filter 0.12s, opacity 0.12s, box-shadow 0.12s; }
 .gantt-hoverable:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .gantt-seg { pointer-events: auto !important; cursor: pointer; z-index: 1; }
+/* Item 17 — subtle status visualisation. Complete segments get an inset darker
+   border; in-progress segments get a diagonal stripe overlay. Not-started keeps
+   today's flat appearance (the baseline). */
+.gantt-seg-complete { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.gantt-seg-in-progress::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.18) 0 4px, transparent 4px 8px); }
+.gantt-seg-in-progress { position: relative; }
+/* Item 16 — unallocated dashed segment marker */
+.gantt-seg-unallocated { pointer-events: auto !important; cursor: pointer; z-index: 1; }
 .gantt-seg.gantt-hovered { filter: brightness(1.15); z-index: 3; }
 .gantt-seg-dim { opacity: 0.35; }
 .gantt-phase-bar.gantt-hovered { filter: brightness(1.12); box-shadow: 0 0 0 1.5px var(--accent-blue) inset; z-index: 3; }
@@ -22678,7 +22686,7 @@ const Gantt = {
     html += '</div>';
 
     // Milestones — every shape rendered on the chart MUST appear here with a clear label.
-    // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat).
+    // Mirrors the SVGs in Gantt.render (msDeadline/msLaunch/msUat/msMilestone).
     html += '<div class="gantt-legend-group">' +
       '<span class="gantt-legend-item" title="Deadline (hard_deadline) — the project cannot slip past this date.">' +
         '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/><line x1="2" y1="6.5" x2="14" y2="6.5" stroke="#0f172a" stroke-width="1"/><line x1="5" y1="1.5" x2="5" y2="4.5" stroke="#0f172a" stroke-width="1.3" stroke-linecap="round"/><line x1="11" y1="1.5" x2="11" y2="4.5" stroke="#0f172a" stroke-width="1.3" stroke-linecap="round"/><line x1="8" y1="8.5" x2="8" y2="11" stroke="#0f172a" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12.5" r="0.9" fill="#0f172a"/></svg> Deadline</span>' +
@@ -22686,6 +22694,12 @@ const Gantt = {
         '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1.5 L11 6 L11 11 L5 11 L5 6 Z" fill="#ffffff" stroke="#0f172a" stroke-width="1.2" stroke-linejoin="round"/><circle cx="8" cy="7" r="1.2" fill="#0f172a"/><path d="M5 11 L3 14 M11 11 L13 14" stroke="#0f172a" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg> Launch</span>' +
       '<span class="gantt-legend-item" title="DT UAT release — the data-sourcing partner has signed off.">' +
         '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="2" width="10" height="12" rx="1" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/><polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> UAT release</span>' +
+      // Item 15 — custom customer-milestone diamond.
+      '<span class="gantt-legend-item" data-gantt-legend="milestone" title="Customer milestone — any entry in project.customer_milestones[].">' +
+        '<svg width="14" height="14" viewBox="0 0 16 16"><polygon points="8,1.5 14.5,8 8,14.5 1.5,8" fill="#ffffff" stroke="#475569" stroke-width="1.3"/><circle cx="8" cy="8" r="1.3" fill="#475569"/></svg> Milestone</span>' +
+      // Item 16 — unallocated dashed segment.
+      '<span class="gantt-legend-item" data-gantt-legend="unallocated" title="Unallocated skill capacity — points with no sprint allocation yet.">' +
+        '<svg width="14" height="10" viewBox="0 0 28 10"><rect x="1" y="1" width="26" height="8" rx="2" fill="rgba(148,163,184,0.15)" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3 2"/></svg> Unallocated</span>' +
       '</div>';
 
     // Lines — today (live reference), sprint boundaries, financial year.
@@ -23873,6 +23887,7 @@ const Gantt = {
       };
 
       let segmentsHtml = '';
+      let unallocatedSegmentsHtml = '';
       // H10: executive mode collapses bars — no per-skill segments so the timeline reads as a
       // single status colour per project with milestones overlaid. Keeps the chart one-page and
       // scannable for executive briefings.
@@ -23881,31 +23896,51 @@ const Gantt = {
           const pts = p[sk] || 0;
           if (pts <= 0) return;
           const splits = (p.skill_splits && p.skill_splits[sk]) || [];
-          if (!splits.length) return; // No scheduled splits = no time range = no segment in overview
+          if (!splits.length) {
+            // Item 16 — unallocated skill points: render a dashed segment at the
+            // tail of the bar so the un-scheduled work is visually surfaced.
+            const segW = Math.max(8, Math.min(40, Math.round(w * 0.15)));
+            const segLeft = Math.max(0, w - segW);
+            unallocatedSegmentsHtml += '<div class="gantt-seg-unallocated gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" data-gantt-unallocated="true" title="' + Dashboard.esc(pts + ' SP unallocated — ' + skillLabels[sk]) + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:rgba(148,163,184,0.18);border:1px dashed #94a3b8;box-sizing:border-box"></div>';
+            return;
+          }
           const windows = splits.map(sp => computeSplitWindow(sp, sk)).filter(Boolean);
           if (!windows.length) return;
           const segX1 = Math.min(...windows.map(win => win.start));
           const segX2 = Math.max(...windows.map(win => win.end));
           const segLeft = Math.round(segX1 - x1);
-          const segW = Math.max(2, Math.round(segX2 - segX1));
-          segmentsHtml += '<div class="gantt-seg gantt-hoverable" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
+          // Item 17 — drop the 2 px fallback; require ≥6 px so adjacent segments
+          // butt flush without visible white gaps. Compute a per-phase status
+          // class so finished/in-progress segments get a subtle styling marker.
+          const segW = Math.max(6, Math.round(segX2 - segX1));
+          const allComplete = splits.every(sp => sp.status === 'complete' || sp.completed >= (sp.points || 0));
+          const anyInProg = splits.some(sp => sp.status === 'in_progress' || ((sp.completed || 0) > 0 && (sp.completed || 0) < (sp.points || 0)));
+          const segStatusCls = allComplete ? ' gantt-seg-complete' : anyInProg ? ' gantt-seg-in-progress' : '';
+          segmentsHtml += '<div class="gantt-seg gantt-hoverable' + segStatusCls + '" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" data-phase-status="' + (allComplete ? 'complete' : anyInProg ? 'in-progress' : 'not-started') + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
         });
       }
 
+      // Item 17 — bar label rendered consistently. When the bar is too narrow
+      // for an inline label, attach the label outside the bar on the right
+      // (mirrors the detailed-mode floatLabel pattern) so every project shows
+      // its name regardless of bar width.
       let barLabel = '';
-      // Lifecycle stage chip is intentionally omitted from Gantt bars — bar labels are tight,
-      // most projects sit at the default Implementation stage, and the chip duplicates info
-      // that's already on the Projects table and Detail Panel (Issue 7).
-      if (w > 60) barLabel = '<span class="bar-label">' + Dashboard.esc(p.name) + '</span>';
+      let outsideLabel = '';
+      const safeName = Dashboard.esc(p.name);
+      if (w > 60) {
+        barLabel = '<span class="bar-label">' + safeName + '</span>';
+      } else if (p.name) {
+        outsideLabel = '<span class="bar-label bar-label-outside" style="position:absolute;left:' + (x1 + w + 6) + 'px;top:50%;transform:translateY(-50%);white-space:nowrap;font-size:10px;color:var(--text-dark-secondary);pointer-events:none">' + safeName + '</span>';
+      }
 
       let barContent = '';
-      if (segmentsHtml) {
-        barContent = segmentsHtml + barLabel;
+      if (segmentsHtml || unallocatedSegmentsHtml) {
+        barContent = segmentsHtml + unallocatedSegmentsHtml + barLabel;
       } else {
         barContent = barLabel;
       }
 
-      const barBg = segmentsHtml ? 'transparent' : color;
+      const barBg = (segmentsHtml || unallocatedSegmentsHtml) ? 'transparent' : color;
 
       // TBD phase indicator — open-ended dashed panel after the live bar showing
       // that future phases exist but are not yet scheduled.
@@ -24013,6 +24048,14 @@ const Gantt = {
           '<rect x="3" y="2" width="10" height="12" rx="1" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.2"/>' +
           '<polyline points="5.5,8.5 7.5,10.5 10.5,6.5" fill="none" style="stroke:var(--gantt-ms-stroke);stroke-width:1.6" stroke-linecap="round" stroke-linejoin="round"/>' +
         '</svg>');
+      // Item 15 — customer-milestone diamond. Generic milestone icon for any
+      // entry in project.customer_milestones[]; differentiated from external-
+      // dependency diamond by the centre dot.
+      const msMilestone = (x, type, date, name) => msWrap('gantt-ms-milestone', x, type, date,
+        '<svg width="18" height="18" viewBox="0 0 16 16" focusable="false">' +
+          '<polygon points="8,1.5 14.5,8 8,14.5 1.5,8" style="fill:var(--gantt-ms-fill);stroke:var(--gantt-ms-stroke);stroke-width:1.3" stroke-linejoin="round"/>' +
+          '<circle cx="8" cy="8" r="1.3" style="fill:var(--gantt-ms-stroke)"/>' +
+        '</svg>');
 
       if (p.hard_deadline) milestoneHtml += msDeadline(dateToX(p.hard_deadline), 'Hard Deadline', p.hard_deadline);
       if (p.category === 'Product Release' && p.product_release_date) milestoneHtml += msLaunch(dateToX(p.product_release_date), 'Product Launch', p.product_release_date);
@@ -24020,6 +24063,15 @@ const Gantt = {
       if (ds.type && ds.type !== 'Internal') {
         if (ds.uat_release_date) milestoneHtml += msUat(dateToX(ds.uat_release_date), 'DT UAT Release', ds.uat_release_date);
       }
+      // Item 15 — customer milestones rendered as diamonds with hover-tooltip
+      // showing the milestone name + status.
+      (p.customer_milestones || []).forEach(m => {
+        if (!m || !m.date) return;
+        const mx = dateToX(m.date);
+        const name = m.name || 'Milestone';
+        const status = m.status || 'Planned';
+        milestoneHtml += msMilestone(mx, 'Milestone — ' + name + ' (' + status + ')', m.date, name);
+      });
       // External-dependency gates: one diamond per external blocker with a known expected_date.
       // Same token-driven black-on-white treatment as the other milestone glyphs — shape (diamond)
       // alone differentiates this from a hard deadline; colour is reserved for RAG and customer chips.
@@ -24105,6 +24157,9 @@ const Gantt = {
         '<div class="gantt-bar gantt-hoverable' + critClass + '" data-hover-type="bar" data-id="' + p.id + '" tabindex="0" role="button" aria-label="' + Dashboard.esc(p.name) + '" style="left:' + x1 + 'px;width:' + w + 'px;background:' + barBg + ';border:1px solid ' + color + '40" onclick="DetailPanel.open(\'' + p.id + '\')">' +
           barContent + resizeHandles +
         '</div>' +
+        // Item 17 — outside-bar label for narrow bars (w<=60px). Sits outside the
+        // .gantt-bar so it can extend past the bar's right edge.
+        outsideLabel +
         confidenceHtml +
         forecastHtml +
         baselineHtml +
