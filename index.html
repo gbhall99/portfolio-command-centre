@@ -989,6 +989,19 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .strategy-section .strategy-row:last-child { border-bottom: 0; }
 .strategy-section .caps { color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
 .strategy-section .chip, .strategy-section .obj-chip, .strategy-section .persona-chip { background: var(--surface-2); color: var(--text-dark); border: 1px solid var(--border-dim); }
+/* Item 6 — compact strategy picker (chip strip + "+" button + popover) */
+.dp-strategy-section { display: flex; flex-direction: column; gap: 6px; }
+.dp-strategy-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.dp-strategy-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; min-width: 80px; }
+.dp-strategy-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; align-items: center; }
+.dp-strategy-chip { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 2px 8px; border-radius: 12px; background: var(--surface-inset); border: 1px solid var(--border-dim); color: var(--text-dark); }
+.dp-strategy-chip-remove { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 0 0 0 2px; }
+.dp-strategy-chip-remove:hover { color: var(--status-red); }
+.dp-strategy-add { width: 22px; height: 22px; border: 1px dashed var(--border-light); border-radius: 50%; background: var(--surface); color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 18px; padding: 0; }
+.dp-strategy-add:hover { color: var(--accent-blue); border-color: var(--accent-blue); }
+.dp-strategy-popover-row.is-selected { background: rgba(59,130,246,0.06); }
+.dp-strategy-popover-row label:hover { background: rgba(59,130,246,0.04); }
+
 .strategy-picker { background: var(--surface); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); }
 .strategy-picker[open] { box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .strategy-picker-summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; list-style: none; user-select: none; }
@@ -17702,45 +17715,125 @@ const BacklogHealth = {
 const DetailPanel = {
   currentId: null,
   // ===== Strategy linkage (Tasks 20 + 21) =====
+  // Item 6: compact strategy picker — chip strip + "+" button. No <details>
+  // expansion; collapsed by default. Click "+" opens a popover with checkbox
+  // list (filterable). Selected items render as removable chips inline.
   renderStrategyEditFields(project) {
     const personas = (typeof Personas !== 'undefined') ? Personas.list() : [];
     const metrics  = (typeof Metrics  !== 'undefined') ? Metrics.list()  : [];
-    const groups   = (typeof MetricGroups !== 'undefined') ? MetricGroups.list() : [];
-    const groupName = (id) => { const g = groups.find(x => x.id === id); return g ? g.name : id; };
+    const objectives = (typeof Objectives !== 'undefined') ? Objectives.list() : [];
     const selectedMetricIds  = new Set(project.metric_ids  || []);
     const selectedPersonaIds = new Set(project.persona_ids || []);
-
-    // Group metrics by group_id for display
-    const byGroup = {};
-    metrics.forEach(m => {
-      if (!byGroup[m.group_id]) byGroup[m.group_id] = [];
-      byGroup[m.group_id].push(m);
-    });
-    let metricOpts = '';
-    Object.keys(byGroup).forEach(gid => {
-      metricOpts += '<optgroup label="' + Dashboard.esc(groupName(gid)) + '">';
-      byGroup[gid].forEach(m => {
-        const sel = selectedMetricIds.has(m.id) ? ' selected' : '';
-        metricOpts += '<option value="' + Dashboard.esc(m.id) + '"' + sel + '>' + Dashboard.esc(m.name) + '</option>';
-      });
-      metricOpts += '</optgroup>';
-    });
-    const personaOpts = personas.map(p => {
-      const sel = selectedPersonaIds.has(p.id) ? ' selected' : '';
-      return '<option value="' + Dashboard.esc(p.id) + '"' + sel + '>'
-           + Dashboard.esc(p.name) + (p.role_title ? ' — ' + Dashboard.esc(p.role_title) : '') + '</option>';
-    }).join('');
-
-    return '<div class="strategy-edit-fields" style="display:flex;flex-direction:column;gap:8px">'
-         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Metrics this project delivers <small style="font-weight:400;color:var(--text-muted)">— primary link</small>'
-         +     '<select multiple name="metric_ids" id="proj-metric-ids" size="6" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'metric_ids\', this)">' + metricOpts + '</select>'
-         +   '</label>'
-         +   '<label style="font-size:11px;font-weight:600;color:var(--text-secondary)">Personas served <small style="font-weight:400;color:var(--text-muted)">— optional, for non-metric work</small>'
-         +     '<select multiple name="persona_ids" id="proj-persona-ids" size="4" style="width:100%;font-size:12px" onchange="DetailPanel.onStrategyMultiChange(\'persona_ids\', this)">' + personaOpts + '</select>'
-         +   '</label>'
-         + '</div>';
+    const selectedObjectiveIds = new Set(project.objective_ids || []);
+    const esc = Dashboard.esc;
+    const chip = (label, id, field) => '<span class="dp-strategy-chip" data-id="' + esc(id) + '">' + esc(label) + ' <button type="button" class="dp-strategy-chip-remove" data-id="' + esc(id) + '" data-field="' + esc(field) + '" onclick="DetailPanel._toggleStrategySelection(\'' + esc(field) + '\',\'' + esc(id) + '\',false)" aria-label="Remove">×</button></span>';
+    const labelFor = (kind, id) => {
+      if (kind === 'metric') { const m = metrics.find(x => x.id === id); return m ? m.name : id; }
+      if (kind === 'persona') { const p = personas.find(x => x.id === id); return p ? (p.name + (p.role_title ? ' — ' + p.role_title : '')) : id; }
+      if (kind === 'objective') { const o = objectives.find(x => x.id === id); return o ? o.name : id; }
+      return id;
+    };
+    // Item 4: Objectives presented before Metrics whenever both are shown together.
+    const rowHtml = (field, kind, count) => {
+      const selected = field === 'metric_ids' ? selectedMetricIds
+        : field === 'persona_ids' ? selectedPersonaIds
+        : selectedObjectiveIds;
+      const chips = Array.from(selected).map(id => chip(labelFor(kind, id), id, field)).join('');
+      return '<div class="dp-strategy-row" data-field="' + field + '">' +
+        '<span class="dp-strategy-label">' + (field === 'metric_ids' ? 'Metrics' : field === 'persona_ids' ? 'Personas' : 'Objectives') + '</span>' +
+        '<div class="dp-strategy-chips">' + chips +
+          '<button type="button" class="dp-strategy-add" data-field="' + field + '" data-kind="' + kind + '" onclick="DetailPanel._openStrategyPicker(\'' + field + '\',\'' + kind + '\')" aria-label="Add ' + kind + '">+</button>' +
+        '</div>' +
+      '</div>';
+    };
+    return '<div class="dp-strategy-section">' +
+      rowHtml('objective_ids', 'objective', objectives.length) +
+      rowHtml('metric_ids', 'metric', metrics.length) +
+      rowHtml('persona_ids', 'persona', personas.length) +
+    '</div>';
   },
 
+  _openStrategyPicker(field, kind) {
+    const existing = document.getElementById('dpStrategyPopover');
+    if (existing && existing.dataset.field === field) { existing.remove(); return; }
+    if (existing) existing.remove();
+    const project = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!project) return;
+    const options = kind === 'metric' ? (typeof Metrics !== 'undefined' ? Metrics.list() : [])
+      : kind === 'persona' ? (typeof Personas !== 'undefined' ? Personas.list() : [])
+      : (typeof Objectives !== 'undefined' ? Objectives.list() : []);
+    const selected = new Set(project[field] || []);
+    const esc = Dashboard.esc;
+    const popover = document.createElement('div');
+    popover.id = 'dpStrategyPopover';
+    popover.className = 'dp-strategy-popover';
+    popover.dataset.field = field;
+    popover.dataset.kind = kind;
+    popover.setAttribute('role', 'dialog');
+    popover.style.cssText = 'position:absolute;z-index:60;background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:8px 10px;width:280px;max-height:320px;overflow:auto;font-size:12px';
+    const labelOf = (o) => kind === 'persona' ? (o.name + (o.role_title ? ' — ' + o.role_title : '')) : o.name;
+    popover.innerHTML =
+      '<input type="text" class="dp-strategy-popover-filter" placeholder="Filter…" oninput="DetailPanel._filterStrategyPicker(this.value)" style="width:100%;padding:5px 7px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;font-size:11px">' +
+      '<ul class="dp-strategy-popover-list" style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px">' +
+        options.map(o => {
+          const cls = selected.has(o.id) ? ' is-selected' : '';
+          return '<li class="dp-strategy-popover-row' + cls + '" data-id="' + esc(o.id) + '" data-label="' + esc(labelOf(o).toLowerCase()) + '">' +
+            '<label style="display:flex;align-items:center;gap:6px;padding:3px 4px;cursor:pointer">' +
+              '<input type="checkbox" data-id="' + esc(o.id) + '"' + (selected.has(o.id) ? ' checked' : '') + ' onchange="DetailPanel._toggleStrategySelection(\'' + field + '\',\'' + esc(o.id) + '\',this.checked)">' +
+              '<span>' + esc(labelOf(o)) + '</span>' +
+            '</label>' +
+          '</li>';
+        }).join('') +
+      '</ul>' +
+      '<div style="text-align:right;margin-top:8px"><button type="button" class="btn btn-ghost btn-sm" onclick="DetailPanel._closeStrategyPicker()">Done</button></div>';
+    // Anchor near the + button.
+    const btn = document.querySelector('.dp-strategy-add[data-field="' + field + '"]');
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      popover.style.top = (r.bottom + 6) + 'px';
+      popover.style.left = Math.max(8, r.left - 240) + 'px';
+    }
+    document.body.appendChild(popover);
+    setTimeout(() => { const f = popover.querySelector('.dp-strategy-popover-filter'); if (f) f.focus(); }, 30);
+  },
+
+  _filterStrategyPicker(query) {
+    const pop = document.getElementById('dpStrategyPopover');
+    if (!pop) return;
+    const q = (query || '').trim().toLowerCase();
+    pop.querySelectorAll('.dp-strategy-popover-row').forEach(row => {
+      const match = !q || (row.dataset.label || '').indexOf(q) >= 0;
+      row.style.display = match ? '' : 'none';
+    });
+  },
+
+  _toggleStrategySelection(field, id, checked) {
+    if (!this.currentId || !App.data) return;
+    const project = App.data.projects.find(pr => pr.id === this.currentId);
+    if (!project) return;
+    const arr = Array.isArray(project[field]) ? project[field].slice() : [];
+    const idx = arr.indexOf(id);
+    if (checked && idx < 0) arr.push(id);
+    else if (!checked && idx >= 0) arr.splice(idx, 1);
+    project[field] = arr;
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    // Refresh the chip strip if it's in DOM.
+    const row = document.querySelector('.dp-strategy-row[data-field="' + field + '"]');
+    if (row && this.currentId) {
+      // Re-render the parent Strategy linkage section.
+      const html = this.renderStrategyEditFields(project);
+      const wrapper = row.closest('.dp-strategy-section');
+      if (wrapper) wrapper.outerHTML = html;
+    }
+  },
+
+  _closeStrategyPicker() {
+    const o = document.getElementById('dpStrategyPopover');
+    if (o) o.remove();
+  },
+
+  // Legacy callsite kept for back-compat with anything still wired up.
   onStrategyMultiChange(field, sel) {
     if (!this.currentId || !App.data || !Array.isArray(App.data.projects)) return;
     const project = App.data.projects.find(pr => pr.id === this.currentId);
@@ -21737,7 +21830,7 @@ const DetailPanel = {
             '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mandatory fields. Pick "Add details later →" to skip Steps 2 + 3 and finish now.</div>' +
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
               '<label style="font-size:11px;font-weight:600">Name *<br><input type="text" id="cwName" placeholder="New project name" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-              '<label style="font-size:11px;font-weight:600">Customer *<br><select id="cwCustomer" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
+              '<label style="font-size:11px;font-weight:600">Customer *<br><select id="cwCustomer" onchange="DetailPanel._refreshCreateWizardForCustomer(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
               '<label style="font-size:11px;font-weight:600">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
               '<label style="font-size:11px;font-weight:600">Lifecycle stage<br><select id="cwLifecycle" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + lifeOpts + '</select></label>' +
             '</div>' +
@@ -21755,16 +21848,19 @@ const DetailPanel = {
               skipBtn('moscow') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="sponsor" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Sponsor' + suggestedLabel('sponsor') + '<br><input type="text" id="cwSponsor" placeholder="Sponsor name" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              // Item 1 — sponsor is a <select> sourced from customer.sponsors; refreshed when customer changes.
+              '<label style="flex:1;font-size:11px;font-weight:600">Sponsor' + suggestedLabel('sponsor') + '<br><select id="cwSponsor" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + this._cwSponsorOptions(defaultCust, '') + '</select></label>' +
               skipBtn('sponsor') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="target_date" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
               '<label style="flex:1;font-size:11px;font-weight:600">Target date' + suggestedLabel('target_date') + '<br><input type="date" id="cwTargetDate" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
               skipBtn('target_date') +
             '</div>' +
-            '<div class="wiz-field-row" data-wiz-field="strategy_link" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Strategy linkage' + suggestedLabel('strategy_link') + '<br><input type="text" id="cwStrategyLink" placeholder="Metric / Objective IDs" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-              skipBtn('strategy_link') +
+            // Item 1 — strategy linkage uses checkbox lists (objectives first per Item 4), not free-text IDs.
+            '<div class="wiz-field-row" data-wiz-field="strategy_link" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' +
+              '<label style="font-size:11px;font-weight:600">Strategy linkage' + suggestedLabel('strategy_link') + '</label>' +
+              '<div id="cwStrategyLinkBlock" style="display:flex;flex-direction:column;gap:6px">' + this._cwStrategyLinkHtml(defaultCust) + '</div>' +
+              '<div style="text-align:right">' + skipBtn('strategy_link') + '</div>' +
             '</div>' +
           '</div>' +
 
@@ -21777,9 +21873,11 @@ const DetailPanel = {
               '</select></label>' +
               skipBtn('data_sourcing') +
             '</div>' +
-            '<div class="wiz-field-row" data-wiz-field="phase_flow" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Phase flow' + suggestedLabel('phase_flow') + '<br><input type="text" id="cwPhaseFlow" placeholder="e.g. Requirements → Data Engineering → Tableau → UAT" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-              skipBtn('phase_flow') +
+            // Item 1 — phase flow is a checkbox toggle row, matching Delivery > Delivery Setup's flow widget.
+            '<div class="wiz-field-row" data-wiz-field="phase_flow" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' +
+              '<label style="font-size:11px;font-weight:600">Phase flow' + suggestedLabel('phase_flow') + '</label>' +
+              '<div id="cwPhaseFlowBlock" style="display:flex;flex-wrap:wrap;gap:6px">' + this._cwPhaseFlowHtml(['Requirements', 'Data Engineering', 'Tableau', 'UAT']) + '</div>' +
+              '<div style="text-align:right">' + skipBtn('phase_flow') + '</div>' +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="hard_deadline" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
               '<label style="flex:1;font-size:11px;font-weight:600">Hard deadline' + suggestedLabel('hard_deadline') + '<br><input type="date" id="cwHardDeadline" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
@@ -21812,6 +21910,63 @@ const DetailPanel = {
     const o = document.getElementById('createWizard');
     if (o) o.remove();
     this._cwState = null;
+  },
+
+  // Item 1 — wizard ref-data helpers. Sponsor pulls from customer.sponsors;
+  // strategy link pulls from Objectives/Metrics/Personas (customer-scoped); phase
+  // flow uses checkbox toggles like Delivery Setup.
+  _cwSponsorOptions(customerName, currentValue) {
+    const customer = (App.data && App.data.customers || []).find(c => c.name === customerName);
+    const pool = (customer && Array.isArray(customer.sponsors)) ? customer.sponsors : [];
+    const esc = Dashboard.esc;
+    const opts = ['<option value="">(none)</option>'];
+    if (currentValue && pool.indexOf(currentValue) < 0) {
+      opts.push('<option value="' + esc(currentValue) + '" selected>' + esc(currentValue) + ' (legacy)</option>');
+    }
+    pool.forEach(s => opts.push('<option value="' + esc(s) + '"' + (s === currentValue ? ' selected' : '') + '>' + esc(s) + '</option>'));
+    return opts.join('');
+  },
+
+  _cwStrategyLinkHtml(customerName) {
+    const esc = Dashboard.esc;
+    const filterByCust = (arr) => (arr || []).filter(o => !customerName || !o.customer || o.customer === customerName);
+    const objectives = (typeof Objectives !== 'undefined') ? filterByCust(Objectives.list()) : [];
+    const metrics    = (typeof Metrics !== 'undefined')    ? filterByCust(Metrics.list())    : [];
+    const personas   = (typeof Personas !== 'undefined')   ? filterByCust(Personas.list())   : [];
+    // Item 4 — objectives rendered first when shown alongside metrics.
+    const mkSel = (id, label, items, valueOf, labelOf) => {
+      const opts = items.map(it => '<option value="' + esc(valueOf(it)) + '">' + esc(labelOf(it)) + '</option>').join('');
+      return '<div><label style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">' + label + '</label>' +
+        '<select multiple id="' + id + '" size="3" style="width:100%;padding:4px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px">' + opts + '</select></div>';
+    };
+    return mkSel('cwObjectiveIds', 'Objectives', objectives, o => o.id, o => o.name) +
+           mkSel('cwMetricIds',    'Metrics',    metrics,    m => m.id, m => m.name) +
+           mkSel('cwPersonaIds',   'Personas',   personas,   p => p.id, p => p.name + (p.role_title ? ' — ' + p.role_title : ''));
+  },
+
+  _cwPhaseFlowHtml(selectedPhases) {
+    const all = ['Requirements', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'];
+    const sel = new Set(selectedPhases || []);
+    const esc = Dashboard.esc;
+    return all.map(ph => {
+      const isOn = sel.has(ph);
+      return '<label class="cw-phase-toggle" data-phase="' + esc(ph) + '" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border:1px solid var(--border-light);border-radius:14px;background:' + (isOn ? 'rgba(59,130,246,0.1)' : 'var(--surface)') + ';color:' + (isOn ? 'var(--accent-blue)' : 'var(--text-dark-secondary)') + '">' +
+        '<input type="checkbox" data-cw-phase="' + esc(ph) + '"' + (isOn ? ' checked' : '') + ' style="margin:0">' + esc(ph) +
+      '</label>';
+    }).join('');
+  },
+
+  _refreshCreateWizardForCustomer(customerName) {
+    const sponsorEl = document.getElementById('cwSponsor');
+    if (sponsorEl) sponsorEl.innerHTML = this._cwSponsorOptions(customerName, sponsorEl.value);
+    const linkBlock = document.getElementById('cwStrategyLinkBlock');
+    if (linkBlock) linkBlock.innerHTML = this._cwStrategyLinkHtml(customerName);
+    // Also refresh forum picker.
+    const forumEl = document.getElementById('cwGovernanceForum');
+    if (forumEl) {
+      const forums = (App.data.governance_forums || []).filter(f => f.customer === customerName);
+      forumEl.innerHTML = '<option value="">— None —</option>' + forums.map(f => '<option value="' + Dashboard.esc(f.name) + '">' + Dashboard.esc(f.name) + '</option>').join('');
+    }
   },
 
   // Move forward through the steps. Validates Step 1 before advancing.
@@ -21897,9 +22052,10 @@ const DetailPanel = {
     }
     const moscow = document.getElementById('cwMoscow');
     if (moscow && tpl.moscow) { moscow.value = tpl.moscow; showSuggested('moscow', true); }
-    const phaseFlow = document.getElementById('cwPhaseFlow');
-    if (phaseFlow && tpl.delivery_config && Array.isArray(tpl.delivery_config.phase_order)) {
-      phaseFlow.value = tpl.delivery_config.phase_order.join(' → ');
+    // Phase flow now uses checkbox toggles — re-render with the template's phase_order selected.
+    const phaseFlowBlock = document.getElementById('cwPhaseFlowBlock');
+    if (phaseFlowBlock && tpl.delivery_config && Array.isArray(tpl.delivery_config.phase_order)) {
+      phaseFlowBlock.innerHTML = this._cwPhaseFlowHtml(tpl.delivery_config.phase_order);
       showSuggested('phase_flow', true);
     }
     const forum = document.getElementById('cwGovernanceForum');
@@ -21914,10 +22070,16 @@ const DetailPanel = {
       forum.value = tpl.governance_forum;
       showSuggested('governance_forum', true);
     }
-    const strat = document.getElementById('cwStrategyLink');
-    if (strat && (tpl.metric_ids || tpl.objective_ids || tpl.persona_ids)) {
-      const ids = [].concat(tpl.metric_ids || [], tpl.objective_ids || [], tpl.persona_ids || []);
-      strat.value = ids.join(', ');
+    // Strategy linkage applied via select boxes (objective_ids / metric_ids / persona_ids).
+    const setMultiSel = (id, ids) => {
+      const el = document.getElementById(id);
+      if (!el || !Array.isArray(ids) || !ids.length) return;
+      Array.from(el.options).forEach(opt => { opt.selected = ids.indexOf(opt.value) >= 0; });
+    };
+    if (tpl.objective_ids || tpl.metric_ids || tpl.persona_ids) {
+      setMultiSel('cwObjectiveIds', tpl.objective_ids);
+      setMultiSel('cwMetricIds',    tpl.metric_ids);
+      setMultiSel('cwPersonaIds',   tpl.persona_ids);
       showSuggested('strategy_link', true);
     }
   },
@@ -21954,10 +22116,27 @@ const DetailPanel = {
     const moscow = val('cwMoscow', 'moscow');
     const sponsor = val('cwSponsor', 'sponsor');
     const targetDate = val('cwTargetDate', 'target_date');
-    const strategyLink = val('cwStrategyLink', 'strategy_link');
     const hardDeadline = val('cwHardDeadline', 'hard_deadline');
     const governanceForum = val('cwGovernanceForum', 'governance_forum');
     const dataSourcing = val('cwDataSourcing', 'data_sourcing') || 'Internal';
+    // Item 1 — read strategy linkage from the three <select multiple> boxes.
+    const readMultiSel = (id) => {
+      const el = !onlyStep1 && !skipped.strategy_link ? document.getElementById(id) : null;
+      if (!el) return [];
+      return Array.from(el.selectedOptions || []).map(o => o.value).filter(Boolean);
+    };
+    const objectiveIds = readMultiSel('cwObjectiveIds');
+    const metricIds    = readMultiSel('cwMetricIds');
+    const personaIds   = readMultiSel('cwPersonaIds');
+    // Item 1 — phase flow from the checkbox toggle row.
+    const readPhaseFlow = () => {
+      if (onlyStep1 || skipped.phase_flow) return null;
+      const block = document.getElementById('cwPhaseFlowBlock');
+      if (!block) return null;
+      const picked = Array.from(block.querySelectorAll('input[data-cw-phase]:checked')).map(i => i.dataset.cwPhase);
+      return picked.length ? picked : null;
+    };
+    const phaseOrder = readPhaseFlow();
 
     const templates = App.data.project_templates || [];
     const tpl = tplId ? templates.find(t => t.id === tplId) : null;
@@ -21995,12 +22174,14 @@ const DetailPanel = {
       stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
     };
 
-    // Strategy link parse — accept comma-separated metric/objective/persona ids.
-    if (strategyLink) {
-      const ids = strategyLink.split(',').map(s => s.trim()).filter(Boolean);
-      newProject.metric_ids = ids.filter(s => /^metric/i.test(s));
-      newProject.objective_ids = ids.filter(s => /^obj/i.test(s));
-      newProject.persona_ids = ids.filter(s => /^per/i.test(s));
+    // Strategy link — structured selection from the three multi-selects.
+    if (objectiveIds.length) newProject.objective_ids = objectiveIds;
+    if (metricIds.length)    newProject.metric_ids    = metricIds;
+    if (personaIds.length)   newProject.persona_ids   = personaIds;
+
+    // Phase flow override from the checkbox row (only if the user explicitly picked).
+    if (phaseOrder) {
+      newProject.delivery_config.phase_order = phaseOrder;
     }
 
     // Apply template sizing if provided; otherwise split the manual size evenly across enabled phases.
