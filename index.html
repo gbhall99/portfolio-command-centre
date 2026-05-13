@@ -691,8 +691,10 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .project-table tbody tr.row-at-risk { background: rgba(245,158,11,0.04); }
 .project-table tbody tr.row-blocked { background: rgba(239,68,68,0.04); }
 
-.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.badge-customer { color: white; }
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.badge-customer { color: white; max-width: 100%; }
+/* Item 12 — customer badge no longer visually overflows its cell into the manager column. */
+.project-table td .badge-customer { display: inline-block; max-width: calc(100% - 2px); vertical-align: middle; }
 .badge-status { }
 .rag-dots { display: flex; gap: 4px; align-items: center; }
 .rag-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid rgba(0,0,0,0.08); }
@@ -18140,6 +18142,63 @@ const DetailPanel = {
     ).join('') + '</div>';
   },
 
+  // Item 13: field-help popover. Reusable for any project-settings field — first
+  // user is MoSCoW. Click `?` next to a label → popover with concise definition.
+  FIELD_HELP: {
+    moscow: {
+      title: 'MoSCoW prioritisation',
+      body: [
+        ['Must',   'Required for this release. Business-critical — won\'t ship without it.'],
+        ['Should', 'Important but not blocking. Ship if capacity allows.'],
+        ['Could',  'Nice-to-have. Defer if capacity is tight; no harm if it slips.'],
+        ['Won\'t', 'Explicitly out of scope for this release. Captured so it\'s not forgotten.']
+      ]
+    }
+  },
+  _showFieldHelp(field) {
+    const existing = document.getElementById('dpFieldHelpPopover');
+    if (existing) { existing.remove(); return; }
+    const help = this.FIELD_HELP[field];
+    if (!help) return;
+    const esc = Dashboard.esc;
+    const pop = document.createElement('div');
+    pop.id = 'dpFieldHelpPopover';
+    pop.className = 'dp-field-help-popover';
+    pop.setAttribute('role', 'dialog');
+    pop.dataset.field = field;
+    pop.style.cssText = 'position:absolute;z-index:60;background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:12px 14px;max-width:340px;font-size:11px';
+    pop.innerHTML = '<div style="font-weight:700;margin-bottom:6px">' + esc(help.title) + '</div>' +
+      '<ul style="margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px">' +
+        help.body.map(([k, v]) =>
+          '<li><strong style="display:inline-block;min-width:54px">' + esc(k) + '</strong> <span style="color:var(--text-dark-secondary)">' + esc(v) + '</span></li>'
+        ).join('') +
+      '</ul>' +
+      '<div style="text-align:right;margin-top:8px"><button type="button" class="btn btn-ghost btn-sm" onclick="DetailPanel._closeFieldHelp()">Close</button></div>';
+    // Anchor to the clicked button.
+    const btn = document.querySelector('.field-help-btn[data-field="' + field + '"]');
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      pop.style.top = (r.bottom + 6) + 'px';
+      pop.style.left = Math.max(8, r.left - 100) + 'px';
+    }
+    document.body.appendChild(pop);
+    // Click-away to close.
+    setTimeout(() => {
+      const handler = (e) => {
+        if (!pop.contains(e.target) && !(btn && btn.contains(e.target))) {
+          this._closeFieldHelp();
+          document.removeEventListener('click', handler, true);
+        }
+      };
+      document.addEventListener('click', handler, true);
+      pop._clickAwayHandler = handler;
+    }, 10);
+  },
+  _closeFieldHelp() {
+    const o = document.getElementById('dpFieldHelpPopover');
+    if (o) o.remove();
+  },
+
   // R9 / AC-R9.1: customer-narrative side-drawer. Lets the PO edit wins / asks /
   // customer-visible-risk-ids from the Detail panel Overview without opening a
   // walkthrough. Round-trips through App.updateProjectNarrative (R9 / AC-R9.2).
@@ -19192,7 +19251,7 @@ const DetailPanel = {
               '</div>';
             })() +
           '</div>' +
-          '<div class="field-group"><div class="field-label" title="MoSCoW classification partitions priority bands. Must > Should > Could > Won’t.">MoSCoW</div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won’t'], p.moscow || '') + '</div>' +
+          '<div class="field-group"><div class="field-label" style="display:flex;align-items:center;gap:4px">MoSCoW <button type="button" class="field-help-btn" data-field="moscow" aria-label="What is MoSCoW?" onclick="DetailPanel._showFieldHelp(\'moscow\')" style="border:1px solid var(--border-light);background:var(--surface);color:var(--text-muted);cursor:pointer;font-size:10px;width:16px;height:16px;border-radius:50%;padding:0;line-height:14px">?</button></div>' + sel('moscow', ['', 'Must', 'Should', 'Could', 'Won’t'], p.moscow || '') + '</div>' +
           '<div class="field-group"><div class="field-label" title="Business value: how much does this deliver to customers/users/revenue? 1 = negligible, 10 = transformational.">Business value (1–10)</div>' + scaleSel('business_value', p.business_value, BUSINESS_VALUE_LABELS) + '</div>' +
           '<div class="field-group"><div class="field-label" title="Time-criticality: how much value decays as we delay? 1 = no decay, 10 = value lost if not done imminently.">Time-criticality (1–10)</div>' + scaleSel('time_criticality', p.time_criticality, TIME_CRITICALITY_LABELS) + '</div>' +
           '<div class="field-group"><div class="field-label" title="Risk reduction / opportunity enablement: how much does this de-risk the portfolio or open new opportunities? 1 = none, 10 = unlocks major downstream value.">Risk / opportunity (1–10)</div>' + scaleSel('risk_reduction_opportunity', p.risk_reduction_opportunity, RISK_OPPORTUNITY_LABELS) + '</div>' +
@@ -25338,7 +25397,10 @@ const Walkthrough = {
     // Phase 6 / AC-6.1: route the RAG triplet through the shared Overview.renderRagTriplet
     // so that DetailPanel and Walkthrough produce byte-identical DOM.
     const sharedRagTriplet = Overview.renderRagTriplet(project);
-    const healthHtml = '<div class="wt-tile" data-wt-tile="health"><h6>Health</h6>' + sharedRagTriplet +
+    // Item 10: Health tile contains only the RAG triplet. Status moves to its
+    // own tile with a proper heading so it reads as a discrete decision surface.
+    const healthHtml = '<div class="wt-tile" data-wt-tile="health"><h6>Health</h6>' + sharedRagTriplet + '</div>';
+    const statusHtml = '<div class="wt-tile" data-wt-tile="status"><h6>Status</h6>' +
       '<select class="wt-status-sel" onchange="App.updateProjectStatus(\'' + esc(project.id) + '\', this.value, \'' + esc(this._activeWalkthroughId) + '\');Walkthrough._renderCenter();">' +
         ['Not Started', 'In Progress', 'On Hold', 'At Risk', 'Blocked', 'Complete', 'Closed'].map(s => '<option' + (project.status === s ? ' selected' : '') + '>' + s + '</option>').join('') +
       '</select></div>';
@@ -25356,7 +25418,7 @@ const Walkthrough = {
 
     host.innerHTML = headerHtml +
       '<div data-wt-prompts>' + promptsHtml + '</div>' +
-      '<div data-wt-grid class="wt-grid">' + healthHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
+      '<div data-wt-grid class="wt-grid">' + healthHtml + statusHtml + trajectoryHtml + datesHtml + sinceHtml + '</div>' +
       '<div data-wt-milestones></div>' +
       '<div data-wt-open-lists></div>' +
       '<div data-wt-capture></div>';
