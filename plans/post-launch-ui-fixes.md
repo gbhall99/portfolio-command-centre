@@ -434,6 +434,203 @@ Default country on migration: `UK` (preserves prior behaviour for the existing f
 
 ---
 
+---
+
+## 18. Rename Governance view's inner "Meetings" tab → "Governance"
+
+**User wording:** *"Rename Meetings to Governance"*
+
+**Current state:** The Governance view (sidebar item still labelled "Governance Meetings") contains two inner tabs:
+```html
+<div class="gov-tab active" data-tab="forums">Meetings <span>0</span></div>
+<div class="gov-tab"        data-tab="risks">Risks   <span>0</span></div>
+```
+After items 19 + 20 below land, the "Risks" inner tab is removed entirely (it moves to its own top-level RAID view). The remaining "Meetings" tab is renamed "Governance" and is the only thing in the view, so the inner-tab strip becomes redundant.
+
+**Fix:**
+- Rename the `data-tab="forums"` label from "Meetings" to "Governance".
+- Once the Risks inner tab moves out (item 20), drop the `gov-tabs` strip entirely — the view shows the Governance content directly.
+- Sidebar item "Governance Meetings" → keep "Governance" label only (matches item 19 grouping below).
+- Update `App.navigate('governance')` → no logic change, label only.
+- Update `App.viewNames.governance` from `'Governance Meetings'` to `'Governance'` (`index.html:7002`).
+
+**AC:**
+- **AC-18.1** Sidebar shows nav item labelled `Governance` (no "Meetings" suffix).
+- **AC-18.2** The Governance view body has no `.gov-tabs` strip; content renders directly.
+- **AC-18.3** `App.viewNames.governance === 'Governance'`.
+
+**Files:** `index.html` — sidebar HTML at line 3028, gov-tabs block at lines 3350–3353, `viewNames` map at line 7002, breadcrumb / share-link string consumers.
+
+---
+
+## 19. Group Strategy + Metrics + Personas under one Governance sub-area
+
+**User wording:** *"Move Strategy, Metrics and Personas into one menu area together with an appropriate name — under governance."*
+
+**Current state:**
+- **Portfolio section** contains: Portfolio Overview, Strategy, Projects, Roadmap, Backlog
+- **Governance section** contains: Metrics, Personas, Governance Meetings (`data-view="governance"`)
+- So Strategy lives in Portfolio; Metrics + Personas live in Governance. The three are functionally related (Strategy = objectives + cascade; Metrics = measurement; Personas = roles & people) but visually scattered.
+
+**Fix:**
+- **Group name: "Strategy & People"** (recommended) — captures Strategy (objectives), Metrics (measurement), Personas (people / roles). Alternative considered: "Strategy" (single sub-header with the three as child items) — simpler but less expressive.
+- **Sidebar restructure:**
+  ```
+  Portfolio
+    Portfolio Overview
+    Projects
+    Roadmap
+    Backlog          (link to the new Tinder backlog — see item 21)
+    RAID             (new — see item 20)
+
+  Sprint Management
+    Sprint Planning
+    Capacity
+    My Actions
+
+  Governance
+    Strategy & People
+      Strategy       (existing strategy view)
+      Metrics        (existing metrics view)
+      Personas       (existing personas view)
+    Governance       (renamed from Governance Meetings — see item 18)
+
+  Activity
+  System Settings
+  ```
+- "Strategy & People" is a **collapsible sub-group** inside the Governance section, not a separate view route. The three child nav items remain as separate routes (`/strategy`, `/metrics`, `/personas`) — no view consolidation, just visual grouping under a sub-header.
+- Strategy nav item moves from Portfolio section to under "Strategy & People".
+- The sub-group header is a non-clickable label (same styling as the current `.nav-section-label`, indented one level).
+
+**AC:**
+- **AC-19.1** Strategy nav item no longer appears under Portfolio section.
+- **AC-19.2** Strategy, Metrics, and Personas nav items all appear in the Governance section under a "Strategy & People" sub-header (or whichever name finalises).
+- **AC-19.3** Clicking each of the three still navigates to its existing view (no routing changes).
+- **AC-19.4** Alt-key shortcut bindings preserved (Alt-1..Alt-6).
+
+**Files:** `index.html` — sidebar HTML at lines 2986–3027; consider a small CSS tweak for the indented sub-header.
+
+**Open question:** Confirm the group name. Options: "Strategy & People", "Strategy", "Business Context", or your suggestion. Default applied below: **Strategy & People**.
+
+---
+
+## 20. RAID as its own top-level nav item (cross-portfolio, all four categories)
+
+**User wording:** *"Move risks into its own tab called RAID that includes all RAID items and not just Risks, incl their status, dates, etc."*
+
+**Current state:**
+- Inside the Governance view, a sub-tab `data-tab="risks"` renders a cross-portfolio risks dashboard (`#govRisksContent`).
+- Per-project RAID (Risks / Assumptions / Issues / Decisions) lives on the Detail panel RAID tab — Phase 3 IA.
+- There is NO cross-portfolio view of Assumptions, Issues, or Decisions today.
+
+**Fix:**
+- **New top-level nav item: `RAID`** under Portfolio section (next to Backlog).
+- New view `App.navigate('raid')` → renders `RaidView` (new module).
+- View has 4 inner tabs (matches project-level RAID tab order from Phase 5 / item 2): **Risks · Assumptions · Issues · Decisions**.
+- Each tab is a sortable/filterable table aggregating all rows of that type across every project for the active customer.
+- Columns: project · description · owner · score (risk only) · status · dates · last-updated · row-click → opens Detail panel deep-linked to that row (e.g., `raid#risks` with the specific row highlighted).
+- Drop the `gov-tab data-tab="risks"` inner tab from the Governance view (its content moves here).
+
+**AC:**
+- **AC-20.1** Sidebar Portfolio section contains a new `RAID` nav item.
+- **AC-20.2** `App.navigate('raid')` renders 4 inner tabs in order: Risks / Assumptions / Issues / Decisions.
+- **AC-20.3** Each tab lists every row of its type for projects under the active customer (verified by fixture — 3 projects × 2 risks each → 6 rows on the Risks tab).
+- **AC-20.4** Row columns include: project name, description, owner, status, dates, last-updated. (Risk-only column: score = impact × probability via `Format.riskScore`.)
+- **AC-20.5** Clicking a row opens the Detail panel on the RAID tab, scrolled to the row's category (e.g., a Risk row deep-links to `#/p/<id>/raid#risks`).
+- **AC-20.6** Header filters: project (multi-select), status, owner, date range. Sort by any column.
+- **AC-20.7** Empty state: "No <category> recorded for <customer>" — same pattern as project-level RAID empty states.
+- **AC-20.8** Governance view no longer renders the `risks` sub-tab.
+
+**Files:** `index.html` — new HTML container `<div id="raidView">`, new `const RaidView = { … }` module, sidebar entry, `App.navigate` routing case, `App.viewNames.raid`. Reuses existing aggregators where possible (e.g. cross-portfolio risks helper already exists for the current Risks dashboard).
+
+**Risk:** medium — new view + 4 sub-tabs + cross-project aggregation. Mitigated by reusing existing risk-aggregation code; Assumptions / Issues / Decisions aggregators are simple slice helpers.
+
+---
+
+## 21. Tinder-style backlog refinement UX
+
+**User wording:** *"Plan out a much more interactive and user friendly backlog process that actually gets updates made and refined in such an easy way — think a tinder swipe left/right kind of UI that promotes decision making, updates and enhancements to the backlog."*
+
+**Current state:** The backlog view (`data-view="backlog"`) renders three column buckets: Unrefined / Refined / Parked. Refinement requires clicking through each project, hitting the Detail panel, editing fields, returning. High friction, low cadence — backlog rarely refined as a result.
+
+### Design — "Refinement Deck"
+
+A single-card swipe interface optimised for fast batch refinement:
+
+**Layout:**
+- Full-viewport overlay (opt-in via a "Refine backlog →" button on the existing backlog view; not a replacement of the columns view).
+- Stack of cards centred horizontally. Top card is interactive; the next 2-3 cards peek behind, slightly offset (Tinder-style).
+- Card content (compact, single screen):
+  - Project name (large) + customer pill
+  - Sponsor · manager · governance forum (small line)
+  - One-line PO caption (the `narrative.po_caption` field)
+  - Current MoSCoW band + size estimate (chip + number)
+  - RAG triplet (3 dots)
+  - "Last updated N days ago" stamp
+  - Top 3 risks (compact list, click each to drill — opens Detail panel deep-linked)
+  - Top 1 strategy linkage (metric / objective / persona chip)
+- Below the card: 4 large action buttons (also keyboard-driven).
+
+**Swipe actions:**
+
+| Direction | Effect | Keyboard | Audit-log event |
+|---|---|---|---|
+| **Swipe right** | Promote to Refined (`lifecycle_stage='Refined'` or set `backlog_state='refined'`) + advance | `→` | `field_change` |
+| **Swipe left** | Park (`backlog_state='parked'`) + advance | `←` | `field_change` |
+| **Swipe up** | Needs info (flag with `needs_info=true`; appears in My Actions) + advance | `↑` | `field_change` |
+| **Swipe down** | Skip (no change, just advance — review later) | `↓` | none |
+
+**Inline edits without leaving the card:**
+- MoSCoW chip → click to cycle Must / Should / Could / Won't (no modal)
+- Size estimate → inline number stepper (5-point increments)
+- "Add note" → small textarea collapses into card (saves as a Decision tagged `backlog-refinement` per Phase 5 reason-capture pattern, with auto-rationale "<reason>")
+- RAG dot → click to cycle Green → Amber → Red (shared `Overview.cycleRag`)
+
+**Session affordances:**
+- Progress: "Card 5 of 27 unrefined"
+- Undo last decision (single-step) — uses `App.pushUndo` to rollback the lifecycle_stage / backlog_state change
+- "Pause session" button — saves position so user can resume after lunch
+- End-of-deck summary: "You refined 14, parked 8, flagged 3, skipped 2. Session: 12 minutes."
+
+**Source of the deck:**
+- Default: all projects in the Backlog view's "Unrefined" bucket for the active customer.
+- Filter: optional "by attention score" sort (highest first) or "oldest unrefined first".
+
+**Persistence:**
+- Each swipe persists immediately via `App.updateProject` — no batched save.
+- Audit entries created per swipe (so a backlog-refinement session is replayable).
+- Session metadata captured: `{ session_id, started_at, ended_at, customer, decisions_count }` saved to `App.data.backlog_sessions[]` for retrospective.
+
+**Why this works:**
+- Reduces refinement friction from N clicks per project to 1 swipe per project.
+- Decision-forcing format (you must act per card; "skip" is explicit, not implicit).
+- Batches refinement into a single contiguous session — works like a meeting ritual rather than a periodic chore.
+- Existing data model survives unchanged — this is a pure UI overlay calling existing mutation paths.
+
+**AC:**
+- **AC-21.1** Backlog view renders a `Refine backlog →` button that opens the Refinement Deck overlay.
+- **AC-21.2** Overlay renders 1 active card + 3 peeking cards from `lifecycle_stage='Backlog'` (or `backlog_state='unrefined'`) projects of the active customer, sorted by attention score desc by default.
+- **AC-21.3** Swipe right (or arrow-right key) promotes the project's `backlog_state` to `refined`, advances to the next card, and writes an audit entry.
+- **AC-21.4** Swipe left (or arrow-left key) sets `backlog_state='parked'`, advances, writes audit entry.
+- **AC-21.5** Swipe up (or arrow-up key) sets `needs_info=true`, advances, writes audit entry tagged for My Actions.
+- **AC-21.6** Swipe down (or arrow-down key) advances without persisting any change.
+- **AC-21.7** Inline MoSCoW chip click cycles Must/Should/Could/Won't and persists via `App.updateProject` without leaving the card.
+- **AC-21.8** Inline RAG click cycles G→A→R via `Overview.cycleRag`.
+- **AC-21.9** Inline "Add note" expands a textarea; saving creates a Decision tagged `backlog-refinement`.
+- **AC-21.10** Undo button reverts the last card's swipe action AND rewinds the deck by one position.
+- **AC-21.11** End-of-deck summary screen shows counts (refined / parked / needs-info / skipped) + elapsed time.
+- **AC-21.12** Session metadata persisted to `App.data.backlog_sessions[]` on session end.
+- **AC-21.13** Pause: closing the overlay mid-session preserves position; re-opening resumes.
+- **AC-21.14** Keyboard shortcuts scoped to the overlay only — `j/k` style nav doesn't fire when overlay closed.
+
+**Files:** `index.html` — new module `const BacklogDeck = { … }` (~400 lines), new CSS for `.backlog-deck-card` / animations, integration point on existing Backlog view, schema: `project.backlog_state` field + `project.needs_info` flag + `App.data.backlog_sessions[]` array.
+
+**Risk:** medium — new significant UI surface, but built on existing mutation paths (no schema-shape changes beyond two flags + a sessions log). Touch animations work in jsdom for non-physics tests; visual e2e against Chromium needed.
+
+**Open question:** Should swiping right immediately promote OR mark "ready for promotion" with a separate batch-confirm at session end? Default: immediate (matches the Tinder mental model — every decision sticks; undo is available, batch-confirm is not). Confirm before Slot H ships.
+
+---
+
 ## Build sequence
 
 Each row independently shippable. Tests written alongside.
@@ -447,8 +644,10 @@ Each row independently shippable. Tests written alongside.
 | **E** | 11 | "feat(governance): require project scope on every action + decision" | medium | Has migration; gate via `enforceProjectScope` setting flag, default ON |
 | **F** | 14 | "feat(team): country-scoped holidays + member country attribute" | medium | Schema + capacity math — test against existing solver fixtures |
 | **G** | 15, 16, 17 | "feat(gantt): milestone diamonds + unallocated viz + label + status" | medium | Three Gantt-render changes; one combined visual-snapshot test |
+| **H** | 18, 19, 20 | "feat(nav): RAID top-level view + Strategy/Metrics/Personas grouped under Governance + rename Meetings" | medium | RAID is the biggest piece — new cross-portfolio view + 4 aggregators. Nav restructure is pure HTML. Land together so sidebar isn't reorganised twice. |
+| **I** | 21 | "feat(backlog): Refinement Deck (Tinder-style swipe UX)" | medium-high | New significant UI surface; isolated from other slots so it can ship later without blocking. |
 
-**Estimated test deltas:** ~40 new AC tests across the 7 slots. Existing 548 unit + 56 e2e tests must stay green.
+**Estimated test deltas:** ~75 new AC tests across the 9 slots (Slots H + I add ~35 between them). Existing 548 unit + 56 e2e tests must stay green.
 
 ---
 
@@ -461,6 +660,10 @@ Each row independently shippable. Tests written alongside.
 | Slot E migration flags orphans rather than auto-fixing — user may not notice the `_unscoped` rows | medium | Add a one-time toast on first load post-migration listing the count + link to a cleanup view. |
 | Slot F country migration applies wrong default for non-UK teams | medium | Default `GB` is documented; first thing the user sees after migration is the country picker on their first team-member edit. Could also gate via Settings toast: "We've defaulted team members to GB — review and adjust". |
 | Slot G #17 fix changes the visual look of every Gantt bar | medium | Take a screenshot snapshot of the current Gantt against `portfolio-data.json` before edit; manual sign-off on the new render before merging Slot G. |
+| Slot H #20 RAID view aggregator misses rows when `assumptions_register` / `issues_register` / `decisions_register` schemas drift across projects | medium | Use defensive `Array.isArray(p.X || [])` reads; write a smoke test against the demo fixture asserting total-row counts per category equal `Σ project rows`. |
+| Slot H #19 nav restructure breaks deep links / saved bookmarks if URL hash changed | low | View IDs (`metrics`, `personas`, `strategy`) preserved; only visual grouping changes. No hash change. |
+| Slot I #21 swipe gesture conflicts with browser-native pull-to-refresh on mobile | low | Overlay sets `touch-action: none` on the card stack; existing app is laptop-first so mobile is best-effort. |
+| Slot I #21 immediate-promote on swipe right surprises users who expected batch-confirm | medium | Undo is one click away; end-of-deck summary recaps. If the "Open question" in item 21 flips to batch-confirm, the implementation supports both with a settings flag. |
 
 ---
 
@@ -474,4 +677,11 @@ All 5 open questions answered by the user:
 4. **Item 14 (Country):** Locked country list = `UK / US / India / Netherlands / Canada / Malaysia`. India has sub-locations: Hyderabad, Bangalore. *(Plan updated above with the full `LOCATIONS` constant.)*
 5. **Item 17 (Status visualization):** Approved — diagonal stripe for in-progress, inset darker border for complete, flat for not-started.
 
-Plan ready to execute.
+## Open questions (added 2026-05-13, second pass)
+
+Items 18–21 were added later — two of them need confirmation before they ship:
+
+6. **Item 19 (Strategy/Metrics/Personas grouping):** Proposed sub-header name = **"Strategy & People"**. Alternatives: "Strategy", "Business Context", or your suggestion. Confirm.
+7. **Item 21 (Refinement Deck — swipe right):** Default = **immediate-promote** (Tinder mental model; undo available). Alternative: batch-confirm at session end. Confirm.
+
+Plan ready to execute. Slots A–G are unblocked; Slot H needs answer to Q6; Slot I needs answer to Q7.
