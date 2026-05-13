@@ -1122,6 +1122,16 @@ html[data-theme="dark"] .why-rank-btn { background: var(--surface); color: var(-
 .panel-toolbar-btn:hover { background: var(--surface-hover); color: var(--text-dark); }
 .panel-toolbar-spacer { flex: 1; }
 .panel-toolbar-jump { background: var(--surface); color: var(--text-dark); border: 1px solid var(--border-dim); border-radius: var(--radius-sm); font-size: var(--fs-xs); padding: 3px 6px; max-width: 180px; }
+/* Phase 0 / AC-0.1: chip-row TOC replaces the "Jump to…" select.
+   Renders horizontally-scrollable chips, one per visible panel-section.
+   Active chip (scroll-spy target) gets aria-current="location" styling. */
+.dp-chip-row { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; flex: 1; align-items: center; padding: 2px 0; margin: 0; }
+.dp-chip-row::-webkit-scrollbar { height: 4px; }
+.dp-chip-row::-webkit-scrollbar-thumb { background: var(--border-dim); border-radius: 4px; }
+.dp-chip-row .dp-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: transparent; border: 1px solid var(--border-dim); color: var(--text-dark-secondary); font-size: var(--fs-xs); white-space: nowrap; cursor: pointer; text-decoration: none; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; font-weight: 500; }
+.dp-chip-row .dp-chip:hover { background: var(--surface-2); color: var(--text-dark); }
+.dp-chip-row .dp-chip[aria-current="location"] { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; font-weight: 600; }
+.dp-chip-row .dp-chip:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .panel-section { margin-bottom: 20px; }
 .panel-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; position: relative; }
 .panel-section-title::before { content: ''; display: inline-block; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin-right: 4px; transition: transform 0.18s ease; opacity: 0.6; flex-shrink: 0; }
@@ -3359,9 +3369,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     <button class="panel-toolbar-btn" type="button" onclick="DetailPanel.collapseAll()">Collapse all</button>
     <button class="panel-toolbar-btn" type="button" onclick="DetailPanel.expandAll()">Expand all</button>
     <span class="panel-toolbar-spacer"></span>
-    <select class="panel-toolbar-jump" id="panelJumpMenu" onchange="DetailPanel.jumpToSection(this.value); this.value=''">
-      <option value="">Jump to…</option>
-    </select>
+    <nav class="dp-chip-row" id="dpChipRow" aria-label="Section navigation"></nav>
   </div>
   <div class="panel-body" id="panelBody"></div>
 </div>
@@ -3974,6 +3982,12 @@ const App = {
       if (!Array.isArray(p.success_criteria)) p.success_criteria = [];
       // 5. Customer-facing milestones (N rows, named + dated).
       if (!Array.isArray(p.customer_milestones)) p.customer_milestones = [];
+      // Phase 0 / AC-0.4: external_commitment defaults to false on legacy rows so
+      // the field is always present. Externally-committed milestones surface
+      // distinctly in later phases (Overview read-only strip + reports).
+      p.customer_milestones.forEach(m => {
+        if (typeof m.external_commitment !== 'boolean') m.external_commitment = false;
+      });
     });
 
     // Always-run (Project Details Overhaul, 2026-05): seed customer.sponsors from project sponsors,
@@ -16557,7 +16571,19 @@ const ColumnPicker = {
     document.body.appendChild(this.el);
     if (triggerBtn) {
       const r = triggerBtn.getBoundingClientRect();
-      this.el.style.top = (r.bottom + 6) + 'px';
+      // Position the popover relative to the trigger. The trigger lives in the bottom
+      // toolbar on the Projects view, so a naive `top: r.bottom + 6` pushes the popover
+      // below the viewport on standard heights (e.g. 800 px). Flip-up when below-fit
+      // fails; clamp into the viewport either way.
+      const vh = window.innerHeight;
+      const popoverH = this.el.offsetHeight || Math.min(400, Math.round(vh * 0.7));
+      const fitsBelow = (r.bottom + 6 + popoverH) <= vh;
+      const fitsAbove = (r.top - 6 - popoverH) >= 0;
+      let top;
+      if (fitsBelow) top = r.bottom + 6;
+      else if (fitsAbove) top = r.top - 6 - popoverH;
+      else top = Math.max(8, vh - popoverH - 8); // last-resort clamp
+      this.el.style.top = top + 'px';
       this.el.style.left = Math.max(8, r.right - 280) + 'px';
     }
     this.el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -17524,6 +17550,9 @@ const DetailPanel = {
     panel.setAttribute('aria-modal', 'false');
     document.getElementById('panelOverlay').classList.remove('open');
     this.currentId = null;
+    // Phase 0 / AC-0.1: tear down the scroll-spy observer so it doesn't keep firing
+    // against a hidden panel — also avoids stale section references on next open.
+    if (typeof this._teardownScrollSpy === 'function') this._teardownScrollSpy();
     if (this._triggerEl && this._triggerEl.focus) {
       this._triggerEl.focus();
       this._triggerEl = null;
@@ -18472,6 +18501,16 @@ const DetailPanel = {
     const updatedLabel = p.last_updated
       ? '<span class="psm-chip" title="Last saved ' + esc(p.last_updated) + '" style="background:transparent;padding:0;color:var(--text-muted)">Updated <strong style="color:var(--text-dark)">' + esc(App.timeAgo(new Date(p.last_updated))) + '</strong></span>'
       : '';
+    // Phase 0 / AC-0.3: last-reviewed chip. Sources `last_reviewed_at` (ISO) +
+    // `last_reviewed_by_walkthrough_id` (resolved to walkthrough name when available).
+    // Chip is absent when the project has never been reviewed.
+    let reviewedLabel = '';
+    if (p.last_reviewed_at) {
+      const wt = ((App.data && App.data.walkthroughs) || []).find(w => w.id === p.last_reviewed_by_walkthrough_id);
+      const wtName = wt ? (wt.customer + (wt.started_at ? ' · ' + new Date(wt.started_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '')) : 'walkthrough';
+      const isoTitle = 'Last reviewed ' + p.last_reviewed_at + (wt ? ' in ' + wt.customer + ' walkthrough (' + (wt.id || '') + ')' : '');
+      reviewedLabel = '<span class="psm-chip" title="' + esc(isoTitle) + '" style="background:transparent;padding:0;color:var(--text-muted)">Reviewed <strong style="color:var(--text-dark)">' + esc(App.timeAgo(new Date(p.last_reviewed_at))) + '</strong>' + (wt ? ' <span style="color:var(--text-muted);font-weight:normal">in ' + esc(wtName) + '</span>' : '') + '</span>';
+    }
     el.innerHTML =
       '<span class="psm-chip" style="background:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--surface-2)') + '22;color:' + (App.customerColor ? App.customerColor(p.customer) : 'var(--text-dark)') + '">' + esc(p.customer || '') + '</span>' +
       '<span class="psm-chip">' + esc(p.id) + '</span>' +
@@ -18482,27 +18521,45 @@ const DetailPanel = {
         '<span class="rag-dot" data-rag="' + App.ragKey(p.rag_scope) + '" style="background:' + ragColor(p.rag_scope) + '"></span>' +
       '</span>' +
       (p.manager ? '<span class="psm-chip" style="background:transparent;padding:0;color:var(--text-muted)">Manager: <strong style="color:var(--text-dark)">' + esc(p.manager) + '</strong></span>' : '') +
-      updatedLabel;
+      updatedLabel +
+      reviewedLabel;
   },
 
-  _buildJumpMenu() {
-    const menu = document.getElementById('panelJumpMenu');
-    if (!menu) return;
-    let html = '<option value="">Jump to…</option>';
-    document.querySelectorAll('#panelBody .panel-section').forEach((section, idx) => {
+  // Phase 0 / AC-0.1: chip-row TOC replaces the "Jump to…" select.
+  // - Renders one chip per visible panel-section of the active tab (DOM-constructed,
+  //   no innerHTML — every label flows through textContent so XSS-safe by construction).
+  // - Click scrolls section into view (expanding collapsed sections first).
+  // - Scroll-spy via IntersectionObserver marks the in-view chip aria-current="location".
+  _buildChipRow() {
+    const nav = document.getElementById('dpChipRow');
+    if (!nav) return;
+    const sections = Array.from(document.querySelectorAll('#panelBody .panel-section'));
+    while (nav.firstChild) nav.removeChild(nav.firstChild);
+    if (!sections.length) { this._teardownScrollSpy(); return; }
+    sections.forEach((section, idx) => {
       const title = section.querySelector('.panel-section-title');
       if (!title) return;
       if (!section.id) section.id = 'detail-section-' + idx;
-      html += '<option value="' + section.id + '">' + (title.childNodes[0] ? title.childNodes[0].textContent.trim() : title.textContent.trim()) + '</option>';
+      const labelText = (title.childNodes[0] ? title.childNodes[0].textContent.trim() : title.textContent.trim()) || ('Section ' + (idx + 1));
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'dp-chip';
+      chip.dataset.targetId = section.id;
+      chip.textContent = labelText;
+      chip.addEventListener('click', () => this.jumpToSection(section.id));
+      nav.appendChild(chip);
     });
-    menu.innerHTML = html;
+    this._setupScrollSpy(sections);
   },
+
+  // Back-compat alias — keeps older call-sites pointing at the same render path.
+  _buildJumpMenu() { return this._buildChipRow(); },
 
   jumpToSection(id) {
     if (!id) return;
     const section = document.getElementById(id);
     if (!section) return;
-    // If collapsed, expand before scrolling
+    // If collapsed, expand before scrolling so the user lands on visible content.
     if (section.classList.contains('collapsed')) {
       section.classList.remove('collapsed');
       const title = section.querySelector('.panel-section-title');
@@ -18512,6 +18569,52 @@ const DetailPanel = {
     }
     const body = document.getElementById('panelBody');
     if (body) body.scrollTo({ top: section.offsetTop - 60, behavior: 'smooth' });
+    this._markActiveChip(id);
+  },
+
+  _markActiveChip(id) {
+    const nav = document.getElementById('dpChipRow');
+    if (!nav) return;
+    nav.querySelectorAll('.dp-chip').forEach(chip => {
+      if (chip.dataset.targetId === id) chip.setAttribute('aria-current', 'location');
+      else chip.removeAttribute('aria-current');
+    });
+    const active = nav.querySelector('.dp-chip[aria-current="location"]');
+    if (active && active.scrollIntoView) {
+      try { active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); } catch (_e) {}
+    }
+  },
+
+  _setupScrollSpy(sections) {
+    this._teardownScrollSpy();
+    if (!sections || !sections.length || typeof IntersectionObserver === 'undefined') return;
+    const body = document.getElementById('panelBody');
+    if (!body) return;
+    const ratios = new Map();
+    const cb = (entries) => {
+      entries.forEach(e => ratios.set(e.target.id, e.intersectionRatio));
+      let bestId = '';
+      let bestRatio = -1;
+      sections.forEach(s => {
+        const r = ratios.get(s.id) || 0;
+        if (r > bestRatio) { bestRatio = r; bestId = s.id; }
+      });
+      if (bestId && bestRatio > 0) this._markActiveChip(bestId);
+    };
+    const io = new IntersectionObserver(cb, {
+      root: body,
+      rootMargin: '-10% 0px -70% 0px',
+      threshold: [0, 0.1, 0.5, 1]
+    });
+    sections.forEach(s => io.observe(s));
+    this._scrollSpyObserver = io;
+  },
+
+  _teardownScrollSpy() {
+    if (this._scrollSpyObserver) {
+      try { this._scrollSpyObserver.disconnect(); } catch (_e) {}
+      this._scrollSpyObserver = null;
+    }
   },
 
   collapseAll() {
@@ -18695,18 +18798,20 @@ const DetailPanel = {
   },
 
   renderAuditLog(projectId) {
-    // Change History is now a collapsible panel-section (collapsed by default — it's reference
-    // material, not something you read every time). The title carries the existing chevron +
-    // click handler installed by _installCollapseHandler.
+    // Phase 0 / AC-0.2: renamed "Change History" → "History". Stays default-collapsed
+    // (reference material, not weekly-read content) but the "show all" link is rendered
+    // unconditionally — every project gets a 1-click jump to its Activity feed regardless
+    // of how many local entries exist. Closes the PO red line "never hidden by accordion alone".
     const entries = App.getProjectAuditLog(projectId);
     const totalCount = App.data && App.data.audit_log ? App.data.audit_log.filter(e => e.projectId === projectId).length : entries.length;
-    // Match the `.risk-count` chip pattern used by every other register section title (Risks,
-    // Issues, Stakeholders, etc.) so Change History reads the same visual rhythm.
-    const headerLabel = 'Change History' + (entries.length ? ' <span class="risk-count">' + totalCount + '</span>' : '');
+    const headerLabel = 'History' + (entries.length ? ' <span class="risk-count">' + totalCount + '</span>' : '');
+    const pname = (App.data.projects.find(p => p.id === projectId) || {}).name || '';
+    const showAllLink = '<div style="padding:6px 0;font-size:11px;color:var(--accent-blue);cursor:pointer" onclick="App.navigate(\'activity\');setTimeout(function(){var s=document.getElementById(\'activitySearch\');if(s){s.value=' + JSON.stringify(pname) + ';s.dispatchEvent(new Event(\'input\'))}},100)">' + (totalCount ? 'Show all ' + totalCount + ' changes in Activity feed' : 'Open Activity feed') + ' →</div>';
     if (!entries.length) {
       return '<div class="panel-section collapsed" data-default-collapsed="change-history">' +
         '<div class="panel-section-title">' + headerLabel + '</div>' +
         '<div class="audit-empty">No changes recorded yet</div>' +
+        showAllLink +
       '</div>';
     }
     const rows = entries.map(e => {
@@ -18721,13 +18826,9 @@ const DetailPanel = {
       else if (e.newValue) { detail += ': set to ' + Dashboard.esc(String(e.newValue).substring(0, 60)); }
       return '<div class="audit-entry"><span class="audit-time">' + timeStr + '</span>' + srcBadge + '<span class="audit-detail">' + detail + '</span></div>';
     }).join('');
-    const pname = (App.data.projects.find(p => p.id === projectId) || {}).name || '';
-    const showAll = totalCount > 50
-      ? '<div style="padding:6px 0;font-size:11px;color:var(--accent-blue);cursor:pointer" onclick="App.navigate(\'activity\');setTimeout(function(){var s=document.getElementById(\'activitySearch\');if(s){s.value=' + JSON.stringify(pname) + ';s.dispatchEvent(new Event(\'input\'))}},100)">View all ' + totalCount + ' changes in Activity feed &rarr;</div>'
-      : '';
     return '<div class="panel-section collapsed" data-default-collapsed="change-history">' +
       '<div class="panel-section-title">' + headerLabel + '</div>' +
-      '<div class="audit-log-rows">' + rows + showAll + '</div>' +
+      '<div class="audit-log-rows">' + rows + showAllLink + '</div>' +
     '</div>';
   },
 
@@ -19278,6 +19379,7 @@ const DetailPanel = {
             this.CUSTOMER_MILESTONE_STATUSES.map(s => '<option value="' + s + '"' + (s === (m.status || 'Planned') ? ' selected' : '') + '>' + s + '</option>').join('') +
           '</select></div>' +
           '<div class="full"><div class="risk-field-label">Notes</div><input type="text" data-customer-milestone-idx="' + i + '" data-customer-milestone-field="notes" value="' + esc(m.notes || '') + '" placeholder="Optional" onchange="DetailPanel.onCustomerMilestoneChange(this)"></div>' +
+          '<div class="full"><label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dark-secondary);cursor:pointer;margin-top:4px"><input type="checkbox" data-customer-milestone-idx="' + i + '" data-customer-milestone-field="external_commitment" ' + (m.external_commitment ? 'checked' : '') + ' onchange="DetailPanel.onCustomerMilestoneChange(this)" style="margin:0;cursor:pointer"> Committed to customer (external)</label></div>' +
         '</div>' +
       '</div>'
     ).join('');
@@ -19287,7 +19389,7 @@ const DetailPanel = {
     if (!p) return;
     if (!Array.isArray(p.customer_milestones)) p.customer_milestones = [];
     App.pushUndo('Add customer milestone');
-    p.customer_milestones.push({ name: '', date: '', status: 'Planned', notes: '' });
+    p.customer_milestones.push({ name: '', date: '', status: 'Planned', notes: '', external_commitment: false });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
@@ -19314,7 +19416,9 @@ const DetailPanel = {
     const field = el.dataset.customerMilestoneField;
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p || !Array.isArray(p.customer_milestones) || !p.customer_milestones[idx]) return;
-    p.customer_milestones[idx][field] = el.value;
+    // AC-0.4: external_commitment is a checkbox; read .checked, not .value.
+    const value = (el.type === 'checkbox') ? !!el.checked : el.value;
+    p.customer_milestones[idx][field] = value;
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
