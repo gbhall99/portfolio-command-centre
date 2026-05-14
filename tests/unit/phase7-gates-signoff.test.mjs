@@ -158,13 +158,14 @@ describe('Phase 7 / AC-7.3 — Sponsor sign-off log', () => {
     app.teardown();
   });
 
-  it('renderSponsorSignOffLog renders one row per sign-off', async () => {
+  it('renderSponsorSignOffLog renders one row per sign-off on Scope & Value tab', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.addSponsorSignOff('P7', { date: '2026-01-01', scope_version: 'v1', sponsor: 'A', status: 'Approved' });
     app.DetailPanel.addSponsorSignOff('P7', { date: '2026-02-01', scope_version: 'v2', sponsor: 'B', status: 'Rejected' });
     app.DetailPanel.open('P7');
-    const delivery = app.document.querySelector('[data-dp-tab="delivery"]');
-    const rows = delivery.querySelectorAll('.dp-sponsor-signoff-row');
+    // User-IA-rev: Sponsor sign-off log moved from Delivery to Scope.
+    const scope = app.document.querySelector('[data-dp-tab="scope"]');
+    const rows = scope.querySelectorAll('.dp-sponsor-signoff-row');
     expect(rows.length).toBe(2);
     app.teardown();
   });

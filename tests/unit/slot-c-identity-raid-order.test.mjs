@@ -26,11 +26,11 @@ describe('Slot C — Item 3: Overview Identity strip removed; sponsor pill in st
     app.teardown();
   });
 
-  it('Scope tab still renders the full editable Identity section', async () => {
+  it('Overview tab now renders the full editable Identity section (moved from Scope per user-IA-rev)', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('C1');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
-    const titles = Array.from(scope.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
+    const overview = app.document.querySelector('[data-dp-tab="overview"]');
+    const titles = Array.from(overview.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
     expect(titles.some(t => /^Identity/.test(t))).toBe(true);
     app.teardown();
   });

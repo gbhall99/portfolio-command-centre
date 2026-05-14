@@ -1944,8 +1944,16 @@ html[data-theme="dark"] .gantt-phase-status-dot.pending { background: var(--surf
    border; in-progress segments get a diagonal stripe overlay. Not-started keeps
    today's flat appearance (the baseline). */
 .gantt-seg-complete { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-.gantt-seg-in-progress::after { content: ''; position: absolute; inset: 0; pointer-events: none; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.18) 0 4px, transparent 4px 8px); }
 .gantt-seg-in-progress { position: relative; }
+/* User-IA-rev — stripes use explicit positioning + a slightly heavier opacity
+   so the in-progress overlay reads on every segment regardless of skill colour. */
+.gantt-seg-in-progress::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.32) 0 4px, transparent 4px 8px);
+}
 /* Item 16 — unallocated dashed segment marker */
 .gantt-seg-unallocated { pointer-events: auto !important; cursor: pointer; z-index: 1; }
 .gantt-seg.gantt-hovered { filter: brightness(1.15); z-index: 3; }
@@ -3041,25 +3049,24 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Governance</div>
-      <!-- Slot H / Item 19 — Strategy + Metrics + Personas grouped under
-           "Business Context" sub-header inside the Governance section. -->
-      <div class="nav-subgroup-label" data-nav-subgroup="business-context" style="font-size:10px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;padding:8px 16px 4px;margin-top:4px">Business Context</div>
-      <div class="nav-item nav-item-indent" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
+      <!-- User-IA-rev — Business Context sub-header dropped; menu flat. All 4
+           items sit at the same indent level under the Governance section. -->
+      <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
         Strategy
       </div>
-      <div class="nav-item nav-item-indent" data-view="metrics" onclick="App.navigate('metrics')" title="Metric library with RACI and cascade">
+      <div class="nav-item" data-view="metrics" onclick="App.navigate('metrics')" title="Metric library with RACI and cascade">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 18 9 12 13 16 21 8"/><polyline points="14 8 21 8 21 15"/></svg>
         Metrics
       </div>
-      <div class="nav-item nav-item-indent" data-view="personas" onclick="App.navigate('personas')" title="Persona hierarchy + assigned people">
+      <div class="nav-item" data-view="personas" onclick="App.navigate('personas')" title="Persona hierarchy + assigned people">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-1a4 4 0 014-4h4a4 4 0 014 4v1"/><circle cx="17" cy="9" r="2"/><path d="M16 21v-1a3 3 0 013-3h0a3 3 0 013 3v1"/></svg>
         Personas
       </div>
-      <!-- Slot H / Item 18 — sidebar label "Governance" (no "Meetings" suffix). -->
+      <!-- User-IA-rev — inner Governance tab renamed to "Business Management". -->
       <div class="nav-item" data-view="governance" onclick="App.navigate('governance')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
-        Governance <span class="nav-badge" id="navBadgeForums">0</span>
+        Business Management <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
       <div class="nav-section-label">System</div>
       <!-- Activity moved here from the Portfolio section — audit-trail browsing is an admin/system task. -->
@@ -7090,7 +7097,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', governance: 'Governance', raid: 'RAID', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', governance: 'Business Management', raid: 'RAID', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -10933,16 +10940,87 @@ const Personas = {
     const p = this.byId(personaId);
     if (!p) return;
     const metrics = Metrics.list();
-    if (!metrics.length) { alert('No metrics defined yet for this customer.'); return; }
-    const list = metrics.map((m, i) => (i + 1) + ') ' + m.name + ' [' + m.id + ']').join('\n');
-    const sel = prompt('Pick a metric (id or number):\n' + list);
-    if (!sel) return;
-    let metric = metrics.find(m => m.id === sel.trim());
-    if (!metric) {
-      const idx = parseInt(sel.trim(), 10);
-      if (!isNaN(idx) && idx >= 1 && idx <= metrics.length) metric = metrics[idx - 1];
-    }
-    if (!metric) { alert('Metric not found.'); return; }
+    if (!metrics.length) { App.toast('No metrics defined yet for this customer.', 'error'); return; }
+    // User-IA-rev — replace the typed-id prompt with a proper picker dialog.
+    this._openMetricPicker(metrics, (metric) => {
+      if (!metric) return;
+      this._addHoldingForMetric(personaId, metric);
+    });
+  },
+
+  _openMetricPicker(metrics, onPick) {
+    const existing = document.getElementById('personaMetricPickerOverlay');
+    if (existing) existing.remove();
+    const esc = Dashboard.esc;
+    const overlay = document.createElement('div');
+    overlay.id = 'personaMetricPickerOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:340;background:rgba(15,23,42,0.55);display:flex;align-items:center;justify-content:center;padding:20px';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:480px;width:100%;max-height:80vh;display:flex;flex-direction:column';
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:14px 18px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:baseline';
+    const ti = document.createElement('h3');
+    ti.style.cssText = 'margin:0;font-size:14px;font-weight:700';
+    ti.textContent = 'Pick a metric';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.style.cssText = 'background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => { overlay.remove(); onPick(null); });
+    header.appendChild(ti);
+    header.appendChild(closeBtn);
+    const filter = document.createElement('input');
+    filter.type = 'text';
+    filter.placeholder = 'Search metrics…';
+    filter.id = 'personaMetricPickerFilter';
+    filter.style.cssText = 'margin:12px 18px;padding:7px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px';
+    const list = document.createElement('div');
+    list.style.cssText = 'overflow:auto;padding:0 8px 12px;flex:1';
+    const renderRows = (q) => {
+      const ql = (q || '').toLowerCase().trim();
+      list.replaceChildren();
+      metrics.filter(m => !ql || (m.name || '').toLowerCase().indexOf(ql) >= 0 || (m.id || '').toLowerCase().indexOf(ql) >= 0)
+        .forEach(m => {
+          const row = document.createElement('button');
+          row.type = 'button';
+          row.className = 'persona-metric-picker-row';
+          row.dataset.metricId = m.id;
+          row.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:8px 12px;border:none;background:transparent;text-align:left;cursor:pointer;border-radius:var(--radius-sm)';
+          row.addEventListener('mouseenter', () => { row.style.background = 'var(--bg-content)'; });
+          row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+          const nameEl = document.createElement('div');
+          nameEl.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-dark)';
+          nameEl.textContent = m.name;
+          const idEl = document.createElement('div');
+          idEl.style.cssText = 'font-size:10px;color:var(--text-muted)';
+          idEl.textContent = m.id + (m.unit ? ' · ' + m.unit : '');
+          row.appendChild(nameEl);
+          row.appendChild(idEl);
+          row.addEventListener('click', () => { overlay.remove(); onPick(m); });
+          list.appendChild(row);
+        });
+      if (!list.childNodes.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:12px;text-align:center;color:var(--text-muted);font-size:12px';
+        empty.textContent = 'No metrics match "' + (q || '') + '".';
+        list.appendChild(empty);
+      }
+    };
+    filter.addEventListener('input', () => renderRows(filter.value));
+    modal.appendChild(header);
+    modal.appendChild(filter);
+    modal.appendChild(list);
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); onPick(null); } });
+    document.body.appendChild(overlay);
+    renderRows('');
+    setTimeout(() => filter.focus(), 30);
+  },
+
+  _addHoldingForMetric(personaId, metric) {
     let filter = {};
     if ((metric.dimensions || []).length) {
       const filterText = prompt('Filter (optional, "key=value, key=value"):', '');
@@ -19261,17 +19339,26 @@ const DetailPanel = {
     // Detail panel since it is a project control, not an EVM stat.
     const lifecycleBanner = this.renderLifecycleBanner(p);
     if (lifecycleBanner) overviewSections.push(lifecycleBanner);
+    // User-IA-rev — Status stays on Overview; RAG/Health moves to top of RAID.
     overviewSections.push(
       '<div class="panel-section">' +
-        '<div class="panel-section-title">Status &amp; Health</div>' +
+        '<div class="panel-section-title">Status</div>' +
         '<div class="field-grid">' +
           '<div class="field-group"><div class="field-label">Status</div>' + sel('status', this.STATUSES, p.status) + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+    // Build the Health (RAG triplet) block here so it can be pushed to the
+    // top of raidSections once they're processed below.
+    const healthBlockForRaid =
+      '<div class="panel-section dp-health-block">' +
+        '<div class="panel-section-title">Health</div>' +
+        '<div class="field-grid">' +
           ragSel('Schedule Health', 'rag_schedule', p.rag_schedule) +
           ragSel('Resource Health', 'rag_resourcing', p.rag_resourcing) +
           ragSel('Scope Health', 'rag_scope', p.rag_scope) +
         '</div>' +
-      '</div>'
-    );
+      '</div>';
     overviewSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy</div>' +
@@ -19298,10 +19385,9 @@ const DetailPanel = {
       '</div>';
     })());
 
-    // Phase 5 / AC-5.1: Blockers + Top-3 risks strip on Overview. Filters
-    // risks_register and issues_register for blocking/at-risk/red items so the
-    // new risk logged via the Phase tracker chip surfaces here without reload.
-    overviewSections.push((function() {
+    // User-IA-rev — Blockers moves to RAID (top, after Health). Build the
+    // block here and push to raidSections below; no overview push.
+    const blockersBlockForRaid = (function() {
       const risks = Array.isArray(p.risks_register) ? p.risks_register : [];
       const blockers = risks.filter(r => {
         if (!r) return false;
@@ -19321,7 +19407,10 @@ const DetailPanel = {
         '<div class="panel-section-title">Blockers</div>' +
         inner +
       '</div>';
-    })());
+    })();
+    // User-IA-rev — push Health + Blockers to the top of the RAID tab.
+    raidSections.push(healthBlockForRaid);
+    raidSections.push(blockersBlockForRaid);
     // Item 2 — RAID order: Risks → Assumptions → Issues → Decisions.
     raidSections.push(
       '<div class="panel-section">' +
@@ -19423,9 +19512,8 @@ const DetailPanel = {
       }
     })();
 
-    // Setup/Health tabs collapsed into the 4-tab IA. Each push targets the
-    // tab from §3.13 migration map.
-    scopeSections.push(
+    // User-IA-rev — Identity + Prioritisation moved from Scope & Value to Overview.
+    overviewSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Identity</div>' +
         '<div class="field-grid">' +
@@ -19448,7 +19536,7 @@ const DetailPanel = {
         '</div>' +
       '</div>'
     );
-    scopeSections.push(
+    overviewSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Prioritisation</div>' +
         '<div class="field-grid">' +
@@ -19554,8 +19642,8 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
       '</div>'
     );
-    // Phase 7 / AC-7.3: Sponsor sign-off log co-located with Stakeholders on Delivery.
-    deliverySections.push(
+    // User-IA-rev — Sponsor sign-off log moved from Delivery to Scope & Value.
+    scopeSections.push(
       '<div class="panel-section dp-sponsor-signoff-section">' +
         '<div class="panel-section-title">Sponsor sign-off log <span class="risk-count">' + ((p.stakeholders || []).filter(s => s && s.type === 'sponsor_sign_off').length) + '</span></div>' +
         '<div id="sponsorSignOffList">' + this.renderSponsorSignOffLog(p) + '</div>' +
@@ -19591,23 +19679,23 @@ const DetailPanel = {
       '</div>'
     );
 
-    // Delivery (daily ops) — Dates, Sprint window, Delivery Phases, Customer Milestones.
-    deliverySections.push(
-      '<div class="panel-section">' +
-        '<div class="panel-section-title">Dates</div>' +
+    // User-IA-rev — Dates becomes a sub-block embedded inside Customer
+    // Milestones (no standalone Dates section).
+    const datesSubBlock =
+      '<div class="dp-dates-subblock" data-dates-subblock style="border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;background:var(--bg-content)">' +
+        '<div class="dp-dates-subtitle" style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Dates</div>' +
         '<div class="field-grid">' +
           '<div class="field-group"><div class="field-label">Hard deadline (external)</div>' +
             '<input type="date" class="field-input" data-field="hard_deadline" value="' + (p.hard_deadline || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
           '<div class="field-group"><div class="field-label">Target date</div>' +
             '<input type="date" class="field-input" data-field="target_date" value="' + (p.target_date || '') + '" onchange="DetailPanel.onFieldChange(this)"></div>' +
         '</div>' +
-        '<div style="margin-top:10px;font-size:11px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:14px">' +
+        '<div style="margin-top:8px;font-size:11px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:14px">' +
           (p.start_date ? '<span><strong>Started:</strong> ' + new Date(p.start_date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) + '</span>' : '') +
           ((p.status === 'Complete' || p.status === 'Closed') && p.actual_date ? '<span><strong>Completed:</strong> ' + new Date(p.actual_date).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) + '</span>' : '') +
           (p.baseline_start && p.baseline_end ? '<span><strong>Baseline:</strong> ' + p.baseline_start + ' &rarr; ' + p.baseline_end + '</span>' : '') +
         '</div>' +
-      '</div>'
-    );
+      '</div>';
     (function() {
       const win = (typeof App.computeSprintWindow === 'function') ? App.computeSprintWindow(p) : { start: null, end: null };
       const fmtSprint = (s) => s ? (s.sprint_id + ' · ' + (s.start_date ? new Date(s.start_date).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) : '—')) : '—';
@@ -19691,6 +19779,8 @@ const DetailPanel = {
     deliverySections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Customer Milestones <span class="risk-count" id="customerMilestoneCount">' + ((p.customer_milestones || []).length || 0) + '</span></div>' +
+        // User-IA-rev — Dates embedded at the top of the Customer Milestones section.
+        datesSubBlock +
         '<div class="risk-list" id="customerMilestoneList">' +
         this.renderCustomerMilestones(p) +
         '</div>' +
@@ -23938,8 +24028,26 @@ const Gantt = {
           // butt flush without visible white gaps. Compute a per-phase status
           // class so finished/in-progress segments get a subtle styling marker.
           const segW = Math.max(6, Math.round(segX2 - segX1));
-          const allComplete = splits.every(sp => sp.status === 'complete' || sp.completed >= (sp.points || 0));
-          const anyInProg = splits.some(sp => sp.status === 'in_progress' || ((sp.completed || 0) > 0 && (sp.completed || 0) < (sp.points || 0)));
+          // User-IA-rev — segment status detection rewritten to use aggregate
+          // completed-vs-points math so the diagonal-stripe in-progress overlay
+          // renders consistently across every segment.
+          //   total_done = Σ sp.completed (or sp.points when sp.status==='complete')
+          //   total_pts  = Σ sp.points
+          //   complete   = total_pts > 0 AND total_done >= total_pts
+          //   in-progress= total_done > 0 AND total_done < total_pts
+          //                OR any split has status === 'in_progress'
+          let total_done = 0;
+          let total_pts = 0;
+          let anyExplicitInProg = false;
+          splits.forEach(sp => {
+            const pts2 = Number(sp.points) || 0;
+            const done = sp.status === 'complete' ? pts2 : (Number(sp.completed) || 0);
+            total_pts += pts2;
+            total_done += done;
+            if (sp.status === 'in_progress') anyExplicitInProg = true;
+          });
+          const allComplete = total_pts > 0 && total_done >= total_pts;
+          const anyInProg = !allComplete && (anyExplicitInProg || (total_done > 0 && total_done < total_pts));
           const segStatusCls = allComplete ? ' gantt-seg-complete' : anyInProg ? ' gantt-seg-in-progress' : '';
           segmentsHtml += '<div class="gantt-seg gantt-hoverable' + segStatusCls + '" data-hover-type="seg" data-skill="' + skillLabels[sk] + '" data-skill-key="' + sk + '" data-pts="' + pts + '" data-phase-status="' + (allComplete ? 'complete' : anyInProg ? 'in-progress' : 'not-started') + '" style="position:absolute;top:0;bottom:0;left:' + segLeft + 'px;width:' + segW + 'px;background:' + skillColors[sk] + ';opacity:0.85"></div>';
         });

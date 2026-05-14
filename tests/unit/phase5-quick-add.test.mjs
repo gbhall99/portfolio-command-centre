@@ -48,8 +48,8 @@ describe('Phase 5 / AC-5.1 — Phase tracker + Log risk chip', () => {
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
     expect(raid.innerHTML).toMatch(/SME unavailable in sprint 3/);
 
-    // Overview blockers strip surfaces the high-severity risk.
-    const blockersStrip = app.document.querySelector('[data-dp-tab="overview"] .dp-blockers-strip');
+    // User-IA-rev: Blockers strip moved from Overview to RAID.
+    const blockersStrip = app.document.querySelector('[data-dp-tab="raid"] .dp-blockers-strip');
     expect(blockersStrip).toBeTruthy();
     expect(blockersStrip.textContent).toContain('SME unavailable in sprint 3');
     app.teardown();

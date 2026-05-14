@@ -85,11 +85,10 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     const scope = app.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
 
-    // Overview holds: EVM strip, Status & Health, Strategy.
-    // Note: Slot C removed the read-only Identity strip from Overview — identity
-    // info is now in the title bar + a sponsor pill in the sticky header.
+    // Overview holds: Status, Strategy, plus (user-IA-rev) Identity + Prioritisation.
+    // Health/RAG block moved to RAID per user request.
     expect(overview.querySelector('.dp-identity-strip')).toBeFalsy();
-    expect(overview.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status</);
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Strategy</);
 
     // Delivery holds: Delivery Setup, Dependencies, Stakeholders, Dates,
@@ -102,10 +101,12 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
     expect(delivery.innerHTML).toMatch(/Customer Milestones/);
 
-    // Scope holds: Identity (editable), Prioritisation, Strategy linkage, Benefits, Success criteria
+    // User-IA-rev: Identity + Prioritisation moved from Scope to Overview.
+    const overviewTitles = Array.from(overview.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
     const scopeTitles = Array.from(scope.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
-    expect(scopeTitles.some(t => /^Identity/.test(t))).toBe(true);
-    expect(scopeTitles.some(t => /^Prioritisation/.test(t))).toBe(true);
+    expect(overviewTitles.some(t => /^Identity/.test(t))).toBe(true);
+    expect(overviewTitles.some(t => /^Prioritisation/.test(t))).toBe(true);
+    // Scope keeps Strategy linkage / Benefits / Success criteria / Gate reviews / Sponsor sign-off.
     expect(scopeTitles.some(t => /^Strategy linkage/.test(t))).toBe(true);
     expect(scopeTitles.some(t => /^Benefits/.test(t))).toBe(true);
     expect(scopeTitles.some(t => /^Success criteria/.test(t))).toBe(true);

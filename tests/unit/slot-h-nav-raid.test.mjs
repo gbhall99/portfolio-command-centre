@@ -12,23 +12,22 @@ async function bootEmpty() {
   }));
 }
 
-describe('Slot H — Item 18: Governance view renamed; gov-tabs removed', () => {
-  it('sidebar nav item for the Governance view shows "Governance" (no "Meetings" suffix)', async () => {
+describe('Governance nav item — renamed to Business Management; gov-tabs removed', () => {
+  it('sidebar nav item shows "Business Management" (no "Governance" or "Meetings" suffix)', async () => {
     const app = await bootEmpty();
     const navItem = app.document.querySelector('[data-view="governance"]');
     expect(navItem).toBeTruthy();
-    expect(navItem.textContent.trim()).toMatch(/^Governance/);
+    expect(navItem.textContent).toMatch(/Business Management/);
     expect(navItem.textContent).not.toMatch(/Meetings/);
     app.teardown();
   });
 
-  it('App.viewNames map shows Governance for "governance"', async () => {
+  it('App.viewNames map shows "Business Management" for "governance"', async () => {
     const app = await bootEmpty();
-    // updateViewTitlebar contains the map; assert via a navigate.
     app.App.activeCustomer = 'Acme Industries';
     app.App.navigate('governance');
     const title = app.document.getElementById('viewTitlebarName');
-    expect(title.textContent).toBe('Governance');
+    expect(title.textContent).toBe('Business Management');
     app.teardown();
   });
 
@@ -40,12 +39,11 @@ describe('Slot H — Item 18: Governance view renamed; gov-tabs removed', () => 
   });
 });
 
-describe('Slot H — Item 19: Strategy + Metrics + Personas grouped under "Business Context"', () => {
-  it('Business Context sub-header sits inside the Governance nav section', async () => {
+describe('Governance section — flat menu (no Business Context sub-header)', () => {
+  it('Business Context sub-header is no longer in the DOM (menu is flat)', async () => {
     const app = await bootEmpty();
     const subHeader = app.document.querySelector('[data-nav-subgroup="business-context"]');
-    expect(subHeader).toBeTruthy();
-    expect(subHeader.textContent.trim()).toBe('Business Context');
+    expect(subHeader).toBeFalsy();
     app.teardown();
   });
 

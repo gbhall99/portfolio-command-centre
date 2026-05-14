@@ -53,7 +53,7 @@ describe('Detail Panel — four-tab IA', () => {
     app.teardown();
   });
 
-  it('Overview carries Status & Health + Identity strip; Delivery carries phase points + sprint window; Scope carries Identity + Benefits; RAID carries Risks + Issues', async () => {
+  it('Overview carries Status + Identity + Prioritisation; Delivery carries phase points + sprint window; Scope carries Strategy linkage + Benefits; RAID carries Health + Blockers + Risks + Issues + Decisions (user-IA-rev)', async () => {
     resetIdSeq();
     const proj = makeProject({ name: 'P1' });
     proj.size_total = 10;
@@ -67,13 +67,21 @@ describe('Detail Panel — four-tab IA', () => {
     const delivery = app.window.document.querySelector('[data-dp-tab="delivery"]');
     const scope = app.window.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.window.document.querySelector('[data-dp-tab="raid"]');
-    expect(overview.innerHTML).toMatch(/Status &amp; Health|Status & Health/);
-    // Slot C — Identity strip dropped from Overview; sponsor pill lives in the sticky header.
+    // Overview: Status (kept), Identity + Prioritisation (moved from Scope).
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status</);
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Identity</);
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Prioritisation</);
+    // Identity strip (read-only) was dropped earlier; full editable Identity now lives here.
     expect(overview.querySelector('.dp-identity-strip')).toBeNull();
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
     expect(delivery.innerHTML).toMatch(/Sprint window/);
-    expect(scope.innerHTML).toMatch(/Identity/);
+    // Scope keeps Strategy linkage + Benefits + Success criteria; Identity moved out.
+    expect(scope.innerHTML).toMatch(/Strategy linkage/);
     expect(scope.innerHTML).toMatch(/Benefits/);
+    expect(scope.innerHTML).not.toMatch(/panel-section-title[^>]*>Identity</);
+    // RAID: Health + Blockers (moved from Overview) + R/A/I/D.
+    expect(raid.innerHTML).toMatch(/panel-section-title[^>]*>Health</);
+    expect(raid.innerHTML).toMatch(/panel-section-title[^>]*>Blockers</);
     expect(raid.innerHTML).toMatch(/Risks/);
     expect(raid.innerHTML).toMatch(/Issues/);
     expect(raid.innerHTML).toMatch(/Decisions/);

@@ -36,8 +36,9 @@ describe('Slot A — Item 13: MoSCoW field-help popover', () => {
   it('Prioritisation section renders a help button next to the MoSCoW label', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('A1');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
-    const btn = scope.querySelector('.field-help-btn[data-field="moscow"]');
+    // User-IA-rev: Prioritisation moved from Scope to Overview.
+    const overview = app.document.querySelector('[data-dp-tab="overview"]');
+    const btn = overview.querySelector('.field-help-btn[data-field="moscow"]');
     expect(btn).toBeTruthy();
     expect(btn.textContent).toBe('?');
     expect(btn.getAttribute('aria-label')).toMatch(/MoSCoW/i);
