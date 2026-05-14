@@ -3048,9 +3048,9 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
       </div>
     </div>
     <div class="nav-section">
-      <div class="nav-section-label">Governance</div>
+      <div class="nav-section-label">Business Management</div>
       <!-- User-IA-rev — Business Context sub-header dropped; menu flat. All 4
-           items sit at the same indent level under the Governance section. -->
+           items sit at the same indent level under the Business Management section. -->
       <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
         Strategy
@@ -3063,10 +3063,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-1a4 4 0 014-4h4a4 4 0 014 4v1"/><circle cx="17" cy="9" r="2"/><path d="M16 21v-1a3 3 0 013-3h0a3 3 0 013 3v1"/></svg>
         Personas
       </div>
-      <!-- User-IA-rev — inner Governance tab renamed to "Business Management". -->
+      <!-- User-IA-rev — labels swapped: section header is "Business Management";
+           the inner forums view is "Governance". data-view="governance" preserved
+           for back-compat with deep-links / shortcuts. -->
       <div class="nav-item" data-view="governance" onclick="App.navigate('governance')">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
-        Business Management <span class="nav-badge" id="navBadgeForums">0</span>
+        Governance <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
       <div class="nav-section-label">System</div>
       <!-- Activity moved here from the Portfolio section — audit-trail browsing is an admin/system task. -->
@@ -7097,7 +7099,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', governance: 'Business Management', raid: 'RAID', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'My Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Strategy', sprint: 'Sprint Planning', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', governance: 'Governance', raid: 'RAID', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -19359,16 +19361,17 @@ const DetailPanel = {
           ragSel('Scope Health', 'rag_scope', p.rag_scope) +
         '</div>' +
       '</div>';
-    overviewSections.push(
+    // User-IA-rev — Strategy + Gates pushed AFTER Identity + Prioritisation
+    // (see Identity / Prioritisation push below). Build the blocks here, push later.
+    const strategyOverviewBlock =
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy</div>' +
         this.renderStrategySection(p) +
-      '</div>'
-    );
+      '</div>';
 
     // Phase 7 / AC-7.2: Last gate / Next gate chip on Overview. Sources from
     // computeGateRollup. Renders both fields side-by-side; em-dash when no data.
-    overviewSections.push((function() {
+    const gatesOverviewBlock = (function() {
       const rollup = DetailPanel.computeGateRollup(p);
       const lastTxt = rollup.last
         ? rollup.last.gate_name + ' · ' + (rollup.last.actual_date || '') + (rollup.last.decision ? ' (' + rollup.last.decision + ')' : '')
@@ -19383,7 +19386,7 @@ const DetailPanel = {
           '<span class="dp-gate-chip dp-gate-chip-next"><strong style="color:var(--text-dark)">Next gate:</strong> ' + Dashboard.esc(nextTxt) + '</span>' +
         '</div>' +
       '</div>';
-    })());
+    })();
 
     // User-IA-rev — Blockers moves to RAID (top, after Health). Build the
     // block here and push to raidSections below; no overview push.
@@ -19580,6 +19583,9 @@ const DetailPanel = {
         })() +
       '</div>'
     );
+    // User-IA-rev — Strategy + Gates pushed AFTER Prioritisation.
+    overviewSections.push(strategyOverviewBlock);
+    overviewSections.push(gatesOverviewBlock);
     deliverySections.push((function() {
       const dc = p.delivery_config || { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: [] };
       if (dc.include_req === undefined) dc.include_req = true;

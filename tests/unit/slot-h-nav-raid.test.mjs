@@ -12,22 +12,30 @@ async function bootEmpty() {
   }));
 }
 
-describe('Governance nav item — renamed to Business Management; gov-tabs removed', () => {
-  it('sidebar nav item shows "Business Management" (no "Governance" or "Meetings" suffix)', async () => {
+describe('Governance nav item — labels swapped: section = Business Management, inner item = Governance', () => {
+  it('sidebar inner nav item shows "Governance" (renamed from Business Management)', async () => {
     const app = await bootEmpty();
     const navItem = app.document.querySelector('[data-view="governance"]');
     expect(navItem).toBeTruthy();
-    expect(navItem.textContent).toMatch(/Business Management/);
+    expect(navItem.textContent).toMatch(/Governance/);
     expect(navItem.textContent).not.toMatch(/Meetings/);
     app.teardown();
   });
 
-  it('App.viewNames map shows "Business Management" for "governance"', async () => {
+  it('Business Management is the section header (replaces the prior Governance heading)', async () => {
+    const app = await bootEmpty();
+    const sectionHeader = Array.from(app.document.querySelectorAll('.nav-section-label'))
+      .find(el => el.textContent.trim() === 'Business Management');
+    expect(sectionHeader).toBeTruthy();
+    app.teardown();
+  });
+
+  it('App.viewNames map shows "Governance" for "governance"', async () => {
     const app = await bootEmpty();
     app.App.activeCustomer = 'Acme Industries';
     app.App.navigate('governance');
     const title = app.document.getElementById('viewTitlebarName');
-    expect(title.textContent).toBe('Business Management');
+    expect(title.textContent).toBe('Governance');
     app.teardown();
   });
 
@@ -63,7 +71,7 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
     const sections = Array.from(app.document.querySelectorAll('.nav-section'));
     const govSection = sections.find(s => {
       const label = s.querySelector('.nav-section-label');
-      return label && label.textContent.trim() === 'Governance';
+      return label && label.textContent.trim() === 'Business Management';
     });
     expect(govSection).toBeTruthy();
     expect(govSection.querySelector('[data-view="strategy"]')).toBeTruthy();
