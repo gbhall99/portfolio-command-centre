@@ -361,7 +361,7 @@ body.customer-mode #btnExport { display: none !important; }
 body.customer-mode .raid-toolbar label { display: none !important; }
 .customer-mode-banner { display: none; align-items: center; gap: 10px; padding: 6px 14px; background: var(--accent-blue); color: #fff; font-size: 12px; font-weight: 600; }
 body.customer-mode .customer-mode-banner { display: flex; }
-.customer-mode-banner button { background: rgba(255,255,255,0.22); color: #fff; border: none; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; font-weight: 600; min-height: 24px; }
+.customer-mode-banner button { background: rgba(255,255,255,0.95); color: var(--accent-blue); border: none; padding: 4px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; font-weight: 700; min-height: 24px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .unsaved-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-amber); display: none; }
 .unsaved-dot.visible { display: inline-block; }
@@ -3109,7 +3109,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   </nav>
 
   <main class="main-content" id="mainContent" role="main">
-    <div class="customer-mode-banner" id="customerModeBanner" role="status"><span>Customer view — read-only, curated for external sharing. Internal planning tools are hidden.</span><button onclick="App.toggleCustomerMode()">Exit customer view</button></div>
+    <div class="customer-mode-banner" id="customerModeBanner" role="status"><span>Customer view — read-only, curated for external sharing.</span><span id="customerModeScopeChip" style="font-weight:700;padding:2px 10px;border-radius:999px;background:rgba(255,255,255,0.95);color:var(--accent-blue)"></span><span style="flex:1"></span><button onclick="App.toggleCustomerMode()">Exit customer view</button></div>
     <div class="view-titlebar" id="viewTitlebar" aria-live="polite" hidden>
       <h1 class="view-titlebar-name" id="viewTitlebarName"></h1>
       <span class="view-titlebar-divider" aria-hidden="true"></span>
@@ -5494,7 +5494,10 @@ const App = {
     Dashboard.init();
     this.captureSnapshot();
     if (typeof RaidView !== 'undefined' && RaidView.updateNavBadge) RaidView.updateNavBadge();
-    this.customerMode = this.uiStateGet('ui.customerMode', false);
+    // R1: a shareable ?view=customer / #view=customer link opens straight into read-only customer mode.
+    const _urlWantsCustomer = /(?:[?#&]|^)(?:view=customer|customer-view)\b/.test((location.hash || '') + ' ' + (location.search || ''));
+    this.customerMode = _urlWantsCustomer || this.uiStateGet('ui.customerMode', false);
+    if (_urlWantsCustomer) this.uiStateSet('ui.customerMode', true);
     this._applyCustomerMode();
     this.toast('Loaded ' + this.data.projects.length + ' projects from ' + (this.fileName || 'session'), 'success');
     console.log('[PCC] Data loaded:', this.data.projects.length, 'projects');
@@ -7195,6 +7198,8 @@ const App = {
     // Customer-scoped sidebar badges must refresh on customer switch (and initial load).
     if (typeof RaidView !== 'undefined' && RaidView.updateNavBadge) RaidView.updateNavBadge();
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
+    const _scopeChip = document.getElementById('customerModeScopeChip');
+    if (_scopeChip) _scopeChip.textContent = (this.customerMode && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
     this.updateViewTitlebar();
   },
 
@@ -8493,6 +8498,14 @@ const App = {
     try { localStorage.setItem('pcc.ui', JSON.stringify(store)); } catch (e) {}
   },
 
+  // R3 — single canonical severe-risk test (impact x probability >= 15), shared across all surfaces so counts reconcile.
+  isSevereRisk(row) {
+    if (!row) return false;
+    const s = (row.status || '').toLowerCase();
+    if (s === 'closed' || s === 'mitigated' || s === 'resolved') return false;
+    return ((parseInt(row.impact, 10) || 0) * (parseInt(row.probability, 10) || 0)) >= 15;
+  },
+
   // R1 — Customer (read-only) view: curate the sidebar to the customer-facing views and hide edit affordances.
   toggleCustomerMode() {
     this.customerMode = !this.customerMode;
@@ -8505,6 +8518,9 @@ const App = {
     if (document.body) document.body.classList.toggle('customer-mode', on);
     const btn = document.getElementById('btnCustomerMode');
     if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // R2: persistent "Viewing: <customer>" scoping chip so operator + customer both see whose data is on screen.
+    const chip = document.getElementById('customerModeScopeChip');
+    if (chip) chip.textContent = (on && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
     // R1/R10: keep a read-only "For your attention" surface and use plain-language labels in customer mode.
     const setNavLabel = (view, label) => {
       const item = document.querySelector('.nav-item[data-view="' + view + '"]');
@@ -17512,9 +17528,7 @@ const Portfolio = {
     if (execEl) {
       let severe = 0;
       (App.data.projects || []).forEach(p => (p.risks_register || []).forEach(r => {
-        const s = (r.status || '').toLowerCase();
-        if (s === 'closed' || s === 'mitigated' || s === 'resolved') return;
-        if (((parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0)) >= 15) severe++;
+        if (App.isSevereRisk(r)) severe++;
       }));
       // R8: use the same three words as the Dashboard verdict tile (On Track / Watch / Off Track).
       const word = (ragMix.Red > 0 || blocked > 0) ? 'Off Track' : ((ragMix.Amber > 0 || atRisk > 0) ? 'Watch' : 'On Track');
@@ -17812,7 +17826,7 @@ const MyActions = {
     (App.data.projects || []).forEach(p => {
       if (App.activeCustomer && p.customer !== App.activeCustomer) return;
       (p.issues_register || []).forEach((row, idx) => { if (isOpen(row.status)) blockers.push({ kind: 'issue', project: p, row, idx, score: 0, label: row.description || row.text || '(issue)' }); });
-      (p.risks_register || []).forEach((row, idx) => { const score = (parseInt(row.impact, 10) || 0) * (parseInt(row.probability, 10) || 0); if (isOpen(row.status) && score >= 12) blockers.push({ kind: 'risk', project: p, row, idx, score, label: row.description || '(risk)' }); });
+      (p.risks_register || []).forEach((row, idx) => { const score = (parseInt(row.impact, 10) || 0) * (parseInt(row.probability, 10) || 0); if (App.isSevereRisk(row)) blockers.push({ kind: 'risk', project: p, row, idx, score, label: row.description || '(risk)' }); });
     });
     blockers.sort((a, b) => (b.score || 0) - (a.score || 0));
     return { decisions, actions, blockers };
@@ -17826,16 +17840,23 @@ const MyActions = {
     const { decisions, actions, blockers } = this.collect();
 
     const renderDecisionRow = (d) => {
-      const stateColor = d.state === 'Discussed' ? 'var(--status-amber)' : 'var(--accent-blue)';
+      const cm = App.customerMode;
+      const stateColor = cm ? 'var(--accent-blue)' : (d.state === 'Discussed' ? 'var(--status-amber)' : 'var(--accent-blue)');
       const linked = (d.decision.linkedProjects || []).slice(0, 3).map(pid => {
         const proj = App.data.projects.find(p => p.id === pid);
         return proj ? esc(proj.name) : esc(pid);
       }).join(', ');
+      // R7: plain-language framing for external customers \u2014 no forum/state jargon.
+      const badgeText = cm ? 'For your input' : d.state;
+      const headline = cm ? ('We need your decision on: ' + esc(d.decision.text || '(no text)')) : esc(d.decision.text || '(no text)');
+      const subline = cm
+        ? ('Awaiting your input' + (d.decision.date ? ' by ' + esc(d.decision.date) : '') + (linked ? ' \u00B7 ' + linked : ''))
+        : (esc(d.forum.name) + (d.decision.date ? ' \u00B7 ' + esc(d.decision.date) : '') + (linked ? ' \u00B7 ' + linked : ''));
       return '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-dim);font-size:12px;align-items:center">' +
-        '<span style="font-size:9px;padding:2px 6px;border-radius:999px;background:' + stateColor + ';color:white;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;white-space:nowrap">' + esc(d.state) + '</span>' +
+        '<span style="font-size:9px;padding:2px 6px;border-radius:999px;background:' + stateColor + ';color:white;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;white-space:nowrap">' + esc(badgeText) + '</span>' +
         '<div>' +
-          '<div style="font-weight:600;color:var(--text-dark)">' + esc(d.decision.text || '(no text)') + '</div>' +
-          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(d.forum.name) + (d.decision.date ? ' \u00B7 ' + esc(d.decision.date) : '') + (linked ? ' \u00B7 ' + linked : '') + '</div>' +
+          '<div style="font-weight:600;color:var(--text-dark)">' + headline + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + subline + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:4px">' +
           (App.customerMode ? '' : '<button class="btn btn-primary btn-sm" onclick="MyActions.approveDecision(' + d.forumIdx + ', ' + d.dIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Approve this decision">Approve</button>') +
@@ -36274,7 +36295,7 @@ const RaidView = {
       const caret = active ? (effDir === 'asc' ? ' ▲' : ' ▼') : '';
       // R4: announce sortability on every sortable column and make headers keyboard-operable (WCAG 2.1.1 / 4.1.2).
       const ariaSort = ' aria-sort="' + (active ? (effDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"';
-      return '<th' + ariaSort + ' tabindex="0" role="button" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + '" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
+      return '<th' + ariaSort + ' tabindex="0" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + ' (click or press Enter)" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
     }).join('') + '</tr>';
     const dateField = isRisks ? 'resolution_date'
       : kind === 'issues' ? 'resolution_date'
