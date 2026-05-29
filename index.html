@@ -16038,16 +16038,73 @@ const Dashboard = {
     if (!cust) { host.innerHTML = '<div style="padding:14px;color:var(--text-muted)">Select a customer.</div>'; return; }
     const buckets = App.computeBacklogBuckets(cust);
     const esc = Dashboard.esc;
-    const card = (p) => '<div class="backlog-card" style="padding:8px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:pointer;background:var(--surface)" onclick="DetailPanel.open(\'' + esc(p.id) + '\')">' +
-      '<div style="font-weight:600;font-size:12px">' + esc(p.name) + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</div>' +
-      '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(p.status) + ' · ' + (p.size_total || 0) + ' SP · ' + esc(p.moscow || '—') + '</div>' +
+    // R2: direct manipulation — cards are draggable between buckets and carry park/refine actions.
+    const card = (p, bucketKey) => {
+      const parked = bucketKey === 'parked';
+      const actions = '<div style="display:flex;gap:6px;margin-top:6px">' +
+        (parked
+          ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();Dashboard.backlogUnpark(\'' + esc(p.id) + '\')" title="Return to the active backlog">Un-park</button>'
+          : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();Dashboard.backlogPark(\'' + esc(p.id) + '\')" title="Park this project (set On Hold)">Park</button>') +
+        (bucketKey !== 'refined' ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();Dashboard.backlogRefine(\'' + esc(p.id) + '\')" title="Open the refinement form — size, MoSCoW, priority, Definition of Ready">Refine…</button>' : '') +
+      '</div>';
+      return '<div class="backlog-card" draggable="true" data-project-id="' + esc(p.id) + '" ondragstart="Dashboard.backlogDragStart(event,\'' + esc(p.id) + '\')" style="padding:8px 10px;border:1px solid var(--border-light);border-radius:var(--radius-sm);margin-bottom:6px;cursor:grab;background:var(--surface)" onclick="DetailPanel.open(\'' + esc(p.id) + '\')">' +
+        '<div style="font-weight:600;font-size:12px">' + esc(p.name) + (App.lifecycleStageChip ? App.lifecycleStageChip(p) : '') + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(p.status) + ' · ' + (p.size_total || 0) + ' SP · ' + esc(p.moscow || '—') + '</div>' +
+        actions +
+      '</div>';
+    };
+    const col = (title, list, bucketKey) => '<div class="backlog-col" data-bucket="' + bucketKey + '" ondragover="Dashboard.backlogDragOver(event)" ondragleave="Dashboard.backlogDragLeave(event)" ondrop="Dashboard.backlogDrop(event,\'' + bucketKey + '\')" style="flex:1;min-width:240px;border-radius:var(--radius-md);padding:6px;transition:background 0.12s">' +
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-bottom:8px">' + title + ' (' + list.length + ')</div>' +
+      (list.length ? list.map(p => card(p, bucketKey)).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">None.</div>') +
     '</div>';
-    const col = (title, list) => '<div style="flex:1;min-width:240px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-bottom:8px">' + title + ' (' + list.length + ')</div>' + (list.length ? list.map(card).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">None.</div>') + '</div>';
-    host.innerHTML = '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:14px">' +
-      col('Unrefined', buckets.unrefined) +
-      col('Refined &amp; ranked', buckets.refined) +
-      col('Parked', buckets.parked) +
-    '</div>';
+    const html = '<div style="display:flex;gap:14px;flex-wrap:wrap;padding:14px">' +
+      col('Unrefined', buckets.unrefined, 'unrefined') +
+      col('Refined &amp; ranked', buckets.refined, 'refined') +
+      col('Parked', buckets.parked, 'parked') +
+    '</div>' +
+    '<div style="padding:0 14px 14px;font-size:10px;color:var(--text-muted)">Drag a card between columns, or use the buttons. Park = on hold; Refine opens the sizing &amp; priority form.</div>';
+    host.innerHTML = html;
+  },
+
+  // R2 — backlog drag/drop + move-to-bucket actions.
+  _backlogProject(pid) { return (App.data && App.data.projects || []).find(p => p.id === pid); },
+  backlogDragStart(e, pid) { this._backlogDragId = pid; try { e.dataTransfer.setData('text/plain', pid); e.dataTransfer.effectAllowed = 'move'; } catch (_) {} },
+  backlogDragOver(e) { e.preventDefault(); if (e.currentTarget) e.currentTarget.style.background = 'var(--surface-2)'; },
+  backlogDragLeave(e) { if (e.currentTarget) e.currentTarget.style.background = ''; },
+  backlogDrop(e, bucket) {
+    e.preventDefault();
+    if (e.currentTarget) e.currentTarget.style.background = '';
+    let pid = '';
+    try { pid = e.dataTransfer.getData('text/plain'); } catch (_) {}
+    pid = pid || this._backlogDragId;
+    this._backlogDragId = null;
+    if (!pid) return;
+    if (bucket === 'parked') this.backlogPark(pid);
+    else this._backlogToActive(pid, bucket);
+  },
+  backlogPark(pid) {
+    const p = this._backlogProject(pid); if (!p) return;
+    if (p.status === 'On Hold') return;
+    App.updateProject(pid, 'status', 'On Hold');
+    App.toast('Parked “' + p.name + '”', 'info');
+    this.renderBacklogTab(App.activeCustomer);
+  },
+  backlogUnpark(pid) {
+    const p = this._backlogProject(pid); if (!p) return;
+    if (p.status === 'On Hold') App.updateProject(pid, 'status', 'Not Started');
+    if (p.moscow === "Won't" || p.moscow === 'Won’t') App.updateProject(pid, 'moscow', 'Could');
+    App.toast('Un-parked “' + p.name + '”', 'info');
+    this.renderBacklogTab(App.activeCustomer);
+  },
+  _backlogToActive(pid, bucket) {
+    const p = this._backlogProject(pid); if (!p) return;
+    const wasParked = p.status === 'On Hold' || p.moscow === "Won't" || p.moscow === 'Won’t';
+    if (wasParked) { this.backlogUnpark(pid); return; }
+    // Refined is a derived state (sized + ranked); guide the user into the form to complete it.
+    if (bucket === 'refined') this.backlogRefine(pid);
+  },
+  backlogRefine(pid) {
+    if (typeof DetailPanel !== 'undefined' && DetailPanel.open) DetailPanel.open(pid, { tab: 'scope' });
   },
 
   renderExecSummary() {
@@ -17618,7 +17675,17 @@ const MyActions = {
         }
       });
     });
-    return { decisions, actions };
+    // R6: open RAID blockers (issues + high-scoring risks) for the active customer, so the view
+    // named "My Actions" surfaces the real to-do list, not just governance items.
+    const blockers = [];
+    const isOpen = (s) => { s = (s || '').toLowerCase(); return s !== 'closed' && s !== 'resolved' && s !== 'done' && s !== 'mitigated'; };
+    (App.data.projects || []).forEach(p => {
+      if (App.activeCustomer && p.customer !== App.activeCustomer) return;
+      (p.issues_register || []).forEach((row, idx) => { if (isOpen(row.status)) blockers.push({ kind: 'issue', project: p, row, idx, score: 0, label: row.description || row.text || '(issue)' }); });
+      (p.risks_register || []).forEach((row, idx) => { const score = (parseInt(row.impact, 10) || 0) * (parseInt(row.probability, 10) || 0); if (isOpen(row.status) && score >= 12) blockers.push({ kind: 'risk', project: p, row, idx, score, label: row.description || '(risk)' }); });
+    });
+    blockers.sort((a, b) => (b.score || 0) - (a.score || 0));
+    return { decisions, actions, blockers };
   },
 
   render() {
@@ -17626,7 +17693,7 @@ const MyActions = {
     const body = document.getElementById('myActionsBody');
     if (!body) return;
     const esc = Dashboard.esc;
-    const { decisions, actions } = this.collect();
+    const { decisions, actions, blockers } = this.collect();
 
     const renderDecisionRow = (d) => {
       const stateColor = d.state === 'Discussed' ? 'var(--status-amber)' : 'var(--accent-blue)';
@@ -17663,7 +17730,23 @@ const MyActions = {
       '</div>';
     };
 
-    body.innerHTML =
+    const renderBlockerRow = (b) => {
+      const isRisk = b.kind === 'risk';
+      const chipColor = isRisk ? 'var(--status-amber)' : 'var(--status-red)';
+      const chipLabel = isRisk ? ('Risk ' + (b.score || '')) : 'Issue';
+      return '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-dim);font-size:12px;align-items:center">' +
+        '<span style="font-size:9px;padding:2px 6px;border-radius:999px;background:' + chipColor + ';color:white;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;white-space:nowrap">' + esc(chipLabel) + '</span>' +
+        '<div>' +
+          '<div style="font-weight:600;color:var(--text-dark)">' + esc(String(b.label).slice(0, 120)) + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(b.project.name) + (b.row.owner ? ' · ' + esc(b.row.owner) : '') + (b.row.status ? ' · ' + esc(b.row.status) : '') + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px">' +
+          '<button class="btn btn-outline btn-sm" onclick="MyActions.openBlocker(\'' + esc(b.project.id) + '\',\'' + b.kind + '\',' + b.idx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this item in the RAID tab">Open</button>' +
+        '</div>' +
+      '</div>';
+    };
+
+    const html =
       '<div style="background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);overflow:hidden">' +
         '<div style="padding:10px 14px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center">' +
           '<div><strong>Decisions awaiting approval</strong> <span style="color:var(--text-muted);font-size:11px">(' + decisions.length + ')</span></div>' +
@@ -17675,7 +17758,14 @@ const MyActions = {
           '<div><strong>Overdue actions</strong> <span style="color:var(--text-muted);font-size:11px">(' + actions.length + ')</span></div>' +
         '</div>' +
         (actions.length ? actions.map(renderActionRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">No overdue actions.</div>') +
+      '</div>' +
+      '<div style="background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);overflow:hidden">' +
+        '<div style="padding:10px 14px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center">' +
+          '<div><strong>Blockers — open issues &amp; top risks</strong> <span style="color:var(--text-muted);font-size:11px">(' + blockers.length + ')</span></div>' +
+        '</div>' +
+        (blockers.length ? blockers.map(renderBlockerRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">No open issues or high risks for this customer.</div>') +
       '</div>';
+    body.innerHTML = html;
 
     this.updateNavBadge();
   },
@@ -17683,10 +17773,16 @@ const MyActions = {
   updateNavBadge() {
     const badge = document.getElementById('navBadgeMyActions');
     if (!badge) return;
-    const { decisions, actions } = this.collect();
-    const count = decisions.length + actions.length;
+    const { decisions, actions, blockers } = this.collect();
+    const count = decisions.length + actions.length + (blockers ? blockers.length : 0);
     badge.textContent = count;
     badge.style.display = count > 0 ? '' : 'none';
+  },
+
+  // R6: open a blocker (issue/risk) in the project detail panel's RAID tab.
+  openBlocker(projectId, kind, idx) {
+    if (typeof DetailPanel === 'undefined' || typeof DetailPanel.open !== 'function') return;
+    DetailPanel.open(projectId, { tab: 'raid', section: kind === 'risk' ? 'risks' : 'issues', entryPoint: 'myactions' });
   },
 
   openForum(forumIdx) {
@@ -31087,7 +31183,7 @@ const Capacity = {
           overallCol +
           '<div class="team-actions">' +
             '<button onclick="event.stopPropagation();Capacity.openMemberImpactModal(\'' + Dashboard.esc(tm.name) + '\')" title="Simulate dropping this member" style="font-size:10px">Impact?</button>' +
-            '<button onclick="event.stopPropagation();Capacity.editSprintCapacity(' + idx + ')" title="Per-sprint capacity overrides" style="font-size:10px">Sprint overrides</button>' +
+            '<button onclick="event.stopPropagation();Capacity.editSprintCapacity(' + idx + ')" title="Set per-sprint availability — mark off sick / on leave" style="font-size:10px">Availability / leave…</button>' +
             '<button onclick="event.stopPropagation();Capacity.editMember(' + idx + ')" title="Edit">\u270E</button>' +
             '<button class="delete" onclick="event.stopPropagation();Capacity.deleteMember(' + idx + ')" title="Remove">\u2715</button>' +
           '</div>' +
@@ -31476,6 +31572,7 @@ const Capacity = {
         '<span style="min-width:60px;font-weight:600;font-size:11px">' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
         '<input type="number" value="' + explicitPts + '" min="0" step="1" placeholder="' + placeholderText + '" aria-label="Available points for ' + s.sprint_id + ' (default ' + defaultPts + ')" style="width:70px;padding:3px 6px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px;text-align:center" onchange="Capacity.onSprintOverrideChange(' + idx + ',\'' + s.sprint_id + '\',\'available_points\',this.value)">' +
         '<span style="font-size:10px;color:var(--text-muted);flex:1">pts</span>' +
+        (isPast ? '' : '<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="Capacity.markOffSick(' + idx + ',\'' + s.sprint_id + '\')" title="Set availability to 0 for this sprint (off sick / on leave)">Off sick</button>') +
         hintHtml +
         '<span style="font-size:10px;color:var(--text-muted)">' + holStr + '</span>' +
       '</div>';
@@ -31496,9 +31593,16 @@ const Capacity = {
       '<div id="capOverrideTotal" style="margin-top:8px;padding:8px 10px;background:var(--surface-2);border-radius:var(--radius-sm);font-size:11px;color:var(--text-dark)"><strong>Horizon total:</strong> ' + Math.round(horizonPts) + ' pts across ' + sprints.length + ' sprint' + (sprints.length === 1 ? '' : 's') + '</div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
         '<button class="btn btn-outline btn-sm" onclick="Capacity.closeEdit()">Done</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="Capacity.closeEdit();Sprint.autoAllocate()" title="Apply availability changes and re-run the allocation solver">Save &amp; re-run Auto-Allocate</button>' +
       '</div>';
     document.getElementById('teamEditOverlay').style.display = 'block';
     document.getElementById('teamEditModal').style.display = 'block';
+  },
+
+  // R5: one-click "off sick / on leave" — zero this member's availability for a sprint, then re-render.
+  markOffSick(idx, sprintId) {
+    this.setSprintOverride(idx, sprintId, 'available_points', 0);
+    this.editSprintCapacity(idx);
   },
 
   setSprintOverride(tmIdx, sprintId, field, value) {
