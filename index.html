@@ -126,7 +126,7 @@ html[data-theme="dark"] {
   --border-strong: #334155;
   --text-dark: #e8ecf1;
   --text-dark-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
+  --text-muted: #a8b3c4;
   --border-light: #1f2937;
   --status-grey: #94a3b8;
   /* Gantt palette dark-mode flips. Violet/red/teal bumped to lighter shades so
@@ -340,11 +340,27 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .btn-ghost:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .btn-outline { background: transparent; color: var(--text-dark-secondary); border: 1px solid var(--border-light); }
 .btn-outline:hover { background: var(--bg-content); border-color: var(--text-muted); }
-.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-sm { padding: 5px 10px; font-size: 12px; min-height: 24px; }
 /* Icon-only button: square, no min-width, no extra horizontal padding. Use together with
    .btn-ghost / .btn-outline so the hover / focus rings stay consistent with the rest of
    the button system instead of each icon button inventing its own inline style. */
 .btn-icon { padding: 5px; min-width: 0; }
+/* R1 — Customer (read-only) view: curated nav + hidden edit affordances. */
+body.customer-mode .nav-section-label,
+body.customer-mode .nav-item[data-view="dashboard"],
+body.customer-mode .nav-item[data-view="backlog"],
+body.customer-mode .nav-item[data-view="sprint"],
+body.customer-mode .nav-item[data-view="capacity"],
+body.customer-mode .nav-item[data-view="myactions"],
+body.customer-mode .nav-item[data-view="strategy"],
+body.customer-mode .nav-item[data-view="personas"],
+body.customer-mode .nav-item[data-view="activity"],
+body.customer-mode .nav-item[data-view="config"],
+body.customer-mode #btnAddProject,
+body.customer-mode #btnExport { display: none !important; }
+.customer-mode-banner { display: none; align-items: center; gap: 10px; padding: 6px 14px; background: var(--accent-blue); color: #fff; font-size: 12px; font-weight: 600; }
+body.customer-mode .customer-mode-banner { display: flex; }
+.customer-mode-banner button { background: rgba(255,255,255,0.22); color: #fff; border: none; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; font-weight: 600; min-height: 24px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .unsaved-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-amber); display: none; }
 .unsaved-dot.visible { display: inline-block; }
@@ -2966,6 +2982,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
       <button class="btn btn-ghost btn-sm" id="btnUndoHistory" disabled onclick="App.toggleUndoHistory(event)" title="Show undo history" aria-label="Show undo history" aria-haspopup="menu" aria-expanded="false" style="padding:4px 6px;min-width:0"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
     </span>
     <button class="btn btn-ghost btn-sm" id="btnRedo" disabled onclick="App.redo()" title="Redo (Ctrl+Shift+Z)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg></button>
+    <button class="btn btn-ghost btn-sm" id="btnCustomerMode" onclick="App.toggleCustomerMode()" aria-pressed="false" title="Customer (read-only) view — curated nav, safe to screen-share" aria-label="Toggle customer view"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Customer view</title><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
     <button class="btn btn-add btn-sm" id="btnAddProject" disabled onclick="DetailPanel.quickAdd()">+ New Project</button>
     <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes"></span>
     <span class="saved-indicator hidden" id="savedIndicator" aria-live="polite" title="Last save"><span class="si-dot"></span><span id="savedIndicatorText">Saved</span></span>
@@ -3091,6 +3108,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   </nav>
 
   <main class="main-content" id="mainContent" role="main">
+    <div class="customer-mode-banner" id="customerModeBanner" role="status"><span>Customer view — read-only, curated for external sharing. Internal planning tools are hidden.</span><button onclick="App.toggleCustomerMode()">Exit customer view</button></div>
     <div class="view-titlebar" id="viewTitlebar" aria-live="polite" hidden>
       <h1 class="view-titlebar-name" id="viewTitlebarName"></h1>
       <span class="view-titlebar-divider" aria-hidden="true"></span>
@@ -3139,9 +3157,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
             <div class="portfolio-subtitle">Aggregated across all customers · read-only</div>
           </div>
           <div class="portfolio-header-actions">
+            <button class="btn btn-primary btn-sm" onclick="Report.exportCustomerPack(App.activeCustomer)" title="Customer-facing pack for the active customer — safe to share"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Customer Pack</button>
+            <button class="btn btn-outline btn-sm" onclick="Gantt.exportCustomerRoadmap()" title="One-page customer roadmap — dates, milestones, RAG strip"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16"/><path d="M9 4v16"/></svg> Customer Roadmap</button>
             <button class="btn btn-outline btn-sm" onclick="Portfolio.exportSummary()" title="Copy portfolio summary to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg> Copy Summary</button>
           </div>
         </div>
+        <div class="portfolio-exec-line" id="portfolioExecLine" style="font-size:13px;color:var(--text-dark);margin-top:8px"></div>
         <div class="summary-cards" id="portfolioKpis" style="margin-top:8px"></div>
         <div class="portfolio-section-title">Health by customer</div>
         <div class="portfolio-customer-grid" id="portfolioCustomerGrid"></div>
@@ -5472,6 +5493,8 @@ const App = {
     Dashboard.init();
     this.captureSnapshot();
     if (typeof RaidView !== 'undefined' && RaidView.updateNavBadge) RaidView.updateNavBadge();
+    this.customerMode = this.uiStateGet('ui.customerMode', false);
+    this._applyCustomerMode();
     this.toast('Loaded ' + this.data.projects.length + ' projects from ' + (this.fileName || 'session'), 'success');
     console.log('[PCC] Data loaded:', this.data.projects.length, 'projects');
     // REQ-UX-02: Run data integrity check on load
@@ -8465,6 +8488,23 @@ const App = {
     if (value === null || value === undefined) delete store[key];
     else store[key] = value;
     try { localStorage.setItem('pcc.ui', JSON.stringify(store)); } catch (e) {}
+  },
+
+  // R1 — Customer (read-only) view: curate the sidebar to the customer-facing views and hide edit affordances.
+  toggleCustomerMode() {
+    this.customerMode = !this.customerMode;
+    this.uiStateSet('ui.customerMode', this.customerMode);
+    this._applyCustomerMode();
+    this.toast(this.customerMode ? 'Customer view on — read-only, curated nav' : 'Customer view off — full access restored', 'info');
+  },
+  _applyCustomerMode() {
+    const on = !!this.customerMode;
+    if (document.body) document.body.classList.toggle('customer-mode', on);
+    const btn = document.getElementById('btnCustomerMode');
+    if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
+    const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'myactions', 'strategy', 'personas', 'activity', 'config'];
+    if (on && hidden.indexOf(this.currentView) >= 0) this.navigate('portfolio');
   },
 
   toast(message, type) {
@@ -17420,6 +17460,23 @@ const Portfolio = {
     } catch (e) { /* ignore */ }
     const velocityLabel = sprintsCounted ? Math.round(velocitySum / sprintsCounted) + ' pts' : '—';
 
+    // R6: one-line cross-portfolio health summary above the KPI cards.
+    const execEl = document.getElementById('portfolioExecLine');
+    if (execEl) {
+      let severe = 0;
+      (App.data.projects || []).forEach(p => (p.risks_register || []).forEach(r => {
+        const s = (r.status || '').toLowerCase();
+        if (s === 'closed' || s === 'mitigated' || s === 'resolved') return;
+        if (((parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0)) >= 15) severe++;
+      }));
+      const word = (ragMix.Red > 0 || blocked > 0) ? 'Needs attention' : ((ragMix.Amber > 0 || atRisk > 0) ? 'Watch' : 'Healthy');
+      const wordColor = word === 'Needs attention' ? 'var(--status-red)' : word === 'Watch' ? 'var(--status-amber)' : 'var(--status-green)';
+      const line = '<strong>Portfolio health: <span style="color:' + wordColor + '">' + word + '</span></strong> — ' +
+        active.length + ' active across ' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + ', ' +
+        onTrackPct + '% on-track, ' + atRisk + ' at risk, ' + blocked + ' blocked, ' + severe + ' severe risk' + (severe === 1 ? '' : 's') + '.';
+      execEl.innerHTML = line;
+    }
+
     const card = (opts) => (
       '<div class="dash-card" tabindex="0" aria-label="' + this.esc(opts.title + ': ' + String(opts.value).replace(/<[^>]*>/g, '')) + '"' +
         (opts.onclick ? ' onclick="' + opts.onclick + '" style="cursor:pointer"' : '') + '>' +
@@ -17498,6 +17555,7 @@ const Portfolio = {
       const milestonesMet = projects.reduce((s, p) => s + ((p.customer_milestones || []).filter(m => /done|achiev|complete|met|hit/i.test(m.status || '')).length), 0);
       const milestonesTotal = projects.reduce((s, p) => s + ((p.customer_milestones || []).length), 0);
       const fmtSP = (n) => (App.fmtPoints ? App.fmtPoints(n) : Math.round(n));
+      const deliveredPct = totalSP > 0 ? Math.round((delivered / totalSP) * 100) : 0;
 
       return '<div class="portfolio-customer-card" tabindex="0" role="button" ' +
         'onclick="Portfolio.openCustomer(\'' + this.esc(c).replace(/\'/g, '\\\'') + '\')" ' +
@@ -17517,7 +17575,8 @@ const Portfolio = {
         '<div class="portfolio-customer-card-stat"><span>At Risk</span><strong' + (atRisk ? ' style="color:var(--status-amber)"' : '') + '>' + atRisk + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>Past deadline</span><strong' + (overdue ? ' style="color:var(--status-red)"' : '') + '>' + overdue + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>On-track</span><strong>' + onTrackPct + '%</strong></div>' +
-        '<div class="portfolio-customer-card-stat" style="border-top:1px solid var(--border-dim);margin-top:4px;padding-top:6px" title="Story points delivered so far, of total scoped"><span>Delivered</span><strong style="color:var(--status-green)">' + fmtSP(delivered) + ' / ' + fmtSP(totalSP) + ' SP</strong></div>' +
+        '<div class="portfolio-customer-card-stat" style="border-top:1px solid var(--border-dim);margin-top:4px;padding-top:6px" title="' + fmtSP(delivered) + ' of ' + fmtSP(totalSP) + ' story points delivered"><span>Work delivered</span><strong style="color:var(--status-green)">' + deliveredPct + '%</strong></div>' +
+        '<div style="margin:3px 0 5px;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden" role="progressbar" aria-valuenow="' + deliveredPct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Work delivered"><div style="height:100%;width:' + deliveredPct + '%;background:var(--status-green)"></div></div>' +
         '<div class="portfolio-customer-card-stat" title="Customer milestones met to date"><span>Milestones met</span><strong>' + milestonesMet + (milestonesTotal ? ' / ' + milestonesTotal : '') + '</strong></div>' +
       '</div>';
     }).join('');
@@ -36108,6 +36167,7 @@ const RaidView = {
     const toolbar = '<div class="raid-toolbar" style="display:flex;align-items:center;gap:14px;margin-bottom:10px">' +
       '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dark-secondary);cursor:pointer">' +
       '<input type="checkbox" ' + (this.showAll ? 'checked' : '') + ' onchange="RaidView.toggleShowAll(this.checked)" aria-label="Show ' + this.activeTab + ' across all customers"> Show all customers</label>' +
+      (this.showAll ? '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--accent-blue);color:#fff" role="status">Viewing all customers</span>' : '') +
       '<span style="font-size:11px;color:var(--text-muted)">' + rows.length + ' ' + this.activeTab + scope + '</span></div>';
     const body = rows.length
       ? this._renderTable(this.activeTab, rows)

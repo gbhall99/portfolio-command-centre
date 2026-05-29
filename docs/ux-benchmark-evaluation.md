@@ -59,3 +59,32 @@ Per-persona: Portfolio Owner SUS 82.5 (only one clearing Grade A) · Scrum Maste
 - **Wave 3 — direct-manipulation workflows (M/L):** R2, R5, R6.
 
 Each wave keeps `npm test` green (baseline: 635 passed / 3 skipped, 130 files). Re-evaluate against benchmarks after each wave; iterate until all six families reach excellent.
+
+---
+
+## Round 2 — post-overhaul re-evaluation (2026-05-29)
+
+Same multi-agent method re-run against the overhauled code, adversarially verified (verdict: **defensible/needs-adjustment**, confidence 0.78 — the verifier found the product is *better* than the raw scorecard implies: per-project change-history and a per-member utilisation column already exist, so a couple of "partials" are not real).
+
+| Benchmark | Baseline | After Waves 1–3 | Excellent | Status |
+|---|---|---|---|---|
+| Task Success | 77.5% | **92.5%** (verifier: ~95%) | ≥95% | ✅ at/near |
+| Task Time eff. | 0.64 | **0.76** | ≥0.80 | ◐ close |
+| SUS | 76.9 | **82.6** | ≥80.3 (A) | ✅ Grade A |
+| SUPR-Q | 73.75 | **83.5** | ≥90 all subscales | ◐ (loyalty binding) |
+| NPS | 0 | **50** | ≥50 | ✅ at threshold |
+| CSAT | 77.5% | **84%** | ≥85% | ◐ −1 |
+
+Per-persona after Waves 1–3: Product Owner SUS 85 / SUPR-Q 87, Scrum Master 84/84, Portfolio Owner 82.5/84, **Customer 79/79** — the Customer persona is the single binding constraint on every aggregate.
+
+### Wave 4 — Customer persona + appearance (this round)
+- **R1** Customer (read-only) view mode: header toggle curates the sidebar to Portfolio/Roadmap/RAID/Metrics/Governance, hides create/export affordances, shows a read-only banner; persisted via `uiStateSet`.
+- **R2** Value reframed from raw "X/Y SP" to a plain-language **"Work delivered %"** progress bar (SP demoted to tooltip).
+- **R3** Customer Pack + Customer Roadmap exports surfaced on the Portfolio Overview header (were only in Governance/Roadmap).
+- **R6** One-line **cross-portfolio health** summary on Portfolio Overview ("health word — N active, X% on-track, at-risk, blocked, severe risks").
+- **R7** Global 24px minimum target size on small buttons (WCAG 2.5.8).
+- **R12** Persistent "Viewing all customers" pill in RAID when cross-portfolio scope is on.
+- **R14** Lightened dark-mode muted text for AA contrast.
+- Skipped as **stale/already-built** (verifier-confirmed): R5 (inline change-history exists), R4 (utilisation column exists), R13 (non-bug), parts of R3.
+
+Wave 4 targets the Customer persona's SUS/loyalty/CSAT and SUPR-Q appearance. SUPR-Q ≥90 on *every* subscale (esp. loyalty) is an aspirational bar that reflects emotional attachment as much as UI; the remaining gap is tracked honestly rather than asserted closed.

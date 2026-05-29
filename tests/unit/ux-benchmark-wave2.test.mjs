@@ -72,8 +72,10 @@ describe('Wave 2 R3 — Portfolio Overview shows plain-language value delivered 
     const grid = app.document.getElementById('portfolioCustomerGrid');
     expect(grid).toBeTruthy();
     const html = grid.innerHTML;
-    expect(html).toMatch(/Delivered/);
-    expect(html).toMatch(/6 \/ 20 SP/);
+    // Wave 4 R2 reframed raw "X/Y SP" into a plain-language "Work delivered %" bar (SP in the tooltip).
+    expect(html).toMatch(/Work delivered/);
+    expect(html).toMatch(/30%/); // 6 of 20 delivered
+    expect(html).toMatch(/6 of 20 story points/); // SP retained in tooltip
     expect(html).toMatch(/Milestones met/);
     expect(html).toMatch(/1 \/ 2/);
     app.teardown();
