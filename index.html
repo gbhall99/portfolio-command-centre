@@ -13670,7 +13670,38 @@ const Strategy = {
 // (and Personas now embeds a People sub-tab) but live as their own routes
 // rather than sub-tabs inside Strategy.
 const MetricsView = {
+  // R1: a plain-language outcomes summary for non-expert customers (no RACI/cascade jargon).
+  _outcomesCard() {
+    const c = App.activeCustomer;
+    if (!c || !App.data) return '';
+    const esc = Dashboard.esc;
+    const projects = (App.data.projects || []).filter(p => p.customer === c);
+    const active = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    const delivered = projects.reduce((s, p) => s + Object.values(p.skill_splits || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.reduce((x, e) => x + (App.toInteger ? App.toInteger(e.completed) : (e.completed || 0)), 0) : 0), 0), 0);
+    const totalSP = projects.reduce((s, p) => s + (p.size_total || 0), 0);
+    const pct = totalSP > 0 ? Math.round(delivered / totalSP * 100) : 0;
+    const onTrack = active.filter(p => (p.rag_schedule || 'Green') !== 'Red' && (p.rag_resourcing || 'Green') !== 'Red' && (p.rag_scope || 'Green') !== 'Red').length;
+    const onTrackPct = active.length ? Math.round(onTrack / active.length * 100) : 0;
+    const milestonesMet = projects.reduce((s, p) => s + ((p.customer_milestones || []).filter(m => /done|achiev|complete|met|hit/i.test(m.status || '')).length), 0);
+    const now = new Date(); let next = null;
+    projects.forEach(p => (p.customer_milestones || []).forEach(m => { if (m.date) { const d = new Date(m.date); if (d >= now && (!next || d < next)) next = d; } }));
+    const nextStr = next ? next.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+    const stat = (v, label, color) => '<div style="min-width:120px"><div style="font-size:24px;font-weight:700;color:' + (color || 'var(--text-dark)') + '">' + esc(String(v)) + '</div><div style="font-size:11px;color:var(--text-muted)">' + label + '</div></div>';
+    return '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px 18px;background:var(--surface)">' +
+      '<h2 style="font-size:16px;margin:0 0 4px">Outcomes — value delivered for ' + esc(c) + '</h2>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">A plain-language summary of progress on your delivery.</div>' +
+      '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
+        stat(pct + '%', 'of planned work delivered', 'var(--status-green)') +
+        stat(onTrackPct + '%', 'of projects on track') +
+        stat(milestonesMet, 'milestones met') +
+        stat(nextStr, 'next delivery') +
+      '</div></div>';
+  },
   render() {
+    // In customer mode show only the plain-language Outcomes summary; hide the expert RACI/cascade library.
+    if (App.customerMode) {
+      return '<div class="strategy-view"><div class="strategy-body">' + this._outcomesCard() + '</div></div>';
+    }
     return '<div class="strategy-view">'
          +   '<div class="strategy-body">' + Metrics.renderInventoryTab() + '</div>'
          + '</div>';
@@ -17485,8 +17516,9 @@ const Portfolio = {
         if (s === 'closed' || s === 'mitigated' || s === 'resolved') return;
         if (((parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0)) >= 15) severe++;
       }));
-      const word = (ragMix.Red > 0 || blocked > 0) ? 'Needs attention' : ((ragMix.Amber > 0 || atRisk > 0) ? 'Watch' : 'Healthy');
-      const wordColor = word === 'Needs attention' ? 'var(--status-red)' : word === 'Watch' ? 'var(--status-amber)' : 'var(--status-green)';
+      // R8: use the same three words as the Dashboard verdict tile (On Track / Watch / Off Track).
+      const word = (ragMix.Red > 0 || blocked > 0) ? 'Off Track' : ((ragMix.Amber > 0 || atRisk > 0) ? 'Watch' : 'On Track');
+      const wordColor = word === 'Off Track' ? 'var(--status-red)' : word === 'Watch' ? 'var(--status-amber)' : 'var(--status-green)';
       // R3: worst project across the portfolio (worst-of-RAG, tiebroken by top open risk score).
       const ragRank = { Red: 3, Amber: 2, Green: 1 };
       let worst = null, worstScore = -1;
@@ -17497,13 +17529,13 @@ const Portfolio = {
         if (sc > worstScore) { worstScore = sc; worst = p; }
       });
       // R2: blocked / severe-risk segments are one-click triage launchers.
-      const seg = (label, onclick) => '<span role="button" tabindex="0" style="cursor:pointer;text-decoration:underline dotted" onclick="' + onclick + '" onkeydown="if(event.key===\'Enter\'){' + onclick + '}">' + label + '</span>';
-      const worstChip = worst ? ' <button class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="DetailPanel.open(\'' + this.esc(worst.id) + '\')" title="Open the highest-risk project">Worst project: ' + this.esc(worst.name) + '</button>' : '';
+      const seg = (label, onclick, title) => '<span role="button" tabindex="0" title="' + (title || '') + '" style="cursor:pointer;text-decoration:underline dotted" onclick="' + onclick + '" onkeydown="if(event.key===\'Enter\'){' + onclick + '}">' + label + '</span>';
+      const worstChip = worst ? ' <button class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="DetailPanel.open(\'' + this.esc(worst.id) + '\')" title="Ranked by worst RAG, then highest open-risk score">Worst project: ' + this.esc(worst.name) + '</button>' : '';
       const line = '<strong>Portfolio health: <span style="color:' + wordColor + '">' + word + '</span></strong> — ' +
         active.length + ' active across ' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + ', ' +
         onTrackPct + '% on-track, ' + atRisk + ' at risk, ' +
-        seg(blocked + ' blocked', "App.navigate('dashboard')") + ', ' +
-        seg(severe + ' severe risk' + (severe === 1 ? '' : 's'), "App.navigate('raid')") + '.' + worstChip;
+        seg(blocked + ' blocked', "App.navigate('dashboard')", 'View blocked projects') + ', ' +
+        seg(severe + ' severe risk' + (severe === 1 ? '' : 's'), "App.navigate('raid')", 'Risks with impact x probability >= 15 — view in Risks & Decisions') + '.' + worstChip;
       execEl.innerHTML = line;
     }
 
@@ -20630,11 +20662,12 @@ const DetailPanel = {
       const srcBadge = srcLabel ? ' <span class="audit-entry-source ' + srcCls + '">' + srcLabel + '</span>' : '';
       let detail = '<span class="audit-field">' + Dashboard.esc(e.field) + '</span>';
       if (e.field === 'project_created') { detail = 'Project created'; }
-      else if (e.oldValue && e.newValue) { detail += ': ' + Dashboard.esc(String(e.oldValue).substring(0, 40)) + ' \u2192 ' + Dashboard.esc(String(e.newValue).substring(0, 40)); }
+      else if (e.oldValue && e.newValue) { detail += ': <span title="' + Dashboard.esc(String(e.oldValue) + ' \u2192 ' + String(e.newValue)) + '">' + Dashboard.esc(String(e.oldValue).substring(0, 80)) + ' \u2192 ' + Dashboard.esc(String(e.newValue).substring(0, 80)) + '</span>'; }
       else if (e.newValue) { detail += ': set to ' + Dashboard.esc(String(e.newValue).substring(0, 60)); }
       return '<div class="audit-entry"><span class="audit-time">' + timeStr + '</span>' + srcBadge + '<span class="audit-detail">' + detail + '</span></div>';
     }).join('');
-    return '<div class="panel-section collapsed" data-default-collapsed="change-history">' +
+    // R6: default-expand History when there are entries (audits shouldn't need an extra click).
+    return '<div class="panel-section" data-section="change-history">' +
       '<div class="panel-section-title">' + headerLabel + '</div>' +
       '<div class="audit-log-rows">' + rows + showAllLink + '</div>' +
     '</div>';
@@ -36239,8 +36272,9 @@ const RaidView = {
       if (!key) return '<th style="' + thBase + '">' + esc(h) + '</th>';
       const active = key === effKey;
       const caret = active ? (effDir === 'asc' ? ' ▲' : ' ▼') : '';
-      const ariaSort = active ? ' aria-sort="' + (effDir === 'asc' ? 'ascending' : 'descending') + '"' : '';
-      return '<th' + ariaSort + ' onclick="RaidView.setSort(\'' + key + '\')" title="Sort by ' + esc(h) + '" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
+      // R4: announce sortability on every sortable column and make headers keyboard-operable (WCAG 2.1.1 / 4.1.2).
+      const ariaSort = ' aria-sort="' + (active ? (effDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"';
+      return '<th' + ariaSort + ' tabindex="0" role="button" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + '" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
     }).join('') + '</tr>';
     const dateField = isRisks ? 'resolution_date'
       : kind === 'issues' ? 'resolution_date'
