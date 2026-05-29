@@ -3045,7 +3045,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Capacity
       </div>
-      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="Decisions awaiting approval + overdue actions across all meetings">
+      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="Decisions awaiting approval + overdue actions for the active customer">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         My Actions <span class="nav-badge" id="navBadgeMyActions">0</span>
       </div>
@@ -3125,7 +3125,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <div class="portfolio-header">
           <div>
             <h2 class="portfolio-title">My Actions</h2>
-            <div class="portfolio-subtitle">Decisions awaiting approval and overdue actions across all meetings</div>
+            <div class="portfolio-subtitle">Decisions awaiting approval and overdue actions for the active customer</div>
           </div>
         </div>
         <div id="myActionsBody" style="display:flex;flex-direction:column;gap:14px"></div>
@@ -3390,11 +3390,12 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
         <div class="gov-exports" id="govExports" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="flex:0 0 auto">
             <div style="font-size:12px;font-weight:700;color:var(--text-dark)">Exports</div>
-            <div style="font-size:10px;color:var(--text-muted)" id="govExportsScope">Status Report covers all customers. Portfolio Pack is scoped to the active customer.</div>
+            <div style="font-size:10px;color:var(--text-muted)" id="govExportsScope">Customer Pack &amp; Portfolio Pack are scoped to the active customer and safe to share. The Internal Status Report spans all customers &mdash; internal use only.</div>
           </div>
           <div style="flex:1 1 auto"></div>
-          <button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()" title="Cross-customer PDF status report"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Status Report</button>
+          <button class="btn btn-primary btn-sm" onclick="Report.exportCustomerPack(App.activeCustomer)" title="Customer-facing pack for the active customer — safe to forward"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Customer Pack</button>
           <button class="btn btn-outline btn-sm" id="govExportPortfolioPackBtn" onclick="Report.exportPortfolioPack(App.activeCustomer)" title="Branded portfolio pack (active customer)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg> Portfolio Pack</button>
+          <button class="btn btn-ghost btn-sm" onclick="App.exportStatusReport()" title="Internal cross-customer PDF — includes ALL customers; do not forward to a single customer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Internal Status Report</button>
         </div>
         <!-- Slot H / Item 18 — gov-tabs strip removed (Risks moves to its own
              top-level RAID view; Governance view shows only forums now). -->
@@ -6914,8 +6915,20 @@ const App = {
   },
 
   // --- Status Report Export (HTML-based printable) ---
-  exportStatusReport() {
+  async exportStatusReport() {
     if (!this.data) return;
+    // R1: this report spans EVERY customer. Guard against a customer-facing user forwarding
+    // a PDF that embeds other clients' projects. Customer-safe alternative is the Customer Pack.
+    const _custs = this.getCustomers();
+    if (_custs.length > 1 && typeof this.confirm === 'function') {
+      const ok = await this.confirm({
+        title: 'Internal report — covers all customers',
+        body: 'The Status Report includes every customer in your portfolio (' + _custs.join(', ') + '). It is for internal use only — do not forward it to a single customer. To share with one customer, use the Customer Pack instead.',
+        confirmLabel: 'Generate internal report',
+        danger: true
+      });
+      if (!ok) return;
+    }
     const projects = this.data.projects;
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const customers = this.getCustomers();
@@ -8099,7 +8112,7 @@ const App = {
       '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
       '<button class="btn btn-outline btn-sm" onclick="App.loadDemoData()" title="Load shippable demo dataset">Load demo dataset</button>' +
       '<button class="btn btn-outline btn-sm" onclick="App.exportCSV()">Export CSV</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Status Report (PDF)</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="App.exportStatusReport()">Internal Status Report (PDF)</button>' +
       '<button class="btn btn-outline btn-sm" onclick="Gantt.exportBaselineReport()">Variance Report (PDF)</button>' +
       '<button class="btn btn-outline btn-sm" onclick="App.showAuditExportModal()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Export Audit Log</button>' +
       '<button class="btn btn-outline btn-sm" onclick="App._integrityIssues=App.validateDataIntegrity();App.renderConfig()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M9 12l2 2 4-4"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Integrity Check</button>' +
@@ -14455,7 +14468,8 @@ const CommandPalette = {
       { title: 'Export JSON backup', action: () => App.exportJSON(), meta: 'Save full portfolio state' },
       { title: 'Backup history (restore daily snapshot)', action: () => Backups.openUI(), meta: 'IndexedDB · last 14 days' },
       { title: 'Export CSV', action: () => App.exportCSV(), meta: 'Project table CSV' },
-      { title: 'Status Report', action: () => App.exportStatusReport(), meta: 'Cross-customer PDF' },
+      { title: 'Customer Pack (active customer)', action: () => Report.exportCustomerPack(App.activeCustomer), meta: 'Safe to forward' },
+      { title: 'Internal Status Report (all customers)', action: () => App.exportStatusReport(), meta: 'Internal — cross-customer' },
       { title: 'Portfolio Pack (branded)', action: () => Report.exportPortfolioPack(App.activeCustomer), meta: 'Active customer only' },
       { title: 'Configure Branding', action: () => Report.configureBranding(App.activeCustomer), meta: 'Logo, colour, classification' },
       { title: 'New Project', action: () => DetailPanel.quickAdd(), meta: 'Create new project' },
@@ -17421,6 +17435,13 @@ const Portfolio = {
       const onTrack = active.filter(p => this.worstRag(p) === 'Green').length;
       const onTrackPct = active.length ? Math.round((onTrack / active.length) * 100) : 0;
 
+      // R3: plain-language "value delivered" for a non-expert customer — from existing data, no new schema.
+      const delivered = projects.reduce((s, p) => s + Object.values(p.skill_splits || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.reduce((x, e) => x + (App.toInteger ? App.toInteger(e.completed) : (e.completed || 0)), 0) : 0), 0), 0);
+      const totalSP = projects.reduce((s, p) => s + (p.size_total || 0), 0);
+      const milestonesMet = projects.reduce((s, p) => s + ((p.customer_milestones || []).filter(m => /done|achiev|complete|met|hit/i.test(m.status || '')).length), 0);
+      const milestonesTotal = projects.reduce((s, p) => s + ((p.customer_milestones || []).length), 0);
+      const fmtSP = (n) => (App.fmtPoints ? App.fmtPoints(n) : Math.round(n));
+
       return '<div class="portfolio-customer-card" tabindex="0" role="button" ' +
         'onclick="Portfolio.openCustomer(\'' + this.esc(c).replace(/\'/g, '\\\'') + '\')" ' +
         'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Portfolio.openCustomer(\'' + this.esc(c).replace(/\'/g, '\\\'') + '\');}" ' +
@@ -17439,6 +17460,8 @@ const Portfolio = {
         '<div class="portfolio-customer-card-stat"><span>At Risk</span><strong' + (atRisk ? ' style="color:var(--status-amber)"' : '') + '>' + atRisk + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>Past deadline</span><strong' + (overdue ? ' style="color:var(--status-red)"' : '') + '>' + overdue + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>On-track</span><strong>' + onTrackPct + '%</strong></div>' +
+        '<div class="portfolio-customer-card-stat" style="border-top:1px solid var(--border-dim);margin-top:4px;padding-top:6px" title="Story points delivered so far, of total scoped"><span>Delivered</span><strong style="color:var(--status-green)">' + fmtSP(delivered) + ' / ' + fmtSP(totalSP) + ' SP</strong></div>' +
+        '<div class="portfolio-customer-card-stat" title="Customer milestones met to date"><span>Milestones met</span><strong>' + milestonesMet + (milestonesTotal ? ' / ' + milestonesTotal : '') + '</strong></div>' +
       '</div>';
     }).join('');
     el.innerHTML = cardsHtml;
@@ -17577,7 +17600,8 @@ const MyActions = {
     if (!App.data) return { decisions: [], actions: [] };
     const esc = Dashboard.esc;
     const today = new Date().toISOString().split('T')[0];
-    const forums = App.data.governance_forums || [];
+    // R7: scope to the active customer, consistent with every other view (the app is customer-scoped).
+    const forums = (App.data.governance_forums || []).filter(f => !App.activeCustomer || f.customer === App.activeCustomer);
     const decisions = [];
     const actions = [];
     forums.forEach((forum, forumIdx) => {
