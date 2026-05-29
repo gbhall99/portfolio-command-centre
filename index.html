@@ -351,13 +351,14 @@ body.customer-mode .nav-item[data-view="dashboard"],
 body.customer-mode .nav-item[data-view="backlog"],
 body.customer-mode .nav-item[data-view="sprint"],
 body.customer-mode .nav-item[data-view="capacity"],
-body.customer-mode .nav-item[data-view="myactions"],
 body.customer-mode .nav-item[data-view="strategy"],
 body.customer-mode .nav-item[data-view="personas"],
 body.customer-mode .nav-item[data-view="activity"],
 body.customer-mode .nav-item[data-view="config"],
 body.customer-mode #btnAddProject,
 body.customer-mode #btnExport { display: none !important; }
+/* R8 — never expose other customers' RAID rows during a screen-shared customer session. */
+body.customer-mode .raid-toolbar label { display: none !important; }
 .customer-mode-banner { display: none; align-items: center; gap: 10px; padding: 6px 14px; background: var(--accent-blue); color: #fff; font-size: 12px; font-weight: 600; }
 body.customer-mode .customer-mode-banner { display: flex; }
 .customer-mode-banner button { background: rgba(255,255,255,0.22); color: #fff; border: none; padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11px; font-weight: 600; min-height: 24px; }
@@ -6812,6 +6813,8 @@ const App = {
     this.markDirty();
     this.saveToLocalStorage();
     this.notifyDataChange();
+    // R5: make the rank ripple visible — notifyDataChange recomputes recommended_priority silently.
+    this.toast((projectData.name || 'Project') + ' added — backlog re-prioritised', 'success');
   },
 
   exportJSON() {
@@ -6943,10 +6946,10 @@ const App = {
     // R1: this report spans EVERY customer. Guard against a customer-facing user forwarding
     // a PDF that embeds other clients' projects. Customer-safe alternative is the Customer Pack.
     const _custs = this.getCustomers();
-    if (_custs.length > 1 && typeof this.confirm === 'function') {
+    if (typeof this.confirm === 'function') {
       const ok = await this.confirm({
-        title: 'Internal report — covers all customers',
-        body: 'The Status Report includes every customer in your portfolio (' + _custs.join(', ') + '). It is for internal use only — do not forward it to a single customer. To share with one customer, use the Customer Pack instead.',
+        title: 'Internal report — ' + (_custs.length > 1 ? 'covers all customers' : 'internal classification'),
+        body: 'The Status Report embeds ' + (_custs.length > 1 ? 'every customer in your portfolio (' + _custs.join(', ') + ')' : 'internal delivery detail') + '. It is for internal use only — do not forward it to a customer. To share with one customer, use the Customer Pack instead.',
         confirmLabel: 'Generate internal report',
         danger: true
       });
@@ -8502,8 +8505,21 @@ const App = {
     if (document.body) document.body.classList.toggle('customer-mode', on);
     const btn = document.getElementById('btnCustomerMode');
     if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    // R1/R10: keep a read-only "For your attention" surface and use plain-language labels in customer mode.
+    const setNavLabel = (view, label) => {
+      const item = document.querySelector('.nav-item[data-view="' + view + '"]');
+      if (!item) return;
+      for (let i = 0; i < item.childNodes.length; i++) {
+        const node = item.childNodes[i];
+        if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = ' ' + label + ' '; return; }
+      }
+    };
+    setNavLabel('myactions', on ? 'For your attention' : 'My Actions');
+    setNavLabel('raid', on ? 'Risks & Decisions' : 'RAID');
+    // R8: force RAID back to customer-scoped when entering customer mode, then refresh if it's the active view.
+    if (on && typeof RaidView !== 'undefined') { RaidView.showAll = false; if (this.currentView === 'raid' && RaidView.render) RaidView.render(); }
     // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
-    const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'myactions', 'strategy', 'personas', 'activity', 'config'];
+    const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'strategy', 'personas', 'activity', 'config'];
     if (on && hidden.indexOf(this.currentView) >= 0) this.navigate('portfolio');
   },
 
@@ -17471,9 +17487,23 @@ const Portfolio = {
       }));
       const word = (ragMix.Red > 0 || blocked > 0) ? 'Needs attention' : ((ragMix.Amber > 0 || atRisk > 0) ? 'Watch' : 'Healthy');
       const wordColor = word === 'Needs attention' ? 'var(--status-red)' : word === 'Watch' ? 'var(--status-amber)' : 'var(--status-green)';
+      // R3: worst project across the portfolio (worst-of-RAG, tiebroken by top open risk score).
+      const ragRank = { Red: 3, Amber: 2, Green: 1 };
+      let worst = null, worstScore = -1;
+      active.forEach(p => {
+        let topRisk = 0;
+        (p.risks_register || []).forEach(r => { const s = (r.status || '').toLowerCase(); if (s === 'closed' || s === 'mitigated' || s === 'resolved') return; topRisk = Math.max(topRisk, (parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0)); });
+        const sc = (ragRank[this.worstRag(p)] || 1) * 100 + topRisk + (p.status === 'Blocked' ? 50 : 0);
+        if (sc > worstScore) { worstScore = sc; worst = p; }
+      });
+      // R2: blocked / severe-risk segments are one-click triage launchers.
+      const seg = (label, onclick) => '<span role="button" tabindex="0" style="cursor:pointer;text-decoration:underline dotted" onclick="' + onclick + '" onkeydown="if(event.key===\'Enter\'){' + onclick + '}">' + label + '</span>';
+      const worstChip = worst ? ' <button class="btn btn-outline btn-sm" style="margin-left:8px;font-size:11px;padding:2px 8px" onclick="DetailPanel.open(\'' + this.esc(worst.id) + '\')" title="Open the highest-risk project">Worst project: ' + this.esc(worst.name) + '</button>' : '';
       const line = '<strong>Portfolio health: <span style="color:' + wordColor + '">' + word + '</span></strong> — ' +
         active.length + ' active across ' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + ', ' +
-        onTrackPct + '% on-track, ' + atRisk + ' at risk, ' + blocked + ' blocked, ' + severe + ' severe risk' + (severe === 1 ? '' : 's') + '.';
+        onTrackPct + '% on-track, ' + atRisk + ' at risk, ' +
+        seg(blocked + ' blocked', "App.navigate('dashboard')") + ', ' +
+        seg(severe + ' severe risk' + (severe === 1 ? '' : 's'), "App.navigate('raid')") + '.' + worstChip;
       execEl.innerHTML = line;
     }
 
@@ -17556,6 +17586,14 @@ const Portfolio = {
       const milestonesTotal = projects.reduce((s, p) => s + ((p.customer_milestones || []).length), 0);
       const fmtSP = (n) => (App.fmtPoints ? App.fmtPoints(n) : Math.round(n));
       const deliveredPct = totalSP > 0 ? Math.round((delivered / totalSP) * 100) : 0;
+      // R6: business-outcome caption — the next committed delivery date for this customer.
+      const _now = new Date();
+      let nextLaunch = null;
+      projects.forEach(p => {
+        (p.customer_milestones || []).forEach(m => { if (m.date) { const d = new Date(m.date); if (d >= _now && (!nextLaunch || d < nextLaunch)) nextLaunch = d; } });
+        [p.target_date, p.hard_deadline].forEach(ds => { if (ds) { const d = new Date(ds); if (d >= _now && (!nextLaunch || d < nextLaunch)) nextLaunch = d; } });
+      });
+      const nextLaunchStr = nextLaunch ? nextLaunch.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
 
       return '<div class="portfolio-customer-card" tabindex="0" role="button" ' +
         'onclick="Portfolio.openCustomer(\'' + this.esc(c).replace(/\'/g, '\\\'') + '\')" ' +
@@ -17575,6 +17613,7 @@ const Portfolio = {
         '<div class="portfolio-customer-card-stat"><span>At Risk</span><strong' + (atRisk ? ' style="color:var(--status-amber)"' : '') + '>' + atRisk + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>Past deadline</span><strong' + (overdue ? ' style="color:var(--status-red)"' : '') + '>' + overdue + '</strong></div>' +
         '<div class="portfolio-customer-card-stat"><span>On-track</span><strong>' + onTrackPct + '%</strong></div>' +
+        '<div style="font-size:10px;color:var(--text-dark-secondary);margin-top:6px;font-style:italic">' + (nextLaunchStr ? 'Next delivery: ' + nextLaunchStr : 'Delivery in progress') + '</div>' +
         '<div class="portfolio-customer-card-stat" style="border-top:1px solid var(--border-dim);margin-top:4px;padding-top:6px" title="' + fmtSP(delivered) + ' of ' + fmtSP(totalSP) + ' story points delivered"><span>Work delivered</span><strong style="color:var(--status-green)">' + deliveredPct + '%</strong></div>' +
         '<div style="margin:3px 0 5px;height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden" role="progressbar" aria-valuenow="' + deliveredPct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Work delivered"><div style="height:100%;width:' + deliveredPct + '%;background:var(--status-green)"></div></div>' +
         '<div class="portfolio-customer-card-stat" title="Customer milestones met to date"><span>Milestones met</span><strong>' + milestonesMet + (milestonesTotal ? ' / ' + milestonesTotal : '') + '</strong></div>' +
@@ -17767,7 +17806,7 @@ const MyActions = {
           '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(d.forum.name) + (d.decision.date ? ' \u00B7 ' + esc(d.decision.date) : '') + (linked ? ' \u00B7 ' + linked : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-primary btn-sm" onclick="MyActions.approveDecision(' + d.forumIdx + ', ' + d.dIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Approve this decision">Approve</button>' +
+          (App.customerMode ? '' : '<button class="btn btn-primary btn-sm" onclick="MyActions.approveDecision(' + d.forumIdx + ', ' + d.dIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Approve this decision">Approve</button>') +
           '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + d.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this meeting">Open</button>' +
         '</div>' +
       '</div>';
@@ -17782,8 +17821,8 @@ const MyActions = {
           '<div style="font-size:10px;color:var(--text-muted);margin-top:2px">' + esc(a.forum.name) + ' \u00B7 due ' + esc(a.action.due_date) + (a.action.owner ? ' \u00B7 ' + esc(a.action.owner) : '') + (project ? ' \u00B7 ' + esc(project.name) : '') + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:4px">' +
-          '<button class="btn btn-primary btn-sm" onclick="MyActions.markActionDone(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Mark as done">Mark done</button>' +
-          '<button class="btn btn-outline btn-sm" onclick="MyActions.reassignAction(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Reassign to a different owner">Reassign</button>' +
+          (App.customerMode ? '' : '<button class="btn btn-primary btn-sm" onclick="MyActions.markActionDone(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Mark as done">Mark done</button>') +
+          (App.customerMode ? '' : '<button class="btn btn-outline btn-sm" onclick="MyActions.reassignAction(' + a.forumIdx + ', ' + a.aIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Reassign to a different owner">Reassign</button>') +
           '<button class="btn btn-outline btn-sm" onclick="MyActions.openForum(' + a.forumIdx + ')" style="font-size:10px;padding:3px 8px" aria-label="Open this meeting">Open</button>' +
         '</div>' +
       '</div>';
@@ -33590,6 +33629,12 @@ const Governance = {
 
     // Add Meeting button
     let addBtnHtml = '<div style="margin-bottom:10px"><button class="btn btn-add btn-sm" onclick="Governance.openForumModal(null)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Meeting</button></div>';
+    // R4: outstanding-approvals rollup so approvals aren't scanned forum-by-forum.
+    let pendingApprovals = 0;
+    forums.forEach(f => (f.decisions || []).forEach(d => { const st = d.state || 'Proposed'; if (st === 'Proposed' || st === 'Discussed') pendingApprovals++; }));
+    if (pendingApprovals > 0) {
+      addBtnHtml = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px 12px;border:1px solid var(--border-light);border-left:3px solid var(--accent-blue);border-radius:var(--radius-sm);background:var(--surface)"><strong style="font-size:12px">Outstanding approvals: ' + pendingApprovals + '</strong><span style="font-size:11px;color:var(--text-muted)">decision' + (pendingApprovals === 1 ? '' : 's') + ' awaiting sign-off across all meetings</span><button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:11px" onclick="App.navigate(\'myactions\')">Review in My Actions</button></div>' + addBtnHtml;
+    }
 
     if (!forums.length) {
       document.getElementById('govForumsContent').innerHTML = addBtnHtml + '<div style="padding:40px;text-align:center;color:var(--text-muted)">No governance forums for ' + Dashboard.esc(customer || 'any customer') + '</div>';
