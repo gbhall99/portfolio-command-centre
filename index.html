@@ -18536,9 +18536,12 @@ const DetailPanel = {
     // Trap focus
     if (!this._focusTrapHandler) {
       this._focusTrapHandler = (e) => {
-        if (e.key !== 'Tab') return;
         const panel = document.getElementById('detailPanel');
-        if (!panel.classList.contains('open')) return;
+        if (!panel || !panel.classList.contains('open')) return;
+        // A11Y-1: ESC closes the dialog (via close(), so the blur-flush + unsaved-changes guard still run),
+        // matching every other modal/drawer in the app.
+        if (e.key === 'Escape') { e.preventDefault(); DetailPanel.close(); return; }
+        if (e.key !== 'Tab') return;
         const focusable = panel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
         if (!focusable.length) return;
         const first = focusable[0], last = focusable[focusable.length - 1];
@@ -20100,11 +20103,12 @@ const DetailPanel = {
       '<div class="dp-tab-panel' + (this.activeTab === id ? ' dp-tab-active' : '') + '" id="' + tabPanelId(id) + '" data-dp-tab="' + id + '" role="tabpanel" aria-labelledby="dpTabTrigger-' + id + '" aria-hidden="' + (this.activeTab === id ? 'false' : 'true') + '">' + sectionsHtml + '</div>';
 
     const html = headerHtml + tabsStrip +
-      panelDiv('overview', overviewSections.join('')) +
+      // NAV-2: History (change log) lives inside the Overview tab panel — it was appended at panel-body root,
+      // outside all four tab panels, so it leaked onto every tab with a stray History chip.
+      panelDiv('overview', overviewSections.join('') + this.renderAuditLog(p.id)) +
       panelDiv('delivery', deliverySections.join('')) +
       panelDiv('scope', scopeSections.join('')) +
-      panelDiv('raid', raidSections.join('')) +
-      this.renderAuditLog(p.id);
+      panelDiv('raid', raidSections.join(''));
 
     document.getElementById('panelBody').innerHTML = html;
   },
@@ -20291,7 +20295,7 @@ const DetailPanel = {
   _buildChipRow() {
     const nav = document.getElementById('dpChipRow');
     if (!nav) return;
-    const sections = Array.from(document.querySelectorAll('#panelBody .panel-section'));
+    const sections = this._activeTabSections();
     while (nav.firstChild) nav.removeChild(nav.firstChild);
     if (!sections.length) { this._teardownScrollSpy(); return; }
     sections.forEach((section, idx) => {
@@ -20312,6 +20316,15 @@ const DetailPanel = {
 
   // Back-compat alias — keeps older call-sites pointing at the same render path.
   _buildJumpMenu() { return this._buildChipRow(); },
+
+  // NAV-1: the four tab panels all live in #panelBody (inactive ones are display:none). The chip TOC,
+  // scroll-spy, and Collapse/Expand-all must operate on ONLY the active tab's sections, else chips for
+  // hidden tabs become dead clicks that scroll an unlaid-out element to ~top.
+  _activeTabSections() {
+    const active = document.querySelector('#panelBody .dp-tab-panel.dp-tab-active');
+    if (!active) return Array.from(document.querySelectorAll('#panelBody .panel-section'));
+    return Array.from(active.querySelectorAll('.panel-section'));
+  },
 
   jumpToSection(id) {
     if (!id) return;
@@ -20480,21 +20493,25 @@ const DetailPanel = {
   },
 
   collapseAll() {
-    const keys = [];
-    document.querySelectorAll('#panelBody .panel-section').forEach(section => {
+    // NAV-1: collapse only the active tab's sections; MERGE into other tabs' persisted collapsed state.
+    const keys = new Set(this._getCollapsed());
+    this._activeTabSections().forEach(section => {
       section.classList.add('collapsed');
       const title = section.querySelector('.panel-section-title');
-      if (!title) return;
-      keys.push((title.textContent || '').replace(/\d+/g, '').trim().toLowerCase());
+      if (title) keys.add((title.textContent || '').replace(/\d+/g, '').trim().toLowerCase());
     });
-    this._setCollapsed(keys);
+    this._setCollapsed(Array.from(keys));
   },
 
   expandAll() {
-    document.querySelectorAll('#panelBody .panel-section').forEach(section => {
+    // NAV-1: expand only the active tab's sections; leave other tabs' collapsed state untouched.
+    const activeKeys = new Set();
+    this._activeTabSections().forEach(section => {
       section.classList.remove('collapsed');
+      const title = section.querySelector('.panel-section-title');
+      if (title) activeKeys.add((title.textContent || '').replace(/\d+/g, '').trim().toLowerCase());
     });
-    this._setCollapsed([]);
+    this._setCollapsed(this._getCollapsed().filter(k => !activeKeys.has(k)));
   },
 
   renderDependencies(p) {
