@@ -18,7 +18,7 @@ describe('Wave 5 R1/R8/R10 — customer mode is read-only, plain-language, and s
     app.App._applyCustomerMode();
     const ma = app.document.querySelector('.nav-item[data-view="myactions"]');
     expect(ma.textContent).toMatch(/For your attention/);
-    expect(app.document.querySelector('.nav-item[data-view="raid"]').textContent).toMatch(/Risks & Decisions/);
+    expect(app.document.querySelector('#navRaidSingle').textContent).toMatch(/Risks & Decisions/);
     expect(app.RaidView.showAll).toBe(false); // R8: scope reset on entering customer mode
     // R2 (wave 8): the cross-customer toggle is not even rendered in customer mode.
     app.App.navigate('raid');

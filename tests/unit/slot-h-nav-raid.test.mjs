@@ -22,11 +22,14 @@ describe('Governance nav item — labels swapped: section = Business Management,
     app.teardown();
   });
 
-  it('Business Management is the section header (replaces the prior Governance heading)', async () => {
+  it('sidebar uses scope-first section headers (Across all customers / This customer / System)', async () => {
     const app = await bootEmpty();
-    const sectionHeader = Array.from(app.document.querySelectorAll('.nav-section-label'))
-      .find(el => el.textContent.trim() === 'Business Management');
-    expect(sectionHeader).toBeTruthy();
+    const labels = Array.from(app.document.querySelectorAll('.nav-section-label')).map(el => el.textContent.trim());
+    expect(labels.some(l => /across all customers/i.test(l))).toBe(true);
+    expect(labels.some(l => /this customer/i.test(l))).toBe(true);
+    expect(labels.some(l => /^system$/i.test(l))).toBe(true);
+    // No section header is the bare ambiguous word "Portfolio".
+    expect(labels).not.toContain('Portfolio');
     app.teardown();
   });
 
@@ -65,18 +68,18 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
     app.teardown();
   });
 
-  it('Strategy + Metrics + Personas all appear inside the Governance nav section', async () => {
+  it('Strategy + Metrics + Personas + Governance live in the "This customer" section', async () => {
     const app = await bootEmpty();
-    // Find the Governance section by its label.
     const sections = Array.from(app.document.querySelectorAll('.nav-section'));
-    const govSection = sections.find(s => {
+    const custSection = sections.find(s => {
       const label = s.querySelector('.nav-section-label');
-      return label && label.textContent.trim() === 'Business Management';
+      return label && /this customer/i.test(label.textContent || '');
     });
-    expect(govSection).toBeTruthy();
-    expect(govSection.querySelector('[data-view="strategy"]')).toBeTruthy();
-    expect(govSection.querySelector('[data-view="metrics"]')).toBeTruthy();
-    expect(govSection.querySelector('[data-view="personas"]')).toBeTruthy();
+    expect(custSection).toBeTruthy();
+    expect(custSection.querySelector('[data-view="strategy"]')).toBeTruthy();
+    expect(custSection.querySelector('[data-view="metrics"]')).toBeTruthy();
+    expect(custSection.querySelector('[data-view="personas"]')).toBeTruthy();
+    expect(custSection.querySelector('[data-view="governance"]')).toBeTruthy();
     app.teardown();
   });
 
@@ -94,11 +97,13 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
 });
 
 describe('Slot H — Item 20: top-level RAID view with 4 inner tabs', () => {
-  it('sidebar Portfolio section has a RAID nav item', async () => {
+  it('the "Across all customers" section (first) carries the cross-customer RAID nav item', async () => {
     const app = await bootEmpty();
     const sections = app.document.querySelectorAll('.nav-section');
-    const portfolioSection = sections[0];
-    expect(portfolioSection.querySelector('[data-view="raid"]')).toBeTruthy();
+    const allSection = sections[0];
+    expect(allSection.querySelector('.nav-section-label').textContent).toMatch(/across all customers/i);
+    expect(allSection.querySelector('#navRaidAll')).toBeTruthy();
+    expect(allSection.querySelector('[data-view="raid"]')).toBeTruthy();
     app.teardown();
   });
 

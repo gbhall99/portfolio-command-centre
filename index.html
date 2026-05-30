@@ -347,6 +347,8 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .btn-icon { padding: 5px; min-width: 0; }
 /* R1 — Customer (read-only) view: curated nav + hidden edit affordances. */
 body.customer-mode .nav-section-label,
+body.customer-mode .nav-subsection-label,
+body.customer-mode #navRaidAll,
 body.customer-mode .nav-item[data-view="dashboard"],
 body.customer-mode .nav-item[data-view="backlog"],
 body.customer-mode .nav-item[data-view="sprint"],
@@ -438,6 +440,11 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 .sidebar { width: var(--sidebar-width); background: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; border-right: 1px solid var(--border-color); }
 .nav-section { padding: 16px 12px 8px; }
 .nav-section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 0 8px 8px; }
+/* IA Goal 1a: scope-first section labels. The "This customer" header carries a live customer chip;
+   sub-dividers (Delivery/Planning/Business context) aid findability WITHOUT being scope headers. */
+.nav-scope-customer-chip { display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--tint-blue-weak, rgba(59,130,246,0.12)); color: var(--accent-blue); font-size: 9px; font-weight: 700; letter-spacing: 0.3px; text-transform: none; vertical-align: middle; }
+.nav-scope-customer-chip:empty { display: none; }
+.nav-subsection-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); opacity: 0.6; padding: 8px 8px 3px; }
 .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-md); cursor: pointer; color: var(--text-secondary); font-size: 13px; font-weight: 500; transition: all 0.12s ease; margin-bottom: 2px; }
 .nav-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .nav-item.active { background: var(--accent-blue); color: white; }
@@ -517,6 +524,8 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 .view-titlebar-divider { width: 1px; height: 18px; background: var(--border-dim); }
 .view-titlebar-customer { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600; background: var(--surface-2); color: var(--text-dark); }
 .view-titlebar-customer::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--tb-customer-color, var(--accent-blue)); }
+/* IA Goal 1a: all-customers / system scope badges drop the customer dot so they never read as a customer name. */
+.view-titlebar-customer.tb-no-dot::before { display: none; }
 .view-titlebar-spacer { flex: 1; }
 .view-titlebar-asof { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 /* UI-H1: .summary-card was the compact cousin of .dash-card. Unified the
@@ -2349,7 +2358,7 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
 /* --- Responsive: Tablet (≤1100px) --- */
 @media (max-width: 1100px) {
   .sidebar { width: 56px; overflow: hidden; }
-  .nav-section-label { display: none; }
+  .nav-section-label, .nav-subsection-label { display: none; }
   .nav-item { justify-content: center; padding: 10px; }
   .nav-item .nav-icon { margin: 0; }
   .nav-item span:not(.nav-icon):not(.nav-badge) { display: none; }
@@ -2381,7 +2390,7 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
     box-shadow: 4px 0 24px rgba(0,0,0,0.2); overflow: visible;
   }
   .sidebar.mobile-open { transform: translateX(0); }
-  .sidebar .nav-section-label { display: block; }
+  .sidebar .nav-section-label, .sidebar .nav-subsection-label { display: block; }
   .sidebar .nav-item span { display: inline; }
   .sidebar .nav-item .nav-badge { display: inline; }
   .sidebar .nav-item { justify-content: flex-start; }
@@ -3029,71 +3038,74 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 
 <div class="app-body">
   <nav class="sidebar" role="navigation" aria-label="Main navigation">
+    <!-- IA Goal 1a: scope-FIRST section headers. Section 1 aggregates ALL customers; section 2 is
+         scoped to the single active customer; section 3 is system. data-view keys are unchanged for
+         deep-links / customer-mode redirects / label swaps. RAID is split into two explicit items
+         (both data-view=raid) so cross-customer vs this-customer is a navigation choice, not a hidden toggle. -->
     <div class="nav-section">
-      <div class="nav-section-label">Portfolio</div>
+      <div class="nav-section-label">Across all customers</div>
       <div class="nav-item" data-view="portfolio" onclick="App.navigate('portfolio')" title="Read-only view across all customers">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 010 18"/><path d="M12 3a15 15 0 000 18"/></svg>
         Portfolio Overview
       </div>
-      <div class="nav-item active" data-view="dashboard" onclick="App.navigate('dashboard')">
+      <div class="nav-item" data-view="raid" id="navRaidAll" onclick="if(typeof RaidView!=='undefined')RaidView.showAll=true;App.navigate('raid')" title="Risks / Assumptions / Issues / Decisions across every customer">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        RAID · all customers
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label" id="navScopeCustomerLabel">This customer<span class="nav-scope-customer-chip" id="navScopeCustomerChip"></span></div>
+      <div class="nav-subsection-label">Delivery</div>
+      <div class="nav-item active" data-view="dashboard" onclick="App.navigate('dashboard')" title="This customer only — projects">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         Projects <span class="nav-badge" id="navBadgeTotal">0</span>
       </div>
-      <div class="nav-item" data-view="roadmap" onclick="App.navigate('roadmap')">
+      <div class="nav-item" data-view="roadmap" onclick="App.navigate('roadmap')" title="This customer only — delivery timeline">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="10" height="4" rx="1"/><rect x="7" y="11" width="10" height="4" rx="1"/><rect x="11" y="17" width="10" height="4" rx="1"/></svg>
         Roadmap
       </div>
-      <div class="nav-item" data-view="backlog" onclick="App.navigate('backlog')" title="Backlog buckets — Unrefined / Refined / Parked">
+      <div class="nav-item" data-view="backlog" onclick="App.navigate('backlog')" title="This customer only — Unrefined / Refined / Parked">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
         <span>Backlog</span>
       </div>
-      <!-- Slot H / Item 20 — new top-level RAID view (cross-portfolio R/A/I/D). -->
-      <div class="nav-item" data-view="raid" onclick="App.navigate('raid')" title="Risks / Assumptions / Issues / Decisions — cross-portfolio">
+      <div class="nav-item" data-view="raid" id="navRaidSingle" onclick="if(typeof RaidView!=='undefined')RaidView.showAll=false;App.navigate('raid')" title="This customer only — Risks / Assumptions / Issues / Decisions">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         RAID <span class="nav-badge" id="navBadgeRaid">0</span>
       </div>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Sprint Management</div>
-      <div class="nav-item" data-view="sprint" onclick="App.navigate('sprint')">
+      <div class="nav-subsection-label">Planning</div>
+      <div class="nav-item" data-view="sprint" onclick="App.navigate('sprint')" title="This customer only — sprint allocation">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><polyline points="21 4 21 10 15 10"/></svg>
         Sprint Planning
       </div>
-      <div class="nav-item" data-view="capacity" onclick="App.navigate('capacity')">
+      <div class="nav-item" data-view="capacity" onclick="App.navigate('capacity')" title="This customer only — team capacity & workload">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Capacity
       </div>
-      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="Decisions awaiting approval + overdue actions for the active customer">
+      <div class="nav-item" data-view="myactions" id="navMyActions" onclick="App.navigate('myactions')" title="This customer only — decisions awaiting approval + overdue actions">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         My Actions <span class="nav-badge" id="navBadgeMyActions">0</span>
       </div>
-    </div>
-    <div class="nav-section">
-      <div class="nav-section-label">Business Management</div>
-      <!-- User-IA-rev — Business Context sub-header dropped; menu flat. All 4
-           items sit at the same indent level under the Business Management section. -->
-      <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="Personas, Objectives, and Metrics inventory">
+      <div class="nav-subsection-label">Business context</div>
+      <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="This customer only — Personas, Objectives, and Metrics inventory">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
         Strategy
       </div>
-      <div class="nav-item" data-view="metrics" onclick="App.navigate('metrics')" title="Metric library with RACI and cascade">
+      <div class="nav-item" data-view="metrics" onclick="App.navigate('metrics')" title="This customer only — Metric library with RACI and cascade">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 18 9 12 13 16 21 8"/><polyline points="14 8 21 8 21 15"/></svg>
         Metrics
       </div>
-      <div class="nav-item" data-view="personas" onclick="App.navigate('personas')" title="Persona hierarchy + assigned people">
+      <div class="nav-item" data-view="personas" onclick="App.navigate('personas')" title="This customer only — Persona hierarchy + assigned people">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 21v-1a4 4 0 014-4h4a4 4 0 014 4v1"/><circle cx="17" cy="9" r="2"/><path d="M16 21v-1a3 3 0 013-3h0a3 3 0 013 3v1"/></svg>
         Personas
       </div>
-      <!-- User-IA-rev — labels swapped: section header is "Business Management";
-           the inner forums view is "Governance". data-view="governance" preserved
-           for back-compat with deep-links / shortcuts. -->
-      <div class="nav-item" data-view="governance" onclick="App.navigate('governance')">
+      <div class="nav-item" data-view="governance" onclick="App.navigate('governance')" title="This customer only — governance forums & decisions">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/></svg>
         Governance <span class="nav-badge" id="navBadgeForums">0</span>
       </div>
+    </div>
+    <div class="nav-section">
       <div class="nav-section-label">System</div>
-      <!-- Activity moved here from the Portfolio section — audit-trail browsing is an admin/system task. -->
-      <div class="nav-item" data-view="activity" id="navActivity" onclick="App.navigate('activity')">
+      <div class="nav-item" data-view="activity" id="navActivity" onclick="App.navigate('activity')" title="Audit trail across all data">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
         Activity
       </div>
@@ -7115,6 +7127,17 @@ const App = {
       if (isActive) item.setAttribute('aria-current', 'page');
       else item.removeAttribute('aria-current');
     });
+    // IA Goal 1a: RAID has two nav items (all-customers / this-customer) sharing data-view=raid.
+    // Highlight only the one matching the current scope so the active state isn't ambiguous.
+    if (viewName === 'raid') {
+      const showAll = (typeof RaidView !== 'undefined') && !!RaidView.showAll;
+      [['navRaidAll', showAll], ['navRaidSingle', !showAll]].forEach(([id, on]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('active', on);
+        if (on) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
+      });
+    }
     document.querySelectorAll('.view').forEach(view => { view.classList.remove('active'); });
     // Dashboard and Projects are now a single page ("Projects") backed by #viewDashboard. The
     // `projects` key is kept as an alias so existing shortcuts / deep-links still resolve.
@@ -7147,6 +7170,15 @@ const App = {
     this.updateViewTitlebar();
   },
 
+  // IA Goal 1a: single declarative source of truth for each view's data scope.
+  // 'all' = aggregates every customer; 'one' = scoped to App.activeCustomer; 'system' = cross-cutting admin.
+  VIEW_SCOPE: { portfolio: 'all', dashboard: 'one', projects: 'one', roadmap: 'one', backlog: 'one', raid: 'one', sprint: 'one', capacity: 'one', myactions: 'one', strategy: 'one', metrics: 'one', personas: 'one', governance: 'one', activity: 'system', config: 'system' },
+  _viewScope(view) {
+    // RAID is the one dynamic case — its scope follows the RAID nav entry the user clicked.
+    if (view === 'raid' && typeof RaidView !== 'undefined' && RaidView.showAll) return 'all';
+    return this.VIEW_SCOPE[view] || 'one';
+  },
+
   updateViewTitlebar() {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
@@ -7157,13 +7189,22 @@ const App = {
     const asOfEl = document.getElementById('viewTitlebarAsOf');
     if (nameEl) nameEl.textContent = names[this.currentView] || '';
     if (custEl) {
-      if (this.currentView === 'portfolio') {
+      // IA Goal 1a: categorical SCOPE badge. 'all'/'system' carry no customer dot so they never read
+      // as a customer named "All customers"; 'one' keeps the customer-coloured pill.
+      const scope = this._viewScope(this.currentView);
+      custEl.classList.remove('tb-no-dot');
+      if (scope === 'all') {
         custEl.textContent = 'All customers';
+        custEl.classList.add('tb-no-dot');
+        custEl.style.setProperty('--tb-customer-color', 'var(--accent-blue)');
+      } else if (scope === 'system') {
+        custEl.textContent = 'System · all data';
+        custEl.classList.add('tb-no-dot');
         custEl.style.setProperty('--tb-customer-color', 'var(--text-muted)');
       } else {
         const c = this.activeCustomer || '—';
         const color = this.activeCustomer ? (this.getCustomerColor && this.getCustomerColor(this.activeCustomer)) : 'var(--text-muted)';
-        custEl.textContent = c;
+        custEl.textContent = 'This customer: ' + c;
         custEl.style.setProperty('--tb-customer-color', color || 'var(--accent-blue)');
       }
     }
@@ -7200,6 +7241,9 @@ const App = {
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     const _scopeChip = document.getElementById('customerModeScopeChip');
     if (_scopeChip) _scopeChip.textContent = (this.customerMode && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
+    // IA Goal 1a: the "This customer" sidebar header names the active customer (derived, never persisted).
+    const _navScopeChip = document.getElementById('navScopeCustomerChip');
+    if (_navScopeChip) _navScopeChip.textContent = this.activeCustomer || '';
     this.updateViewTitlebar();
   },
 
@@ -8522,16 +8566,18 @@ const App = {
     const chip = document.getElementById('customerModeScopeChip');
     if (chip) chip.textContent = (on && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
     // R1/R10: keep a read-only "For your attention" surface and use plain-language labels in customer mode.
-    const setNavLabel = (view, label) => {
-      const item = document.querySelector('.nav-item[data-view="' + view + '"]');
+    const setNavLabel = (selector, label) => {
+      // Target by unique selector — data-view="raid" is now duplicated across two nav items, so a
+      // bare [data-view] query would relabel the wrong (all-customers) entry.
+      const item = document.querySelector(selector);
       if (!item) return;
       for (let i = 0; i < item.childNodes.length; i++) {
         const node = item.childNodes[i];
         if (node.nodeType === 3 && node.textContent.trim()) { node.textContent = ' ' + label + ' '; return; }
       }
     };
-    setNavLabel('myactions', on ? 'For your attention' : 'My Actions');
-    setNavLabel('raid', on ? 'Risks & Decisions' : 'RAID');
+    setNavLabel('#navMyActions', on ? 'For your attention' : 'My Actions');
+    setNavLabel('#navRaidSingle', on ? 'Risks & Decisions' : 'RAID');
     // R8: force RAID back to customer-scoped when entering customer mode, then refresh if it's the active view.
     if (on && typeof RaidView !== 'undefined') { RaidView.showAll = false; if (this.currentView === 'raid' && RaidView.render) RaidView.render(); }
     // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
