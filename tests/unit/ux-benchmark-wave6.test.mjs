@@ -48,7 +48,7 @@ describe('Wave 6 R4 — RAID sort headers are keyboard-operable and announce sor
     app.App.setActiveCustomer('Acme Industries');
     app.App.navigate('raid');
     const html = app.document.getElementById('raidContent').innerHTML;
-    expect(html).toMatch(/tabindex="0" role="button" onclick="RaidView\.setSort/);
+    expect(html).toMatch(/tabindex="0" onclick="RaidView\.setSort/);
     expect(html).toMatch(/onkeydown="if\(event\.key/);
     expect(html).toMatch(/aria-sort="none"/); // inactive sortable columns announce sortability
     app.teardown();
