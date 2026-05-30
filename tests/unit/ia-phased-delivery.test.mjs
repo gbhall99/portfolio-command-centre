@@ -51,3 +51,29 @@ describe('IA 1b / B7 — classify sizing change: elaboration vs scope-creep', ()
     app.teardown();
   });
 });
+
+describe('IA 1b / B9 — Gantt placeholder train (no gantt disconnection)', () => {
+  it('future tbd/planned phases render as a continuous flush-butted train after the live bar', async () => {
+    const proj = makeProject({ id: 'P1', name: 'Rolling', customer: 'Acme Industries',
+      start_date: '2026-02-02', target_date: '2026-05-29',
+      size_requirements: 10, size_engineering: 8, size_total: 18,
+      delivery_config: { include_req: true, include_de: true, include_ds: true, include_tableau: true, include_uat: true,
+        phase_order: ['Requirements', 'Data Engineering',
+          { phase: 'Data Science', status: 'planned', placeholder_size: 12 },
+          { phase: 'Tableau', status: 'tbd' },
+          { phase: 'UAT', status: 'tbd' }] } });
+    const app = await loadApp(makeDataset({ projects: [proj], customers: [{ name: 'Acme Industries', color: '#6366f1' }] }));
+    app.App.setActiveCustomer('Acme Industries');
+    app.App.navigate('roadmap');
+    const scroll = app.document.querySelector('.gantt-scroll');
+    const panels = scroll ? Array.from(scroll.querySelectorAll('.gantt-tbd')) : [];
+    expect(panels.length).toBe(3); // Data Science (planned) + Tableau + UAT (tbd)
+    const statuses = panels.map(el => el.getAttribute('data-phase-status'));
+    expect(statuses).toEqual(['planned', 'tbd', 'tbd']);
+    // Flush-butted: each panel's left == the previous panel's left + width (a continuous train, no gaps).
+    const lefts = panels.map(el => parseFloat(el.style.left));
+    expect(lefts[1]).toBeGreaterThan(lefts[0]);
+    expect(lefts[2]).toBeGreaterThan(lefts[1]);
+    app.teardown();
+  });
+});
