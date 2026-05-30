@@ -21484,6 +21484,18 @@ const DetailPanel = {
     App.saveToLocalStorage();
   },
 
+  // B7 (rolling-wave / progressive elaboration): classify a sizing change so the detail panel can
+  // distinguish PLANNED phase elaboration from real scope creep.
+  //  - 'elaboration': the edited skill/phase went from 0 -> N (a previously-unknown phase is now sized).
+  //  - 'scope-change': an already-sized phase grew by >20% of the prior committed total.
+  //  - 'none': below threshold, or first-ever sizing of the whole project.
+  _classifySizeChange(prevFieldVal, newFieldVal, previousTotal, newTotal) {
+    if ((prevFieldVal || 0) === 0 && (newFieldVal || 0) > 0) return 'elaboration';
+    const changePct = previousTotal > 0 ? Math.abs(newTotal - previousTotal) / previousTotal : 0;
+    if (previousTotal > 0 && changePct > 0.2) return 'scope-change';
+    return 'none';
+  },
+
   onFieldChange(el) {
     const field = el.dataset.field;
     let value = el.value;
@@ -21499,10 +21511,15 @@ const DetailPanel = {
         el.value = String(baseVal);
       }
     }
+    // B7 (rolling-wave): capture the edited sizing field's PRIOR value before the write, so we can
+    // tell first-time phase elaboration (0 -> N) apart from growth of an already-sized phase.
+    const _isSizingField = field.startsWith('size_') && field !== 'size_total';
+    const _prevFieldVal = _isSizingField ? (() => { const pp = App.data.projects.find(pr => pr.id === this.currentId); return pp ? Number(pp[field] || 0) : 0; })() : 0;
+
     App.updateProject(this.currentId, field, value);
 
     // Recompute size_total if a sizing field changed
-    if (field.startsWith('size_') && field !== 'size_total') {
+    if (_isSizingField) {
       const p = App.data.projects.find(pr => pr.id === this.currentId);
       if (p) {
         const previousTotal = p.size_total || 0;
@@ -21519,12 +21536,15 @@ const DetailPanel = {
         }
         App.markDirty();
         App.saveToLocalStorage();
-        // H8: scope-change detection — if the total changed by more than 20%, ask the user to
-        // record a reason before the change sticks in the audit trail. Skip the first-time
-        // sizing (previousTotal === 0) since that's initial estimation, not a scope change.
-        const changeAbs = Math.abs(p.size_total - previousTotal);
-        const changePct = previousTotal > 0 ? (changeAbs / previousTotal) : 0;
-        if (previousTotal > 0 && changePct > 0.2 && !this._scopeChangePromptActive) {
+        const newFieldVal = Number(p[field] || 0);
+        const cls = this._classifySizeChange(_prevFieldVal, newFieldVal, previousTotal, p.size_total);
+        if (cls === 'elaboration') {
+          // Rolling-wave: sizing a previously-unknown phase is PLANNED progressive elaboration — log a
+          // neutral event so the Activity feed shows it distinctly from unplanned scope growth, and do
+          // NOT fire the scope-change prompt.
+          App.logChange(p.id, 'phase_elaborated', String(previousTotal), String(p.size_total), 'user', { field: field });
+        } else if (cls === 'scope-change' && !this._scopeChangePromptActive) {
+          // H8: growth of an already-sized phase by >20% is a real scope change — record a reason.
           this._promptScopeChangeReason(p.id, field, previousTotal, p.size_total);
         }
       }
