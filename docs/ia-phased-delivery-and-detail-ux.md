@@ -39,13 +39,15 @@ in the Delivery tab so users can seed un-elaborated phases without editing data.
 
 ## Workflow 2 — Project detail page UX scrutiny (verdict: defensible, 0.9)
 
-Five lenses → 20-item backlog + 19 acceptance criteria. **Shipped so far** (`b999375`):
-- **NAV-1** chip TOC / scroll-spy / Collapse-Expand-all scoped to the active tab (were spanning hidden tabs → dead clicks).
-- **NAV-2** History moved inside the Overview tab panel (was leaking onto every tab).
-- **A11Y-1** Escape closes the dialog (was the only modal without it).
+Five lenses → 20-item backlog + 19 acceptance criteria. **Shipped:**
+- **NAV-1** chip TOC / scroll-spy / Collapse-Expand-all scoped to the active tab (were spanning hidden tabs → dead clicks). `b999375`
+- **NAV-2** History moved inside the Overview tab panel (was leaking onto every tab). `b999375`
+- **A11Y-1** Escape closes the dialog (was the only modal without it). `b999375`
+- **TASK-1** merge Status + the three RAG dials into one "Status & Health" card on Overview (was an
+  Overview→RAID round-trip). `5fb0e24`
+- **TASK-2** Projects/Backlog row-click lands on Overview (now carries Status/Identity/Prioritisation/Health). `5fb0e24`
 
-**Remaining detail-page backlog (queued):** TASK-1 merge Status+Health on Overview · TASK-2 default entry tab →
-Overview · A11Y-2 field accessible names · A11Y-3 keyboard RAG radiogroup · VIS-1 theme-aware banner tints ·
-NAV-3 stable per-section collapse keys · TASK-3 sticky-meta deep-links · FB-1 save feedback · A11Y-4 tablist
-arrow keys · IA-1 tighten RAID · VIS-2 EVM cells-first · VIS-3/4/5 read-only badges + tokens · ERR-1 app-modal
-close guard. (CONS-1 flagged stale by the verifier — re-check before action.)
+**Remaining detail-page backlog (queued):** A11Y-2 field accessible names · A11Y-3 keyboard RAG radiogroup ·
+VIS-1 theme-aware banner tints · NAV-3 stable per-section collapse keys · TASK-3 sticky-meta deep-links ·
+FB-1 save feedback · A11Y-4 tablist arrow keys · IA-1 tighten RAID · VIS-2 EVM cells-first · VIS-3/4/5 read-only
+badges + tokens · ERR-1 app-modal close guard. (CONS-1 flagged stale by the verifier — re-check before action.)
