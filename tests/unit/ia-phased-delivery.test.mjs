@@ -52,6 +52,19 @@ describe('IA 1b / B7 — classify sizing change: elaboration vs scope-creep', ()
   });
 });
 
+describe('IA 1b / B6 — tolerant phase readers (mixed string/object phase_order)', () => {
+  it('App.phaseName / phaseNames / phaseStatusOf handle both string and object entries', async () => {
+    const app = await loadApp(makeDataset({ projects: [makeProject({ id: 'P1', customer: 'Acme Industries' })], customers: [{ name: 'Acme Industries', color: '#6366f1' }] }));
+    const A = app.App;
+    expect(A.phaseName('Requirements')).toBe('Requirements');
+    expect(A.phaseName({ phase: 'Tableau', status: 'tbd' })).toBe('Tableau');
+    expect(A.phaseNames(['Requirements', { phase: 'UAT', status: 'planned' }])).toEqual(['Requirements', 'UAT']);
+    expect(A.phaseStatusOf('Requirements')).toBe('committed'); // a bare string = committed
+    expect(A.phaseStatusOf({ phase: 'UAT', status: 'tbd' })).toBe('tbd');
+    app.teardown();
+  });
+});
+
 describe('IA 1b / B9 — Gantt placeholder train (no gantt disconnection)', () => {
   it('future tbd/planned phases render as a continuous flush-butted train after the live bar', async () => {
     const proj = makeProject({ id: 'P1', name: 'Rolling', customer: 'Acme Industries',

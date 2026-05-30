@@ -6593,6 +6593,13 @@ const App = {
     return this.advanceStage(projectId, 'Implementation', opts);
   },
 
+  // B6 (rolling-wave): phase_order entries may be a plain string (a committed phase, shipped format)
+  // OR an object { phase, status:'tbd'|'planned'|'committed', placeholder_size? } for not-yet-committed
+  // phases. These tolerant readers let every consumer treat the array uniformly without throwing.
+  phaseName(entry) { return (entry && typeof entry === 'object') ? entry.phase : entry; },
+  phaseNames(order) { return (Array.isArray(order) ? order : []).map(e => App.phaseName(e)); },
+  phaseStatusOf(entry) { return (entry && typeof entry === 'object' && entry.status) ? entry.status : 'committed'; },
+
   promoteTbdPhase(projectId, phaseName, opts) {
     opts = opts || {};
     const p = (this.data && this.data.projects || []).find(pr => pr.id === projectId);
@@ -19935,13 +19942,14 @@ const DetailPanel = {
       const allPhaseNames = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'];
       const colors = { 'Requirements': '#6366f1', 'Data Sourcing': '#64748b', 'Data Engineering': '#2563eb', 'Data Science': '#7c3aed', 'Tableau': '#0891b2', 'UAT': '#ec4899' };
       const order = dc.phase_order || [];
+      const orderNames = App.phaseNames(order); // B6: object-tolerant phase name list
       const phaseToggleMap = { 'Requirements': 'include_req', 'Data Engineering': 'include_de', 'Data Science': 'include_ds', 'Tableau': 'include_tableau', 'UAT': 'include_uat' };
       const flowItems = allPhaseNames.map((ph) => {
         const c = colors[ph] || '#94a3b8';
-        const isInOrder = order.includes(ph);
+        const isInOrder = orderNames.includes(ph);
         const isDataSourcing = ph === 'Data Sourcing';
         const toggleField = phaseToggleMap[ph];
-        const orderIdx = order.indexOf(ph);
+        const orderIdx = orderNames.indexOf(ph);
         const canUp = isInOrder && orderIdx > 0;
         const canDown = isInOrder && orderIdx >= 0 && orderIdx < order.length - 1;
         const upBtn = canUp ? '<span onclick="event.stopPropagation();DetailPanel.movePhaseOrder(' + orderIdx + ',-1);return false" style="cursor:pointer;opacity:0.5;font-size:9px;padding:0 1px" title="Move earlier">◀</span>' : '';
@@ -20062,7 +20070,7 @@ const DetailPanel = {
           '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="DetailPanel._closePhaseTrackerRiskForm()">Cancel</button>' +
         '</div>' +
         '<div class="stage-tracker">' +
-        (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; return order.length ? DetailPanel.PHASES.filter(ph => order.includes(ph.name)).sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
+        (function() { const order = (p.delivery_config && p.delivery_config.phase_order) || []; const names = App.phaseNames(order); return names.length ? DetailPanel.PHASES.filter(ph => names.includes(ph.name)).sort((a, b) => names.indexOf(a.name) - names.indexOf(b.name)) : DetailPanel.PHASES; })().map(ph => {
           const stageVal = ph.stageKey ? ((p.stages || {})[ph.stageKey] || 'Not Started') : 'Not Started';
           const val = ph.stageKey ? stageVal :
             (ph.skillKey && (p[ph.skillKey] || 0) > 0 ? 'Not Started' : 'N/A');
@@ -21744,10 +21752,11 @@ const DetailPanel = {
     // Phase dependency validation: if setting to Complete, check predecessors
     if (value === 'Complete') {
       const order = (p.delivery_config && p.delivery_config.phase_order) || [];
-      const phaseIdx = order.indexOf(phaseName);
+      const orderNames = App.phaseNames(order); // B6: object-tolerant
+      const phaseIdx = orderNames.indexOf(phaseName);
       if (phaseIdx > 0) {
         for (let pi = 0; pi < phaseIdx; pi++) {
-          const predName = order[pi];
+          const predName = orderNames[pi];
           const predPhase = this.PHASES.find(ph => ph.name === predName);
           if (!predPhase) continue;
           let predStatus = 'Not Started';
@@ -30650,7 +30659,7 @@ const Capacity = {
     // of the same project). Scans the project's phase_order for the next phase that has
     // an assignee and returns { phase, member }.
     const nextHandoverFor = (a) => {
-      const order = a.phaseOrder || [];
+      const order = App.phaseNames(a.phaseOrder || []); // B6: object-tolerant phase names
       const myIdx = order.indexOf(a.phaseName);
       if (myIdx < 0 || myIdx >= order.length - 1) return null;
       for (let i = myIdx + 1; i < order.length; i++) {
