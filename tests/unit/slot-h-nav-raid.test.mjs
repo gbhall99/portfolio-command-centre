@@ -22,14 +22,12 @@ describe('Governance nav item — labels swapped: section = Business Management,
     app.teardown();
   });
 
-  it('sidebar uses scope-first section headers (Across all customers / This customer / System)', async () => {
+  it('sidebar uses scope-first section headers (Portfolio / {Customer} Delivery / System)', async () => {
     const app = await bootEmpty();
     const labels = Array.from(app.document.querySelectorAll('.nav-section-label')).map(el => el.textContent.trim());
-    expect(labels.some(l => /across all customers/i.test(l))).toBe(true);
-    expect(labels.some(l => /this customer/i.test(l))).toBe(true);
+    expect(labels.some(l => /^portfolio$/i.test(l))).toBe(true);
+    expect(labels.some(l => /delivery/i.test(l))).toBe(true);
     expect(labels.some(l => /^system$/i.test(l))).toBe(true);
-    // No section header is the bare ambiguous word "Portfolio".
-    expect(labels).not.toContain('Portfolio');
     app.teardown();
   });
 
@@ -68,12 +66,12 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
     app.teardown();
   });
 
-  it('Strategy + Metrics + Personas + Governance live in the "This customer" section', async () => {
+  it('Strategy + Metrics + Personas + Governance live in the customer "Delivery" section', async () => {
     const app = await bootEmpty();
     const sections = Array.from(app.document.querySelectorAll('.nav-section'));
     const custSection = sections.find(s => {
       const label = s.querySelector('.nav-section-label');
-      return label && /this customer/i.test(label.textContent || '');
+      return label && /delivery/i.test(label.textContent || '');
     });
     expect(custSection).toBeTruthy();
     expect(custSection.querySelector('[data-view="strategy"]')).toBeTruthy();
@@ -97,11 +95,11 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
 });
 
 describe('Slot H — Item 20: top-level RAID view with 4 inner tabs', () => {
-  it('the "Across all customers" section (first) carries the cross-customer RAID nav item', async () => {
+  it('the "Portfolio" section (first) carries the cross-customer RAID nav item', async () => {
     const app = await bootEmpty();
     const sections = app.document.querySelectorAll('.nav-section');
     const allSection = sections[0];
-    expect(allSection.querySelector('.nav-section-label').textContent).toMatch(/across all customers/i);
+    expect(allSection.querySelector('.nav-section-label').textContent).toMatch(/^portfolio$/i);
     expect(allSection.querySelector('#navRaidAll')).toBeTruthy();
     expect(allSection.querySelector('[data-view="raid"]')).toBeTruthy();
     app.teardown();

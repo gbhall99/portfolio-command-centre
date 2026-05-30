@@ -75,13 +75,14 @@ describe('Phase 4 / AC-4.1 — Create with only Step 1 → Overview + readiness 
     expect(proj.size_total).toBe(15);
     expect(proj.customer).toBe('Acme Industries');
 
-    // The readiness chip is in the sticky-header DOM, with backlog ✓ + planning ✗ + steerco ✗.
+    // S1: the readiness chip is now a compact badge ("Not ready · N"); the per-gate backlog/planning/
+    // steerco breakdown moved into the click-through popover. Two gates unmet here (planning + steerco).
     const chip = app.document.querySelector('.dp-readiness-chip');
     expect(chip).toBeTruthy();
-    const text = chip.textContent;
-    expect(text).toMatch(/backlog\s*✓/);
-    expect(text).toMatch(/planning\s*✗/);
-    expect(text).toMatch(/steerco\s*✗/);
+    expect(chip.textContent).toMatch(/Not ready\s*·\s*2/);
+    chip.click();
+    const popover = app.document.querySelector('#dpReadinessPopover');
+    expect(popover).toBeTruthy();
 
     app.teardown();
   });

@@ -35,30 +35,14 @@ describe('Slot C — Item 3: Overview Identity strip removed; sponsor pill in st
     app.teardown();
   });
 
-  it('sticky header row 1 renders a .dp-sponsor-pill with the sponsor name', async () => {
+  // S1: the sticky-header sponsor pill was removed — it duplicated the Sponsor field now editable in the
+  // Identity section on Overview. The strip should no longer carry it.
+  it('sticky header no longer renders a .dp-sponsor-pill (Sponsor lives in the Identity section)', async () => {
     const { app } = await bootWithProject({ sponsor: 'Ada Lovelace' });
     app.DetailPanel.open('C1');
-    const pill = app.document.querySelector('#panelStickyMeta .dp-sponsor-pill');
-    expect(pill).toBeTruthy();
-    expect(pill.textContent).toContain('Ada Lovelace');
-    expect(pill.dataset.field).toBe('sponsor');
-    app.teardown();
-  });
-
-  it('sticky header sponsor pill shows em-dash when sponsor is empty', async () => {
-    const { app } = await bootWithProject();
-    app.DetailPanel.open('C1');
-    const pill = app.document.querySelector('#panelStickyMeta .dp-sponsor-pill');
-    expect(pill).toBeTruthy();
-    expect(pill.textContent).toContain('—');
-    app.teardown();
-  });
-
-  it('clicking the sponsor pill switches to the Scope tab', async () => {
-    const { app } = await bootWithProject({ sponsor: 'Ada' });
-    app.DetailPanel.open('C1');
-    app.DetailPanel._jumpToSponsorEdit();
-    expect(app.DetailPanel.activeTab).toBe('scope');
+    expect(app.document.querySelector('#panelStickyMeta .dp-sponsor-pill')).toBeFalsy();
+    const overview = app.document.querySelector('[data-dp-tab="overview"]');
+    expect(overview.querySelector('[data-field="sponsor"]')).toBeTruthy();
     app.teardown();
   });
 });

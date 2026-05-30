@@ -85,30 +85,32 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     const scope = app.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
 
-    // Overview holds: Status & Health (TASK-1 co-locates Status + RAG dials), Strategy, plus Identity + Prioritisation.
+    // Overview holds: Status & Health (TASK-1 co-locates Status + RAG dials), plus Identity + Prioritisation.
+    // S2: Strategy is no longer on Overview — the single editor lives on Scope & Value (Strategy linkage).
     expect(overview.querySelector('.dp-identity-strip')).toBeFalsy();
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status\s*(&amp;|&)\s*Health/);
-    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Strategy</);
+    expect(overview.innerHTML).not.toMatch(/panel-section-title[^>]*>Strategy</);
 
-    // Delivery holds: Delivery Setup, Dependencies, Stakeholders, Dates,
-    // Sprint window, Delivery Phases, Customer Milestones
+    // S5: Delivery is a clean execution surface: Delivery Setup / Dependencies / Sprint window / Delivery Phases.
+    // Stakeholders, Dates, Customer Milestones moved to Scope & Value.
     expect(delivery.innerHTML).toMatch(/Delivery Setup/);
     expect(delivery.innerHTML).toMatch(/Dependencies/);
-    expect(delivery.innerHTML).toMatch(/Stakeholders/);
-    expect(delivery.innerHTML).toMatch(/Dates/);
     expect(delivery.innerHTML).toMatch(/Sprint window/);
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
-    expect(delivery.innerHTML).toMatch(/Customer Milestones/);
+    expect(delivery.innerHTML).not.toMatch(/Stakeholders/);
+    expect(delivery.innerHTML).not.toMatch(/Customer Milestones/);
 
     // User-IA-rev: Identity + Prioritisation moved from Scope to Overview.
     const overviewTitles = Array.from(overview.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
     const scopeTitles = Array.from(scope.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
     expect(overviewTitles.some(t => /^Identity/.test(t))).toBe(true);
     expect(overviewTitles.some(t => /^Prioritisation/.test(t))).toBe(true);
-    // Scope keeps Strategy linkage / Benefits / Success criteria / Gate reviews / Sponsor sign-off.
+    // Scope & Value: Strategy linkage / Benefits / Success criteria / Milestones & Dates / Stakeholders / Sponsor sign-off / Gate reviews.
     expect(scopeTitles.some(t => /^Strategy linkage/.test(t))).toBe(true);
     expect(scopeTitles.some(t => /^Benefits/.test(t))).toBe(true);
     expect(scopeTitles.some(t => /^Success criteria/.test(t))).toBe(true);
+    expect(scopeTitles.some(t => /^Milestones/.test(t))).toBe(true);
+    expect(scopeTitles.some(t => /^Stakeholders/.test(t))).toBe(true);
 
     // RAID holds: Assumptions, Risks, Decisions, Issues
     const raidTitles = Array.from(raid.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
@@ -204,12 +206,10 @@ describe('Phase 3 / AC-3.5 — superseded by Slot C (Identity strip dropped; spo
     app.teardown();
   });
 
-  it('sticky header sponsor pill shows the sponsor name in lieu of the strip', async () => {
+  it('sticky header no longer carries a sponsor pill (S1 — Sponsor is in the Identity section)', async () => {
     const { app } = await bootWithProject({ sponsor: 'Ada Lovelace' });
     app.DetailPanel.open('P-T3');
-    const pill = app.document.querySelector('#panelStickyMeta .dp-sponsor-pill');
-    expect(pill).toBeTruthy();
-    expect(pill.textContent).toContain('Ada Lovelace');
+    expect(app.document.querySelector('#panelStickyMeta .dp-sponsor-pill')).toBeFalsy();
     app.teardown();
   });
 });

@@ -53,7 +53,7 @@ describe('Detail Panel — four-tab IA', () => {
     app.teardown();
   });
 
-  it('Overview carries Status + Identity + Prioritisation; Delivery carries phase points + sprint window; Scope carries Strategy linkage + Benefits; RAID carries Health + Blockers + Risks + Issues + Decisions (user-IA-rev)', async () => {
+  it('Overview carries Status & Health + Identity + Prioritisation; Delivery carries phase points + sprint window; Scope carries Strategy linkage + Benefits; RAID carries Blockers + Risks + Issues + Decisions (Health lives on Overview)', async () => {
     resetIdSeq();
     const proj = makeProject({ name: 'P1' });
     proj.size_total = 10;
@@ -67,8 +67,12 @@ describe('Detail Panel — four-tab IA', () => {
     const delivery = app.window.document.querySelector('[data-dp-tab="delivery"]');
     const scope = app.window.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.window.document.querySelector('[data-dp-tab="raid"]');
-    // Overview: Status (kept), Identity + Prioritisation (moved from Scope).
-    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status</);
+    // Overview: Status & Health (TASK-1 co-located Status + the 3 RAG dials), Identity + Prioritisation.
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status &amp; Health/);
+    // The three RAG health dimensions live on Overview now (TASK-1 moved them off RAID).
+    expect(overview.innerHTML).toMatch(/Schedule Health/);
+    expect(overview.innerHTML).toMatch(/Resource Health/);
+    expect(overview.innerHTML).toMatch(/Scope Health/);
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Identity</);
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Prioritisation</);
     // Identity strip (read-only) was dropped earlier; full editable Identity now lives here.
@@ -79,8 +83,8 @@ describe('Detail Panel — four-tab IA', () => {
     expect(scope.innerHTML).toMatch(/Strategy linkage/);
     expect(scope.innerHTML).toMatch(/Benefits/);
     expect(scope.innerHTML).not.toMatch(/panel-section-title[^>]*>Identity</);
-    // RAID: Health + Blockers (moved from Overview) + R/A/I/D.
-    expect(raid.innerHTML).toMatch(/panel-section-title[^>]*>Health</);
+    // RAID: Blockers (derived) + R/A/I/D. Health is NOT a RAID section — TASK-1 moved it to Overview's "Status & Health".
+    expect(raid.innerHTML).not.toMatch(/panel-section-title[^>]*>Health</);
     expect(raid.innerHTML).toMatch(/panel-section-title[^>]*>Blockers</);
     expect(raid.innerHTML).toMatch(/Risks/);
     expect(raid.innerHTML).toMatch(/Issues/);

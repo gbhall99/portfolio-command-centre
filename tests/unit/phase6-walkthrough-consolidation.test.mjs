@@ -193,10 +193,11 @@ describe('Phase 6 / AC-6.6 — Open in Walkthrough from Overview', () => {
     app.teardown();
   });
 
-  it('the Detail panel header carries an "Open in Walkthrough" button for the active project', async () => {
+  it('the Detail panel header More menu carries an "Open in Walkthrough" item for the active project', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('P6');
-    const btn = app.document.querySelector('#panelBody .dp-open-in-walkthrough');
+    // S1: relocated from an in-body action band into the header "More" menu (#dpMoreMenu).
+    const btn = app.document.querySelector('#dpMoreMenu .dp-open-in-walkthrough');
     expect(btn).toBeTruthy();
     expect(btn.dataset.projectId).toBe('P6');
     app.teardown();

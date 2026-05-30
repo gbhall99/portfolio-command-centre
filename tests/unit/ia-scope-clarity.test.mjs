@@ -12,21 +12,20 @@ const boot = () => loadApp(makeDataset({
 }));
 
 describe('IA 1a — scope-first section headers', () => {
-  it('exactly three section labels, matching all-customers / this-customer / system; none is bare "Portfolio"', async () => {
+  it('exactly three section labels: Portfolio / {Customer} Delivery / System', async () => {
     const app = await boot();
     const labels = Array.from(app.document.querySelectorAll('.nav-section-label')).map(el => el.textContent.trim());
     expect(labels).toHaveLength(3);
-    expect(labels.some(l => /across all customers/i.test(l))).toBe(true);
-    expect(labels.some(l => /this customer/i.test(l))).toBe(true);
+    expect(labels).toContain('Portfolio');
+    expect(labels.some(l => /delivery/i.test(l))).toBe(true);
     expect(labels.some(l => /^system$/i.test(l))).toBe(true);
-    expect(labels).not.toContain('Portfolio');
     app.teardown();
   });
 
-  it('Portfolio Overview + the all-customers RAID sit under "Across all customers"', async () => {
+  it('Portfolio Overview + the all-customers RAID sit under "Portfolio"', async () => {
     const app = await boot();
     const first = app.document.querySelectorAll('.nav-section')[0];
-    expect(first.querySelector('.nav-section-label').textContent).toMatch(/across all customers/i);
+    expect(first.querySelector('.nav-section-label').textContent).toMatch(/^portfolio$/i);
     expect(first.querySelector('[data-view="portfolio"]')).toBeTruthy();
     expect(first.querySelector('#navRaidAll')).toBeTruthy();
     app.teardown();
