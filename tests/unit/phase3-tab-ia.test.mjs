@@ -85,10 +85,9 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     const scope = app.document.querySelector('[data-dp-tab="scope"]');
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
 
-    // Overview holds: Status, Strategy, plus (user-IA-rev) Identity + Prioritisation.
-    // Health/RAG block moved to RAID per user request.
+    // Overview holds: Status & Health (TASK-1 co-locates Status + RAG dials), Strategy, plus Identity + Prioritisation.
     expect(overview.querySelector('.dp-identity-strip')).toBeFalsy();
-    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status</);
+    expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Status\s*(&amp;|&)\s*Health/);
     expect(overview.innerHTML).toMatch(/panel-section-title[^>]*>Strategy</);
 
     // Delivery holds: Delivery Setup, Dependencies, Stakeholders, Dates,
@@ -138,7 +137,7 @@ describe('Phase 3 / AC-3.3 — entry-point routing', () => {
   const fixtures = [
     { entryPoint: 'dashboard', expected: 'overview' },
     { entryPoint: 'walkthrough', expected: 'overview' },
-    { entryPoint: 'projects', expected: 'delivery' },
+    { entryPoint: 'projects', expected: 'overview' },
     { entryPoint: 'roadmap', expected: 'delivery' },
     { entryPoint: 'strategy', expected: 'scope' }
   ];
