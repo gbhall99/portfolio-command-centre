@@ -13701,15 +13701,16 @@ const MetricsView = {
     const milestonesMet = projects.reduce((s, p) => s + ((p.customer_milestones || []).filter(m => /done|achiev|complete|met|hit/i.test(m.status || '')).length), 0);
     const now = new Date(); let next = null;
     projects.forEach(p => (p.customer_milestones || []).forEach(m => { if (m.date) { const d = new Date(m.date); if (d >= now && (!next || d < next)) next = d; } }));
-    const nextStr = next ? next.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
-    const stat = (v, label, color) => '<div style="min-width:120px"><div style="font-size:24px;font-weight:700;color:' + (color || 'var(--text-dark)') + '">' + esc(String(v)) + '</div><div style="font-size:11px;color:var(--text-muted)">' + label + '</div></div>';
+    const nextStr = next ? next.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'None scheduled yet';
+    const milestonesStr = milestonesMet > 0 ? String(milestonesMet) : 'None yet';
+    const stat = (v, label, color) => '<div style="min-width:120px"><div style="font-size:' + (String(v).length > 6 ? '15px' : '24px') + ';font-weight:700;color:' + (color || 'var(--text-dark)') + ';line-height:1.4">' + esc(String(v)) + '</div><div style="font-size:11px;color:var(--text-muted)">' + label + '</div></div>';
     return '<div style="border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px 18px;background:var(--surface)">' +
       '<h2 style="font-size:16px;margin:0 0 4px">Outcomes — value delivered for ' + esc(c) + '</h2>' +
       '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">A plain-language summary of progress on your delivery.</div>' +
       '<div style="display:flex;gap:28px;flex-wrap:wrap">' +
         stat(pct + '%', 'of planned work delivered', 'var(--status-green)') +
         stat(onTrackPct + '%', 'of projects on track') +
-        stat(milestonesMet, 'milestones met') +
+        stat(milestonesStr, 'milestones met') +
         stat(nextStr, 'next delivery') +
       '</div></div>';
   },
@@ -36264,9 +36265,12 @@ const RaidView = {
     const rows = this._sortRows(this._collect(this.activeTab), this.activeTab);
     const scope = this.showAll ? ' across all customers' : '';
     const toolbar = '<div class="raid-toolbar" style="display:flex;align-items:center;gap:14px;margin-bottom:10px">' +
-      '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dark-secondary);cursor:pointer">' +
-      '<input type="checkbox" ' + (this.showAll ? 'checked' : '') + ' onchange="RaidView.toggleShowAll(this.checked)" aria-label="Show ' + this.activeTab + ' across all customers"> Show all customers</label>' +
-      (this.showAll ? '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--accent-blue);color:#fff" role="status">Viewing all customers</span>' : '') +
+      // R2: in customer mode the cross-customer toggle is not rendered at all (force-off + CSS-hidden + not in the DOM),
+      // so a screen-shared customer session cannot re-enable other customers' RAID data.
+      (App.customerMode ? '' :
+        '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dark-secondary);cursor:pointer">' +
+        '<input type="checkbox" ' + (this.showAll ? 'checked' : '') + ' onchange="RaidView.toggleShowAll(this.checked)" aria-label="Show ' + this.activeTab + ' across all customers"> Show all customers</label>') +
+      (this.showAll && !App.customerMode ? '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--accent-blue);color:#fff" role="status">Viewing all customers</span>' : '') +
       '<span style="font-size:11px;color:var(--text-muted)">' + rows.length + ' ' + this.activeTab + scope + '</span></div>';
     const body = rows.length
       ? this._renderTable(this.activeTab, rows)

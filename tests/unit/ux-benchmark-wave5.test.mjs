@@ -20,6 +20,9 @@ describe('Wave 5 R1/R8/R10 — customer mode is read-only, plain-language, and s
     expect(ma.textContent).toMatch(/For your attention/);
     expect(app.document.querySelector('.nav-item[data-view="raid"]').textContent).toMatch(/Risks & Decisions/);
     expect(app.RaidView.showAll).toBe(false); // R8: scope reset on entering customer mode
+    // R2 (wave 8): the cross-customer toggle is not even rendered in customer mode.
+    app.App.navigate('raid');
+    expect(app.document.getElementById('raidContent').innerHTML).not.toMatch(/Show all customers/);
     // restoring full mode brings the labels back
     app.App.customerMode = false;
     app.App._applyCustomerMode();
