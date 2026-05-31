@@ -7326,6 +7326,21 @@ const App = {
     // dashboard/projects alias handling below. Without this the id resolver would
     // look for a nonexistent '#viewGantt' and render a blank screen.
     if (viewName === 'gantt') viewName = 'roadmap';
+    // Resilience: an unknown/legacy view key (e.g. 'settings' instead of 'config')
+    // has no matching #view container, which would leave every panel inactive and
+    // blank the content pane. Resolve such keys to a sensible target instead.
+    // 'dashboard'/'projects' both resolve to #viewDashboard, so they are always valid.
+    if (viewName !== 'dashboard' && viewName !== 'projects') {
+      const probeId = 'view' + viewName.charAt(0).toUpperCase() + viewName.slice(1);
+      if (!document.getElementById(probeId)) {
+        // No panel for this key. If we're already on a real view, no-op (keep current
+        // view) so a stray deep-link can't blank the page; otherwise fall back to the
+        // default Projects view rather than rendering nothing.
+        const haveCurrent = this.currentView && (this.currentView === 'dashboard' || this.currentView === 'projects' || document.getElementById('view' + this.currentView.charAt(0).toUpperCase() + this.currentView.slice(1)));
+        if (haveCurrent) return;
+        viewName = 'dashboard';
+      }
+    }
     if (!this.data && viewName !== 'dashboard' && viewName !== 'portfolio') return;
     // L15: encode current view into the URL hash so it can be shared.
     try {
