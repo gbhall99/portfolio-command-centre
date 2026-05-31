@@ -4630,9 +4630,22 @@ const App = {
     const el = document.getElementById('navBadgeTotal');
     if (!el || !this.data || !Array.isArray(this.data.projects)) return;
     const cust = this.activeCustomer;
-    el.textContent = cust
-      ? this.data.projects.filter(p => p && p.customer === cust).length
-      : this.data.projects.length;
+    if (!cust) {
+      // No active customer (transient): fall back to the raw count, no annotation.
+      el.textContent = this.data.projects.length;
+      el.removeAttribute('title');
+      return;
+    }
+    // Badge basis must match what the Dashboard reports. Pull active/total from the single
+    // canonical source (portfolioHealth) so the sidebar count and the view's headline figures
+    // ("spans N active projects", "1 of N", ACTIVE WORK totals) can never drift. The badge
+    // shows the ACTIVE count; the title annotates "N active / M total" so any gap from
+    // Complete/Closed projects is explained rather than reading as a bug.
+    const ph = this.portfolioHealth(cust);
+    el.textContent = ph.active;
+    el.title = ph.total === ph.active
+      ? (ph.active + (ph.active === 1 ? ' active project' : ' active projects'))
+      : (ph.active + ' active / ' + ph.total + ' total — ' + (ph.total - ph.active) + ' complete or closed');
   },
   updateForumsNavBadge() {
     const el = document.getElementById('navBadgeForums');
