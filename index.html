@@ -708,6 +708,8 @@ html[data-theme="dark"] .undo-history-menu { box-shadow: 0 8px 24px rgba(0,0,0,0
 .kpi-filter-link { cursor: pointer; text-decoration: none; border-bottom: 1px dotted currentColor; transition: opacity 0.15s; }
 .kpi-filter-link:hover { opacity: 0.75; }
 .kpi-filter-link:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; border-radius: 2px; }
+.config-breadcrumb-back:hover { text-decoration: underline; }
+.config-breadcrumb-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
 /* Portfolio Overview (C1) — cross-customer read-only landing */
 .portfolio-overview { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
@@ -3766,7 +3768,7 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     </div>
     <div class="view" id="viewConfig">
       <div class="governance-container" id="configContainer">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">System Settings</h2><button class="view-help-btn" onclick="Onboarding.showViewHelp('config')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>
+        <div id="configTitleRow" style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><h2 id="configTitleHeading" style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">System Settings</h2><button class="view-help-btn" onclick="Onboarding.showViewHelp('config')" title="View help"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button></div>
         <div class="view-help-panel" id="helpConfig"></div>
         <div id="configBody"></div>
       </div>
@@ -8002,10 +8004,14 @@ const App = {
   _renderConfigCategory(id) {
     const cat = this.CONFIG_CATEGORIES.find(c => c.id === id);
     if (!cat) return this._renderConfigDashboard();
-    const breadcrumb = '<div class="config-breadcrumb" style="display:flex;align-items:center;gap:6px;margin-bottom:12px;font-size:12px">' +
-      '<button class="btn btn-ghost btn-sm" onclick="App.closeConfigCategory()" aria-label="Back to settings" style="padding:4px 10px">&larr; Settings</button>' +
-      '<span style="color:var(--text-muted)">/</span>' +
-      '<span style="font-weight:600;color:var(--text-dark)">' + Dashboard.esc(cat.label) + '</span>' +
+    // Single breadcrumb authority on a category page: "System Settings / <Category>" with the first
+    // segment as the only back control. The static in-page H2 title is suppressed (see renderConfig)
+    // so "System Settings" isn't printed twice and there is only one back affordance.
+    const breadcrumb = '<div class="config-breadcrumb" style="display:flex;align-items:center;gap:6px;margin-bottom:12px;font-size:13px;font-weight:700">' +
+      '<button class="config-breadcrumb-back" onclick="App.closeConfigCategory()" aria-label="Back to System Settings" style="background:none;border:none;padding:0;font:inherit;color:var(--accent);cursor:pointer">System Settings</button>' +
+      '<span style="color:var(--text-muted);font-weight:400">/</span>' +
+      '<span style="color:var(--text-dark)">' + Dashboard.esc(cat.label) + '</span>' +
+      '<button class="view-help-btn" onclick="Onboarding.showViewHelp(\'config\')" title="View help" style="margin-left:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>' +
     '</div>';
     let body;
     try { body = cat.render() || ''; }
@@ -8033,6 +8039,12 @@ const App = {
       '</div>';
     }
     body.innerHTML = html;
+    // De-duplicate the breadcrumb chrome: on a category page the in-page breadcrumb
+    // ("System Settings / <Category>") is the single authority and carries its own help button,
+    // so suppress the redundant static "System Settings" title row entirely. At the dashboard
+    // level that row carries the title + help.
+    const titleRow = document.getElementById('configTitleRow');
+    if (titleRow) titleRow.style.display = this._configActiveCategory ? 'none' : '';
     // SM consolidation: populate the storage meter now that it lives in Settings → Data.
     if (this.checkStorageQuota) this.checkStorageQuota();
   },
@@ -9177,6 +9189,45 @@ const App = {
     if (populated.length === 3) confidence = 'high';
     else if (populated.length >= 1 && (project && project.size_total > 0)) confidence = 'medium';
     return { wsjf: Math.round(wsjf * 100) / 100, cod, size, confidence, populated: populated.length };
+  },
+
+  // Single source of truth for portfolio-health figures shown on the Dashboard.
+  // The Exec Summary, ACTIVE WORK card and PORTFOLIO HEALTH card all read from this
+  // so "at risk" can never mean three different things on one screen.
+  //  - atRisk: reconciled attention figure — status 'At Risk' OR any RAG dimension Red, de-duped by project id.
+  //  - atRiskStatusOnly: projects whose *status* is literally 'At Risk' (a narrower axis).
+  //  - ragMix: worst-RAG bucket per active project (Green/Amber/Red).
+  // Both axes are exposed deliberately so callers can label them distinctly rather than collide.
+  portfolioHealth(customer) {
+    const empty = {
+      total: 0, active: 0, inProgress: 0, atRisk: 0, atRiskStatusOnly: 0,
+      blocked: 0, ragMix: { Green: 0, Amber: 0, Red: 0 }, onTrackCount: 0, onTrackPct: 0
+    };
+    if (!this.data || !customer) return empty;
+    const all = this.data.projects.filter(p => p.customer === customer);
+    const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+    const isRed = p => p.rag_schedule === 'Red' || p.rag_resourcing === 'Red' || p.rag_scope === 'Red';
+    const atRisk = active.filter(p => p.status === 'At Risk' || isRed(p)).length;
+    const atRiskStatusOnly = active.filter(p => p.status === 'At Risk').length;
+    const blocked = active.filter(p => p.status === 'Blocked').length;
+    const inProgress = active.filter(p => p.status === 'In Progress').length;
+    const ragMix = { Green: 0, Amber: 0, Red: 0 };
+    active.forEach(p => {
+      const dims = [p.rag_schedule, p.rag_resourcing, p.rag_scope].filter(Boolean);
+      if (dims.includes('Red')) ragMix.Red++;
+      else if (dims.includes('Amber')) ragMix.Amber++;
+      else ragMix.Green++;
+    });
+    const onTrackCount = active.filter(p =>
+      (p.rag_schedule === 'Green' || !p.rag_schedule) &&
+      (p.rag_resourcing === 'Green' || !p.rag_resourcing) &&
+      (p.rag_scope === 'Green' || !p.rag_scope)
+    ).length;
+    const onTrackPct = active.length > 0 ? Math.round((onTrackCount / active.length) * 100) : 0;
+    return {
+      total: all.length, active: active.length, inProgress, atRisk, atRiskStatusOnly,
+      blocked, ragMix, onTrackCount, onTrackPct
+    };
   },
 
   // Issue 12: compute confidence signal + reasons for a project's automated priority. Used by
@@ -16617,15 +16668,11 @@ const Dashboard = {
 
     const all = App.data.projects.filter(p => p.customer === customer);
     const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
-    // A project is at-risk if any RAG dimension is Red OR status is At Risk.
-    // De-duplicated by id so a Red-RAG / At-Risk project counts once.
-    const atRisk = active.filter(p =>
-      p.status === 'At Risk' ||
-      p.rag_schedule === 'Red' ||
-      p.rag_resourcing === 'Red' ||
-      p.rag_scope === 'Red'
-    ).length;
-    const blocked = active.filter(p => p.status === 'Blocked').length;
+    // Reconciled portfolio-health figures from the single source of truth (App.portfolioHealth),
+    // so the Exec Summary, ACTIVE WORK card and PORTFOLIO HEALTH card always agree.
+    const ph = App.portfolioHealth(customer);
+    const atRisk = ph.atRisk;
+    const blocked = ph.blocked;
 
     const todayIso = new Date().toISOString().split('T')[0];
 
@@ -16790,6 +16837,8 @@ const Dashboard = {
     const projects = App.data.projects.filter(p => p.customer === customer);
     const activeProjects = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
     const snapshots = App.data.daily_snapshots || [];
+    // Reconciled portfolio-health figures — shared with the Exec Summary and Portfolio Health card.
+    const ph = App.portfolioHealth(customer);
 
     // Helper: build sparkline SVG from data points
     const sparklineSvg = (values) => {
@@ -16817,13 +16866,9 @@ const Dashboard = {
       return '<svg width="10" height="10" viewBox="0 0 10 10" style="margin-left:4px"><polygon points="5,9 9,3 1,3" fill="' + downColor + '"/></svg>';
     };
 
-    // 1. % On Track
-    const onTrackCount = activeProjects.filter(p =>
-      (p.rag_schedule === 'Green' || !p.rag_schedule) &&
-      (p.rag_resourcing === 'Green' || !p.rag_resourcing) &&
-      (p.rag_scope === 'Green' || !p.rag_scope)
-    ).length;
-    const onTrackPct = activeProjects.length > 0 ? Math.round((onTrackCount / activeProjects.length) * 100) : 0;
+    // 1. % On Track (from the shared portfolio-health source of truth)
+    const onTrackCount = ph.onTrackCount;
+    const onTrackPct = ph.onTrackPct;
     // Snapshot data for on-track: compute from snapshot if available
     const recentSnaps = snapshots.slice(-6);
     const onTrackSpark = recentSnaps.length >= 2 ? recentSnaps.map(s => {
@@ -17000,11 +17045,14 @@ const Dashboard = {
     const cutoffDate = new Date(Date.now() - daysBack * 86400000).toISOString().split('T')[0];
     // Pick the latest snapshot on-or-before the cutoff.
     const prevSnap = snapshots.filter(s => s.date <= cutoffDate).pop() || snapshots.filter(s => s.date < today).pop();
-    const byStatus = {};
-    projects.forEach(p => { byStatus[p.status] = (byStatus[p.status] || 0) + 1; });
-    const inProg = byStatus['In Progress'] || 0;
-    const atRisk = byStatus['At Risk'] || 0;
-    const blocked = byStatus['Blocked'] || 0;
+    // All three counts come from the shared portfolio-health source of truth so the ACTIVE WORK
+    // card agrees with the Exec Summary. atRisk is the reconciled figure (status 'At Risk' OR any
+    // Red RAG, de-duped) — the same definition the Exec Summary prose uses. atRiskStatusOnly is the
+    // narrower status-only axis used only to compare against the (status-based) daily snapshot delta.
+    const inProg = ph.inProgress;
+    const atRisk = ph.atRisk;
+    const atRiskStatusOnly = ph.atRiskStatusOnly;
+    const blocked = ph.blocked;
     const deltaChip = (cur, prev, invertColor) => {
       if (!prevSnap || prev === undefined) return '';
       const d = cur - prev;
@@ -17014,14 +17062,8 @@ const Dashboard = {
       return '<span style="font-size:var(--fs-2xs);font-weight:600;color:' + color + ';margin-left:4px">' + (d > 0 ? '+' : '') + d + '</span>';
     };
 
-    // RAG mix for Portfolio Health
-    const ragMix = { Green: 0, Amber: 0, Red: 0 };
-    activeProjects.forEach(p => {
-      const worst = [p.rag_schedule, p.rag_resourcing, p.rag_scope].filter(Boolean);
-      if (worst.includes('Red')) ragMix.Red++;
-      else if (worst.includes('Amber')) ragMix.Amber++;
-      else ragMix.Green++;
-    });
+    // RAG mix for Portfolio Health — from the shared source of truth.
+    const ragMix = ph.ragMix;
 
     // Helper: render one headline card with rich hover content.
     const renderHero = (opts) => {
@@ -17051,7 +17093,8 @@ const Dashboard = {
         footnote: onTrackPct + '% fully on-track',
         tip: [
           '<strong>On-track:</strong> ' + onTrackPct + '% (' + onTrackCount + ' of ' + activeProjects.length + ')',
-          '<strong>Green / Amber / Red:</strong> ' + ragMix.Green + ' · ' + ragMix.Amber + ' · ' + ragMix.Red,
+          '<strong>Green / Amber / Red:</strong> ' + ragMix.Green + ' · ' + ragMix.Amber + ' · ' + ragMix.Red + ' (worst RAG per project)',
+          '<strong>At risk:</strong> ' + atRisk + ' (status At Risk or any Red RAG) — see Active Work',
           activeProjects.length === 0 ? '<em>No active projects yet.</em>' : ''
         ]
       }),
@@ -17061,12 +17104,13 @@ const Dashboard = {
         value:
           '<span class="kpi-filter-link" role="button" tabindex="0" onclick="event.stopPropagation();Dashboard.applyQuickFilter(\'filterStatus\',\'In Progress\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Dashboard.applyQuickFilter(\'filterStatus\',\'In Progress\');}" title="Show in-progress projects" aria-label="Filter projects to In Progress" style="color:var(--accent-blue)">' + inProg + '</span>' + deltaChip(inProg, prevSnap ? prevSnap.inProgress : undefined, false) +
           ' <span style="color:var(--text-muted);font-size:16px">·</span> ' +
-          '<span class="kpi-filter-link" role="button" tabindex="0" onclick="event.stopPropagation();Dashboard.applyQuickFilter(\'filterStatus\',\'At Risk\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Dashboard.applyQuickFilter(\'filterStatus\',\'At Risk\');}" title="Show at-risk projects" aria-label="Filter projects to At Risk" style="color:var(--status-amber)">' + atRisk + '</span>' + deltaChip(atRisk, prevSnap ? prevSnap.atRisk : undefined, true) +
+          '<span class="kpi-filter-link" role="button" tabindex="0" onclick="event.stopPropagation();Dashboard.applyQuickFilter(\'filterStatus\',\'At Risk\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Dashboard.applyQuickFilter(\'filterStatus\',\'At Risk\');}" title="At risk = status At Risk or any Red RAG" aria-label="At-risk projects (status At Risk or any Red RAG)" style="color:var(--status-amber)">' + atRisk + '</span>' + deltaChip(atRiskStatusOnly, prevSnap ? prevSnap.atRisk : undefined, true) +
           ' <span style="color:var(--text-muted);font-size:16px">·</span> ' +
           '<span class="kpi-filter-link" role="button" tabindex="0" onclick="event.stopPropagation();Dashboard.applyQuickFilter(\'filterStatus\',\'Blocked\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();Dashboard.applyQuickFilter(\'filterStatus\',\'Blocked\');}" title="Show blocked projects" aria-label="Filter projects to Blocked" style="color:var(--status-red)">' + blocked + '</span>' + deltaChip(blocked, prevSnap ? prevSnap.blocked : undefined, true),
         footnote: (prevSnap ? 'Δ vs ' + prevSnap.date : 'No prior snapshot'),
         tip: [
           '<strong>Total active:</strong> ' + activeProjects.length + ' of ' + projects.length,
+          '<strong>At risk:</strong> ' + atRisk + ' — reconciled: status At Risk OR any Red RAG (matches the Executive Summary). Of these, ' + atRiskStatusOnly + ' by status alone.',
           '<strong>Throughput (last 2 sprints):</strong> ' + throughput + ' projects completed',
           '<strong>Avg cycle time:</strong> ' + (avgCycle > 0 ? avgCycle + ' days' : '—')
         ]
@@ -34217,12 +34261,14 @@ const Governance = {
     const riskCountEl = document.getElementById('govRiskCount');
     if (forumCountEl) forumCountEl.textContent = forums.length;
     if (riskCountEl) riskCountEl.textContent = riskCount;
-    // D3: Exports scope label — Status Report is cross-customer; Portfolio Pack is the active customer.
+    // D3: Exports scope label — single source of truth for all three buttons, kept in sync with the
+    // button set (Customer Pack, Portfolio Pack, Internal Status Report). Mirrors the authored HTML
+    // default so the runtime text never drops a button.
     // M13: disable the Portfolio Pack button outright when no customer is active so the export can't misfire.
     const scopeEl = document.getElementById('govExportsScope');
     if (scopeEl) scopeEl.textContent = customer
-      ? ('Status Report covers all customers. Portfolio Pack is scoped to ' + customer + '.')
-      : 'Status Report covers all customers. Portfolio Pack needs an active customer — select one above.';
+      ? ('Customer Pack & Portfolio Pack are scoped to ' + customer + ' and safe to forward. The Internal Status Report spans all customers — internal use only.')
+      : 'Customer Pack & Portfolio Pack are scoped to the active customer — select one above to enable them. The Internal Status Report spans all customers — internal use only.';
     const packBtn = document.getElementById('govExportPortfolioPackBtn');
     if (packBtn) {
       packBtn.disabled = !customer;
