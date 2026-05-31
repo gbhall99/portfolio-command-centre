@@ -36746,6 +36746,33 @@ const RaidView = {
     host.innerHTML = html;
   },
 
+  // PO refinement: render a stored ISO timestamp ("2026-05-02T14:20:00") as a
+  // human-friendly "2 May 2026" — matching the en-GB date formatting used across
+  // the rest of the app. Falls back to the raw value when it isn't parseable.
+  _fmtUpdated(val) {
+    if (!val) return '';
+    const d = new Date(val);
+    if (isNaN(d)) return String(val);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  },
+  // PO refinement: a stored date string is shown human-friendly too. Risks/issues
+  // carry resolution_date (often empty until resolved); decisions/assumptions a date.
+  _fmtDate(val) {
+    if (!val) return '';
+    const d = new Date(val);
+    if (isNaN(d)) return String(val);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  },
+  // PO refinement: only risks and issues carry a lifecycle status; an absent status
+  // on those two means the item is still open. Assumptions and decisions have no
+  // status concept, so the column is hidden for them rather than showing all "—".
+  _statusFor(kind, row) {
+    if (kind !== 'risks' && kind !== 'issues') return '';
+    const s = (row.status || '').trim();
+    if (!s) return 'Open';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  },
+
   _renderTable(kind, rows) {
     const esc = Dashboard.esc;
     const isRisks = kind === 'risks';
@@ -36753,11 +36780,24 @@ const RaidView = {
     const sortable = { Project: 'project', Customer: 'customer', Owner: 'owner', Score: 'score', Status: 'status' };
     const effKey = this.sortKey || (isRisks ? 'score' : 'project');
     const effDir = this.sortKey ? this.sortDir : (isRisks ? 'desc' : 'asc');
+    const dateField = isRisks ? 'resolution_date'
+      : kind === 'issues' ? 'resolution_date'
+      : kind === 'decisions' ? 'date'
+      : 'date';
+    // PO refinement: populate-or-hide. A status column only makes sense for risks/issues,
+    // and the date column is dropped when no visible row carries a date — so neither column
+    // renders as a full column of "—".
+    const hasStatus = (kind === 'risks' || kind === 'issues');
+    const hasDate = rows.some(r => !!r.row[dateField]);
+    // Per-kind date column label so an empty header is never ambiguous.
+    const dateLabel = (isRisks || kind === 'issues') ? 'Resolved' : 'Decided';
     const headers = ['Project']
       .concat(showCust ? ['Customer'] : [])
       .concat(['Description', 'Owner'])
       .concat(isRisks ? ['Score'] : [])
-      .concat(['Status', 'Date', 'Updated', '']);
+      .concat(hasStatus ? ['Status'] : [])
+      .concat(hasDate ? [dateLabel] : [])
+      .concat(['Updated', '']);
     const thBase = 'text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-light)';
     const headerHtml = '<tr>' + headers.map(h => {
       const key = sortable[h];
@@ -36768,22 +36808,20 @@ const RaidView = {
       const ariaSort = ' aria-sort="' + (active ? (effDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"';
       return '<th' + ariaSort + ' tabindex="0" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + ' (click or press Enter)" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
     }).join('') + '</tr>';
-    const dateField = isRisks ? 'resolution_date'
-      : kind === 'issues' ? 'resolution_date'
-      : kind === 'decisions' ? 'date'
-      : 'date';
     const rowsHtml = rows.map(({ project, row, idx, kind }) => {
       const score = isRisks ? (typeof Format !== 'undefined' && Format.riskScore ? Format.riskScore(row) : ((row.impact || 0) * (row.probability || 0))) : null;
       const desc = row.description || row.decision || row.text || '(no description)';
+      const dateStr = this._fmtDate(row[dateField]);
+      const updatedStr = this._fmtUpdated(row.ts || project.last_updated);
       return '<tr class="raid-row" data-raid-row data-kind="' + kind + '" data-project-id="' + esc(project.id) + '" data-row-idx="' + idx + '" tabindex="0" role="button" onclick="RaidView.openDetailPanelFor(\'' + esc(project.id) + '\',\'' + kind + '\',' + idx + ')" style="cursor:pointer;border-bottom:1px solid var(--border-light)">' +
         '<td style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dark)">' + esc(project.name) + '</td>' +
         (showCust ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(project.customer || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
         '<td style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
         (isRisks ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + score + '</td>' : '') +
-        '<td style="padding:6px 10px;font-size:11px">' + esc(row.status || '—') + '</td>' +
-        '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(row[dateField] || '—') + '</td>' +
-        '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(row.ts || project.last_updated || '—') + '</td>' +
+        (hasStatus ? '<td style="padding:6px 10px;font-size:11px">' + esc(this._statusFor(kind, row)) + '</td>' : '') +
+        (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
+        '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +
         '<td style="padding:6px 10px"><span class="raid-row-link" style="color:var(--accent-blue);font-size:11px">Open →</span></td>' +
       '</tr>';
     }).join('');
