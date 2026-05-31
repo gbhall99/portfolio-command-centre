@@ -95,13 +95,18 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
 });
 
 describe('Slot H — Item 20: top-level RAID view with 4 inner tabs', () => {
-  it('the "Portfolio" section (first) carries the cross-customer RAID nav item', async () => {
+  it('a single RAID nav item lives in the customer "Delivery" section (not Portfolio)', async () => {
     const app = await bootEmpty();
-    const sections = app.document.querySelectorAll('.nav-section');
-    const allSection = sections[0];
-    expect(allSection.querySelector('.nav-section-label').textContent).toMatch(/^portfolio$/i);
-    expect(allSection.querySelector('#navRaidAll')).toBeTruthy();
-    expect(allSection.querySelector('[data-view="raid"]')).toBeTruthy();
+    const sections = Array.from(app.document.querySelectorAll('.nav-section'));
+    expect(sections[0].querySelector('.nav-section-label').textContent).toMatch(/^portfolio$/i);
+    expect(sections[0].querySelector('[data-view="raid"]')).toBeFalsy();
+    const custSection = sections.find(s => {
+      const label = s.querySelector('.nav-section-label');
+      return label && /delivery/i.test(label.textContent || '');
+    });
+    expect(custSection).toBeTruthy();
+    expect(custSection.querySelector('[data-view="raid"]')).toBeTruthy();
+    expect(app.document.querySelectorAll('.nav-item[data-view="raid"]')).toHaveLength(1);
     app.teardown();
   });
 
