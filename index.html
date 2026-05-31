@@ -379,9 +379,9 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .header-customer-select option { background: var(--bg-secondary); color: var(--text-primary); }
 .header-spacer { flex: 1; }
 .mobile-menu-btn { display: none !important; font-size: 18px; }
-/* Keep the whole action cluster on one logical row at the fixed 56px header height — never wrap
-   below it. Gaps are tightened so the cluster fits common laptop widths (1280–1512); if a viewport
-   is genuinely too narrow the row scrolls horizontally rather than spilling under the header. */
+/* Keep the whole action cluster on one logical row at the fixed 56px header height — never wrap below it.
+   min-width:0 lets the row participate in flex shrink so its one shrink sink (the power-tools pill) can yield;
+   the primary CTAs and everyday icons stay flex-shrink:0 so they are never clipped or pushed off the edge. */
 .header-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: nowrap; justify-content: flex-start; min-width: 0; margin-left: auto; }
 /* Primary action cluster (+ New Project, save-state, Export JSON) stays on one row together so Export never
    wraps onto a second line and collides with the save timestamp. It also never shrinks — when the header is
@@ -389,12 +389,15 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .header-primary-actions { display: inline-flex; align-items: center; gap: var(--space-3); flex-wrap: nowrap; flex-shrink: 0; }
 /* Power-tools: visually de-emphasised secondary cluster — recessed surface, tighter gap, dimmer icons.
    Everyday actions (theme, undo/redo, +New Project, Export, save-state) sit outside this group and stay prominent.
-   By default the pill holds its natural content width (flex-shrink:0) so every tool — Boardroom, When-by,
-   Scenarios, Sandbox, "View as", "?", Customer-view — is fully visible and reachable at the common laptop
-   widths (1280–1512). The flexible header-spacer absorbs the difference, so nothing is clipped behind a
-   hidden scrollbar. Only below the tight breakpoint (≤1120px) does the pill become the shrink sink and
-   scroll internally — so it never pushes the primary CTAs off-edge. */
-.header-tools { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-1); background: var(--surface-inset, var(--bg-tertiary)); border: 1px solid var(--border-dim, var(--border-color)); border-radius: var(--radius-pill); min-width: 0; flex-shrink: 0; }
+   This pill is the header's ONE shrink sink at every width: flex-shrink:1 + min-width:0 + overflow-x:auto, with
+   an always-on right-edge fade mask as the "more to reveal" affordance. Whenever the action row is tighter than
+   its natural width (which begins around ~1300px and gets worse as tools are added), the pill yields first by
+   scrolling its secondary tools internally — so the primary CTAs (+New Project, save-state, Export JSON) and the
+   screen-share-critical Customer-view toggle are never pushed off-edge or clipped, at 1280, 1440, 1920 or below.
+   Above its natural width the pill simply sits at content size and the flexible header-spacer absorbs the slack. */
+.header-tools { display: inline-flex; align-items: center; gap: var(--space-1); padding: 2px var(--space-1); background: var(--surface-inset, var(--bg-tertiary)); border: 1px solid var(--border-dim, var(--border-color)); border-radius: var(--radius-pill); min-width: 0; flex-shrink: 1; overflow-x: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 14px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 14px), transparent 100%); }
 .header-tools::-webkit-scrollbar { display: none; }
 .header-tools > * { flex-shrink: 0; }
 /* Everyday actions (theme, undo/redo, divider) hold their size so the power-tools pill is the only shrink sink. */
@@ -403,19 +406,11 @@ html[data-theme="dark"] .header-customer-dot { box-shadow: 0 0 0 1px #f8fafc55; 
 .header-tools .btn-ghost:hover { color: var(--text-default, var(--text-primary)); background: var(--surface-hover, var(--bg-secondary)); }
 .header-tools-select { font-size: var(--fs-2xs); padding: var(--space-1) var(--space-2); border: 1px solid var(--border-dim, var(--border-light)); border-radius: var(--radius-sm); max-width: 140px; color: var(--text-faint, var(--text-muted)); background: transparent; }
 .header-divider { width: 1px; align-self: stretch; min-height: 20px; margin: 0 var(--space-1); background: var(--border-dim, var(--border-color)); }
-/* Guarantee the primary cluster (+ New Project, save-state, Export JSON) is fully visible from 1280px up.
-   At 1280–1512 the flexible header-spacer yields the slack the natural-width pill needs, so the power-tools
-   are fully visible with no clipping. Tighten the everyday-actions gap a notch below 1366 to keep the row
-   comfortable. Only when the viewport is genuinely narrow (≤1120px) does the spacer run out — there the
-   power-tools pill becomes the shrink sink and scrolls internally (with a right-edge fade as the reach
-   affordance), so it can never push the primary CTAs off-edge. */
+/* The primary cluster (+ New Project, save-state, Export JSON) is always fully visible because the power-tools
+   pill (above) is the shrink sink at every width and yields by internal scroll before the primary CTAs are
+   touched. Tighten the everyday-actions gap a notch below 1366 to keep the row comfortable on laptop widths. */
 @media (max-width: 1366px) {
   .header-actions { gap: var(--space-1); }
-}
-@media (max-width: 1120px) {
-  .header-tools { flex-shrink: 1; max-width: 168px; overflow-x: auto; scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 16px), transparent 100%);
-            mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 16px), transparent 100%); }
 }
 
 .btn {
