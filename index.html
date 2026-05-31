@@ -976,8 +976,11 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .persona-table .persona-tbl-chip-more { background: transparent; border-style: dashed; color: var(--text-muted); cursor: default; }
 .persona-table .persona-tbl-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
 .persona-table .persona-tbl-empty { font-size: var(--fs-xs); color: var(--text-faint); font-style: italic; }
-.persona-table .persona-tbl-def { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dark-secondary); font-size: var(--fs-xs); }
-.persona-table .persona-tbl-def-cell { max-width: 240px; }
+/* Definition wraps to 2 lines (no hard truncation). With RACI collapsed to a
+   single column the table fits at 1280, so the freed width lets the definition
+   clamp to two lines instead of an ellipsis at 220px; full text stays in title. */
+.persona-table .persona-tbl-def { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 280px; overflow: hidden; color: var(--text-dark-secondary); font-size: var(--fs-xs); }
+.persona-table .persona-tbl-def-cell { max-width: 300px; }
 /* RACI-tinted metric pills — colour the left border so each cell signals
    its role without losing the metric-group swatch inside. */
 .persona-table .persona-tbl-chip-raci { border-left-width: 3px; max-width: 200px; overflow: visible; text-overflow: clip; white-space: normal; word-break: break-word; }
@@ -989,8 +992,9 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .persona-table .persona-tbl-chip-raci.raci-A { border-left-color: var(--accent-violet); }
 .persona-table .persona-tbl-chip-raci.raci-C { border-left-color: var(--accent-teal); }
 .persona-table .persona-tbl-chip-raci.raci-I { border-left-color: var(--text-faint); }
-.persona-table .persona-raci-cluster { display: inline-flex; gap: 4px; }
-.persona-table .persona-raci-cluster .raci-letter { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 9px; font-size: var(--fs-2xs); font-weight: 700; color: white; }
+.persona-table .persona-raci-cluster { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.persona-table .persona-raci-cluster .raci-letter { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 9px; font-size: var(--fs-2xs); font-weight: 700; color: white; cursor: default; }
+.persona-table .persona-tbl-raci-cell { white-space: nowrap; }
 .persona-table .persona-raci-cluster .raci-letter small { font-weight: 600; font-size: var(--fs-2xs); opacity: 0.85; }
 .persona-table .persona-raci-cluster .raci-letter.raci-A { background: var(--accent-violet); }
 .persona-table .persona-raci-cluster .raci-letter.raci-R { background: var(--accent-blue); }
@@ -10830,25 +10834,31 @@ const Personas = {
     // targets / filter for it), so the holdings signal lives next to the
     // RACI role it relates to rather than as a duplicated column.
     const heldMetricIds = (persona) => new Set((persona.metric_holdings || []).map(h => h.metric_id));
-    const raciMetricsCell = (persona, role, letter) => {
-      const matching = Metrics.list().filter(m =>
-        m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(persona.id));
-      if (!matching.length) return '<span class="persona-tbl-empty">—</span>';
+    // Metrics where this persona sits in metric.raci_defaults[role].
+    const metricsForRole = (persona, role) => Metrics.list().filter(m =>
+      m.raci_defaults && Array.isArray(m.raci_defaults[role]) && m.raci_defaults[role].includes(persona.id));
+    // Collapsed RACI cell: instead of four wide name-chip columns (which pushed
+    // Consulted/Informed/actions off-screen at 1280/1440), one column renders the
+    // R/A/C/I letter badges with a count each. The whole matrix now fits without
+    // horizontal scroll; per-role metric names are listed in the badge tooltip and
+    // the full breakdown remains one click away in the persona detail.
+    const RACI_ROLES = [
+      { role: 'responsible', letter: 'R', label: 'Responsible' },
+      { role: 'accountable', letter: 'A', label: 'Accountable' },
+      { role: 'consulted',   letter: 'C', label: 'Consulted' },
+      { role: 'informed',    letter: 'I', label: 'Informed' },
+    ];
+    const raciClusterCell = (persona) => {
       const held = heldMetricIds(persona);
-      const visible = matching.slice(0, 3).map(m => {
-        const heldDot = held.has(m.id)
-          ? '<span class="persona-tbl-holding-dot" title="Persona holds explicit targets for this metric">●</span>'
-          : '';
-        return '<span class="persona-tbl-chip persona-tbl-chip-raci raci-' + letter + '" '
-          + 'onclick="event.stopPropagation();App.navigate(\'metrics\');setTimeout(()=>Metrics._openDetail(\'' + esc(m.id) + '\'),60)" '
-          + 'title="' + esc(m.name) + (m.definition ? ' — ' + esc(m.definition) : '') + (held.has(m.id) ? ' — persona holds targets' : '') + '">'
-          + '<span class="persona-tbl-swatch" style="background:' + groupSwatch(m.group_id) + '"></span>'
-          + esc(m.name) + heldDot + '</span>';
-      }).join('');
-      const overflow = matching.length > 3
-        ? '<span class="persona-tbl-chip persona-tbl-chip-more">+' + (matching.length - 3) + '</span>'
-        : '';
-      return visible + overflow;
+      const badges = RACI_ROLES.map(({ role, letter, label }) => {
+        const matching = metricsForRole(persona, role);
+        if (!matching.length) return '';
+        const names = matching.map(m => m.name + (held.has(m.id) ? ' (holds targets)' : '')).join(', ');
+        return '<span class="raci-letter raci-' + letter + '" title="' + esc(label + ': ' + names) + '">'
+          + letter + '<small>' + matching.length + '</small></span>';
+      }).filter(Boolean).join('');
+      if (!badges) return '<span class="persona-tbl-empty">—</span>';
+      return '<span class="persona-raci-cluster">' + badges + '</span>';
     };
 
     const parentChip = (persona) => {
@@ -10870,10 +10880,7 @@ const Personas = {
       + '<th class="persona-tbl-th">Definition</th>'
       + '<th class="persona-tbl-th">Reports to</th>'
       + '<th class="persona-tbl-th">People</th>'
-      + '<th class="persona-tbl-th">Responsible</th>'
-      + '<th class="persona-tbl-th">Accountable</th>'
-      + '<th class="persona-tbl-th">Consulted</th>'
-      + '<th class="persona-tbl-th">Informed</th>'
+      + '<th class="persona-tbl-th" title="Responsible / Accountable / Consulted / Informed metric counts">RACI</th>'
       + '<th class="persona-tbl-th"></th>'
       + '</tr></thead>';
 
@@ -10888,10 +10895,7 @@ const Personas = {
            +   '<td class="persona-tbl-def-cell">' + definitionCell(p) + '</td>'
            +   '<td>' + parentChip(p) + '</td>'
            +   '<td>' + peopleChips(p.id) + '</td>'
-           +   '<td>' + raciMetricsCell(p, 'responsible', 'R') + '</td>'
-           +   '<td>' + raciMetricsCell(p, 'accountable', 'A') + '</td>'
-           +   '<td>' + raciMetricsCell(p, 'consulted',   'C') + '</td>'
-           +   '<td>' + raciMetricsCell(p, 'informed',    'I') + '</td>'
+           +   '<td class="persona-tbl-raci-cell">' + raciClusterCell(p) + '</td>'
            +   '<td class="persona-tbl-actions">'
            +     '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation();Personas._openDetail(\''
            +     esc(p.id) + '\')">View more</button>'
@@ -36747,6 +36751,13 @@ const RaidView = {
     this._renderActiveTab();
   },
   _score(r) { return (typeof Format !== 'undefined' && Format.riskScore) ? Format.riskScore(r.row) : ((r.row.impact || 0) * (r.row.probability || 0)); },
+  // Colour-coded severity chip — same red/amber/green thresholds the DetailPanel
+  // risk-score badge uses, so a score shown here conveys magnitude at a glance
+  // and stays consistent with the detail panel rather than being a bare integer.
+  _scoreChip(score) {
+    const bg = score >= 15 ? 'var(--status-red)' : score >= 8 ? 'var(--status-amber)' : 'var(--status-green)';
+    return '<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 7px;border-radius:var(--radius-pill);background:' + bg + ';color:white;font-size:var(--fs-2xs);font-weight:700">' + score + '</span>';
+  },
   _sortRows(rows, kind) {
     const key = this.sortKey || (kind === 'risks' ? 'score' : 'project');
     const dir = this.sortKey ? (this.sortDir === 'asc' ? 1 : -1) : (kind === 'risks' ? -1 : 1);
@@ -36865,18 +36876,28 @@ const RaidView = {
       : kind === 'issues' ? 'resolution_date'
       : kind === 'decisions' ? 'date'
       : 'date';
-    // PO/pfm refinement: populate-or-hide. A status column only makes sense for risks/issues,
-    // AND only when at least one visible row carries a real lifecycle status — otherwise it
-    // collapses to a column of identical "Open" values (zero signal). The date column is
-    // likewise dropped when no visible row carries a date. So neither renders as dead weight.
-    const hasStatus = (kind === 'risks' || kind === 'issues') && rows.some(r => !!(r.row.status && String(r.row.status).trim()));
-    const hasDate = rows.some(r => !!r.row[dateField]);
+    // PO/pfm refinement: populate-or-hide, strengthened to a DISTINCT-value test.
+    // A column carries signal only when its visible cells actually VARY — a column
+    // where every row is the identical value (all "Open", all score 9, all the same
+    // date) conveys nothing and is dropped as dead weight. This single rule governs
+    // Status, Score and Date uniformly, so uniform-but-non-empty columns no longer
+    // slip through the old "has at least one value" guard.
+    // A column is dead weight only when MULTIPLE rows all carry the identical
+    // value (e.g. every risk scores 9, every issue is "Open"); with a single row
+    // there is nothing to compare so the column still shows. "varies(vals)" is
+    // true when the values are not all-identical across 2+ rows.
+    const varies = (vals) => vals.length < 2 || new Set(vals).size > 1;
+    const hasStatus = (kind === 'risks' || kind === 'issues')
+      && varies(rows.map(r => this._statusFor(kind, r.row)));
+    const hasScore = isRisks && varies(rows.map(r => this._score(r)));
+    const datedVals = rows.filter(r => !!r.row[dateField]).map(r => this._fmtDate(r.row[dateField]));
+    const hasDate = datedVals.length > 0 && varies(datedVals);
     // Per-kind date column label so an empty header is never ambiguous.
     const dateLabel = (isRisks || kind === 'issues') ? 'Resolved' : 'Decided';
     const headers = ['Project']
       .concat(showCust ? ['Customer'] : [])
       .concat(['Description', 'Owner'])
-      .concat(isRisks ? ['Score'] : [])
+      .concat(hasScore ? ['Score'] : [])
       .concat(hasStatus ? ['Status'] : [])
       .concat(hasDate ? [dateLabel] : [])
       .concat(['Updated', '']);
@@ -36890,7 +36911,7 @@ const RaidView = {
     // columns map by label.
     const colWidth = {
       'Project': '180px', 'Customer': '130px', 'Description': '380px', 'Owner': '130px',
-      'Score': '70px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
+      'Score': '84px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
       'Updated': '120px', '': '80px',
     };
     const colgroup = '<colgroup>' + headers.map(h =>
@@ -36916,7 +36937,7 @@ const RaidView = {
         (showCust ? '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(project.customer || '—') + '</td>' : '') +
         '<td class="raid-cell-desc" title="' + esc(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
-        (isRisks ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + score + '</td>' : '') +
+        (hasScore ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + this._scoreChip(score) + '</td>' : '') +
         (hasStatus ? '<td style="padding:6px 10px;font-size:11px">' + esc(this._statusFor(kind, row)) + '</td>' : '') +
         (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +

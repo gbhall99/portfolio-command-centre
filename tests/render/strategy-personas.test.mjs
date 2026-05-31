@@ -21,13 +21,17 @@ describe('Strategy — Personas inventory', () => {
     expect(out).toContain('data-id="P2"');
     expect(out).toContain('CFO');
     expect(out).toContain('Regional GM — North');
-    // 2026-05 columns: Definition + R/A/C/I; "Held metrics" column dropped —
-    // holdings now surface as a dot on the relevant RACI pill instead.
+    // 2026-05 columns: Definition + a single collapsed RACI column. The four
+    // wide Responsible/Accountable/Consulted/Informed name-chip columns were
+    // pushing C/I and the row actions off-screen at 1280/1440, so they collapse
+    // into one RACI column of R/A/C/I letter badges with counts; the full
+    // breakdown stays in the persona detail. "Held metrics" remains dropped.
     expect(out).toContain('Definition');
-    expect(out).toContain('Responsible');
-    expect(out).toContain('Accountable');
-    expect(out).toContain('Consulted');
-    expect(out).toContain('Informed');
+    expect(out).toContain('>RACI<');
+    expect(out).not.toContain('>Responsible<');
+    expect(out).not.toContain('>Accountable<');
+    expect(out).not.toContain('>Consulted<');
+    expect(out).not.toContain('>Informed<');
     expect(out).toContain('Reports to');
     expect(out).toContain('View more');
     expect(out).not.toContain('>Held metrics<');
