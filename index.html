@@ -37021,17 +37021,18 @@ const RaidView = {
     // viewport while short columns stayed cramped. We run table-layout:fixed
     // with a <colgroup>: structural columns get tight fixed widths, Description
     // gets a bounded fixed width (so it never stretches into emptiness on
-    // ultrawide), and a trailing spacer <col> absorbs any remaining slack so
-    // the action link stays anchored beside its row. The '' action and date
-    // columns map by label.
+    // ultrawide), and the trailing '' action column is left width-less so it
+    // absorbs any remaining slack — keeping the "Open →" link anchored beside
+    // its row without needing a separate empty spacer column. Every <col> /
+    // <th> / <td> maps to a real, labelled-or-action column (signoff crit 4).
     const colWidth = {
       'Project': '180px', 'Customer': '130px', 'Description': '380px', 'Owner': '130px',
       'Score': '84px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
-      'Updated': '120px', '': '80px',
+      'Updated': '120px', '': 'auto',
     };
     const colgroup = '<colgroup>' + headers.map(h =>
       '<col style="width:' + (colWidth[h] || 'auto') + '">'
-    ).join('') + '<col></colgroup>';
+    ).join('') + '</colgroup>';
     const thBase = 'text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-light)';
     const headerHtml = '<tr>' + headers.map(h => {
       const key = sortable[h];
@@ -37041,7 +37042,7 @@ const RaidView = {
       // R4: announce sortability on every sortable column and make headers keyboard-operable (WCAG 2.1.1 / 4.1.2).
       const ariaSort = ' aria-sort="' + (active ? (effDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"';
       return '<th' + ariaSort + ' tabindex="0" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + ' (click or press Enter)" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
-    }).join('') + '<th style="' + thBase + '" aria-hidden="true"></th></tr>';
+    }).join('') + '</tr>';
     const rowsHtml = rows.map(({ project, row, idx, kind }) => {
       const score = isRisks ? (typeof Format !== 'undefined' && Format.riskScore ? Format.riskScore(row) : ((row.impact || 0) * (row.probability || 0))) : null;
       const desc = row.description || row.decision || row.text || '(no description)';
@@ -37057,7 +37058,6 @@ const RaidView = {
         (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +
         '<td style="padding:6px 10px"><span class="raid-row-link" style="color:var(--accent-blue);font-size:11px">Open →</span></td>' +
-        '<td aria-hidden="true"></td>' +
       '</tr>';
     }).join('');
     return '<div class="raid-table-wrap"><table class="raid-table" style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md)">' + colgroup + '<thead style="background:var(--bg-content)">' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody></table></div>';
