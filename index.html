@@ -16569,12 +16569,6 @@ const Dashboard = {
       p.rag_scope === 'Red'
     ).length;
     const blocked = active.filter(p => p.status === 'Blocked').length;
-    const onTrack = active.filter(p =>
-      (p.rag_schedule === 'Green' || !p.rag_schedule) &&
-      (p.rag_resourcing === 'Green' || !p.rag_resourcing) &&
-      (p.rag_scope === 'Green' || !p.rag_scope)
-    ).length;
-    const onTrackPct = active.length > 0 ? Math.round((onTrack / active.length) * 100) : 0;
 
     const todayIso = new Date().toISOString().split('T')[0];
 
@@ -16640,27 +16634,30 @@ const Dashboard = {
       if (score >= 15) severeRisks++;
     }));
 
-    // Headline health = the single synthesised verdict (On Track / Watch / Off Track),
-    // so the prose and the Verdict KPI card never contradict each other.
-    const headlineVerdict = (typeof this.computeOnTrackVerdict === 'function')
-      ? this.computeOnTrackVerdict(customer)
-      : { verdict: 'On Track' };
-    const healthLabel = headlineVerdict.verdict;
-    const healthWord = healthLabel === 'Off Track' ? 'es-red'
-      : healthLabel === 'Watch' ? 'es-amber'
-      : 'es-green';
+    // Headline verdict, on-track % and RAG mix now live solely in the KPI cards directly
+    // below (Verdict / On-Track % / Portfolio Health), so the prose no longer recomputes
+    // or restates them — keeping the narrative synthesised and forward-looking.
 
     // Build the narrative
     const esc = Dashboard.esc;
     const parts = [];
 
-    // Sentence 1: health
-    let s1 = '<strong>' + esc(customer) + ' portfolio</strong> carries <strong>' + active.length + '</strong> active ' +
-      (active.length === 1 ? 'project' : 'projects') + ' with a headline health of <span class="' + healthWord + '">' + healthLabel + '</span>';
+    // Sentence 1: synthesised framing. The headline VERDICT (Verdict card), ON-TRACK %
+    // (On-Track % card) and the RAG mix (Portfolio Health card) all live in the KPI grid
+    // directly below — so the prose no longer restates them. It keeps only the *reconciled*
+    // attention figure (at-risk = status OR Red-RAG, de-duped by id), which no single card
+    // surfaces verbatim, framed as a synthesised read rather than a raw repeat.
+    let s1 = '<strong>' + esc(customer) + ' portfolio</strong> spans <strong>' + active.length + '</strong> active ' +
+      (active.length === 1 ? 'project' : 'projects');
     if (active.length > 0) {
-      s1 += ' — <strong>' + onTrackPct + '%</strong> fully on-track, ';
-      s1 += '<span class="es-amber">' + atRisk + ' at risk</span>, ';
-      s1 += '<span class="es-red">' + blocked + ' blocked</span>';
+      if (atRisk > 0 || blocked > 0) {
+        const flags = [];
+        if (atRisk > 0) flags.push('<span class="es-amber">' + atRisk + ' at risk</span>');
+        if (blocked > 0) flags.push('<span class="es-red">' + blocked + ' blocked</span>');
+        s1 += ', of which ' + flags.join(' and ') + ' on the reconciled read';
+      } else {
+        s1 += ', none currently at risk or blocked';
+      }
     }
     s1 += '.';
     parts.push(s1);
