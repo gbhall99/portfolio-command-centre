@@ -440,6 +440,8 @@ body.customer-mode .customer-mode-banner { display: flex; }
 .saved-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1; color: var(--text-secondary); padding: 3px 8px; border-radius: 999px; background: transparent; white-space: nowrap; flex-shrink: 0; transition: opacity 0.25s ease, color 0.25s ease; }
 /* Legacy save surface — superseded by the #modeBadge chip. Keep it truly inert: the [hidden] attribute must win even if residual state classes are present. */
 .saved-indicator[hidden] { display: none !important; }
+/* Hard retirement: the legacy indicator stays gone even if the .hidden class or [hidden] attribute is stripped, so it can never re-surface as a competing save surface alongside #modeBadge. */
+#savedIndicator { display: none !important; }
 .saved-indicator.saving { color: var(--accent-amber); }
 .saved-indicator.saved { color: var(--status-green); }
 .saved-indicator .si-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
@@ -6930,9 +6932,12 @@ const App = {
   markDirty() { this.isDirty = true; document.getElementById('unsavedDot').classList.add('visible'); },
 
   _updateSavedIndicator(state, text) {
-    // Legacy #savedIndicator is fully superseded by the consolidated #modeBadge chip.
-    // Kept as an inert no-op so existing call sites stay safe without rendering a
-    // duplicate "Saved HH:MM:SS" surface alongside the mode badge.
+    // Legacy #savedIndicator is fully retired and superseded by the consolidated
+    // #modeBadge chip (driven by refreshDataHealthChip). This driver is a deliberate
+    // no-op for the visible element: it writes nothing to #savedIndicator, so even if
+    // the .hidden class or [hidden] attribute is ever stripped, no competing
+    // "Saved HH:MM:SS" surface can re-surface alongside the mode badge. The hidden
+    // hooks remain in the DOM purely so existing call sites stay no-op-safe.
   },
 
   copyErrorDiagnostics() {
