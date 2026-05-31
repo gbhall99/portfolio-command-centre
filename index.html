@@ -972,11 +972,29 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 
 /* Metrics tab — single full-width library table. Click a row to open the
    detail modal. RACI / dimensions / counts live as inline columns. */
-.metric-library-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--surface); -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
-/* Persistent horizontal scroll affordance: the RACI columns can overflow on
-   narrower viewports (e.g. 1440px), so always surface a slim scrollbar rather
-   than letting overlay scrollbars hide it and make trailing columns
-   (Informed, Targets, …) read as clipped. */
+/* Horizontal scroll affordance: the RACI columns (Responsible…Informed) plus
+   Targets overflow the card on narrower viewports (≤1440px, notably 1280px).
+   Overlay scrollbars hide on macOS/Chromium and reserve 0px, so the trailing
+   columns read as clipped with no cue. Two defences:
+   (1) scrollbar-gutter reserves space wherever classic scrollbars exist;
+   (2) a pure-CSS scroll-shadow (background-attachment: local/scroll) paints a
+   soft fade on whichever edge has hidden content and auto-clears at the ends —
+   no JS, works even when the scrollbar itself is an invisible overlay. */
+.metric-library-wrap {
+  flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-gutter: stable;
+  background:
+    /* edge covers — pinned to the container so the shadow only shows past them */
+    linear-gradient(to right, var(--surface) 30%, rgba(255,255,255,0)) left center,
+    linear-gradient(to left,  var(--surface) 30%, rgba(255,255,255,0)) right center,
+    /* shadows — scroll with content; peek out when there is more to reveal */
+    linear-gradient(to right, rgba(15,23,42,0.22), rgba(15,23,42,0)) left center,
+    linear-gradient(to left,  rgba(15,23,42,0.22), rgba(15,23,42,0)) right center;
+  background-color: var(--surface);
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 22px 100%, 22px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
 .metric-library-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
 .metric-library-wrap::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-sm); }
 .metric-library-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
