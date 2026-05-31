@@ -885,8 +885,30 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 /* Personas — flat table. Rows show identity + reports-to + assigned people +
    held metrics + RACI defaults; clicking a row (or the View more button) opens
    the rich detail modal. */
-.persona-table-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--surface); }
-.persona-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+/* Same horizontal-overflow defence as the Metrics cascade: at ≤1440px the
+   trailing RACI columns (notably Informed) and their chips were squeezed/
+   clipped on the right edge. Size the table to its content and let the wrap
+   scroll, with a pure-CSS scroll-shadow + an always-visible classic scrollbar
+   so overflow reads as scrollable rather than silently truncated. */
+.persona-table-wrap {
+  flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-gutter: stable;
+  background:
+    linear-gradient(to right, var(--surface) 30%, rgba(255,255,255,0)) left center,
+    linear-gradient(to left,  var(--surface) 30%, rgba(255,255,255,0)) right center,
+    linear-gradient(to right, rgba(15,23,42,0.32), rgba(15,23,42,0)) left center,
+    linear-gradient(to left,  rgba(15,23,42,0.32), rgba(15,23,42,0)) right center;
+  background-color: var(--surface);
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 30px 100%, 30px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+.persona-table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.persona-table-wrap::-webkit-scrollbar-track { background: var(--surface-2); border-top: 1px solid var(--border-dim); }
+.persona-table-wrap::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-pill); border: 2px solid var(--surface-2); }
+.persona-table-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+.persona-table-wrap::-webkit-scrollbar-corner { background: var(--surface-2); }
+.persona-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .persona-table .persona-tbl-th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); color: var(--text-muted); text-transform: uppercase; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.4px; padding: 8px 10px; border-bottom: 2px solid var(--border-light); text-align: left; white-space: nowrap; }
 .persona-table .persona-tbl-th.persona-tbl-th-right { text-align: right; }
 .persona-table tbody td { padding: 10px; border-bottom: 1px solid var(--border-light); vertical-align: middle; color: var(--text-dark); }
@@ -914,10 +936,10 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 /* RACI-tinted metric pills — colour the left border so each cell signals
    its role without losing the metric-group swatch inside. */
 .persona-table .persona-tbl-chip-raci { border-left-width: 3px; max-width: 132px; }
-/* Cap the four RACI columns so all of them (Responsible…Informed) stay on
-   screen at 1440px without horizontal scroll — chips wrap within the bounded
-   cell instead of forcing the table wider than the viewport. */
-.persona-table tbody td:has(.persona-tbl-chip-raci) { max-width: 150px; white-space: normal; }
+/* Cap each RACI column so a cell with many chips wraps within a bounded
+   width rather than ballooning; the table now scrolls (see .persona-table-wrap)
+   so columns are never silently clipped at 1440px. */
+.persona-table tbody td:has(.persona-tbl-chip-raci) { max-width: 200px; white-space: normal; }
 .persona-table .persona-tbl-chip-raci.raci-R { border-left-color: var(--accent-blue); }
 .persona-table .persona-tbl-chip-raci.raci-A { border-left-color: var(--accent-violet); }
 .persona-table .persona-tbl-chip-raci.raci-C { border-left-color: var(--accent-teal); }
