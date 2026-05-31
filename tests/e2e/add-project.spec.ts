@@ -4,7 +4,12 @@ import { openAppWithData } from './helpers';
 test('adding a project via App.addProject surfaces in the active view', async ({ page }) => {
   await openAppWithData(page);
 
-  const beforeCount = await page.evaluate(() => (window as any).App.data.projects.length);
+  // The Projects nav badge is customer-scoped (matches RAID/My Actions), so count only
+  // the active customer's projects — the project added below belongs to that customer.
+  const beforeCount = await page.evaluate(() => {
+    const app = (window as any).App;
+    return app.data.projects.filter((p: any) => p.customer === app.activeCustomer).length;
+  });
 
   // Drive programmatically — the wizard is modal-heavy + covered by unit tests.
   // The E2E surface we care about is: notifyDataChange refreshes visible rows.

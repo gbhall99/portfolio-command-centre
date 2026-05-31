@@ -4463,8 +4463,8 @@ const App = {
     if (!this.data) return;
     if (typeof this.computeRecommendedPriorities === 'function') this.computeRecommendedPriorities();
     // Shared UI elements that aren't owned by a single view
-    const totalEl = document.getElementById('navBadgeTotal');
-    if (totalEl) totalEl.textContent = this.data.projects.length;
+    this.updateProjectsNavBadge();
+    this.updateForumsNavBadge();
     // SM consolidation: the single save/state chip (#modeBadge) is refreshed via refreshDataHealthChip below.
     // H9: keep the My Actions badge in sync.
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
@@ -4479,6 +4479,27 @@ const App = {
       this._refreshScheduled = false;
       this.refreshCurrentView();
     });
+  },
+
+  // Customer-scoped sidebar count badges. Like RaidView/MyActions, the Projects and
+  // Governance badges reflect ONLY the active customer's items so they agree with the
+  // scoped boards (system-wide totals live on the System Settings cards). Both re-scope
+  // on customer switch (setActiveCustomer) and on data mutation (notifyDataChange).
+  updateProjectsNavBadge() {
+    const el = document.getElementById('navBadgeTotal');
+    if (!el || !this.data || !Array.isArray(this.data.projects)) return;
+    const cust = this.activeCustomer;
+    el.textContent = cust
+      ? this.data.projects.filter(p => p && p.customer === cust).length
+      : this.data.projects.length;
+  },
+  updateForumsNavBadge() {
+    const el = document.getElementById('navBadgeForums');
+    if (!el || !this.data || !Array.isArray(this.data.governance_forums)) return;
+    const cust = this.activeCustomer;
+    el.textContent = cust
+      ? this.data.governance_forums.filter(f => f && f.customer === cust).length
+      : this.data.governance_forums.length;
   },
 
   // --- Schema Migration ---
@@ -5501,8 +5522,8 @@ const App = {
     this.saveToLocalStorage();
 
     // Refresh UI
-    document.getElementById('navBadgeTotal').textContent = this.data.projects.length;
-    document.getElementById('navBadgeForums').textContent = this.data.governance_forums.length;
+    this.updateProjectsNavBadge();
+    this.updateForumsNavBadge();
     this.refreshDataHealthChip();
 
     // Re-render current view
@@ -5634,8 +5655,8 @@ const App = {
     // (called below after the integrity check) \u2014 it folds mode, save-time, validation and dirty state.
     document.getElementById('btnExport').disabled = false;
     document.getElementById('btnAddProject').disabled = false;
-    document.getElementById('navBadgeTotal').textContent = this.data.projects.length;
-    document.getElementById('navBadgeForums').textContent = this.data.governance_forums.length;
+    this.updateProjectsNavBadge();
+    this.updateForumsNavBadge();
     document.getElementById('fileLoaderScreen').classList.add('hidden');
     // L15: apply any pending hash-encoded view/customer before defaulting to Dashboard.
     if (this._pendingHashCustomer) { try { this.setActiveCustomer(this._pendingHashCustomer); } catch (e) {} this._pendingHashCustomer = null; }
@@ -7377,6 +7398,8 @@ const App = {
     // Summary cards depend on active customer
     if (typeof Dashboard !== 'undefined') Dashboard.renderSummaryCards && Dashboard.renderSummaryCards();
     // Customer-scoped sidebar badges must refresh on customer switch (and initial load).
+    this.updateProjectsNavBadge();
+    this.updateForumsNavBadge();
     if (typeof RaidView !== 'undefined' && RaidView.updateNavBadge) RaidView.updateNavBadge();
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     const _scopeChip = document.getElementById('customerModeScopeChip');
@@ -22199,7 +22222,7 @@ const DetailPanel = {
     App.logChange(clone.id, 'project_created', '', 'Cloned from ' + src.id, 'user');
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('navBadgeTotal').textContent = App.data.projects.length;
+    App.updateProjectsNavBadge();
     App.refreshDataHealthChip();
     Dashboard.populateFilters();
     Dashboard.applyFilters();
@@ -34959,7 +34982,7 @@ const Governance = {
 
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('navBadgeForums').textContent = App.data.governance_forums.length;
+    App.updateForumsNavBadge();
     this.closeForumModal();
     this.render();
   },
@@ -34973,7 +34996,7 @@ const Governance = {
     forums.splice(idx, 1);
     App.markDirty();
     App.saveToLocalStorage();
-    document.getElementById('navBadgeForums').textContent = forums.length;
+    App.updateForumsNavBadge();
     App.toast('Meeting "' + name + '" deleted', 'success');
     this.render();
   },
