@@ -357,8 +357,18 @@ html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(203, 
 }
 .app-header .logo { font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; white-space: nowrap; }
 .app-header .logo span { color: var(--accent-blue); }
-.app-header .mode-badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--bg-tertiary); color: var(--text-secondary); white-space: nowrap; }
-.app-header .mode-badge.loaded { background: rgba(34,197,94,0.15); color: var(--status-green); }
+/* Single consolidated save/state chip (folds storage meter, validation pill, save dot and mode badge). */
+.app-header .mode-badge { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-2xs); font-weight: var(--fw-medium); line-height: var(--lh-tight); padding: 3px 10px 3px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-secondary); white-space: nowrap; cursor: pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease; }
+.app-header .mode-badge:hover { background: var(--bg-surface-hover, var(--surface-hover)); }
+.app-header .mode-badge:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.app-header .mode-badge .mode-badge-icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+.app-header .mode-badge .mode-badge-text { white-space: nowrap; }
+/* Validated (default loaded, clean) */
+.app-header .mode-badge.loaded, .app-header .mode-badge.state-ok { background: var(--tint-green-weak); color: var(--rag-green-strong); border-color: rgba(13,148,136,0.28); }
+/* Saving / dirty — amber */
+.app-header .mode-badge.state-saving, .app-header .mode-badge.state-dirty, .app-header .mode-badge.state-warn { background: var(--tint-amber-weak); color: var(--rag-amber-strong); border-color: rgba(217,119,6,0.28); }
+/* Errors / save failed — red */
+.app-header .mode-badge.state-error { background: var(--tint-red-weak); color: var(--rag-red-strong); border-color: rgba(220,38,38,0.28); }
 .header-customer { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px 4px 12px; background: var(--bg-tertiary); border-radius: 999px; border: 1px solid var(--border-color); }
 .header-customer-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent-blue); flex-shrink: 0; transition: background 0.15s; box-shadow: 0 0 0 1px var(--border-strong); }
 /* L12: in dark theme, give the customer dot a lighter ring for contrast against the dark header */
@@ -3096,7 +3106,6 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 <header class="app-header" role="banner">
   <button class="btn btn-ghost btn-sm mobile-menu-btn" onclick="App.toggleMobileMenu()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:4px"><path d="M4 4 L12 20 L20 4"/><line x1="2" y1="12" x2="6" y2="12"/></svg> Velocity</div>
-  <div class="mode-badge" id="modeBadge">No data loaded</div>
   <div class="header-customer" id="headerCustomer">
     <span class="header-customer-dot" id="headerCustomerDot" aria-hidden="true"></span>
     <label class="header-customer-label" for="globalCustomer">Customer</label>
@@ -3104,7 +3113,6 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
   </div>
   <div class="header-spacer"></div>
   <div class="header-actions">
-    <span class="storage-info" id="storageInfo"></span>
     <!-- Power tools: de-emphasised secondary cluster (visual grouping only; ids/onclick unchanged). -->
     <span class="header-tools" role="group" aria-label="Power tools">
     <button class="btn btn-ghost btn-sm" id="btnPresent" onclick="App.togglePresentation()" title="Boardroom / Presentation mode — larger fonts, bigger numbers" aria-label="Boardroom mode"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Boardroom mode</title><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>
@@ -3112,7 +3120,6 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     <button class="btn btn-ghost btn-sm" id="btnScenarios" onclick="App.openScenarioManager()" title="Scenarios — save / load named what-if snapshots" aria-label="Scenarios"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Scenarios</title><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
     <button class="btn btn-ghost btn-sm" id="btnSandbox" onclick="App.toggleSandboxMode()" title="Sandbox mode — isolate edits as a what-if branch" aria-label="Sandbox mode"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Sandbox</title><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg></button>
     <select id="viewAsPicker" class="filter-select header-tools-select" onchange="App.setViewAsMember(this.value || null)" title="Filter views to a single member's work"><option value="">View as: All</option></select>
-    <button class="btn btn-ghost btn-sm" id="btnDataHealth" onclick="App.openIntegrityFromHeader()" title="Data integrity status — click to review" aria-label="Data integrity status" style="display:none"><span id="dataHealthLabel" style="font-size:var(--fs-2xs);font-weight:var(--fw-semibold)">Validating&hellip;</span></button>
     <button class="btn btn-ghost btn-sm" onclick="App.openShortcutsOverlay()" title="Press ? for keyboard shortcuts" aria-label="Keyboard shortcuts"><span style="font-family:var(--font-mono,monospace);font-size:var(--fs-xs);font-weight:var(--fw-bold)">?</span></button>
     <button class="btn btn-ghost btn-sm" id="btnCustomerMode" onclick="App.toggleCustomerMode()" aria-pressed="false" title="Customer (read-only) view — curated nav, safe to screen-share" aria-label="Toggle customer view"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><title>Customer view</title><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
     </span>
@@ -3126,8 +3133,14 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
     <button class="btn btn-ghost btn-sm" id="btnRedo" disabled onclick="App.redo()" title="Redo (Ctrl+Shift+Z)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg></button>
     <span class="header-primary-actions">
       <button class="btn btn-add btn-sm" id="btnAddProject" disabled onclick="DetailPanel.quickAdd()">+ New Project</button>
-      <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes"></span>
-      <span class="saved-indicator hidden" id="savedIndicator" aria-live="polite" title="Last save"><span class="si-dot"></span><span id="savedIndicatorText">Saved</span></span>
+      <!-- Single save/state surface — folds storage, validation, save-time and "Working locally" into one chip. Colour/icon carry the validated/dirty/error state; clicking opens the integrity panel. -->
+      <button type="button" class="mode-badge" id="modeBadge" onclick="App.openIntegrityFromHeader()" aria-live="polite" title="Save &amp; data state — click to review integrity">
+        <span class="mode-badge-icon" id="saveStateIcon" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="mode-badge-text" id="dataHealthLabel">No data loaded</span>
+      </button>
+      <!-- Legacy hooks retained (hidden) so existing save/health wiring stays no-op-safe. -->
+      <span class="unsaved-dot" id="unsavedDot" title="Unsaved changes" hidden></span>
+      <span class="saved-indicator hidden" id="savedIndicator" aria-live="polite" title="Last save" hidden><span class="si-dot"></span><span id="savedIndicatorText">Saved</span></span>
       <button class="btn btn-primary btn-sm" id="btnExport" disabled onclick="App.exportJSON()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export JSON</button>
     </span>
   </div>
@@ -4452,12 +4465,7 @@ const App = {
     // Shared UI elements that aren't owned by a single view
     const totalEl = document.getElementById('navBadgeTotal');
     if (totalEl) totalEl.textContent = this.data.projects.length;
-    const modeEl = document.getElementById('modeBadge');
-    // L1: friendlier badge — shows "Working locally · last saved HH:MM" instead of dev-jargon "Static Mode".
-    if (modeEl) {
-      const saved = this._lastSavedAt ? new Date(this._lastSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '\u2014';
-      modeEl.textContent = 'Working locally \u00B7 last saved ' + saved;
-    }
+    // SM consolidation: the single save/state chip (#modeBadge) is refreshed via refreshDataHealthChip below.
     // H9: keep the My Actions badge in sync.
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     if (typeof RaidView !== 'undefined' && RaidView.updateNavBadge) RaidView.updateNavBadge();
@@ -5495,8 +5503,7 @@ const App = {
     // Refresh UI
     document.getElementById('navBadgeTotal').textContent = this.data.projects.length;
     document.getElementById('navBadgeForums').textContent = this.data.governance_forums.length;
-    var badge = document.getElementById('modeBadge');
-    badge.textContent = 'Static Mode \u2014 ' + this.data.projects.length + ' projects';
+    this.refreshDataHealthChip();
 
     // Re-render current view
     if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.applyFilters();
@@ -5623,11 +5630,8 @@ const App = {
     } catch (e) { /* non-fatal — defaults keep the app functional */ }
     // Populate recommended_priority once at load so UI chips reflect state from the start.
     this.computeRecommendedPriorities();
-    const badge = document.getElementById('modeBadge');
-    // L1: friendly badge on data load.
-    const savedAt = this._lastSavedAt ? new Date(this._lastSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'just now';
-    badge.textContent = 'Working locally \u00B7 last saved ' + savedAt;
-    badge.classList.add('loaded');
+    // SM consolidation: the single save/state chip (#modeBadge) is fully driven by refreshDataHealthChip
+    // (called below after the integrity check) \u2014 it folds mode, save-time, validation and dirty state.
     document.getElementById('btnExport').disabled = false;
     document.getElementById('btnAddProject').disabled = false;
     document.getElementById('navBadgeTotal').textContent = this.data.projects.length;
@@ -6873,18 +6877,12 @@ const App = {
       localStorage.setItem(this.LS_KEY, json);
       localStorage.setItem(this.LS_META_KEY, JSON.stringify({ savedAt: new Date().toISOString(), projectCount: this.data.projects.length }));
       this.checkStorageQuota();
-      // Flash save indicator
-      const badge = document.getElementById('modeBadge');
-      if (badge) { badge.style.transition = 'background 0.3s'; badge.style.background = '#22c55e20'; setTimeout(() => { badge.style.background = ''; }, 800); }
       const now = new Date();
       const stamp = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       this._updateSavedIndicator('saved', 'Saved ' + stamp);
-      // L1: track last-saved time for the "Working locally" badge.
+      // L1: track last-saved time; SM consolidation: the single chip refreshes its text + state from this.
       this._lastSavedAt = now.toISOString();
-      const modeEl = document.getElementById('modeBadge');
-      if (modeEl && modeEl.classList.contains('loaded')) {
-        modeEl.textContent = 'Working locally \u00B7 last saved ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-      }
+      this.refreshDataHealthChip();
       try { if (typeof Backups !== 'undefined') Backups.record(); } catch (err) {}
       try { if (typeof SyncGuard !== 'undefined') SyncGuard.notifySave(); } catch (err) {}
     } catch (e) {
@@ -7859,6 +7857,8 @@ const App = {
       '</div>';
     }
     body.innerHTML = html;
+    // SM consolidation: populate the storage meter now that it lives in Settings → Data.
+    if (this.checkStorageQuota) this.checkStorageQuota();
   },
 
   _renderSprintCycleCard() {
@@ -8324,7 +8324,14 @@ const App = {
 
   _renderDataCard() {
     return '<div style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Data Management</h3>' +
+    '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px">' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin:0">Data Management</h3>' +
+      // SM consolidation: the browser-storage meter now lives here, off the primary header.
+      '<span style="display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-2xs);color:var(--text-muted);white-space:nowrap" title="Approximate size of this session in browser local storage">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>' +
+        '<span id="storageInfo"></span>' +
+      '</span>' +
+    '</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="btn btn-outline btn-sm" onclick="App.exportJSON()">Export JSON</button>' +
       '<button class="btn btn-outline btn-sm" onclick="App.loadDemoData()" title="Load shippable demo dataset">Load demo dataset</button>' +
@@ -8488,33 +8495,48 @@ const App = {
     ['shortcutsOverlayOverlay', 'shortcutsOverlayModal'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
   },
 
-  // M16: header data-health chip — green/amber/red tied to the most recent integrity check.
+  // SM consolidation: the single header save/state chip (#modeBadge). The text always reads
+  // "Working locally · saved HH:MM"; validated / dirty / error state is folded into the chip's
+  // colour + icon (and a descriptive tooltip). Storage meter now lives in Settings → Data.
+  _SAVE_STATE_ICONS: {
+    ok: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    warn: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    error: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    saving: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>'
+  },
+
+  // M16: header data-health chip — now the consolidated save/state chip.
   refreshDataHealthChip() {
-    const btn = document.getElementById('btnDataHealth');
+    const chip = document.getElementById('modeBadge');
+    const icon = document.getElementById('saveStateIcon');
     const label = document.getElementById('dataHealthLabel');
-    if (!btn || !label) return;
-    if (!this.data) { btn.style.display = 'none'; return; }
-    btn.style.display = '';
+    if (!chip || !label) return;
+    chip.classList.remove('loaded', 'state-ok', 'state-warn', 'state-error', 'state-saving', 'state-dirty');
+    if (!this.data) {
+      label.textContent = 'No data loaded';
+      chip.title = 'No data loaded';
+      if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.ok;
+      return;
+    }
+    const savedTime = this._lastSavedAt
+      ? new Date(this._lastSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      : 'just now';
+    label.textContent = 'Working locally · saved ' + savedTime;
     const issues = this._integrityIssues || [];
     const errors = issues.filter(i => i.type === 'error').length;
     const warnings = issues.filter(i => i.type !== 'error').length;
-    const now = new Date();
-    const timeLabel = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     if (errors) {
-      btn.style.color = 'white';
-      btn.style.background = 'var(--status-red)';
-      label.innerHTML = '&#9888; ' + errors + ' error' + (errors === 1 ? '' : 's');
-      btn.title = 'Data health: ' + errors + ' error(s) found at ' + timeLabel + '. Click to review in Settings.';
+      chip.classList.add('state-error');
+      if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.error;
+      chip.title = 'Working locally · saved ' + savedTime + ' — ' + errors + ' data error' + (errors === 1 ? '' : 's') + '. Click to review in Settings.';
     } else if (warnings) {
-      btn.style.color = 'white';
-      btn.style.background = 'var(--status-amber)';
-      label.innerHTML = '&#9888; ' + warnings + ' warning' + (warnings === 1 ? '' : 's');
-      btn.title = 'Data health: ' + warnings + ' warning(s) at ' + timeLabel + '. Click to review in Settings.';
+      chip.classList.add('state-warn');
+      if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.warn;
+      chip.title = 'Working locally · saved ' + savedTime + ' — ' + warnings + ' data warning' + (warnings === 1 ? '' : 's') + '. Click to review in Settings.';
     } else {
-      btn.style.color = 'white';
-      btn.style.background = 'var(--status-green)';
-      label.innerHTML = '&#10003; validated &middot; ' + timeLabel;
-      btn.title = 'Data health: clean at ' + timeLabel + '. Click to view the integrity panel.';
+      chip.classList.add('loaded', 'state-ok');
+      if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.ok;
+      chip.title = 'Working locally · saved ' + savedTime + ' — data validated. Click to view the integrity panel.';
     }
   },
 
@@ -22178,7 +22200,7 @@ const DetailPanel = {
     App.markDirty();
     App.saveToLocalStorage();
     document.getElementById('navBadgeTotal').textContent = App.data.projects.length;
-    document.getElementById('modeBadge').textContent = 'Static Mode \u2014 ' + App.data.projects.length + ' projects';
+    App.refreshDataHealthChip();
     Dashboard.populateFilters();
     Dashboard.applyFilters();
     Dashboard.renderSummaryCards();
