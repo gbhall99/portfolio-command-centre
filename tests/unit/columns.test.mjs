@@ -53,18 +53,23 @@ describe('Dashboard.COLUMNS registry', () => {
 });
 
 describe('Dashboard.visibleColumns + persistence', () => {
-  it('defaults expose 12 user-visible columns plus 2 chrome', async () => {
+  it('defaults expose 11 user-visible columns plus 2 chrome (Customer is hidden in customer-scoped view)', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
     app.App.uiStateSet('dashboard.columns', null);
     const cols = app.Dashboard.visibleColumns();
-    expect(cols.length).toBe(14);
+    // 'customer' is intentionally NOT default-visible: the view is mandatorily
+    // customer-scoped so a per-row Customer column repeats the active customer
+    // on every row. It remains in COLUMNS / the ColumnPicker for the rare
+    // cross-customer case.
+    expect(cols.length).toBe(13);
     const ids = cols.map(c => c.id);
     expect(ids).toEqual([
       '__drag', '__pin',
-      'priority', 'name', 'customer', 'manager', 'status',
+      'priority', 'name', 'manager', 'status',
       'rag', 'target_date', 'hard_deadline', 'sprint_range',
       'size_total', 'size_done', 'size_remaining'
     ]);
+    expect(ids).not.toContain('customer');
     app.teardown();
   });
 

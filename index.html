@@ -799,8 +799,53 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
 .filter-bar .filter-clear:hover { background: rgba(59,130,246,0.08); }
 .filter-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 
-.table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border-radius: var(--radius-md); border: 1px solid var(--border-dim); box-shadow: var(--shadow-sm); }
+/* The Projects/Dashboard table runs table-layout:fixed with authoritative
+   summed column widths that can exceed the content area below ~1500px. The
+   wrapper keeps overflow-x:auto as the safety net, but we make the overflow
+   unmistakable rather than a silent clip: a persistent thin horizontal
+   scrollbar plus a right-edge fade that only paints while there is more table
+   to the right (pure-CSS, auto-clears at the scroll end). The leftmost identity
+   columns (#, Project, plus row chrome) are pinned sticky so row identity stays
+   anchored at any residual horizontal scroll. */
+.table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border-radius: var(--radius-md); border: 1px solid var(--border-dim); box-shadow: var(--shadow-sm); scrollbar-width: thin; scrollbar-gutter: stable;
+  background-image:
+    linear-gradient(to left, var(--surface) 36px, rgba(255,255,255,0)) right center,
+    linear-gradient(to left, rgba(15,23,42,0.22), rgba(15,23,42,0)) right center;
+  background-repeat: no-repeat;
+  background-size: 36px 100%, 24px 100%;
+  background-attachment: local, scroll;
+}
+.table-wrapper::-webkit-scrollbar { height: 10px; }
+.table-wrapper::-webkit-scrollbar-track { background: var(--surface-2); border-top: 1px solid var(--border-dim); }
+.table-wrapper::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-pill); border: 2px solid var(--surface-2); }
+.table-wrapper::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 .project-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); table-layout: fixed; }
+/* Pinned identity columns — keep #/Project on screen while the delivery
+   columns scroll. Offsets are the cumulative widths of the row chrome
+   (drag 30 + pin 26) ahead of each pinned column. Background is opaque so
+   scrolled cells never bleed through. */
+.project-table th[data-col-id="__drag"], .project-table td.drag-handle { position: sticky; left: 0; z-index: 6; }
+.project-table th[data-col-id="__pin"], .project-table td[data-col-id="__pin"] { position: sticky; left: 30px; z-index: 6; }
+.project-table th[data-col-id="priority"], .project-table td[data-col-id="priority"] { position: sticky; left: 56px; z-index: 6; }
+.project-table th[data-col-id="name"], .project-table td[data-col-id="name"] { position: sticky; left: 136px; z-index: 6; box-shadow: 1px 0 0 var(--border-dim); }
+.project-table thead th[data-col-id="__drag"], .project-table thead th[data-col-id="__pin"], .project-table thead th[data-col-id="priority"], .project-table thead th[data-col-id="name"] { z-index: 11; }
+.project-table tbody td.drag-handle, .project-table tbody td[data-col-id="__pin"], .project-table tbody td[data-col-id="priority"], .project-table tbody td[data-col-id="name"] { background: var(--surface); }
+.project-table tbody tr:nth-child(even) td.drag-handle, .project-table tbody tr:nth-child(even) td[data-col-id="__pin"], .project-table tbody tr:nth-child(even) td[data-col-id="priority"], .project-table tbody tr:nth-child(even) td[data-col-id="name"] { background: var(--surface-2); }
+.project-table tbody tr:hover td.drag-handle, .project-table tbody tr:hover td[data-col-id="__pin"], .project-table tbody tr:hover td[data-col-id="priority"], .project-table tbody tr:hover td[data-col-id="name"] { background: var(--surface-hover); }
+.project-table tbody tr.row-at-risk td.drag-handle, .project-table tbody tr.row-at-risk td[data-col-id="__pin"], .project-table tbody tr.row-at-risk td[data-col-id="priority"], .project-table tbody tr.row-at-risk td[data-col-id="name"] { background: var(--tint-amber-weak); }
+.project-table tbody tr.row-blocked td.drag-handle, .project-table tbody tr.row-blocked td[data-col-id="__pin"], .project-table tbody tr.row-blocked td[data-col-id="priority"], .project-table tbody tr.row-blocked td[data-col-id="name"] { background: var(--tint-red-weak); }
+/* RAID table — deterministic column model. table-layout:fixed honours the
+   <colgroup> widths so Description absorbs slack but is bounded (no empty gap
+   on ultrawide), and structural columns stay tight. Cells clip with ellipsis
+   so long content degrades gracefully at narrow widths. Wrapped in a scroll
+   container so it can never blow out the page. */
+.raid-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* width:100% so it fills the card at laptop widths, but max-width caps the
+   total width on ultrawide so Description stops stretching into emptiness —
+   the table left-aligns and the slack becomes margin, not a giant gap. */
+.raid-table { width: 100%; max-width: 1320px; border-collapse: collapse; table-layout: fixed; }
+.raid-table td.raid-cell-clip, .raid-table td.raid-cell-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raid-table th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-table thead { position: sticky; top: 0; z-index: 10; }
 .project-table th { background: var(--surface-2); padding: var(--space-3) var(--space-4); text-align: left; font-weight: var(--fw-semibold); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); border-bottom: 2px solid var(--border-strong); cursor: pointer; white-space: nowrap; user-select: none; }
 .project-table th:hover { color: var(--text-strong); }
@@ -891,7 +936,7 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
    scroll, with a pure-CSS scroll-shadow + an always-visible classic scrollbar
    so overflow reads as scrollable rather than silently truncated. */
 .persona-table-wrap {
-  flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  flex: 1; min-height: 0; overflow-x: scroll; overflow-y: auto; -webkit-overflow-scrolling: touch;
   scrollbar-width: thin; scrollbar-gutter: stable;
   background:
     linear-gradient(to right, var(--surface) 30%, rgba(255,255,255,0)) left center,
@@ -1007,15 +1052,20 @@ html[data-presentation="on"] .portfolio-subtitle { font-size: calc(13px * var(--
    soft fade on whichever edge has hidden content and auto-clears at the ends —
    no JS, works even when the scrollbar itself is an invisible overlay. */
 .metric-library-wrap {
-  flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  /* overflow-x:scroll (not auto) forces a space-reserving horizontal scrollbar
+     even where the platform would otherwise use a 0px-reserving overlay — so
+     the 600px of trailing columns at ≤1440px are an unmistakable, always-
+     visible scroll affordance rather than a silent clip. */
+  flex: 1; min-height: 0; overflow-x: scroll; overflow-y: auto; -webkit-overflow-scrolling: touch;
   scrollbar-width: thin; scrollbar-gutter: stable;
   background:
     /* edge covers — pinned to the container so the shadow only shows past them */
     linear-gradient(to right, var(--surface) 30%, rgba(255,255,255,0)) left center,
     linear-gradient(to left,  var(--surface) 30%, rgba(255,255,255,0)) right center,
-    /* shadows — scroll with content; peek out when there is more to reveal */
-    linear-gradient(to right, rgba(15,23,42,0.32), rgba(15,23,42,0)) left center,
-    linear-gradient(to left,  rgba(15,23,42,0.32), rgba(15,23,42,0)) right center;
+    /* shadows — scroll with content; peek out when there is more to reveal.
+       Heavier opacity so the cue is unmistakable when columns are hidden. */
+    linear-gradient(to right, rgba(15,23,42,0.42), rgba(15,23,42,0)) left center,
+    linear-gradient(to left,  rgba(15,23,42,0.42), rgba(15,23,42,0)) right center;
   background-color: var(--surface);
   background-repeat: no-repeat;
   background-size: 28px 100%, 28px 100%, 30px 100%, 30px 100%;
@@ -15257,9 +15307,15 @@ const Dashboard = {
     ];
   })(),
 
+  // 'customer' is intentionally NOT default-visible: every Dashboard/Projects
+  // row belongs to App.activeCustomer (the view is mandatorily customer-scoped),
+  // so a per-row Customer column is structurally constant and zero-information —
+  // the active customer is already shown in the header chip + scope chips. The
+  // column remains in COLUMNS so the ColumnPicker can re-add it for the rare
+  // cross-customer/debug case.
   DEFAULT_VISIBLE: [
     '__drag', '__pin',
-    'priority', 'name', 'customer', 'manager', 'status',
+    'priority', 'name', 'manager', 'status',
     'rag', 'target_date', 'hard_deadline', 'sprint_range',
     'size_total', 'size_done', 'size_remaining'
   ],
@@ -16045,7 +16101,9 @@ const Dashboard = {
       let inner;
       try { inner = col.render(p); }
       catch (e) { console.error('[PCC] render failed for column ' + col.id, e); inner = '\u2014'; }
-      return '<td' + cls + editAttr + '>' + inner + '</td>';
+      // data-col-id mirrors the header so CSS can pin the leftmost identity
+      // columns sticky; purely presentational, no JS reads it.
+      return '<td data-col-id="' + col.id + '"' + cls + editAttr + '>' + inner + '</td>';
     }).join('');
     return '<tr' + tone + ' data-id="' + p.id + '" draggable="true">' + cells + '</tr>';
   },
@@ -27375,6 +27433,57 @@ const Sprint = {
     this.attachDragHandlers();
   },
 
+  // ── Shared sprint-header capacity bars ──────────────────────────────────
+  // Both swimlane headers (Projects view + Team view) previously built their
+  // per-skill capacity rows independently, each dropping a skill row whenever a
+  // column had zero capacity AND zero commitment. That produced a different row
+  // count per column, so the same skill did not sit at the same vertical
+  // position across sprint columns and could not be scanned left-to-right.
+  //
+  // _visibleCapSkills decides the row set ONCE per render: the union of skills
+  // that have ANY capacity or ANY commitment across ALL sprints in the grid.
+  // _renderCapBars then renders that fixed set in every column (a muted 0 bar
+  // where a column has no data), so rows align across the timeline. It also
+  // handles the "committed against zero capacity" case explicitly — no '/0'
+  // label and no misleading full-red bar.
+  _visibleCapSkills(sprintIds, sprintTotals, sprintCapCache, capPct) {
+    return this.SKILLS.filter(sk => sprintIds.some(sid => {
+      const com = (sprintTotals[sid] || {})[sk.key] || 0;
+      const cap = Math.floor(((sprintCapCache[sid] || {})[sk.key] || 0) * capPct);
+      return cap > 0 || com > 0;
+    }));
+  },
+  _renderCapBars(visibleSkills, totals, spCap, capPct, skillColors) {
+    let totalCommitted = 0, totalCap = 0;
+    const html = visibleSkills.map(sk => {
+      const com = totals[sk.key] || 0;
+      const cap = Math.floor((spCap[sk.key] || 0) * capPct);
+      totalCommitted += com;
+      totalCap += cap;
+      const noCap = cap === 0;
+      // No capacity configured: utilisation is undefined, not 100%+. Draw an
+      // empty muted track and label the committed points with a "no cap"
+      // marker rather than a divide-by-zero "X/0" + saturated red bar.
+      const pct = noCap ? 0 : Math.round((com / cap) * 100);
+      const barColor = noCap ? 'var(--border-strong)' : App.utilColor(pct);
+      const over = !noCap && pct > 100;
+      const numStyle = over ? 'color:var(--status-red);font-weight:700'
+        : (noCap && com > 0) ? 'color:var(--status-amber);font-weight:700'
+        : 'color:var(--text-muted)';
+      const label = noCap
+        ? (com > 0 ? com + '<span title="No capacity configured for this skill in this sprint" style="font-weight:600"> ⚠</span>' : '0')
+        : (com + '/' + Math.round(cap));
+      return '<div style="display:flex;align-items:center;gap:3px;font-size:var(--fs-2xs)">' +
+        '<span style="width:24px;color:' + skillColors[sk.key] + ';font-weight:600">' + sk.short + '</span>' +
+        '<div style="flex:1;height:4px;background:#e9ecef;border-radius:2px;overflow:hidden;min-width:30px">' +
+          '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + barColor + ';border-radius:2px"></div>' +
+        '</div>' +
+        '<span style="width:36px;text-align:right;font-size:var(--fs-2xs);font-variant-numeric:tabular-nums;' + numStyle + '">' + label + '</span>' +
+      '</div>';
+    }).join('');
+    return { html, totalCommitted, totalCap };
+  },
+
   SPRINT_DEV_WEEKS: 4, // dev weeks per sprint (excluding hardening)
 
   // F-037: recompute sprint capacity_points + committed_points from team + skill_splits ground truth.
@@ -27908,32 +28017,17 @@ const Sprint = {
       return 'future';
     };
     const phaseLabel = { past: 'Past', current: 'Current', future: 'Future' };
+    // Decide the visible skill-row set ONCE so every column header renders the
+    // same fixed rows (aligned left-to-right) — see Sprint._visibleCapSkills.
+    const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
+    const visibleCapSkills = this._visibleCapSkills(sprints.map(s => s.sprint_id), sprintTotals, sprintCapCache, capPct);
     let thead = '<tr><th class="sl-project-cell">Project</th>';
     sprints.forEach(s => {
       const dateRange = this.formatDateRange(s.start_date, s.end_date);
       const ph = sprintPhase(s);
       const totals = sprintTotals[s.sprint_id] || {};
-      let totalCommitted = 0;
-      let totalCap = 0;
       const spCap = sprintCapCache[s.sprint_id] || {};
-      const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
-      const capBars = this.SKILLS.map(sk => {
-        const com = totals[sk.key] || 0;
-        const cap = Math.floor((spCap[sk.key] || 0) * capPct);
-        totalCommitted += com;
-        totalCap += cap;
-        if (cap === 0 && com === 0) return '';
-        const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 999 : 0);
-        const barColor = App.utilColor(pct);
-        const numStyle = pct > 100 ? 'color:var(--status-red);font-weight:700' : 'color:var(--text-muted)';
-        return '<div style="display:flex;align-items:center;gap:3px;font-size:var(--fs-2xs)">' +
-          '<span style="width:24px;color:' + skillColors[sk.key] + ';font-weight:600">' + sk.short + '</span>' +
-          '<div style="flex:1;height:4px;background:#e9ecef;border-radius:2px;overflow:hidden;min-width:30px">' +
-            '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + barColor + ';border-radius:2px"></div>' +
-          '</div>' +
-          '<span style="width:32px;text-align:right;font-size:var(--fs-2xs);font-variant-numeric:tabular-nums;' + numStyle + '">' + com + '/' + Math.round(cap) + '</span>' +
-        '</div>';
-      }).filter(Boolean).join('');
+      const { html: capBars, totalCommitted, totalCap } = this._renderCapBars(visibleCapSkills, totals, spCap, capPct, skillColors);
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
       const overallBadge = totalCap > 0 ? '<div style="font-size:var(--fs-2xs);font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:var(--fs-2xs);color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
@@ -27943,7 +28037,7 @@ const Sprint = {
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
         '</div>' +
         '<span class="sl-dates">' + dateRange + '</span>' +
-        '<div style="margin-top:4px;display:flex;flex-direction:column;gap:1px">' + capBars + '</div>' +
+        (capBars ? '<div style="margin-top:4px;display:flex;flex-direction:column;gap:1px">' + capBars + '</div>' : '') +
         overallBadge +
       '</th>';
     });
@@ -28185,31 +28279,15 @@ const Sprint = {
     });
 
     // Header
+    const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
+    const visibleCapSkills = this._visibleCapSkills(sprints.map(s => s.sprint_id), sprintTotals, sprintCapCache, capPct);
     let thead = '<tr><th class="sl-project-cell">Team member</th>';
     sprints.forEach(s => {
       const ph = sprintPhase(s);
       const dateRange = this.formatDateRange(s.start_date, s.end_date);
       const totals = sprintTotals[s.sprint_id] || {};
       const spCap = sprintCapCache[s.sprint_id] || {};
-      const capPct = (this.allocSettings.maxCapacityPct || 85) / 100;
-      let totalCommitted = 0, totalCap = 0;
-      const capBars = this.SKILLS.map(sk => {
-        const com = totals[sk.key] || 0;
-        const cap = Math.floor((spCap[sk.key] || 0) * capPct);
-        totalCommitted += com;
-        totalCap += cap;
-        if (cap === 0 && com === 0) return '';
-        const pct = cap > 0 ? Math.round((com / cap) * 100) : (com > 0 ? 999 : 0);
-        const barColor = App.utilColor(pct);
-        const numStyle = pct > 100 ? 'color:var(--status-red);font-weight:700' : 'color:var(--text-muted)';
-        return '<div style="display:flex;align-items:center;gap:3px;font-size:var(--fs-2xs)">' +
-          '<span style="width:24px;color:' + skillColors[sk.key] + ';font-weight:600">' + sk.short + '</span>' +
-          '<div style="flex:1;height:4px;background:#e9ecef;border-radius:2px;overflow:hidden;min-width:30px">' +
-            '<div style="height:100%;width:' + Math.min(100, pct) + '%;background:' + barColor + ';border-radius:2px"></div>' +
-          '</div>' +
-          '<span style="width:32px;text-align:right;font-size:var(--fs-2xs);font-variant-numeric:tabular-nums;' + numStyle + '">' + com + '/' + Math.round(cap) + '</span>' +
-        '</div>';
-      }).filter(Boolean).join('');
+      const { html: capBars, totalCommitted, totalCap } = this._renderCapBars(visibleCapSkills, totals, spCap, capPct, skillColors);
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
       const overallBadge = totalCap > 0 ? '<div style="font-size:var(--fs-2xs);font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:var(--fs-2xs);color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
@@ -36802,6 +36880,22 @@ const RaidView = {
       .concat(hasStatus ? ['Status'] : [])
       .concat(hasDate ? [dateLabel] : [])
       .concat(['Updated', '']);
+    // Deterministic column model: under auto-layout the browser fed all slack
+    // to the natural-widest column (Description), so it ballooned with the
+    // viewport while short columns stayed cramped. We run table-layout:fixed
+    // with a <colgroup>: structural columns get tight fixed widths, Description
+    // gets a bounded fixed width (so it never stretches into emptiness on
+    // ultrawide), and a trailing spacer <col> absorbs any remaining slack so
+    // the action link stays anchored beside its row. The '' action and date
+    // columns map by label.
+    const colWidth = {
+      'Project': '180px', 'Customer': '130px', 'Description': '380px', 'Owner': '130px',
+      'Score': '70px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
+      'Updated': '120px', '': '80px',
+    };
+    const colgroup = '<colgroup>' + headers.map(h =>
+      '<col style="width:' + (colWidth[h] || 'auto') + '">'
+    ).join('') + '<col></colgroup>';
     const thBase = 'text-align:left;padding:8px 10px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;border-bottom:1px solid var(--border-light)';
     const headerHtml = '<tr>' + headers.map(h => {
       const key = sortable[h];
@@ -36811,25 +36905,26 @@ const RaidView = {
       // R4: announce sortability on every sortable column and make headers keyboard-operable (WCAG 2.1.1 / 4.1.2).
       const ariaSort = ' aria-sort="' + (active ? (effDir === 'asc' ? 'ascending' : 'descending') : 'none') + '"';
       return '<th' + ariaSort + ' tabindex="0" onclick="RaidView.setSort(\'' + key + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();RaidView.setSort(\'' + key + '\')}" title="Sort by ' + esc(h) + ' (click or press Enter)" style="' + thBase + ';cursor:pointer;user-select:none">' + esc(h) + caret + '</th>';
-    }).join('') + '</tr>';
+    }).join('') + '<th style="' + thBase + '" aria-hidden="true"></th></tr>';
     const rowsHtml = rows.map(({ project, row, idx, kind }) => {
       const score = isRisks ? (typeof Format !== 'undefined' && Format.riskScore ? Format.riskScore(row) : ((row.impact || 0) * (row.probability || 0))) : null;
       const desc = row.description || row.decision || row.text || '(no description)';
       const dateStr = this._fmtDate(row[dateField]);
       const updatedStr = this._fmtUpdated(row.ts || project.last_updated);
       return '<tr class="raid-row" data-raid-row data-kind="' + kind + '" data-project-id="' + esc(project.id) + '" data-row-idx="' + idx + '" tabindex="0" role="button" onclick="RaidView.openDetailPanelFor(\'' + esc(project.id) + '\',\'' + kind + '\',' + idx + ')" style="cursor:pointer;border-bottom:1px solid var(--border-light)">' +
-        '<td style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dark)">' + esc(project.name) + '</td>' +
-        (showCust ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(project.customer || '—') + '</td>' : '') +
-        '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
-        '<td style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
+        '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dark)">' + esc(project.name) + '</td>' +
+        (showCust ? '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(project.customer || '—') + '</td>' : '') +
+        '<td class="raid-cell-desc" title="' + esc(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
+        '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
         (isRisks ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + score + '</td>' : '') +
         (hasStatus ? '<td style="padding:6px 10px;font-size:11px">' + esc(this._statusFor(kind, row)) + '</td>' : '') +
         (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +
         '<td style="padding:6px 10px"><span class="raid-row-link" style="color:var(--accent-blue);font-size:11px">Open →</span></td>' +
+        '<td aria-hidden="true"></td>' +
       '</tr>';
     }).join('');
-    return '<table class="raid-table" style="width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md)"><thead style="background:var(--bg-content)">' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody></table>';
+    return '<div class="raid-table-wrap"><table class="raid-table" style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-md)">' + colgroup + '<thead style="background:var(--bg-content)">' + headerHtml + '</thead><tbody>' + rowsHtml + '</tbody></table></div>';
   },
 
   openDetailPanelFor(projectId, kind, idx) {
