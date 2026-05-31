@@ -57,18 +57,27 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
   await page.click('.nav-item[data-view="strategy"]');
   await expect(page.locator('#viewStrategy')).toContainText('E2E Reduce opex 15%');
 
-  // Open the project's detail panel and verify Strategy section
+  // Open the project's detail panel and verify the Strategy section.
   if (seedResult.projectId) {
     await page.click('.nav-item[data-view="dashboard"]');
     await expect(page.locator('#projectTableBody')).toBeVisible();
     const row = page.locator(`#projectTableBody tr[data-id="${seedResult.projectId}"]`).first();
     await expect(row).toBeVisible();
-    await row.locator('.project-name-cell').click();
+    // Open deterministically via the bridge. The dashboard row uses a ~280 ms
+    // deferred single-click open (so a double-click can take over for inline
+    // edit); opening directly avoids that race.
+    await page.evaluate((pid) => (window as any).DetailPanel.open(pid), seedResult.projectId);
     await expect(page.locator('#detailPanel.open')).toBeVisible();
-    // Strategy section is in the Health tab (default tab on open)
-    const strategySec = page.locator('.strategy-section');
+    // Post-d9b4e83 IA: the read-only `.strategy-section` chip view on Overview was
+    // removed in the strategy de-dup. The surviving editor is `.dp-strategy-section`
+    // (renderStrategyEditFields) on the Scope & Value tab — switch to it before
+    // asserting. It renders the project's explicitly-linked entities as chips; the
+    // seed links the metric, so the linked metric "E2E Total opex" must appear here.
+    // The derived-objective/persona assertions are intentionally dropped: derivation
+    // lived only in the removed read-only section, and the objective + persona are
+    // already verified above via the top-level personas/metrics/strategy view checks.
+    await page.evaluate(() => (window as any).DetailPanel.switchTab('scope'));
+    const strategySec = page.locator('#detailPanel .dp-strategy-section');
     await expect(strategySec).toContainText('E2E Total opex');
-    await expect(strategySec).toContainText('E2E Reduce opex 15%');
-    await expect(strategySec).toContainText('E2E Sarah Chen');
   }
 });
