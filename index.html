@@ -1899,6 +1899,8 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .sprint-swimlane th.sl-sprint-current,
 .sprint-swimlane td.sl-sprint-current { background: rgba(59, 130, 246, 0.06) !important; border-left: 3px solid var(--accent-blue); }
 .sprint-swimlane th.sl-sprint-current { color: var(--text-dark); }
+.sprint-swimlane th.sl-sprint-focus, .sprint-swimlane td.sl-sprint-focus { background: rgba(59, 130, 246, 0.06) !important; border-left: 3px solid var(--accent-blue); }
+.sprint-swimlane th.sl-sprint-hdr.sl-sprint-focus { min-width: 200px; max-width: 240px; box-shadow: inset 0 2px 0 var(--accent-blue); }
 .sl-sprint-phase-pill { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
 .sl-sprint-phase-past { background: rgba(148, 163, 184, 0.18); color: var(--text-muted); }
 .sl-sprint-phase-current { background: rgba(59, 130, 246, 0.18); color: var(--accent-blue); }
@@ -28103,9 +28105,28 @@ const Sprint = {
     '</div>';
   },
 
+  // Capacity window: at most one most-recent past sprint + current + all futures.
+  // Returns { sprints, focusId }. focusId is the sprint to emphasise: the current
+  // sprint if one spans today, else the nearest upcoming sprint, else null.
+  _windowedSprints(all) {
+    const list = (all || []).slice().sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+    const todayISO = new Date().toISOString().split('T')[0];
+    const phase = (s) => {
+      if (s.end_date && s.end_date < todayISO) return 'past';
+      if (s.start_date && s.start_date <= todayISO && (!s.end_date || s.end_date >= todayISO)) return 'current';
+      return 'future';
+    };
+    const pasts = list.filter(s => phase(s) === 'past');
+    const currents = list.filter(s => phase(s) === 'current');
+    const futures = list.filter(s => phase(s) === 'future');
+    const sprints = (pasts.length ? [pasts[pasts.length - 1]] : []).concat(currents).concat(futures);
+    const focusId = currents.length ? currents[0].sprint_id : (futures.length ? futures[0].sprint_id : null);
+    return { sprints, focusId };
+  },
+
   renderSwimLane(board) {
     const projects = this.getFilteredProjects().sort((a, b) => (a.priority || 999) - (b.priority || 999));
-    const sprints = App.data.sprints || [];
+    const { sprints, focusId } = this._windowedSprints(App.data.sprints);
     const customerFilter = App.activeCustomer || '';
     // Per-sprint holiday-aware capacity cache
     const sprintCapCache = {};
@@ -28176,7 +28197,7 @@ const Sprint = {
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
       const overallBadge = totalCap > 0 ? '<div style="font-size:var(--fs-2xs);font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:var(--fs-2xs);color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
-      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
+      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + (s.sprint_id === focusId ? ' sl-sprint-focus' : '') + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700">' +
           '<span>' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
@@ -28230,7 +28251,7 @@ const Sprint = {
         // Filter to only skills in the project's delivery flow, then sort by flow order
         const activeSkillKeys = phaseOrder.length ? new Set(phaseOrder.map(ph => Solver.PHASE_SKILL_MAP[ph]).filter(Boolean)) : null;
         const alloc = rawAlloc.filter(a => !activeSkillKeys || activeSkillKeys.has(a.key)).sort((a, b) => (skillOrder[a.key] !== undefined ? skillOrder[a.key] : 99) - (skillOrder[b.key] !== undefined ? skillOrder[b.key] : 99));
-        const cellClasses = 'sl-cell sl-sprint-' + sprintPhase(s) + (alloc.length > 0 ? ' sl-cell-active' : '');
+        const cellClasses = 'sl-cell sl-sprint-' + sprintPhase(s) + (s.sprint_id === focusId ? ' sl-sprint-focus' : '') + (alloc.length > 0 ? ' sl-cell-active' : '');
         let cellPts = 0;
         const chips = alloc.map(a => {
           cellPts += a.points;
@@ -28342,7 +28363,7 @@ const Sprint = {
     if (!App.data) return;
     const customer = App.activeCustomer || '';
     if (!customer) { board.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">Select a customer to view the team.</div>'; return; }
-    const sprints = App.data.sprints || [];
+    const { sprints, focusId } = Sprint._windowedSprints(App.data.sprints);
     if (!sprints.length) { board.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">No sprints defined.</div>'; return; }
 
     const skillColors = Sprint.SKILL_COLORS;
@@ -28436,7 +28457,7 @@ const Sprint = {
       const overallPct = totalCap > 0 ? Math.round((totalCommitted / totalCap) * 100) : 0;
       const overallColor = overallPct <= 80 ? 'var(--status-green)' : overallPct <= 100 ? 'var(--status-amber)' : 'var(--status-red)';
       const overallBadge = totalCap > 0 ? '<div style="font-size:var(--fs-2xs);font-weight:700;color:' + overallColor + ';margin-top:2px">' + overallPct + '% load <span style="font-weight:400;font-size:var(--fs-2xs);color:var(--text-muted)">@ ' + Math.round(capPct * 100) + '%</span></div>' : '';
-      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
+      thead += '<th class="sl-sprint-hdr sl-sprint-' + ph + (s.sprint_id === focusId ? ' sl-sprint-focus' : '') + '" style="cursor:pointer" onclick="Sprint.showSprintCapacityDetail(\'' + s.sprint_id + '\')" title="Click to view/edit capacity">' +
         '<div style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:700">' +
           '<span>' + s.sprint_id.replace(/^CY\d+-/, '') + '</span>' +
           '<span class="sl-sprint-phase-pill sl-sprint-phase-' + ph + '">' + phaseLabel[ph] + '</span>' +
@@ -28491,7 +28512,7 @@ const Sprint = {
           '</span>';
         }).join('');
 
-        const cellClasses = 'sl-cell sl-team-cell sl-sprint-' + sprintPhase(s) + (entries.length ? ' sl-cell-active' : '');
+        const cellClasses = 'sl-cell sl-team-cell sl-sprint-' + sprintPhase(s) + (s.sprint_id === focusId ? ' sl-sprint-focus' : '') + (entries.length ? ' sl-cell-active' : '');
         tbody += '<td class="' + cellClasses + '">' +
           loadPill +
           (chips || '<div class="sl-empty-hint" style="color:var(--text-muted);font-size:var(--fs-2xs)">—</div>') +
