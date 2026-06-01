@@ -26,7 +26,8 @@ describe('Wave 5 R1/R8/R10 — customer mode is read-only, plain-language, and s
     // restoring full mode brings the labels back
     app.App.customerMode = false;
     app.App._applyCustomerMode();
-    expect(ma.textContent).toMatch(/My Actions/);
+    expect(ma.textContent).toMatch(/Actions/);
+    expect(ma.textContent).not.toMatch(/My Actions/);
     app.teardown();
   });
 
