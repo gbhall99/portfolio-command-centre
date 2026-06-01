@@ -1,6 +1,6 @@
 // IA Goal 1a — portfolio-wide vs single-customer menu clarity.
-// Verifies scope-first section headers, the RAID split, the VIEW_SCOPE map, the titlebar scope badge,
-// the "This customer" nav chip, and that customer mode hides the cross-customer RAID entry.
+// Verifies scope-first section headers, the single RAID destination (scope is an in-view toggle),
+// the VIEW_SCOPE map, the titlebar scope badge, and the "This customer" nav chip.
 
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
@@ -22,39 +22,37 @@ describe('IA 1a — scope-first section headers', () => {
     app.teardown();
   });
 
-  it('Portfolio Overview + the all-customers RAID sit under "Portfolio"', async () => {
+  it('Portfolio Overview sits under "Portfolio" and there is no RAID entry there', async () => {
     const app = await boot();
     const first = app.document.querySelectorAll('.nav-section')[0];
     expect(first.querySelector('.nav-section-label').textContent).toMatch(/^portfolio$/i);
     expect(first.querySelector('[data-view="portfolio"]')).toBeTruthy();
-    expect(first.querySelector('#navRaidAll')).toBeTruthy();
+    expect(first.querySelector('[data-view="raid"]')).toBeFalsy();
     app.teardown();
   });
 });
 
-describe('IA 1a — RAID split into two explicit, scoped nav items', () => {
-  it('two raid items exist with distinct ids and showAll-setting onclicks', async () => {
+describe('IA 1a — RAID is a single, unambiguous nav destination', () => {
+  it('exactly one raid nav item exists; scope defaults to this-customer via onclick', async () => {
     const app = await boot();
     const raids = app.document.querySelectorAll('.nav-item[data-view="raid"]');
-    expect(raids).toHaveLength(2);
-    const all = app.document.getElementById('navRaidAll');
+    expect(raids).toHaveLength(1);
+    expect(app.document.getElementById('navRaidAll')).toBeFalsy();
     const single = app.document.getElementById('navRaidSingle');
-    expect(all).toBeTruthy();
     expect(single).toBeTruthy();
-    expect(all.getAttribute('onclick')).toMatch(/showAll\s*=\s*true/);
     expect(single.getAttribute('onclick')).toMatch(/showAll\s*=\s*false/);
     app.teardown();
   });
 });
 
 describe('IA 1a — single-customer view titles signal scope', () => {
-  it('dashboard/roadmap/backlog/single-RAID titles say "this customer"; portfolio says "all customers"', async () => {
+  it('dashboard/roadmap/backlog titles say "this customer"; portfolio says "all customers"; RAID notes its in-view toggle', async () => {
     const app = await boot();
     const q = sel => app.document.querySelector(sel).getAttribute('title') || '';
     expect(q('[data-view="dashboard"]')).toMatch(/this customer/i);
     expect(q('[data-view="roadmap"]')).toMatch(/this customer/i);
     expect(q('[data-view="backlog"]')).toMatch(/this customer/i);
-    expect(app.document.getElementById('navRaidSingle').getAttribute('title')).toMatch(/this customer/i);
+    expect(app.document.getElementById('navRaidSingle').getAttribute('title')).toMatch(/in-view/i);
     expect(app.document.getElementById('navRaidSingle').getAttribute('title')).not.toMatch(/cross-portfolio/i);
     expect(q('[data-view="portfolio"]')).toMatch(/all customers/i);
     app.teardown();
@@ -98,14 +96,12 @@ describe('IA 1a — "This customer" nav chip + customer-mode RAID hiding', () =>
     app.teardown();
   });
 
-  it('customer mode relabels only the single-customer RAID (not the all-customers entry)', async () => {
+  it('customer mode relabels the single RAID nav item to plain language', async () => {
     const app = await boot();
     app.App.setActiveCustomer('Acme Industries');
     app.App.customerMode = true;
     app.App._applyCustomerMode();
     expect(app.document.getElementById('navRaidSingle').textContent).toMatch(/Risks & Decisions/);
-    // the all-customers RAID entry keeps its label (it is CSS-hidden in customer mode, not relabelled)
-    expect(app.document.getElementById('navRaidAll').textContent).toMatch(/all customers/i);
     app.App.customerMode = false; app.App._applyCustomerMode();
     app.teardown();
   });
