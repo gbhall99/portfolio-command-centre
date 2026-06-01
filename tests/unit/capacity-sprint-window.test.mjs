@@ -1,36 +1,31 @@
-// Capacity: show at most one past sprint, the current sprint, and all future sprints.
+// Capacity "Team Workload by Sprint" grid windows sprints to at most one most-recent
+// past sprint + the current sprint + all futures, and emphasises the focus sprint.
 //
 // NOTE: App.validateAndLoad unconditionally overwrites end_date to start_date + 34 days,
-// so we must build start_dates relative to today such that the "current" sprint's
-// start_date falls within the last 34 days and the "past" sprints' start_dates are older.
+// so we set only start_date and let the loader compute end_date. Dates are computed once
+// at fixture-build time relative to today so the test does not bitrot or straddle midnight.
 
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makeProject } from '../harness/fixtures.mjs';
 
-// Build a dataset with 3 past sprints + 1 current (start within last 33 days) + 2 future.
-// Dates are computed dynamically so the test does not bitrot.
-function datasetWithSprints() {
-  const today = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  const addDays = (base, n) => { const d = new Date(base); d.setDate(d.getDate() + n); return d; };
+// ISO date offset from today (computed once per fixture build).
+const iso = (offsetDays) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().split('T')[0];
+};
 
-  // Each sprint is 35 days wide (start_date to start_date + 34).
-  // Current sprint: starts 1 day ago so today is inside [start, start+34].
-  const currentStart = addDays(today, -1);
-  const s3Start = addDays(currentStart, -35);
-  const s2Start = addDays(s3Start, -35);
-  const s1Start = addDays(s2Start, -35);
-  const f1Start = addDays(currentStart, 35);
-  const f2Start = addDays(f1Start, 35);
-
+// 6 sprints with distinct, identifiable stripped titles (card title strips /^CY\d+-/):
+//   PA1/PA2/PA3 past (PA3 most recent), CUR current (spans today), FU1/FU2 future.
+function datasetWithCurrent() {
   const sprints = [
-    { sprint_id: 'CY24-S1', start_date: iso(s1Start) },
-    { sprint_id: 'CY24-S2', start_date: iso(s2Start) },
-    { sprint_id: 'CY24-S3', start_date: iso(s3Start) },
-    { sprint_id: 'CY99-S4', start_date: iso(currentStart) }, // current — start yesterday, end in 33d
-    { sprint_id: 'CY99-S5', start_date: iso(f1Start) },
-    { sprint_id: 'CY99-S6', start_date: iso(f2Start) }
+    { sprint_id: 'CY24-PA1', start_date: iso(-150) }, // ends -116 → past
+    { sprint_id: 'CY24-PA2', start_date: iso(-110) }, // ends -76  → past
+    { sprint_id: 'CY24-PA3', start_date: iso(-40) },  // ends -6   → most recent past
+    { sprint_id: 'CY24-CUR', start_date: iso(-1) },   // spans today → current
+    { sprint_id: 'CY24-FU1', start_date: iso(40) },   // future
+    { sprint_id: 'CY24-FU2', start_date: iso(80) }    // future
   ];
   return makeDataset({
     projects: [makeProject({ id: 'P1', customer: 'Acme Industries' })],
@@ -39,21 +34,14 @@ function datasetWithSprints() {
   });
 }
 
-// Between-cycles dataset: NO sprint spans today. One past sprint ends before today,
-// the next sprint starts after today (a gap over today). validateAndLoad forces
-// end_date = start_date + 34, so compute starts relative to now to stay deterministic.
+// Same fixture but with the CUR sprint removed: no sprint spans today.
 function datasetBetweenCycles() {
-  const today = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  const addDays = (base, n) => { const d = new Date(base); d.setDate(d.getDate() + n); return d; };
-  // last past: starts today-40 => ends today-6 (before today)
-  // nearest future: starts today+5 => ends today+39
-  // another future: starts today+45
   const sprints = [
-    { sprint_id: 'CY24-S1', start_date: iso(addDays(today, -80)) },
-    { sprint_id: 'CY24-S2', start_date: iso(addDays(today, -40)) },
-    { sprint_id: 'CY99-S3', start_date: iso(addDays(today, 5)) },  // nearest future — focus
-    { sprint_id: 'CY99-S4', start_date: iso(addDays(today, 45)) }
+    { sprint_id: 'CY24-PA1', start_date: iso(-150) },
+    { sprint_id: 'CY24-PA2', start_date: iso(-110) },
+    { sprint_id: 'CY24-PA3', start_date: iso(-40) },
+    { sprint_id: 'CY24-FU1', start_date: iso(40) },
+    { sprint_id: 'CY24-FU2', start_date: iso(80) }
   ];
   return makeDataset({
     projects: [makeProject({ id: 'P1', customer: 'Acme Industries' })],
@@ -62,67 +50,61 @@ function datasetBetweenCycles() {
   });
 }
 
-// Only-future dataset: every sprint starts in the future.
-function datasetOnlyFuture() {
-  const today = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  const addDays = (base, n) => { const d = new Date(base); d.setDate(d.getDate() + n); return d; };
-  const sprints = [
-    { sprint_id: 'CY99-S1', start_date: iso(addDays(today, 5)) },  // nearest future — focus
-    { sprint_id: 'CY99-S2', start_date: iso(addDays(today, 45)) },
-    { sprint_id: 'CY99-S3', start_date: iso(addDays(today, 85)) }
-  ];
-  return makeDataset({
-    projects: [makeProject({ id: 'P1', customer: 'Acme Industries' })],
-    customers: [{ name: 'Acme Industries', color: '#6366f1' }],
-    sprints
-  });
+function renderCapacityGrid(app) {
+  app.App.activeCustomer = 'Acme Industries';
+  app.App.navigate('capacity');
+  let grid = app.document.getElementById('sprintCapGrid');
+  if (!grid || !grid.querySelector('.sprint-cap-card')) {
+    app.Capacity.renderSprintCapacity();
+    grid = app.document.getElementById('sprintCapGrid');
+  }
+  return grid;
 }
 
-describe('Capacity sprint window', () => {
-  it('renders at most one Past sprint column and keeps current + futures', async () => {
-    const app = await loadApp(datasetWithSprints());
-    app.App.activeCustomer = 'Acme Industries';
-    app.Sprint.viewMode = 'swimlane';
-    const board = app.document.getElementById('sprintBoard');
-    expect(board).toBeTruthy();
-    app.Sprint.render();
-    const scope = board;
-    const pills = Array.from(scope.querySelectorAll('.sl-sprint-phase-pill')).map(p => p.textContent.trim().toLowerCase());
-    expect(pills.filter(t => t === 'past').length).toBeLessThanOrEqual(1);
-    expect(pills.filter(t => t === 'current').length).toBe(1);
-    expect(pills.filter(t => t === 'future').length).toBeGreaterThanOrEqual(1);
+describe('Capacity sprint window (Team Workload by Sprint grid)', () => {
+  it('windows to one past sprint + current + futures, current is the focus', async () => {
+    const app = await loadApp(datasetWithCurrent());
+    const grid = renderCapacityGrid(app);
+    expect(grid).toBeTruthy();
+
+    const cards = grid.querySelectorAll('.sprint-cap-card');
+    expect(cards.length).toBe(4);
+
+    const text = grid.textContent;
+    expect(text).toContain('PA3');
+    expect(text).toContain('CUR');
+    expect(text).toContain('FU1');
+    expect(text).toContain('FU2');
+    expect(text).not.toContain('PA1');
+    expect(text).not.toContain('PA2');
+
+    const focusCards = grid.querySelectorAll('.sprint-cap-card-focus');
+    expect(focusCards.length).toBe(1);
+    expect(focusCards[0].querySelector('.sprint-cap-title').textContent.trim()).toBe('CUR');
+
     app.teardown();
   });
 
-  it('between cycles (no current): one past, no current, futures kept, nearest future is focus', async () => {
+  it('between cycles (no current): nearest future is the focus', async () => {
     const app = await loadApp(datasetBetweenCycles());
-    app.App.activeCustomer = 'Acme Industries';
-    app.Sprint.viewMode = 'swimlane';
-    const board = app.document.getElementById('sprintBoard');
-    expect(board).toBeTruthy();
-    app.Sprint.render();
-    const scope = board;
-    const pills = Array.from(scope.querySelectorAll('.sl-sprint-phase-pill')).map(p => p.textContent.trim().toLowerCase());
-    expect(pills.filter(t => t === 'current').length).toBe(0);
-    expect(pills.filter(t => t === 'past').length).toBeLessThanOrEqual(1);
-    expect(pills.filter(t => t === 'future').length).toBeGreaterThanOrEqual(1);
-    expect(scope.querySelector('th.sl-sprint-focus')).toBeTruthy();
-    app.teardown();
-  });
+    const grid = renderCapacityGrid(app);
+    expect(grid).toBeTruthy();
 
-  it('only future sprints: no past, no current, nearest future is focus', async () => {
-    const app = await loadApp(datasetOnlyFuture());
-    app.App.activeCustomer = 'Acme Industries';
-    app.Sprint.viewMode = 'swimlane';
-    const board = app.document.getElementById('sprintBoard');
-    expect(board).toBeTruthy();
-    app.Sprint.render();
-    const scope = board;
-    const pills = Array.from(scope.querySelectorAll('.sl-sprint-phase-pill')).map(p => p.textContent.trim().toLowerCase());
-    expect(pills.filter(t => t === 'past').length).toBe(0);
-    expect(pills.filter(t => t === 'current').length).toBe(0);
-    expect(scope.querySelector('th.sl-sprint-focus')).toBeTruthy();
+    const cards = grid.querySelectorAll('.sprint-cap-card');
+    expect(cards.length).toBe(3);
+
+    const text = grid.textContent;
+    expect(text).toContain('PA3');
+    expect(text).toContain('FU1');
+    expect(text).toContain('FU2');
+    expect(text).not.toContain('PA1');
+    expect(text).not.toContain('PA2');
+    expect(text).not.toContain('CUR');
+
+    const focusCards = grid.querySelectorAll('.sprint-cap-card-focus');
+    expect(focusCards.length).toBe(1);
+    expect(focusCards[0].querySelector('.sprint-cap-title').textContent.trim()).toBe('FU1');
+
     app.teardown();
   });
 });
