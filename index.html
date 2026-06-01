@@ -8957,6 +8957,9 @@ const App = {
     // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
     const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'strategy', 'personas', 'activity', 'config'];
     if (on && hidden.indexOf(this.currentView) >= 0) this.navigate('portfolio');
+    // myactions is NOT hidden in customer mode, so it stays active. Re-render it so the owner
+    // filter toolbar (gated on App.customerMode) is recomputed when toggling mode in place.
+    if (typeof MyActions !== 'undefined' && this.currentView === 'myactions' && MyActions.render) MyActions.render();
   },
 
   toast(message, type) {
@@ -18265,6 +18268,12 @@ const Portfolio = {
    MyActions — cross-forum approvals + overdue actions (H9)
    ============================================================ */
 const MyActions = {
+  ownerFilter: '',
+  setOwnerFilter(value) {
+    this.ownerFilter = value || '';
+    this.render();
+  },
+
   collect() {
     if (!App.data) return { decisions: [], actions: [] };
     const esc = Dashboard.esc;
@@ -18305,7 +18314,29 @@ const MyActions = {
     const body = document.getElementById('myActionsBody');
     if (!body) return;
     const esc = Dashboard.esc;
-    const { decisions, actions, blockers } = this.collect();
+    const all = this.collect();
+    const decisions = all.decisions;
+    // Distinct owners across actions + blockers (non-empty), sorted.
+    const ownerSet = new Set();
+    all.actions.forEach(a => { if (a.action.owner) ownerSet.add(a.action.owner); });
+    all.blockers.forEach(b => { if (b.row.owner) ownerSet.add(b.row.owner); });
+    const owners = Array.from(ownerSet).sort((x, y) => x.localeCompare(y));
+    // Self-heal: if the active filter no longer matches any current owner (e.g. after a
+    // customer switch removed that person), fall back to All so the view never silently
+    // shows an empty list while the dropdown reads "All owners".
+    let activeOwner = this.ownerFilter;
+    if (activeOwner && owners.indexOf(activeOwner) === -1) { activeOwner = ''; this.ownerFilter = ''; }
+    const actions = activeOwner ? all.actions.filter(a => (a.action.owner || '') === activeOwner) : all.actions;
+    const blockers = activeOwner ? all.blockers.filter(b => (b.row.owner || '') === activeOwner) : all.blockers;
+    // Owner filter toolbar (hidden in customer mode — internal triage control).
+    const ownerToolbar = App.customerMode ? '' :
+      '<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px">' +
+        '<label for="actionsOwnerFilter" style="font-size:var(--fs-xs);color:var(--text-muted)">Owner</label>' +
+        '<select id="actionsOwnerFilter" onchange="MyActions.setOwnerFilter(this.value)" style="font-size:var(--fs-xs);padding:3px 8px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dark)">' +
+          '<option value=""' + (activeOwner === '' ? ' selected' : '') + '>All owners</option>' +
+          owners.map(o => '<option value="' + esc(o) + '"' + (activeOwner === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') +
+        '</select>' +
+      '</div>';
 
     const renderDecisionRow = (d) => {
       const cm = App.customerMode;
@@ -18374,17 +18405,17 @@ const MyActions = {
       '</div>' +
       '<div style="background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);overflow:hidden">' +
         '<div style="padding:10px 14px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center">' +
-          '<div><strong>Overdue actions</strong> <span style="color:var(--text-muted);font-size:11px">(' + actions.length + ')</span></div>' +
+          '<div><strong>Overdue actions</strong> <span style="color:var(--text-muted);font-size:11px">(' + actions.length + (activeOwner ? ' of ' + all.actions.length : '') + ')</span></div>' +
         '</div>' +
-        (actions.length ? actions.map(renderActionRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">No overdue actions.</div>') +
+        (actions.length ? actions.map(renderActionRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">' + (activeOwner ? 'No overdue actions for this owner.' : 'No overdue actions.') + '</div>') +
       '</div>' +
       '<div style="background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);overflow:hidden">' +
         '<div style="padding:10px 14px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center">' +
-          '<div><strong>Blockers — open issues &amp; top risks</strong> <span style="color:var(--text-muted);font-size:11px">(' + blockers.length + ')</span></div>' +
+          '<div><strong>Blockers — open issues &amp; top risks</strong> <span style="color:var(--text-muted);font-size:11px">(' + blockers.length + (activeOwner ? ' of ' + all.blockers.length : '') + ')</span></div>' +
         '</div>' +
-        (blockers.length ? blockers.map(renderBlockerRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">No open issues or high risks for this customer.</div>') +
+        (blockers.length ? blockers.map(renderBlockerRow).join('') : '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">' + (activeOwner ? 'No open issues or high risks for this owner.' : 'No open issues or high risks for this customer.') + '</div>') +
       '</div>';
-    body.innerHTML = html;
+    body.innerHTML = ownerToolbar + html;
 
     this.updateNavBadge();
   },
