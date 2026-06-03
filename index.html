@@ -444,8 +444,6 @@ body.customer-mode .nav-item[data-view="activity"],
 body.customer-mode .nav-item[data-view="config"],
 body.customer-mode #btnAddProject,
 body.customer-mode #btnExport { display: none !important; }
-/* R8 — never expose other customers' RAID rows during a screen-shared customer session. */
-body.customer-mode .raid-toolbar label { display: none !important; }
 .customer-mode-banner { display: none; align-items: center; gap: 10px; padding: 6px 14px; background: var(--accent-blue); color: #fff; font-size: 12px; font-weight: 600; }
 body.customer-mode .customer-mode-banner { display: flex; }
 .customer-mode-banner button { background: rgba(255,255,255,0.95); color: var(--accent); border: none; padding: var(--space-1) var(--space-4); border-radius: var(--radius-md); cursor: pointer; font-size: var(--fs-2xs); font-weight: var(--fw-bold); min-height: var(--control-h-sm); }
@@ -8931,8 +8929,8 @@ const App = {
     };
     setNavLabel('#navMyActions', on ? 'For your attention' : 'Actions');
     setNavLabel('#navRaidSingle', on ? 'Risks & Decisions' : 'RAID');
-    // R8: force RAID back to customer-scoped when entering customer mode, then refresh if it's the active view.
-    if (on && typeof RaidView !== 'undefined') { RaidView.showAll = false; if (this.currentView === 'raid' && RaidView.render) RaidView.render(); }
+    // Refresh RAID if it's the active view (it's always customer-scoped).
+    if (on && typeof RaidView !== 'undefined') { if (this.currentView === 'raid' && RaidView.render) RaidView.render(); }
     // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
     const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'strategy', 'personas', 'activity', 'config'];
     if (on && hidden.indexOf(this.currentView) >= 0) this.navigate('portfolio');
@@ -36836,11 +36834,10 @@ const Report = {
    ============================================================ */
 const RaidView = {
   activeTab: 'risks',
-  showAll: false,        // retained false — RAID is always customer-scoped (toggle removed)
   sortKey: null,         // null => per-kind default (risks: score desc; others: project asc)
   sortDir: 'desc',
 
-  // Sidebar badge: open risks + issues for the active customer (always customer-scoped, independent of the view toggle).
+  // Sidebar badge: open risks + issues for the active customer (always customer-scoped).
   updateNavBadge() {
     const badge = document.getElementById('navBadgeRaid');
     if (!badge || !App.data || !Array.isArray(App.data.projects)) return;
