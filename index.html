@@ -3546,6 +3546,18 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
           <span class="filter-label">Manager</span>
           <div class="multi-select" id="sprintFilterManager" data-field="manager"></div>
           <label class="toolbar-chk" title="Show effort in hours on chips instead of story points"><input type="checkbox" id="chipHoursMode" onchange="Sprint.toggleChipHoursMode(this.checked)"> Hours</label>
+          <span class="filter-label" style="margin-left:6px">Sprints</span>
+          <label class="toolbar-chk" style="gap:3px" title="How many past sprints to show">Past
+            <select id="sprintWindowPast" onchange="Sprint.setWindow('past', this.value)" style="font-size:var(--fs-2xs);padding:1px 4px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dark)">
+              <option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="all">All</option>
+            </select>
+          </label>
+          <span style="font-size:var(--fs-2xs);color:var(--text-muted)">&middot; Current &middot;</span>
+          <label class="toolbar-chk" style="gap:3px" title="How many future sprints to show">Future
+            <select id="sprintWindowFuture" onchange="Sprint.setWindow('future', this.value)" style="font-size:var(--fs-2xs);padding:1px 4px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dark)">
+              <option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="all">All</option>
+            </select>
+          </label>
           <span id="solverStalenessChip" class="solver-stale-chip" style="display:none" onclick="Sprint.autoAllocate()" role="button" tabindex="0" aria-label="Solver output may be out of date — click to re-run"></span>
           <div class="toolbar-spacer"></div>
           <button class="btn btn-add btn-sm" onclick="DetailPanel.quickAdd()">+ New Project</button>
@@ -27463,6 +27475,7 @@ const Sprint = {
 
   render() {
     if (!App.data) return;
+    this._syncWindowControls();
     const board = document.getElementById('sprintBoard');
     if (this.sprintView === 'team') {
       this.renderTeamSwimlane(board);
@@ -28052,6 +28065,25 @@ const Sprint = {
       '</div>' +
       splitBtn +
     '</div>';
+  },
+
+  setWindow(which, value) {
+    if (which !== 'past' && which !== 'future') return;
+    const cur = this._windowOpts();
+    const v = value === 'all' ? 'all' : Math.max(0, parseInt(value, 10) || 0);
+    const next = { past: cur.past, future: cur.future };
+    next[which] = v;
+    App.uiStateSet('sprint.window', next);
+    this.render();
+  },
+
+  // Reflect the persisted window in the toolbar selects (static options; set .value).
+  _syncWindowControls() {
+    const cfg = this._windowOpts();
+    const past = document.getElementById('sprintWindowPast');
+    const future = document.getElementById('sprintWindowFuture');
+    if (past) past.value = String(cfg.past);
+    if (future) future.value = String(cfg.future);
   },
 
   // Persisted sprint-window setting → normalised { past, future } (int >= 0 or 'all').
