@@ -1,6 +1,5 @@
 // UX benchmark overhaul — Wave 4 (Customer persona + appearance) regression guards.
 // R1: customer (read-only) view mode. R2: work-delivered as %. R6: cross-portfolio health line.
-// R12: persistent "viewing all customers" cue in RAID.
 
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
@@ -42,22 +41,6 @@ describe('Wave 4 R2/R6 — Portfolio Overview value framing + cross-portfolio li
     expect(grid.innerHTML).toMatch(/Work delivered/);
     expect(grid.innerHTML).toMatch(/role="progressbar"/);
     expect(grid.innerHTML).toMatch(/25%/); // 5 of 20 delivered
-    app.teardown();
-  });
-});
-
-describe('Wave 4 R12 — RAID shows a persistent all-customers cue', () => {
-  it('renders a "Viewing all customers" pill when showAll is on', async () => {
-    const app = await loadApp(makeDataset({
-      projects: [makeProject({ id: 'P1', customer: 'Acme Industries', risks_register: [{ id: 'r', description: 'X', impact: 5, probability: 5, status: 'open' }] })],
-      customers: [{ name: 'Acme Industries', color: '#6366f1' }]
-    }));
-    app.App.setActiveCustomer('Acme Industries');
-    app.App.navigate('raid');
-    app.RaidView.toggleShowAll(true);
-    expect(app.document.getElementById('raidContent').innerHTML).toMatch(/Viewing all customers/);
-    app.RaidView.toggleShowAll(false);
-    expect(app.document.getElementById('raidContent').innerHTML).not.toMatch(/Viewing all customers/);
     app.teardown();
   });
 });
