@@ -1,5 +1,5 @@
 // IA Goal 1a — portfolio-wide vs single-customer menu clarity.
-// Verifies scope-first section headers, the single RAID destination (scope is an in-view toggle),
+// Verifies scope-first section headers, the single RAID destination (scoped to the active customer),
 // the VIEW_SCOPE map, the titlebar scope badge, and the "This customer" nav chip.
 
 import { describe, it, expect } from 'vitest';
@@ -33,26 +33,27 @@ describe('IA 1a — scope-first section headers', () => {
 });
 
 describe('IA 1a — RAID is a single, unambiguous nav destination', () => {
-  it('exactly one raid nav item exists; scope defaults to this-customer via onclick', async () => {
+  it('exactly one raid nav item exists; onclick navigates to the customer-scoped RAID view', async () => {
     const app = await boot();
     const raids = app.document.querySelectorAll('.nav-item[data-view="raid"]');
     expect(raids).toHaveLength(1);
     expect(app.document.getElementById('navRaidAll')).toBeFalsy();
     const single = app.document.getElementById('navRaidSingle');
     expect(single).toBeTruthy();
-    expect(single.getAttribute('onclick')).toMatch(/showAll\s*=\s*false/);
+    expect(single.getAttribute('onclick')).toMatch(/App\.navigate\(['"]raid['"]\)/);
+    expect(single.getAttribute('onclick')).not.toMatch(/showAll/);
     app.teardown();
   });
 });
 
 describe('IA 1a — single-customer view titles signal scope', () => {
-  it('dashboard/roadmap/backlog titles say "this customer"; portfolio says "all customers"; RAID notes its in-view toggle', async () => {
+  it('dashboard/roadmap/backlog titles say "this customer"; portfolio says "all customers"; RAID notes it is scoped to active customer', async () => {
     const app = await boot();
     const q = sel => app.document.querySelector(sel).getAttribute('title') || '';
     expect(q('[data-view="dashboard"]')).toMatch(/this customer/i);
     expect(q('[data-view="roadmap"]')).toMatch(/this customer/i);
     expect(q('[data-view="backlog"]')).toMatch(/this customer/i);
-    expect(app.document.getElementById('navRaidSingle').getAttribute('title')).toMatch(/in-view/i);
+    expect(app.document.getElementById('navRaidSingle').getAttribute('title')).toMatch(/active customer/i);
     expect(app.document.getElementById('navRaidSingle').getAttribute('title')).not.toMatch(/cross-portfolio/i);
     expect(q('[data-view="portfolio"]')).toMatch(/all customers/i);
     app.teardown();
@@ -66,8 +67,8 @@ describe('IA 1a — VIEW_SCOPE map + titlebar scope badge', () => {
     expect(app.App.VIEW_SCOPE.dashboard).toBe('one');
     expect(app.App.VIEW_SCOPE.activity).toBe('system');
     expect(app.App.VIEW_SCOPE.config).toBe('system');
-    // RAID scope is dynamic.
-    app.RaidView.showAll = true; expect(app.App._viewScope('raid')).toBe('all');
+    // RAID is always customer-scoped (all-customers toggle removed).
+    app.RaidView.showAll = true; expect(app.App._viewScope('raid')).toBe('one');
     app.RaidView.showAll = false; expect(app.App._viewScope('raid')).toBe('one');
     app.teardown();
   });
