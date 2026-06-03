@@ -1873,6 +1873,7 @@ html[data-theme="dark"] .sl-skill-chip:focus-visible { outline-color: #f8fafc; b
 .sprint-swimlane th.sl-sprint-current,
 .sprint-swimlane td.sl-sprint-current { background: rgba(59, 130, 246, 0.06) !important; border-left: 3px solid var(--accent-blue); }
 .sprint-swimlane th.sl-sprint-current { color: var(--text-dark); }
+.sprint-swimlane th.sl-sprint-hdr.sl-sprint-current { min-width: 200px; max-width: 240px; }
 .sl-sprint-phase-pill { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; }
 .sl-sprint-phase-past { background: rgba(148, 163, 184, 0.18); color: var(--text-muted); }
 .sl-sprint-phase-current { background: rgba(59, 130, 246, 0.18); color: var(--accent-blue); }
@@ -28090,7 +28091,7 @@ const Sprint = {
 
   renderSwimLane(board) {
     const projects = this.getFilteredProjects().sort((a, b) => (a.priority || 999) - (b.priority || 999));
-    const sprints = App.data.sprints || [];
+    const { sprints } = this._windowedSprints(App.data.sprints);
     const customerFilter = App.activeCustomer || '';
     // Per-sprint holiday-aware capacity cache
     const sprintCapCache = {};
@@ -28327,7 +28328,7 @@ const Sprint = {
     if (!App.data) return;
     const customer = App.activeCustomer || '';
     if (!customer) { board.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">Select a customer to view the team.</div>'; return; }
-    const sprints = App.data.sprints || [];
+    const { sprints } = Sprint._windowedSprints(App.data.sprints);
     if (!sprints.length) { board.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted)">No sprints defined.</div>'; return; }
 
     const skillColors = Sprint.SKILL_COLORS;
@@ -28734,7 +28735,7 @@ const Sprint = {
           }
           // Re-render the multi-select bar
           var existingBar = board.querySelector('.sl-multi-move-bar');
-          var barHtml = self.renderMultiSelectBar(App.data.sprints || []);
+          var barHtml = self.renderMultiSelectBar(Sprint._windowedSprints(App.data.sprints).sprints);
           if (existingBar) {
             if (barHtml) existingBar.outerHTML = barHtml;
             else existingBar.remove();
