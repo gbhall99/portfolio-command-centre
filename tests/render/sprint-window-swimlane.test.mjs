@@ -49,12 +49,15 @@ describe('Sprint Planning swim-lane window', () => {
   it('default window shows 1 past + current + all future', async () => {
     const app = await boot();
     const board = renderProjectsSwimlane(app);
-    const hdrs = Array.from(board.querySelectorAll('th.sl-sprint-hdr')).map(th => th.textContent);
+    const hdrTexts = Array.from(board.querySelectorAll('th.sl-sprint-hdr')).map(th => th.textContent.trim());
     expect(board.querySelectorAll('th.sl-sprint-hdr').length).toBe(4); // CY-P1, CY-CUR, CY-F1, CY-F2
-    expect(hdrs.join(' ')).not.toMatch(/P2/);
-    expect(hdrs.join(' ')).toMatch(/CUR/);
-    expect(hdrs.join(' ')).toMatch(/F1/);
-    expect(hdrs.join(' ')).toMatch(/F2/);
+    // Each header begins with the exact sprint id (renderer only strips a CY<digits>- prefix, so
+    // CY-CUR stays "CY-CUR") immediately followed by the capitalised phase word (Past/Current/Future).
+    // Anchor on that boundary so F1 can't match F11 and CUR can't match a substring. P2 is windowed out.
+    expect(hdrTexts.some(t => /^CY-CUR(Past|Current|Future)/.test(t))).toBe(true);
+    expect(hdrTexts.some(t => /^CY-F1(Past|Current|Future)/.test(t))).toBe(true);
+    expect(hdrTexts.some(t => /^CY-F2(Past|Current|Future)/.test(t))).toBe(true);
+    expect(hdrTexts.some(t => /^CY-P2(Past|Current|Future)/.test(t))).toBe(false);
     app.teardown();
   });
   it('past:0, future:1 shows current + 1 future only', async () => {
@@ -80,10 +83,10 @@ describe('Sprint Planning TEAM swim-lane window', () => {
     app.Sprint.setSprintView('team');
     app.Sprint.render();
     const board = app.document.getElementById('sprintBoard');
-    const hdrs = Array.from(board.querySelectorAll('th.sl-sprint-hdr')).map(th => th.textContent);
+    const hdrTexts = Array.from(board.querySelectorAll('th.sl-sprint-hdr')).map(th => th.textContent.trim());
     expect(board.querySelectorAll('th.sl-sprint-hdr').length).toBe(4); // CY-P1, CY-CUR, CY-F1, CY-F2
-    expect(hdrs.join(' ')).not.toMatch(/P2/);
-    expect(hdrs.join(' ')).toMatch(/CUR/);
+    expect(hdrTexts.some(t => /^CY-P2(Past|Current|Future)/.test(t))).toBe(false);
+    expect(hdrTexts.some(t => /^CY-CUR(Past|Current|Future)/.test(t))).toBe(true);
     app.teardown();
   });
 });
