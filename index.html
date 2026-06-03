@@ -550,6 +550,8 @@ html[data-theme="dark"] .cmdk-input { color: var(--text-dark); }
 .main-content { flex: 1; overflow: auto; display: flex; flex-direction: column; -webkit-overflow-scrolling: touch; }
 .view { display: none; flex: 1; flex-direction: column; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 .view.active { display: flex; }
+body.no-data .view { display: none !important; }
+body.no-data .view-titlebar { display: none !important; }
 
 .file-loader-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; padding: 40px; gap: 24px; }
 .file-loader-screen.hidden { display: none; }
@@ -4268,6 +4270,7 @@ const App = {
   MAX_UNDO: 50,
 
   init() {
+    if (!this.data) document.body.classList.add('no-data');
     this.loadThemePreferences();
     try { SyncGuard.init(); } catch (e) {}
     this.checkStorageAvailability();
@@ -5753,6 +5756,7 @@ const App = {
   onDataLoaded() {
     // Hydrate settings defaults before any UI/solver code reads them.
     this._ensureSettingsDefaults();
+    document.body.classList.remove('no-data');
     // Clear stale activeCustomer (in-memory + localStorage) if the previously-active
     // customer is no longer in data.customers. Otherwise the header dropdown would
     // display a customer that the loaded dataset doesn't contain.
@@ -7430,7 +7434,7 @@ const App = {
         viewName = 'dashboard';
       }
     }
-    if (!this.data && viewName !== 'dashboard' && viewName !== 'portfolio') return;
+    if (!this.data) return;
     // L15: encode current view into the URL hash so it can be shared.
     try {
       const hash = '#view=' + encodeURIComponent(viewName) + (this.activeCustomer && viewName !== 'portfolio' ? '&customer=' + encodeURIComponent(this.activeCustomer) : '');
