@@ -28053,10 +28053,24 @@ const Sprint = {
     '</div>';
   },
 
-  // Capacity window: at most one most-recent past sprint + current + all futures.
-  // Returns { sprints, focusId }. focusId is the sprint to emphasise: the current
-  // sprint if one spans today, else the nearest upcoming sprint, else null.
-  _windowedSprints(all) {
+  // Persisted sprint-window setting → normalised { past, future } (int >= 0 or 'all').
+  _windowOpts() {
+    const raw = (App.uiStateGet && App.uiStateGet('sprint.window', { past: 1, future: 'all' })) || {};
+    const norm = (v, d) => {
+      if (v === 'all') return 'all';
+      if (Number.isInteger(v) && v >= 0) return v;
+      if (typeof v === 'string' && /^\d+$/.test(v)) return parseInt(v, 10);
+      return d;
+    };
+    return { past: norm(raw.past, 1), future: norm(raw.future, 'all') };
+  },
+
+  // Window the sprint list: keep the last `past` past sprints, the current sprint(s),
+  // and the first `future` future sprints ('all' => all, 0 => none). Current is always
+  // shown. focusId = current sprint, else nearest upcoming (between cycles).
+  _windowedSprints(all, opts) {
+    const base = this._windowOpts();
+    const cfg = opts ? { past: opts.past != null ? opts.past : base.past, future: opts.future != null ? opts.future : base.future } : base;
     const list = (all || []).slice().sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
     const todayISO = new Date().toISOString().split('T')[0];
     const phase = (s) => {
@@ -28067,8 +28081,10 @@ const Sprint = {
     const pasts = list.filter(s => phase(s) === 'past');
     const currents = list.filter(s => phase(s) === 'current');
     const futures = list.filter(s => phase(s) === 'future');
-    const sprints = (pasts.length ? [pasts[pasts.length - 1]] : []).concat(currents).concat(futures);
-    const focusId = currents.length ? currents[0].sprint_id : (futures.length ? futures[0].sprint_id : null);
+    const keepPast = cfg.past === 'all' ? pasts : pasts.slice(Math.max(0, pasts.length - cfg.past));
+    const keepFuture = cfg.future === 'all' ? futures : futures.slice(0, cfg.future);
+    const sprints = keepPast.concat(currents).concat(keepFuture);
+    const focusId = currents.length ? currents[0].sprint_id : (keepFuture.length ? keepFuture[0].sprint_id : null);
     return { sprints, focusId };
   },
 
