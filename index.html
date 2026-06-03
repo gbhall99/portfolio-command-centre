@@ -19016,7 +19016,7 @@ const DetailPanel = {
       this._focusTrapHandler = (e) => {
         const panel = document.getElementById('detailPanel');
         if (!panel || !panel.classList.contains('open')) return;
-        // A11Y-1: ESC closes the dialog (via close(), so the blur-flush + unsaved-changes guard still run),
+        // A11Y-1: ESC closes the dialog (via close(), so the blur-flush still runs),
         // matching every other modal/drawer in the app.
         if (e.key === 'Escape') { e.preventDefault(); DetailPanel.close(); return; }
         if (e.key !== 'Tab') return;
@@ -19038,36 +19038,9 @@ const DetailPanel = {
     if (active && panel && panel.contains(active) && typeof active.blur === 'function') {
       active.blur();
     }
-    // After the blur flush, check whether any field still has a DOM value that disagrees with
-    // stored state. That would mean a pending change that couldn't be auto-saved — warn first.
-    // Both sides normalise through the same function so edge cases don't trigger false
-    // positives: missing stored booleans were previously compared as "" vs "false" on every
-    // unchecked checkbox, firing the warning even when the user hadn't touched the panel.
-    const p = this.currentId && App.data ? App.data.projects.find(pr => pr.id === this.currentId) : null;
-    if (p) {
-      const normalize = (v, isBool) => {
-        if (isBool) return v ? 'true' : 'false';
-        if (v == null) return '';
-        return String(v).trim();
-      };
-      const pending = [];
-      panel.querySelectorAll('[data-field]').forEach(el => {
-        const f = el.dataset.field;
-        if (!f) return;
-        // Skip elements that aren't real form inputs (e.g. filter multi-selects tagged with
-        // data-field for other purposes) — they'd always mismatch the flat p[f] lookup.
-        if (!('value' in el) && el.type !== 'checkbox') return;
-        const isCheckbox = el.type === 'checkbox';
-        const domVal = isCheckbox ? normalize(el.checked, true) : normalize(el.value, false);
-        const dataVal = isCheckbox ? normalize(!!p[f], true) : normalize(p[f], false);
-        if (domVal !== dataVal) pending.push(f);
-      });
-      if (pending.length) {
-        const sample = pending.slice(0, 3).join(', ') + (pending.length > 3 ? ' (+' + (pending.length - 3) + ' more)' : '');
-        const proceed = confirm('You have unsaved changes in: ' + sample + '.\n\nClose without saving?');
-        if (!proceed) return;
-      }
-    }
+    // Fields auto-save on blur via App.updateProject; the blur above flushes the focused
+    // field, so close silently. Genuine persistence failures surface via the storage-full
+    // toast independently — no close-time confirm.
     panel.classList.remove('open');
     panel.setAttribute('aria-modal', 'false');
     document.getElementById('panelOverlay').classList.remove('open');
