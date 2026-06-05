@@ -8501,26 +8501,39 @@ const App = {
   },
 
   _renderAnnualHolidaysCard() {
+    const esc = Dashboard.esc;
+    const allTag = '<span style="color:var(--text-muted);font-style:italic">All</span>';
+    const hols = (App.data && App.data.annual_holidays) || [];
+    let rows;
+    if (hols.length) {
+      const th = (t, align) => '<th style="text-align:' + (align || 'left') + ';padding:4px 6px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">' + t + '</th>';
+      rows = '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">' +
+        '<thead><tr style="border-bottom:2px solid var(--border-light)">' +
+          th('Name') + th('Date') + th('Country') + th('City') + th('Recurring', 'center') + '<th style="padding:4px 6px"></th>' +
+        '</tr></thead><tbody>' +
+        hols.map(function (h, i) {
+          const rec = h.recurring
+            ? '<svg width="12" height="12" viewBox="0 0 10 10" aria-label="recurring"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>'
+            : '-';
+          return '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" role="button" tabindex="0" aria-label="Edit ' + esc(h.name || '') + '"' +
+            ' onclick="App.openHolidayForm(' + i + ')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();App.openHolidayForm(' + i + ')}">' +
+            '<td style="padding:4px 6px">' + esc(h.name || '') + '</td>' +
+            '<td style="padding:4px 6px">' + esc(h.date || '') + '</td>' +
+            '<td style="padding:4px 6px">' + (h.country ? esc(h.country) : allTag) + '</td>' +
+            '<td style="padding:4px 6px">' + (h.sub_location ? esc(h.sub_location) : allTag) + '</td>' +
+            '<td style="padding:4px 6px;text-align:center">' + rec + '</td>' +
+            '<td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="event.stopPropagation();App.removeAnnualHoliday(' + i + ')" title="Remove" aria-label="Remove ' + esc(h.name || '') + '">&times;</button></td>' +
+          '</tr>';
+        }).join('') +
+        '</tbody></table>';
+    } else {
+      rows = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No annual holidays configured</div>';
+    }
     return '<div id="annualHolidaysCard" style="background:white;border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:16px">' +
-    '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
-    '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Holidays reduce capacity for team members in-scope. Leave scope blank (All) to apply company-wide, or pick specific customers (e.g. UK-only bank holidays).</div>' +
-    (function() {
-      var hols = (App.data && App.data.annual_holidays) || [];
-      var html = '';
-      if (hols.length) {
-        html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">';
-        html += '<thead><tr style="border-bottom:2px solid var(--border-light)"><th style="text-align:left;padding:4px 6px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Name</th><th style="text-align:left;padding:4px 6px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Date</th><th style="text-align:left;padding:4px 6px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Scope</th><th style="text-align:center;padding:4px 6px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Recurring</th><th style="padding:4px 6px"></th></tr></thead><tbody>';
-        hols.forEach(function(h, i) {
-          var scopeLabel = (h.customers && h.customers.length) ? h.customers.join(', ') : '<span style="color:var(--text-muted);font-style:italic">All</span>';
-          html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px 6px">' + Dashboard.esc(h.name || '') + '</td><td style="padding:4px 6px">' + Dashboard.esc(h.date || '') + '</td><td style="padding:4px 6px;font-size:var(--fs-2xs)">' + scopeLabel + '</td><td style="padding:4px 6px;text-align:center">' + (h.recurring ? '<svg width="12" height="12" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#22c55e"/><polyline points="3,5 4.5,7 7,3.5" fill="none" stroke="white" stroke-width="1.5"/></svg>' : '-') + '</td><td style="padding:4px 6px;text-align:center"><button style="border:none;background:none;color:var(--status-red);cursor:pointer;font-size:12px" onclick="App.removeAnnualHoliday(' + i + ')" title="Remove">&times;</button></td></tr>';
-        });
-        html += '</tbody></table>';
-      } else {
-        html += '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">No annual holidays configured</div>';
-      }
-      return html;
-    })() +
-    '<button class="btn btn-outline btn-sm" onclick="App.addAnnualHoliday()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Holiday</button>' +
+      '<h3 style="font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:12px">Annual Holidays</h3>' +
+      '<div style="font-size:12px;color:var(--text-dark-secondary);margin-bottom:8px">Holidays reduce capacity for team members in the matching country and city. Choose All / All to apply company-wide. Click a row to edit.</div>' +
+      rows +
+      '<button class="btn btn-outline btn-sm" onclick="App.openHolidayForm()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add holiday</button>' +
     '</div>';
   },
 
@@ -8831,7 +8844,7 @@ const App = {
     }
     // Holiday form modal — close via its handler so _holidayEditIndex is reset
     const holidayOverlay = document.getElementById('holidayFormOverlay');
-    if (holidayOverlay && holidayOverlay.offsetParent !== null) { this.closeHolidayForm(); return true; }
+    if (holidayOverlay) { this.closeHolidayForm(); return true; }
     for (const pair of pairs) {
       const overlay = document.getElementById(pair.overlay);
       const modal = pair.modal ? document.getElementById(pair.modal) : null;

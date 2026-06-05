@@ -141,4 +141,37 @@ describe('WS-C holiday add/edit modal form', () => {
     app.App.closeHolidayForm();
     app.teardown();
   });
+
+  it('dismissTopModal (Esc) closes the holiday form', async () => {
+    const app = await loadApp(makeDataset({ annual_holidays: [] }));
+    app.App.openHolidayForm();
+    expect(app.document.getElementById('holidayFormOverlay')).toBeTruthy();
+    const handled = app.App.dismissTopModal();
+    expect(handled).toBe(true);
+    expect(app.document.getElementById('holidayFormOverlay')).toBeFalsy();
+    expect(app.App._holidayEditIndex).toBe(null);
+    app.teardown();
+  });
+});
+
+describe('WS-C holidays settings card', () => {
+  it('renders Country/City columns with All for empty, no Scope column, and an edit affordance', async () => {
+    const app = await loadApp(makeDataset({
+      annual_holidays: [
+        { name: 'Global', date: '2026-01-01', recurring: true, country: '', sub_location: '' },
+        { name: 'India Fest', date: '2026-08-15', recurring: false, country: 'India', sub_location: 'Bangalore' }
+      ]
+    }));
+    const html = app.App._renderAnnualHolidaysCard();
+    expect(html).toMatch(/Country/);
+    expect(html).toMatch(/City/);
+    expect(html).not.toMatch(/Scope/);
+    expect(html).toMatch(/All/);
+    expect(html).toMatch(/India/);
+    expect(html).toMatch(/Bangalore/);
+    expect(html).toMatch(/openHolidayForm\(0\)/);   // row-click edit
+    expect(html).toMatch(/openHolidayForm\(\)/);     // add button
+    expect(html).not.toMatch(/addAnnualHoliday/);
+    app.teardown();
+  });
 });
