@@ -5026,6 +5026,7 @@ const App = {
     });
     (data.annual_holidays || []).forEach(ah => {
       if (ah && !('country' in ah)) ah.country = 'UK';
+      if (ah && 'customers' in ah) delete ah.customers;
     });
     // Multi-named baselines (D2.2). Back-fill from legacy project.allocation_baseline where present.
     if (!Array.isArray(data.baselines)) data.baselines = [];
@@ -27662,7 +27663,7 @@ const Sprint = {
 
   // Returns { name, customer, points, primarySkills, secondarySkills, skills } for one team member in one sprint.
   // Applies override → ramp → contract-end → per-person holiday + annual holiday reductions.
-  // `customerScope` is used for "Both"-tagged members to look up `capacity_by_customer[scope]` and for annual_holiday scoping.
+  // `customerScope` is used for "Both"-tagged members to look up `capacity_by_customer[scope]`.
   // Returns points=0 if member isn't eligible for the customer (unless member is "Both" or no customer scope).
   calcMemberCapacityForSprint(tm, sprintId, customerScope) {
     const out = { name: tm.name, customer: tm.customer, points: 0, primarySkills: [], secondarySkills: [], skills: [] };
@@ -27760,23 +27761,18 @@ const Sprint = {
       }
     });
 
-    // Annual holidays (scoped).
-    // Item 14 — country/sub-location filter applies on top of legacy customer scope.
-    // A holiday with `country` set applies only to members whose country matches.
+    // Annual holidays — country/sub-location scoped only (WS-C: customer scope removed).
+    // Item 14 — A holiday with `country` set applies only to members whose country matches.
     // A holiday with `sub_location` set is further restricted to members in that
-    // sub-location (e.g. India / Bangalore). Missing country = legacy global behaviour.
+    // sub-location (e.g. India / Bangalore). Missing country = applies to all members.
     const memberCountry = tm.country || 'UK';
     const memberSubLocation = tm.sub_location || '';
     let annualHols = (App.data && App.data.annual_holidays) || [];
     annualHols = annualHols.filter(ah => {
-      // Legacy customer-scope filter.
-      if (ah.customers && Array.isArray(ah.customers) && ah.customers.length > 0) {
-        if (customerScope && ah.customers.indexOf(customerScope) < 0) return false;
-      }
-      // Country filter (Item 14).
+      // Holidays apply by country/city only. Empty country = all countries;
+      // empty sub_location = whole country.
       if (ah.country) {
         if (ah.country !== memberCountry) return false;
-        // Sub-location: if the holiday is sub-location-scoped, member must match.
         if (ah.sub_location && ah.sub_location !== memberSubLocation) return false;
       }
       return true;
