@@ -2321,6 +2321,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .wiz-label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-dark); }
 .wiz-input { width: 100%; margin-top: 2px; padding: 6px 8px; border: 1px solid var(--border-dim); border-radius: var(--radius-sm); font-size: var(--fs-sm); background: var(--surface); color: var(--text-dark); box-sizing: border-box; }
 .wiz-input:focus { outline: none; border-color: var(--accent); }
+.wiz-input.wiz-invalid { border-color: var(--status-red); }
 .team-edit-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 9001; width: 380px; max-width: calc(100vw - 24px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; gap: 0; overflow-y: auto; }
 .team-edit-modal > h3 { flex-shrink: 0; margin-bottom: 14px; }
 .team-edit-modal > #teamEditFields,
@@ -8848,6 +8849,9 @@ const App = {
     // Holiday form modal — close via its handler so _holidayEditIndex is reset
     const holidayOverlay = document.getElementById('holidayFormOverlay');
     if (holidayOverlay) { this.closeHolidayForm(); return true; }
+    // Add-project wizard
+    const createWizard = document.getElementById('createWizard');
+    if (createWizard) { DetailPanel._closeCreateWizard(); return true; }
     for (const pair of pairs) {
       const overlay = document.getElementById(pair.overlay);
       const modal = pair.modal ? document.getElementById(pair.modal) : null;
@@ -22994,9 +22998,9 @@ const DetailPanel = {
           '<div data-wiz-step="1" class="wiz-step-content">' +
             '<div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:10px">Mandatory fields. Pick "Add details later →" to skip Steps 2 + 3 and finish now.</div>' +
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-              '<label class="wiz-label">Name *<br><input type="text" id="cwName" placeholder="New project name" class="wiz-input"></label>' +
-              '<label class="wiz-label">Customer *<br><select id="cwCustomer" onchange="DetailPanel._refreshCreateWizardForCustomer(this.value)" class="wiz-input">' + custOpts + '</select></label>' +
-              '<label class="wiz-label">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" class="wiz-input"></label>' +
+              '<label class="wiz-label">Name *<br><input type="text" id="cwName" placeholder="New project name" class="wiz-input" oninput="this.classList.remove(\'wiz-invalid\')"></label>' +
+              '<label class="wiz-label">Customer *<br><select id="cwCustomer" onchange="this.classList.remove(\'wiz-invalid\');DetailPanel._refreshCreateWizardForCustomer(this.value)" class="wiz-input">' + custOpts + '</select></label>' +
+              '<label class="wiz-label">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" class="wiz-input" oninput="this.classList.remove(\'wiz-invalid\')"></label>' +
               '<label class="wiz-label">Lifecycle stage<br><select id="cwLifecycle" class="wiz-input">' + lifeOpts + '</select></label>' +
             '</div>' +
           '</div>' +
@@ -23066,7 +23070,6 @@ const DetailPanel = {
         '</div>' +
       '</div>';
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) this._closeCreateWizard(); });
     document.body.appendChild(overlay);
     setTimeout(() => { const el = document.getElementById('cwName'); if (el) el.focus(); }, 30);
   },
@@ -23135,15 +23138,26 @@ const DetailPanel = {
   },
 
   // Move forward through the steps. Validates Step 1 before advancing.
+  // Validate Step-1 mandatory fields; apply the red cue to the first offender and toast.
+  // Returns true if valid. Used by both Next and the create paths.
+  _validateWizardStep1() {
+    const nameEl = document.getElementById('cwName');
+    const custEl = document.getElementById('cwCustomer');
+    const sizeEl = document.getElementById('cwSize');
+    const name = (nameEl || {}).value || '';
+    const cust = (custEl || {}).value || '';
+    const size = parseInt((sizeEl || {}).value, 10) || 0;
+    [nameEl, custEl, sizeEl].forEach(el => { if (el) el.classList.remove('wiz-invalid'); });
+    if (!name.trim()) { if (nameEl) nameEl.classList.add('wiz-invalid'); App.toast('Project name is required', 'error'); return false; }
+    if (!cust) { if (custEl) custEl.classList.add('wiz-invalid'); App.toast('Customer is required', 'error'); return false; }
+    if (size <= 0) { if (sizeEl) sizeEl.classList.add('wiz-invalid'); App.toast('Total size must be greater than zero', 'error'); return false; }
+    return true;
+  },
+
   _wizardNext() {
     if (!this._cwState) return;
     if (this._cwState.step === 1) {
-      const name = (document.getElementById('cwName') || {}).value || '';
-      const cust = (document.getElementById('cwCustomer') || {}).value || '';
-      const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
-      if (!name.trim()) { App.toast('Project name is required', 'error'); return; }
-      if (!cust) { App.toast('Customer is required', 'error'); return; }
-      if (size <= 0) { App.toast('Total size must be greater than zero', 'error'); return; }
+      if (!this._validateWizardStep1()) return;
     }
     if (this._cwState.step >= 3) return;
     this._cwState.step += 1;
@@ -23268,12 +23282,7 @@ const DetailPanel = {
     const cust = (document.getElementById('cwCustomer') || {}).value || '';
     const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
     const lifecycle = (document.getElementById('cwLifecycle') || {}).value || App.LIFECYCLE_STAGE_DEFAULT;
-    if (!name.trim() || !cust || size <= 0) {
-      App.toast('Step 1 fields are mandatory: name, customer, size', 'error');
-      this._cwState.step = 1;
-      this._showWizardStep(1);
-      return;
-    }
+    if (!this._validateWizardStep1()) { if (this._cwState) { this._cwState.step = 1; } this._showWizardStep(1); return; }
 
     const skipped = this._cwState.skippedFields || {};
     const val = (id, field) => (!onlyStep1 && !skipped[field]) ? (document.getElementById(id) || {}).value || '' : '';
