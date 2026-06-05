@@ -8829,6 +8829,9 @@ const App = {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) { el.remove(); return true; }
     }
+    // Holiday form modal — close via its handler so _holidayEditIndex is reset
+    const holidayOverlay = document.getElementById('holidayFormOverlay');
+    if (holidayOverlay && holidayOverlay.offsetParent !== null) { this.closeHolidayForm(); return true; }
     for (const pair of pairs) {
       const overlay = document.getElementById(pair.overlay);
       const modal = pair.modal ? document.getElementById(pair.modal) : null;
@@ -10299,38 +10302,93 @@ const App = {
   },
 
   // --- Annual Holiday Management (REQ-CAP-02) ---
-  async addAnnualHoliday() {
+  _holidayEditIndex: null,
+
+  openHolidayForm(index) {
     if (!this.data) return;
     if (!this.data.annual_holidays) this.data.annual_holidays = [];
-    const name = await App.prompt({ title: 'Add annual holiday', body: 'Name of the holiday (e.g. Christmas Day).', placeholder: 'Holiday name' });
-    if (!name) return;
-    const date = await App.prompt({ title: 'Holiday date', body: 'Enter the date in YYYY-MM-DD format.', placeholder: '2026-12-25' });
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { App.toast('Invalid date format. Use YYYY-MM-DD', 'error'); return; }
-    const recurring = await App.confirm({ title: 'Recurring annual holiday?', body: 'Choose Yes to repeat this date every year. Choose No for a one-off holiday.', confirmLabel: 'Yes, recurring', cancelLabel: 'One-off' });
-    const customers = this.getCustomers();
-    const scopeRaw = await App.prompt({ title: 'Scope', body: 'Leave blank for ALL customers (global). Or enter a comma-separated list from: ' + customers.join(', '), placeholder: 'Blank for all' });
-    const scope = (scopeRaw || '').split(',').map(s => s.trim()).filter(Boolean);
-    const unknown = scope.filter(c => customers.indexOf(c) < 0);
-    if (unknown.length) { App.toast('These customer names don\u2019t exist yet: ' + unknown.join(', ') + '. Add them in Configuration \u203A Customers first, then re-add the holiday.', 'error'); return; }
-    // Slot F / Item 14 — capture country + sub-location.
-    const countryNames = (this.LOCATIONS || []).map(l => l.country);
-    const countryRaw = await App.prompt({ title: 'Country', body: 'Which country does this holiday apply to? One of: ' + countryNames.join(', '), placeholder: 'UK' });
-    let country = (countryRaw || 'UK').trim();
-    if (countryNames.indexOf(country) < 0) country = 'UK';
-    let sub_location = '';
-    const subs = this._subLocationsForCountry(country);
-    if (subs.length) {
-      const subRaw = await App.prompt({ title: 'Sub-location (optional)', body: 'Leave blank for the whole country. Or one of: ' + subs.join(', '), placeholder: 'Blank for all' });
-      sub_location = (subRaw || '').trim();
-      if (sub_location && subs.indexOf(sub_location) < 0) sub_location = '';
-    }
-    this.pushUndo('Add annual holiday');
-    this.data.annual_holidays.push({ name: name.trim(), date, recurring, customers: scope, country, sub_location });
+    const _existing = document.getElementById('holidayFormOverlay');
+    if (_existing) _existing.remove();
+    this._holidayEditIndex = (typeof index === 'number') ? index : null;
+    const h = this._holidayEditIndex != null ? (this.data.annual_holidays[this._holidayEditIndex] || {}) : {};
+    const esc = Dashboard.esc;
+    const curCountry = h.country || '';
+    const countryOpts = '<option value="">All countries</option>' +
+      (this.LOCATIONS || []).map(l => '<option value="' + esc(l.country) + '"' + (l.country === curCountry ? ' selected' : '') + '>' + esc(l.country) + '</option>').join('');
+    const subs = curCountry ? this._subLocationsForCountry(curCountry) : [];
+    const curCity = h.sub_location || '';
+    const cityOpts = '<option value="">All cities</option>' +
+      subs.map(s => '<option value="' + esc(s) + '"' + (s === curCity ? ' selected' : '') + '>' + esc(s) + '</option>').join('');
+    const fieldStyle = 'width:100%;padding:6px 8px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-dark);font-size:13px;box-sizing:border-box';
+    const labelStyle = 'display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--text-dark)';
+    const overlay = document.createElement('div');
+    overlay.className = 'team-edit-overlay';
+    overlay.id = 'holidayFormOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', this._holidayEditIndex != null ? 'Edit holiday' : 'Add holiday');
+    overlay.onclick = function () { App.closeHolidayForm(); };
+    const modal = document.createElement('div');
+    modal.className = 'team-edit-modal';
+    modal.onclick = function (e) { e.stopPropagation(); };
+    modal.innerHTML =
+      '<h3 style="font-size:15px;font-weight:700;color:var(--text-dark)">' + (this._holidayEditIndex != null ? 'Edit holiday' : 'Add holiday') + '</h3>' +
+      '<div class="team-edit-body" style="display:flex;flex-direction:column;gap:12px">' +
+        '<label style="' + labelStyle + '">Name<input type="text" id="holidayFormName" value="' + esc(h.name || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Date<input type="date" id="holidayFormDate" value="' + esc(h.date || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-dark)"><input type="checkbox" id="holidayFormRecurring"' + (h.recurring ? ' checked' : '') + '> Repeats every year</label>' +
+        '<label style="' + labelStyle + '">Country<select id="holidayFormCountry" onchange="App._holidayFormCountryChanged()" style="' + fieldStyle + '">' + countryOpts + '</select></label>' +
+        '<label style="' + labelStyle + '">City<select id="holidayFormCity" style="' + fieldStyle + '"' + (subs.length ? '' : ' disabled') + '>' + cityOpts + '</select></label>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">' +
+        '<button class="btn btn-outline btn-sm" onclick="App.closeHolidayForm()">Cancel</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="App.saveHolidayForm()">Save</button>' +
+      '</div>';
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    const nameEl = document.getElementById('holidayFormName');
+    if (nameEl && nameEl.focus) { try { nameEl.focus(); } catch (e) {} }
+  },
+
+  _holidayFormCountryChanged() {
+    const countrySel = document.getElementById('holidayFormCountry');
+    const citySel = document.getElementById('holidayFormCity');
+    if (!countrySel || !citySel) return;
+    const country = countrySel.value;
+    const subs = country ? this._subLocationsForCountry(country) : [];
+    citySel.innerHTML = '<option value="">All cities</option>' +
+      subs.map(s => '<option value="' + Dashboard.esc(s) + '">' + Dashboard.esc(s) + '</option>').join('');
+    citySel.value = '';
+    citySel.disabled = subs.length === 0;
+  },
+
+  saveHolidayForm() {
+    const nameEl = document.getElementById('holidayFormName');
+    const dateEl = document.getElementById('holidayFormDate');
+    if (!nameEl || !dateEl) return;
+    const name = (nameEl.value || '').trim();
+    const date = (dateEl.value || '').trim();
+    if (!name) { this.toast('Holiday needs a name', 'error'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { this.toast('Pick a valid date', 'error'); return; }
+    const recurring = !!document.getElementById('holidayFormRecurring').checked;
+    const country = document.getElementById('holidayFormCountry').value || '';
+    const city = document.getElementById('holidayFormCity').value || '';
+    const rec = { name, date, recurring, country, sub_location: city };
+    if (!this.data.annual_holidays) this.data.annual_holidays = [];
+    this.pushUndo(this._holidayEditIndex != null ? 'Edit annual holiday' : 'Add annual holiday');
+    if (this._holidayEditIndex != null) this.data.annual_holidays[this._holidayEditIndex] = rec;
+    else this.data.annual_holidays.push(rec);
     this.markDirty();
     this.saveToLocalStorage();
+    this.closeHolidayForm();
     this.renderConfig();
-    const scopeMsg = country + (sub_location ? ' / ' + sub_location : '') + (scope.length ? ' · ' + scope.join(', ') : '');
-    App.toast('Annual holiday added (' + scopeMsg + ')', 'success');
+    this.toast('Holiday saved', 'success');
+  },
+
+  closeHolidayForm() {
+    const o = document.getElementById('holidayFormOverlay');
+    if (o) o.remove();
+    this._holidayEditIndex = null;
   },
 
   async removeAnnualHoliday(idx) {
