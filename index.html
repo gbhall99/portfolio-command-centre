@@ -2318,6 +2318,10 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
    The team-edit case was the worst offender — editing a member with multiple skills,
    holidays, and sprint overrides produced a modal ~900px tall that overflowed the viewport
    and hid Save / Cancel. */
+.wiz-label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-dark); }
+.wiz-input { width: 100%; margin-top: 2px; padding: 6px 8px; border: 1px solid var(--border-dim); border-radius: var(--radius-sm); font-size: var(--fs-sm); background: var(--surface); color: var(--text-dark); box-sizing: border-box; }
+.wiz-input:focus { outline: none; border-color: var(--accent); }
+.wiz-input.wiz-invalid { border-color: var(--status-red); }
 .team-edit-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 9001; width: 380px; max-width: calc(100vw - 24px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; gap: 0; overflow-y: auto; }
 .team-edit-modal > h3 { flex-shrink: 0; margin-bottom: 14px; }
 .team-edit-modal > #teamEditFields,
@@ -8845,6 +8849,9 @@ const App = {
     // Holiday form modal — close via its handler so _holidayEditIndex is reset
     const holidayOverlay = document.getElementById('holidayFormOverlay');
     if (holidayOverlay) { this.closeHolidayForm(); return true; }
+    // Add-project wizard
+    const createWizard = document.getElementById('createWizard');
+    if (createWizard) { DetailPanel._closeCreateWizard(); return true; }
     for (const pair of pairs) {
       const overlay = document.getElementById(pair.overlay);
       const modal = pair.modal ? document.getElementById(pair.modal) : null;
@@ -22969,11 +22976,11 @@ const DetailPanel = {
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.55);padding:16px';
 
     const stepPill = (n, label, active) =>
-      '<span class="wiz-step" data-wiz-step-pill="' + n + '" style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;background:' + (active ? 'rgba(59,130,246,0.15)' : '#f1f5f9') + ';color:' + (active ? 'var(--accent-blue)' : 'var(--text-muted)') + '">' + n + '. ' + Dashboard.esc(label) + '</span>';
+      '<span class="wiz-step" data-wiz-step-pill="' + n + '" style="padding:3px 10px;border-radius:999px;font-size:var(--fs-xs);font-weight:600;background:' + (active ? 'var(--accent-soft)' : 'var(--surface-inset)') + ';color:' + (active ? 'var(--accent)' : 'var(--text-muted)') + '">' + n + '. ' + Dashboard.esc(label) + '</span>';
 
     overlay.innerHTML =
       '<div style="background:var(--surface,white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);max-width:640px;width:100%;max-height:90vh;overflow:auto;color:var(--text-dark)">' +
-        '<div style="padding:16px 20px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+        '<div style="padding:16px 20px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
           '<div>' +
             '<h3 id="cwTitle" style="margin:0;font-size:15px;font-weight:700">New project</h3>' +
             '<div style="display:flex;gap:6px;margin-top:8px" class="wiz-step-indicator">' +
@@ -22989,38 +22996,38 @@ const DetailPanel = {
 
           // ===== Step 1 — Identify (mandatory) =====
           '<div data-wiz-step="1" class="wiz-step-content">' +
-            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Mandatory fields. Pick "Add details later →" to skip Steps 2 + 3 and finish now.</div>' +
+            '<div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:10px">Mandatory fields. Pick "Add details later →" to skip Steps 2 + 3 and finish now.</div>' +
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
-              '<label style="font-size:11px;font-weight:600">Name *<br><input type="text" id="cwName" placeholder="New project name" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-              '<label style="font-size:11px;font-weight:600">Customer *<br><select id="cwCustomer" onchange="DetailPanel._refreshCreateWizardForCustomer(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + custOpts + '</select></label>' +
-              '<label style="font-size:11px;font-weight:600">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
-              '<label style="font-size:11px;font-weight:600">Lifecycle stage<br><select id="cwLifecycle" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + lifeOpts + '</select></label>' +
+              '<label class="wiz-label">Name *<br><input type="text" id="cwName" placeholder="New project name" class="wiz-input" oninput="this.classList.remove(\'wiz-invalid\')"></label>' +
+              '<label class="wiz-label">Customer *<br><select id="cwCustomer" onchange="this.classList.remove(\'wiz-invalid\');DetailPanel._refreshCreateWizardForCustomer(this.value)" class="wiz-input">' + custOpts + '</select></label>' +
+              '<label class="wiz-label">Total size (SP) *<br><input type="number" id="cwSize" value="20" min="1" step="1" class="wiz-input" oninput="this.classList.remove(\'wiz-invalid\')"></label>' +
+              '<label class="wiz-label">Lifecycle stage<br><select id="cwLifecycle" class="wiz-input">' + lifeOpts + '</select></label>' +
             '</div>' +
           '</div>' +
 
           // ===== Step 2 — Scope & value (skippable) =====
           '<div data-wiz-step="2" class="wiz-step-content" style="display:none">' +
-            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">All fields optional. Pick a template to auto-fill MoSCoW, phase flow, governance forum, and strategy linkage as <strong>Suggested</strong>.</div>' +
+            '<div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:10px">All fields optional. Pick a template to auto-fill MoSCoW, phase flow, governance forum, and strategy linkage as <strong>Suggested</strong>.</div>' +
             '<div class="wiz-field-row" data-wiz-field="template" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Template' + suggestedLabel('template') + '<br><select id="cwTemplate" onchange="DetailPanel._applyTemplateSuggestions(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + tplOpts + '</select></label>' +
+              '<label class="wiz-label" style="flex:1">Template' + suggestedLabel('template') + '<br><select id="cwTemplate" onchange="DetailPanel._applyTemplateSuggestions(this.value)" class="wiz-input">' + tplOpts + '</select></label>' +
               skipBtn('template') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="moscow" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">MoSCoW' + suggestedLabel('moscow') + '<br><select id="cwMoscow" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + moscowOpts + '</select></label>' +
+              '<label class="wiz-label" style="flex:1">MoSCoW' + suggestedLabel('moscow') + '<br><select id="cwMoscow" class="wiz-input">' + moscowOpts + '</select></label>' +
               skipBtn('moscow') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="sponsor" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
               // Item 1 — sponsor is a <select> sourced from customer.sponsors; refreshed when customer changes.
-              '<label style="flex:1;font-size:11px;font-weight:600">Sponsor' + suggestedLabel('sponsor') + '<br><select id="cwSponsor" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + this._cwSponsorOptions(defaultCust, '') + '</select></label>' +
+              '<label class="wiz-label" style="flex:1">Sponsor' + suggestedLabel('sponsor') + '<br><select id="cwSponsor" class="wiz-input">' + this._cwSponsorOptions(defaultCust, '') + '</select></label>' +
               skipBtn('sponsor') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="target_date" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Target date' + suggestedLabel('target_date') + '<br><input type="date" id="cwTargetDate" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              '<label class="wiz-label" style="flex:1">Target date' + suggestedLabel('target_date') + '<br><input type="date" id="cwTargetDate" class="wiz-input"></label>' +
               skipBtn('target_date') +
             '</div>' +
             // Item 1 — strategy linkage uses checkbox lists (objectives first per Item 4), not free-text IDs.
             '<div class="wiz-field-row" data-wiz-field="strategy_link" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' +
-              '<label style="font-size:11px;font-weight:600">Strategy linkage' + suggestedLabel('strategy_link') + '</label>' +
+              '<label class="wiz-label">Strategy linkage' + suggestedLabel('strategy_link') + '</label>' +
               '<div id="cwStrategyLinkBlock" style="display:flex;flex-direction:column;gap:6px">' + this._cwStrategyLinkHtml(defaultCust) + '</div>' +
               '<div style="text-align:right">' + skipBtn('strategy_link') + '</div>' +
             '</div>' +
@@ -23028,32 +23035,32 @@ const DetailPanel = {
 
           // ===== Step 3 — Delivery shape (skippable) =====
           '<div data-wiz-step="3" class="wiz-step-content" style="display:none">' +
-            '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">All fields optional. Defaults applied to omitted fields.</div>' +
+            '<div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:10px">All fields optional. Defaults applied to omitted fields.</div>' +
             '<div class="wiz-field-row" data-wiz-field="data_sourcing" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Data sourcing' + suggestedLabel('data_sourcing') + '<br><select id="cwDataSourcing" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' +
+              '<label class="wiz-label" style="flex:1">Data sourcing' + suggestedLabel('data_sourcing') + '<br><select id="cwDataSourcing" class="wiz-input">' +
                 ['Internal', 'External (GDAS)', 'External (Other)'].map(v => '<option value="' + v + '">' + v + '</option>').join('') +
               '</select></label>' +
               skipBtn('data_sourcing') +
             '</div>' +
             // Item 1 — phase flow is a checkbox toggle row, matching Delivery > Delivery Setup's flow widget.
             '<div class="wiz-field-row" data-wiz-field="phase_flow" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">' +
-              '<label style="font-size:11px;font-weight:600">Phase flow' + suggestedLabel('phase_flow') + '</label>' +
+              '<label class="wiz-label">Phase flow' + suggestedLabel('phase_flow') + '</label>' +
               '<div id="cwPhaseFlowBlock" style="display:flex;flex-wrap:wrap;gap:6px">' + this._cwPhaseFlowHtml(['Requirements', 'Data Engineering', 'Tableau', 'UAT']) + '</div>' +
               '<div style="text-align:right">' + skipBtn('phase_flow') + '</div>' +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="hard_deadline" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Hard deadline' + suggestedLabel('hard_deadline') + '<br><input type="date" id="cwHardDeadline" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px"></label>' +
+              '<label class="wiz-label" style="flex:1">Hard deadline' + suggestedLabel('hard_deadline') + '<br><input type="date" id="cwHardDeadline" class="wiz-input"></label>' +
               skipBtn('hard_deadline') +
             '</div>' +
             '<div class="wiz-field-row" data-wiz-field="governance_forum" style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px">' +
-              '<label style="flex:1;font-size:11px;font-weight:600">Governance forum' + suggestedLabel('governance_forum') + '<br><select id="cwGovernanceForum" style="width:100%;padding:6px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + forumOpts + '</select></label>' +
+              '<label class="wiz-label" style="flex:1">Governance forum' + suggestedLabel('governance_forum') + '<br><select id="cwGovernanceForum" class="wiz-input">' + forumOpts + '</select></label>' +
               skipBtn('governance_forum') +
             '</div>' +
           '</div>' +
 
         '</div>' +
 
-        '<div class="wiz-footer" style="padding:14px 20px;border-top:1px solid var(--border-light);display:flex;justify-content:space-between;gap:8px">' +
+        '<div class="wiz-footer" style="padding:14px 20px;border-top:1px solid var(--border-dim);display:flex;justify-content:space-between;gap:8px">' +
           '<button id="cwPrev" type="button" class="btn btn-ghost btn-sm" onclick="DetailPanel._wizardPrev()" style="visibility:hidden">&larr; Back</button>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
             '<button id="cwAddLater" type="button" class="btn btn-outline btn-sm wiz-add-later" onclick="DetailPanel._addDetailsLater()" title="Create now with just Step 1; finish details on the project page">Add details later &rarr;</button>' +
@@ -23063,7 +23070,6 @@ const DetailPanel = {
         '</div>' +
       '</div>';
 
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) this._closeCreateWizard(); });
     document.body.appendChild(overlay);
     setTimeout(() => { const el = document.getElementById('cwName'); if (el) el.focus(); }, 30);
   },
@@ -23099,7 +23105,7 @@ const DetailPanel = {
     const mkSel = (id, label, items, valueOf, labelOf) => {
       const opts = items.map(it => '<option value="' + esc(valueOf(it)) + '">' + esc(labelOf(it)) + '</option>').join('');
       return '<div><label style="font-size:var(--fs-2xs);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">' + label + '</label>' +
-        '<select multiple id="' + id + '" size="3" style="width:100%;padding:4px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:11px">' + opts + '</select></div>';
+        '<select multiple id="' + id + '" size="3" style="width:100%;padding:4px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:var(--fs-xs)">' + opts + '</select></div>';
     };
     return mkSel('cwObjectiveIds', 'Objectives', objectives, o => o.id, o => o.name) +
            mkSel('cwMetricIds',    'Metrics',    metrics,    m => m.id, m => m.name) +
@@ -23112,7 +23118,7 @@ const DetailPanel = {
     const esc = Dashboard.esc;
     return all.map(ph => {
       const isOn = sel.has(ph);
-      return '<label class="cw-phase-toggle" data-phase="' + esc(ph) + '" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:4px 8px;border:1px solid var(--border-light);border-radius:14px;background:' + (isOn ? 'rgba(59,130,246,0.1)' : 'var(--surface)') + ';color:' + (isOn ? 'var(--accent-blue)' : 'var(--text-dark-secondary)') + '">' +
+      return '<label class="cw-phase-toggle" data-phase="' + esc(ph) + '" style="display:inline-flex;align-items:center;gap:4px;font-size:var(--fs-xs);padding:4px 8px;border:1px solid var(--border-dim);border-radius:14px;background:' + (isOn ? 'var(--accent-soft)' : 'var(--surface)') + ';color:' + (isOn ? 'var(--accent)' : 'var(--text-dark-secondary)') + '">' +
         '<input type="checkbox" data-cw-phase="' + esc(ph) + '"' + (isOn ? ' checked' : '') + ' style="margin:0">' + esc(ph) +
       '</label>';
     }).join('');
@@ -23132,15 +23138,26 @@ const DetailPanel = {
   },
 
   // Move forward through the steps. Validates Step 1 before advancing.
+  // Validate Step-1 mandatory fields; apply the red cue to the first offender and toast.
+  // Returns true if valid. Used by both Next and the create paths.
+  _validateWizardStep1() {
+    const nameEl = document.getElementById('cwName');
+    const custEl = document.getElementById('cwCustomer');
+    const sizeEl = document.getElementById('cwSize');
+    const name = (nameEl || {}).value || '';
+    const cust = (custEl || {}).value || '';
+    const size = parseInt((sizeEl || {}).value, 10) || 0;
+    [nameEl, custEl, sizeEl].forEach(el => { if (el) el.classList.remove('wiz-invalid'); });
+    if (!name.trim()) { if (nameEl) nameEl.classList.add('wiz-invalid'); App.toast('Project name is required', 'error'); return false; }
+    if (!cust) { if (custEl) custEl.classList.add('wiz-invalid'); App.toast('Customer is required', 'error'); return false; }
+    if (size <= 0) { if (sizeEl) sizeEl.classList.add('wiz-invalid'); App.toast('Total size must be greater than zero', 'error'); return false; }
+    return true;
+  },
+
   _wizardNext() {
     if (!this._cwState) return;
     if (this._cwState.step === 1) {
-      const name = (document.getElementById('cwName') || {}).value || '';
-      const cust = (document.getElementById('cwCustomer') || {}).value || '';
-      const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
-      if (!name.trim()) { App.toast('Project name is required', 'error'); return; }
-      if (!cust) { App.toast('Customer is required', 'error'); return; }
-      if (size <= 0) { App.toast('Total size must be greater than zero', 'error'); return; }
+      if (!this._validateWizardStep1()) return;
     }
     if (this._cwState.step >= 3) return;
     this._cwState.step += 1;
@@ -23161,8 +23178,8 @@ const DetailPanel = {
     });
     root.querySelectorAll('[data-wiz-step-pill]').forEach(el => {
       const active = el.dataset.wizStepPill === String(n);
-      el.style.background = active ? 'rgba(59,130,246,0.15)' : '#f1f5f9';
-      el.style.color = active ? 'var(--accent-blue)' : 'var(--text-muted)';
+      el.style.background = active ? 'var(--accent-soft)' : 'var(--surface-inset)';
+      el.style.color = active ? 'var(--accent)' : 'var(--text-muted)';
     });
     const prev = document.getElementById('cwPrev');
     const next = document.getElementById('cwNext');
@@ -23265,12 +23282,7 @@ const DetailPanel = {
     const cust = (document.getElementById('cwCustomer') || {}).value || '';
     const size = parseInt((document.getElementById('cwSize') || {}).value, 10) || 0;
     const lifecycle = (document.getElementById('cwLifecycle') || {}).value || App.LIFECYCLE_STAGE_DEFAULT;
-    if (!name.trim() || !cust || size <= 0) {
-      App.toast('Step 1 fields are mandatory: name, customer, size', 'error');
-      this._cwState.step = 1;
-      this._showWizardStep(1);
-      return;
-    }
+    if (!this._validateWizardStep1()) { if (this._cwState) { this._cwState.step = 1; } this._showWizardStep(1); return; }
 
     const skipped = this._cwState.skippedFields || {};
     const val = (id, field) => (!onlyStep1 && !skipped[field]) ? (document.getElementById(id) || {}).value || '' : '';
