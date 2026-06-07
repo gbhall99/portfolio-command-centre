@@ -83,6 +83,18 @@ describe('F4 product form', () => {
     app.Products._closeForm();
     app.teardown();
   });
+  it('saving a product persists via saveToLocalStorage', async () => {
+    const app = await boot2();
+    let saved = 0;
+    const orig = app.App.saveToLocalStorage; app.App.saveToLocalStorage = function () { saved++; return orig && orig.apply(this, arguments); };
+    app.Products._openForm();
+    app.document.getElementById('pfName').value = 'Persisted';
+    app.Products._saveForm();
+    expect(saved).toBeGreaterThan(0);
+    expect(app.Products.list().some(p => p.name === 'Persisted')).toBe(true);
+    app.App.saveToLocalStorage = orig;
+    app.teardown();
+  });
   it('edit form lists linked projects', async () => {
     const app = await boot2();
     const rec = app.Products.add({ name: 'Linked', product_type: 'Application' });

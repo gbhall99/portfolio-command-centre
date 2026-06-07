@@ -49,7 +49,7 @@ describe('Delivery nav — chronological order', () => {
     const stratIdx = children.findIndex(c => c.classList.contains('nav-subsection-label') && /customer profile/i.test(c.textContent));
     expect(stratIdx).toBeGreaterThan(-1);
     const after = children.slice(stratIdx + 1).filter(c => c.classList.contains('nav-item')).map(c => c.getAttribute('data-view'));
-    expect(after.slice(0, 3)).toEqual(['strategy', 'personas', 'metrics']);
+    expect(after.slice(0, 4)).toEqual(['strategy', 'personas', 'metrics', 'products']);
     app.teardown();
   });
 
