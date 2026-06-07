@@ -2322,6 +2322,7 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .wiz-input { width: 100%; margin-top: 2px; padding: 6px 8px; border: 1px solid var(--border-dim); border-radius: var(--radius-sm); font-size: var(--fs-sm); background: var(--surface); color: var(--text-dark); box-sizing: border-box; }
 .wiz-input:focus { outline: none; border-color: var(--accent); }
 .wiz-input.wiz-invalid { border-color: var(--status-red); }
+.pf-invalid { border-color: var(--status-red) !important; }
 .team-edit-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 20px; z-index: 9001; width: 380px; max-width: calc(100vw - 24px); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-sizing: border-box; gap: 0; overflow-y: auto; }
 .team-edit-modal > h3 { flex-shrink: 0; margin-bottom: 14px; }
 .team-edit-modal > #teamEditFields,
@@ -8860,6 +8861,9 @@ const App = {
     // Holiday form modal — close via its handler so _holidayEditIndex is reset
     const holidayOverlay = document.getElementById('holidayFormOverlay');
     if (holidayOverlay) { this.closeHolidayForm(); return true; }
+    // Product form modal
+    const productForm = document.getElementById('productFormOverlay');
+    if (productForm) { Products._closeForm(); return true; }
     // Add-project wizard
     const createWizard = document.getElementById('createWizard');
     if (createWizard) { DetailPanel._closeCreateWizard(); return true; }
@@ -12831,6 +12835,90 @@ const Products = {
   linkedProjects(id) {
     return (App.data.projects || []).filter(pr => Array.isArray(pr.product_ids) && pr.product_ids.includes(id));
   }
+  ,_editId: null,
+  _parseList(v) { return (v || '').split(',').map(s => s.trim()).filter(Boolean); },
+  _openForm(id) {
+    if (!App.data) return;
+    const existing = document.getElementById('productFormOverlay');
+    if (existing) existing.remove();
+    this._editId = id || null;
+    const p = this._editId ? (this.byId(this._editId) || {}) : {};
+    const esc = Dashboard.esc;
+    const fieldStyle = 'width:100%;margin-top:2px;padding:6px 8px;border:1px solid var(--border-dim);border-radius:var(--radius-sm);font-size:var(--fs-sm);background:var(--surface);color:var(--text-dark);box-sizing:border-box';
+    const labelStyle = 'display:flex;flex-direction:column;gap:4px;font-size:var(--fs-xs);font-weight:600;color:var(--text-dark)';
+    const typeOpts = this.PRODUCT_TYPES.map(t => '<option value="' + esc(t) + '"' + ((p.product_type || 'Application') === t ? ' selected' : '') + '>' + esc(t) + '</option>').join('');
+    const linkedHtml = this._editId
+      ? (this.linkedProjects(this._editId).map(pr => '<span class="chip" style="cursor:pointer" onclick="Products._closeForm();DetailPanel.open(' + esc(JSON.stringify(pr.id)) + ')">' + esc(pr.name) + '</span>').join(' ') || '<span style="color:var(--text-muted);font-size:var(--fs-2xs)">No linked projects yet — link this product from a project.</span>')
+      : '';
+    const overlay = document.createElement('div');
+    overlay.className = 'team-edit-overlay';
+    overlay.id = 'productFormOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', this._editId ? 'Edit product' : 'Add product');
+    overlay.onclick = function () { Products._closeForm(); };
+    const modal = document.createElement('div');
+    modal.className = 'team-edit-modal';
+    modal.onclick = function (e) { e.stopPropagation(); };
+    modal.innerHTML =
+      '<h3 style="font-size:15px;font-weight:700;color:var(--text-dark)">' + (this._editId ? 'Edit product' : 'Add product') + '</h3>' +
+      '<div class="team-edit-body" style="display:flex;flex-direction:column;gap:12px">' +
+        '<label style="' + labelStyle + '">Name<input type="text" id="pfName" value="' + esc(p.name || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Type<select id="pfType" style="' + fieldStyle + '">' + typeOpts + '</select></label>' +
+        '<label style="' + labelStyle + '">Versions (comma-separated)<input type="text" id="pfVersions" value="' + esc((p.versions || []).join(', ')) + '" placeholder="v2.0, v1.9" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Product owner<input type="text" id="pfOwner" value="' + esc(p.product_owner || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Tech stack (comma-separated)<input type="text" id="pfTech" value="' + esc((p.tech_stack || []).join(', ')) + '" placeholder="React, Node, Postgres" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Description<textarea id="pfDescription" rows="3" style="' + fieldStyle + ';resize:vertical">' + esc(p.description || '') + '</textarea></label>' +
+        (this._editId ? '<div style="font-size:var(--fs-xs);font-weight:600;color:var(--text-dark)">Linked projects<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' + linkedHtml + '</div></div>' : '') +
+      '</div>' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:16px">' +
+        '<div>' + (this._editId ? '<button class="btn btn-outline btn-sm" style="color:var(--status-red)" onclick="Products._removeFromForm()">Remove</button>' : '') + '</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-outline btn-sm" onclick="Products._closeForm()">Cancel</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="Products._saveForm()">Save</button>' +
+        '</div>' +
+      '</div>';
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    const n = document.getElementById('pfName');
+    if (n && n.focus) { try { n.focus(); } catch (e) {} }
+  },
+  _saveForm() {
+    const nameEl = document.getElementById('pfName');
+    if (!nameEl) return;
+    const name = (nameEl.value || '').trim();
+    if (!name) { if (App.toast) App.toast('Product needs a name', 'error'); nameEl.classList.add('pf-invalid'); return; }
+    const rec = {
+      name,
+      product_type: document.getElementById('pfType').value || 'Application',
+      versions: this._parseList(document.getElementById('pfVersions').value),
+      product_owner: (document.getElementById('pfOwner').value || '').trim(),
+      tech_stack: this._parseList(document.getElementById('pfTech').value),
+      description: (document.getElementById('pfDescription').value || '').trim()
+    };
+    if (App.pushUndo) App.pushUndo(this._editId ? 'Edit product' : 'Add product');
+    if (this._editId) this.update(this._editId, rec);
+    else this.add(rec);
+    if (App.markDirty) App.markDirty();
+    this._closeForm();
+    ProductsView.mount();
+    if (App.toast) App.toast('Product saved', 'success');
+  },
+  _removeFromForm() {
+    if (!this._editId) return;
+    const p = this.byId(this._editId);
+    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Remove product "' + (p ? p.name : '') + '"?')) return;
+    if (App.pushUndo) App.pushUndo('Remove product');
+    this.remove(this._editId);
+    this._closeForm();
+    ProductsView.mount();
+    if (App.toast) App.toast('Product removed', 'success');
+  },
+  _closeForm() {
+    const o = document.getElementById('productFormOverlay');
+    if (o) o.remove();
+    this._editId = null;
+  }
 };
 
 /* ============================================================
@@ -14014,11 +14102,12 @@ const ProductsView = {
     const host = document.getElementById('viewProducts');
     if (!host || !App.data) return;
     const esc = Dashboard.esc;
+    const ro = !!App.customerMode;
     const prods = Products.list();
     const toolbar = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
       '<div><h2 style="font-size:15px;font-weight:700;color:var(--text-dark);margin:0">Products</h2>' +
       '<div style="font-size:12px;color:var(--text-muted)">Active products for ' + esc(App.activeCustomer || '') + ' and their linked projects.</div></div>' +
-      '<button class="btn btn-primary btn-sm" onclick="Products._openForm()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add product</button>' +
+      (ro ? '' : '<button class="btn btn-primary btn-sm" onclick="Products._openForm()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add product</button>') +
       '</div>';
     let body;
     if (!prods.length) {
@@ -14031,7 +14120,17 @@ const ProductsView = {
           const linked = Products.linkedProjects(p.id).length;
           const techChips = (p.tech_stack || []).slice(0, 4).map(t => '<span class="chip" style="font-size:var(--fs-2xs)">' + esc(t) + '</span>').join(' ');
           const ver = (p.versions && p.versions.length) ? esc(p.versions[0]) : '<span style="color:var(--text-muted)">—</span>';
-          return '<tr data-product-row data-id="' + esc(p.id) + '" style="cursor:pointer;border-bottom:1px solid var(--border-light)" role="button" tabindex="0" aria-label="Open ' + esc(p.name) + '" onclick="Products._openForm(\'' + esc(p.id) + '\')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();Products._openForm(\'' + esc(p.id) + '\')}">' +
+          if (ro) {
+            return '<tr data-product-row data-id="' + esc(p.id) + '" style="border-bottom:1px solid var(--border-light)">' +
+              '<td style="padding:8px 10px"><strong>' + esc(p.name) + '</strong></td>' +
+              '<td style="padding:8px 10px">' + esc(p.product_type || '') + '</td>' +
+              '<td style="padding:8px 10px">' + ver + '</td>' +
+              '<td style="padding:8px 10px">' + esc(p.product_owner || '') + '</td>' +
+              '<td style="padding:8px 10px">' + (techChips || '<span style="color:var(--text-muted)">—</span>') + '</td>' +
+              '<td style="padding:8px 10px;font-variant-numeric:tabular-nums">' + linked + '</td>' +
+            '</tr>';
+          }
+          return '<tr data-product-row data-id="' + esc(p.id) + '" style="cursor:pointer;border-bottom:1px solid var(--border-light)" role="button" tabindex="0" aria-label="Open ' + esc(p.name) + '" onclick="Products._openForm(' + esc(JSON.stringify(p.id)) + ')" onkeydown="if(event.key===\'Enter\'){event.preventDefault();Products._openForm(' + esc(JSON.stringify(p.id)) + ')}">' +
             '<td style="padding:8px 10px"><strong>' + esc(p.name) + '</strong></td>' +
             '<td style="padding:8px 10px">' + esc(p.product_type || '') + '</td>' +
             '<td style="padding:8px 10px">' + ver + '</td>' +
