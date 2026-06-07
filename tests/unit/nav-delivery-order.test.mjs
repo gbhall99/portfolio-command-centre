@@ -1,5 +1,5 @@
 // Delivery nav: chronological reorder — RAID/Governance/Actions at top with Projects,
-// then a Planning subsection (Backlog first), then a Strategy subsection (Personas before
+// then a Planning subsection (Backlog first), then a Customer Profile subsection (Personas before
 // Metrics). No nav-strategy-group wrapper (the vertical line is gone).
 
 import { describe, it, expect } from 'vitest';
@@ -42,14 +42,14 @@ describe('Delivery nav — chronological order', () => {
     app.teardown();
   });
 
-  it('Strategy subsection lists Strategy, Personas, then Metrics (Personas before Metrics)', async () => {
+  it('Customer Profile subsection lists Objectives, Personas, then Metrics (Personas before Metrics)', async () => {
     const app = await boot();
     const sec = deliverySection(app);
     const children = Array.from(sec.children);
-    const stratIdx = children.findIndex(c => c.classList.contains('nav-subsection-label') && /strategy/i.test(c.textContent));
+    const stratIdx = children.findIndex(c => c.classList.contains('nav-subsection-label') && /customer profile/i.test(c.textContent));
     expect(stratIdx).toBeGreaterThan(-1);
     const after = children.slice(stratIdx + 1).filter(c => c.classList.contains('nav-item')).map(c => c.getAttribute('data-view'));
-    expect(after.slice(0, 3)).toEqual(['strategy', 'personas', 'metrics']);
+    expect(after.slice(0, 4)).toEqual(['strategy', 'personas', 'metrics', 'products']);
     app.teardown();
   });
 

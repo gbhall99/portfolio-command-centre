@@ -132,7 +132,7 @@ describe('Slot B — Item 6: compact strategy pickers (chip strip + +button popo
     expect(scope).toBeTruthy();
     const section = scope.querySelector('.dp-strategy-section');
     expect(section).toBeTruthy();
-    expect(section.querySelectorAll('.dp-strategy-row').length).toBe(3);
+    expect(section.querySelectorAll('.dp-strategy-row').length).toBe(4);
     expect(section.querySelectorAll('details[open]').length).toBe(0);
     app.teardown();
   });
