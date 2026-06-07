@@ -18941,25 +18941,29 @@ const DetailPanel = {
     const personas = (typeof Personas !== 'undefined') ? Personas.list() : [];
     const metrics  = (typeof Metrics  !== 'undefined') ? Metrics.list()  : [];
     const objectives = (typeof Objectives !== 'undefined') ? Objectives.list() : [];
+    const products = (typeof Products !== 'undefined') ? Products.list() : [];
     const selectedMetricIds  = new Set(project.metric_ids  || []);
     const selectedPersonaIds = new Set(project.persona_ids || []);
     const selectedObjectiveIds = new Set(project.objective_ids || []);
+    const selectedProductIds = new Set(project.product_ids || []);
     const esc = Dashboard.esc;
     const chip = (label, id, field) => '<span class="dp-strategy-chip" data-id="' + esc(id) + '">' + esc(label) + ' <button type="button" class="dp-strategy-chip-remove" data-id="' + esc(id) + '" data-field="' + esc(field) + '" onclick="DetailPanel._toggleStrategySelection(\'' + esc(field) + '\',\'' + esc(id) + '\',false)" aria-label="Remove">×</button></span>';
     const labelFor = (kind, id) => {
       if (kind === 'metric') { const m = metrics.find(x => x.id === id); return m ? m.name : id; }
       if (kind === 'persona') { const p = personas.find(x => x.id === id); return p ? (p.name + (p.role_title ? ' — ' + p.role_title : '')) : id; }
       if (kind === 'objective') { const o = objectives.find(x => x.id === id); return o ? o.name : id; }
+      if (kind === 'product') { const x = products.find(y => y.id === id); return x ? x.name : id; }
       return id;
     };
     // Item 4: Objectives presented before Metrics whenever both are shown together.
     const rowHtml = (field, kind, count) => {
       const selected = field === 'metric_ids' ? selectedMetricIds
         : field === 'persona_ids' ? selectedPersonaIds
+        : field === 'product_ids' ? selectedProductIds
         : selectedObjectiveIds;
       const chips = Array.from(selected).map(id => chip(labelFor(kind, id), id, field)).join('');
       return '<div class="dp-strategy-row" data-field="' + field + '">' +
-        '<span class="dp-strategy-label">' + (field === 'metric_ids' ? 'Metrics' : field === 'persona_ids' ? 'Personas' : 'Objectives') + '</span>' +
+        '<span class="dp-strategy-label">' + (field === 'metric_ids' ? 'Metrics' : field === 'persona_ids' ? 'Personas' : field === 'product_ids' ? 'Products' : 'Objectives') + '</span>' +
         '<div class="dp-strategy-chips">' + chips +
           '<button type="button" class="dp-strategy-add" data-field="' + field + '" data-kind="' + kind + '" onclick="DetailPanel._openStrategyPicker(\'' + field + '\',\'' + kind + '\')" aria-label="Add ' + kind + '">+</button>' +
         '</div>' +
@@ -18969,6 +18973,7 @@ const DetailPanel = {
       rowHtml('objective_ids', 'objective', objectives.length) +
       rowHtml('metric_ids', 'metric', metrics.length) +
       rowHtml('persona_ids', 'persona', personas.length) +
+      rowHtml('product_ids', 'product', products.length) +
     '</div>';
   },
 
@@ -18980,6 +18985,7 @@ const DetailPanel = {
     if (!project) return;
     const options = kind === 'metric' ? (typeof Metrics !== 'undefined' ? Metrics.list() : [])
       : kind === 'persona' ? (typeof Personas !== 'undefined' ? Personas.list() : [])
+      : kind === 'product' ? (typeof Products !== 'undefined' ? Products.list() : [])
       : (typeof Objectives !== 'undefined' ? Objectives.list() : []);
     const selected = new Set(project[field] || []);
     const esc = Dashboard.esc;
@@ -19077,6 +19083,7 @@ const DetailPanel = {
     const selectedMetricIds  = new Set(project.metric_ids  || []);
     const selectedPersonaIds = new Set(project.persona_ids || []);
     const selectedObjectiveIds = new Set(project.objective_ids || []);
+    const selectedProductIds = new Set(project.product_ids || []);
 
     // Multi-select dropdown helper: a <details> with checkboxes inside. Summary
     // doubles as both the trigger and the chip display of current selections.
@@ -19124,6 +19131,9 @@ const DetailPanel = {
     const objectiveOpts = Objectives.list().map(o => ({
       id: o.id, name: o.name, subtitle: '',
     }));
+    const productOpts = (typeof Products !== 'undefined' ? Products.list() : []).map(p => ({
+      id: p.id, name: p.name, subtitle: p.product_type || '',
+    }));
 
     // Item 4 — Objectives presented before Metrics whenever shown together.
     return '<div class="strategy-section">'
@@ -19132,6 +19142,7 @@ const DetailPanel = {
                   via: 'via ' + viaMetricNames.join(', ') })))
          +   renderPicker('metric_ids',    'Metrics',    metricOpts,    selectedMetricIds, [])
          +   renderPicker('persona_ids',   'Personas',   personaOpts,   selectedPersonaIds, [])
+         +   renderPicker('product_ids',   'Products',   productOpts,   selectedProductIds, [])
          + '</div>';
   },
 
