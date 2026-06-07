@@ -5078,6 +5078,7 @@ const App = {
     if (!Array.isArray(data.metrics))       data.metrics       = [];
     if (!Array.isArray(data.metric_groups)) data.metric_groups = [];
     if (!Array.isArray(data.people))        data.people        = [];
+    if (!Array.isArray(data.products))      data.products      = [];
 
     // Default metric_groups per customer if none defined for that customer
     const DEFAULT_METRIC_GROUPS = [
@@ -5215,8 +5216,9 @@ const App = {
 
     // Project additions
     (data.projects || []).forEach(p => {
-      if (!Array.isArray(p.metric_ids))  p.metric_ids  = [];
-      if (!Array.isArray(p.persona_ids)) p.persona_ids = [];
+      if (!Array.isArray(p.metric_ids))   p.metric_ids   = [];
+      if (!Array.isArray(p.persona_ids))  p.persona_ids  = [];
+      if (!Array.isArray(p.product_ids))  p.product_ids  = [];
     });
 
     data.meta.schema_version = this.SCHEMA_VERSION;
@@ -12772,6 +12774,54 @@ const Objectives = {
       if (typeof DetailPanel !== 'undefined' && DetailPanel.open) DetailPanel.open(projectId);
     }, 80);
   },
+};
+
+/* ============================================================
+   Products — product/application catalogue, customer-scoped
+   ============================================================ */
+const Products = {
+  PRODUCT_TYPES: ['Application', 'Dashboard', 'Service', 'Other'],
+  list() {
+    if (!App.data || !Array.isArray(App.data.products)) return [];
+    return App.data.products.filter(p => p.customer === App.activeCustomer);
+  },
+  byId(id) {
+    return (App.data.products || []).find(p => p.id === id) || null;
+  },
+  add(product) {
+    if (!App.data.products) App.data.products = [];
+    const rec = {
+      product_type: 'Application', versions: [], product_owner: '', tech_stack: [], description: '',
+      ...product,
+      customer: product.customer || App.activeCustomer,
+    };
+    if (!rec.id) rec.id = 'PRD-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    if (!Array.isArray(rec.versions)) rec.versions = [];
+    if (!Array.isArray(rec.tech_stack)) rec.tech_stack = [];
+    App.data.products.push(rec);
+    if (App._save) App._save();
+    return rec;
+  },
+  update(id, patch) {
+    const p = this.byId(id);
+    if (!p) return null;
+    Object.assign(p, patch);
+    if (App._save) App._save();
+    return p;
+  },
+  remove(id) {
+    const idx = (App.data.products || []).findIndex(p => p.id === id);
+    if (idx < 0) return false;
+    App.data.products.splice(idx, 1);
+    (App.data.projects || []).forEach(pr => {
+      if (Array.isArray(pr.product_ids)) pr.product_ids = pr.product_ids.filter(pid => pid !== id);
+    });
+    if (App._save) App._save();
+    return true;
+  },
+  linkedProjects(id) {
+    return (App.data.projects || []).filter(pr => Array.isArray(pr.product_ids) && pr.product_ids.includes(id));
+  }
 };
 
 /* ============================================================
