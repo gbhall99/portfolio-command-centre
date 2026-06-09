@@ -37341,8 +37341,80 @@ const RaidView = {
     const body = rows.length
       ? this._renderTable(this.activeTab, rows)
       : '<div class="raid-empty" style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No ' + this.activeTab + ' recorded for ' + (App.activeCustomer || 'this customer') + '.</div>';
-    const html = toolbar + body;
+    const html = this._renderAttention() + toolbar + body;
     host.innerHTML = html;
+  },
+
+  // D4: collect governance-forum decisions for the active customer that are still
+  // pending a verdict (Proposed/Discussed). Returns the forum, its index (for nav),
+  // the decision and its index within the forum.
+  _pendingDecisions() {
+    const out = [];
+    const cust = App.activeCustomer;
+    ((App.data && App.data.governance_forums) || []).forEach((forum, forumIdx) => {
+      if (cust && forum.customer !== cust) return;
+      (forum.decisions || []).forEach((d, dIdx) => {
+        const state = d.state || 'Proposed';
+        if (state === 'Proposed' || state === 'Discussed') out.push({ forum, forumIdx, decision: d, dIdx });
+      });
+    });
+    return out;
+  },
+
+  // D4: Attention triage panel — three customer-scoped groups surfaced above the
+  // RAID table. Each row deep-links: risks/issues open the project detail panel on
+  // the RAID tab (reusing openDetailPanelFor); decisions navigate to the governance
+  // forum. Empty groups show "All clear". Pure presentation over RaidIntel helpers.
+  _renderAttention() {
+    const esc = Dashboard.esc;
+    const today = RaidIntel._today();
+    const isOpen = (row) => { const s = (row.status || '').toLowerCase(); return s !== 'closed' && s !== 'resolved' && s !== 'done' && s !== 'mitigated'; };
+    const risks = this._collect('risks').filter(r => isOpen(r.row))
+      .map(r => ({ ...r, sev: RaidIntel.riskSeverity(r.row), urg: RaidIntel.riskUrgency(r.row, today), near: RaidIntel.riskNearTarget(r.row, today) }))
+      .filter(r => r.sev >= 15 || (r.sev >= 8 && r.near))
+      .sort((a, b) => b.urg - a.urg).slice(0, 5);
+    const issues = this._collect('issues').filter(r => isOpen(r.row))
+      .map(r => ({ ...r, age: RaidIntel.issueAgeDays(r.row, today) }))
+      .filter(r => r.age !== null && r.age >= RaidIntel.ISSUE_AMBER)
+      .sort((a, b) => b.age - a.age).slice(0, 5);
+    const decisions = this._pendingDecisions()
+      .map(d => ({ ...d, age: RaidIntel.decisionAgeDays(d.decision, today) }))
+      .filter(d => d.age !== null && d.age >= RaidIntel.DECISION_AGING)
+      .sort((a, b) => b.age - a.age).slice(0, 5);
+    const group = (title, count, itemsHtml) =>
+      '<div class="raid-attn-group" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);padding:10px 12px">' +
+        '<div style="font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);font-weight:700;margin-bottom:6px">' + esc(title) + ' <span style="color:var(--text-dark)">' + count + '</span></div>' +
+        (count ? itemsHtml : '<div style="font-size:var(--fs-2xs);color:var(--text-muted)">All clear</div>') +
+      '</div>';
+    const riskItems = risks.map(r => {
+      const d = r.row.target_date ? RaidIntel._daysBetween(today, r.row.target_date) : null;
+      const dueStr = d === null ? '' : (d < 0 ? 'overdue' : 'in ' + d + 'd');
+      return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'risks\',' + r.idx + ')">' +
+        this._scoreChip(r.sev) + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);color:' + (r.near ? 'var(--status-red)' : 'var(--text-muted)') + '">' + dueStr + '</span>' +
+      '</div>';
+    }).join('');
+    const issueItems = issues.map(r =>
+      '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'issues\',' + r.idx + ')">' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);font-weight:700;color:' + (RaidIntel.issueAging(r.row, today) === 'red' ? 'var(--status-red)' : 'var(--status-amber)') + '">open ' + r.age + 'd</span>' +
+      '</div>').join('');
+    const decisionItems = decisions.map(d =>
+      '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView._openForum(' + d.forumIdx + ')">' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(d.decision.text || '') + '">' + esc((d.decision.text || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);font-weight:700;color:var(--status-amber)">pending ' + d.age + 'd</span>' +
+      '</div>').join('');
+    return '<div class="raid-attention" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+      group('Risks to watch', risks.length, riskItems) +
+      group('Oldest open issues', issues.length, issueItems) +
+      group('Aging decisions', decisions.length, decisionItems) +
+    '</div>';
+  },
+
+  // D4: mirror MyActions.openForum — navigate to governance and scroll the forum card.
+  _openForum(forumIdx) {
+    App.navigate('governance');
+    setTimeout(() => { const cards = document.querySelectorAll('.forum-card'); if (cards[forumIdx]) cards[forumIdx].scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80);
   },
 
   // PO refinement: render a stored ISO timestamp ("2026-05-02T14:20:00") as a
