@@ -37273,8 +37273,35 @@ const RaidView = {
     return '<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 7px;border-radius:var(--radius-pill);background:' + bg + ';color:white;font-size:var(--fs-2xs);font-weight:700">' + score + '</span>';
   },
   _sortRows(rows, kind) {
-    const key = this.sortKey || (kind === 'risks' ? 'score' : 'project');
-    const dir = this.sortKey ? (this.sortDir === 'asc' ? 1 : -1) : (kind === 'risks' ? -1 : 1);
+    const today = RaidIntel._today();
+    // Per-kind default sort key/dir. D5: issues default to age desc (oldest open
+    // first); risks stay score desc; assumptions/decisions stay project asc.
+    const defaultKey = kind === 'risks' ? 'score' : kind === 'issues' ? 'Age' : 'project';
+    const defaultDir = (kind === 'risks' || kind === 'issues') ? -1 : 1;
+    const key = this.sortKey || defaultKey;
+    const dir = this.sortKey ? (this.sortDir === 'asc' ? 1 : -1) : defaultDir;
+    // Age sorts numerically with null ages always last regardless of direction.
+    if (key === 'Age') {
+      const age = (r) => RaidIntel.issueAgeDays(r.row, today);
+      return rows.slice().sort((a, b) => {
+        const va = age(a), vb = age(b);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;   // nulls last
+        if (vb === null) return -1;
+        if (va < vb) return -dir; if (va > vb) return dir; return 0;
+      });
+    }
+    if (key === 'target') {
+      // Sort by days-to-target; risks without a target_date sort last.
+      const tgt = (r) => r.row.target_date ? RaidIntel._daysBetween(today, r.row.target_date) : null;
+      return rows.slice().sort((a, b) => {
+        const va = tgt(a), vb = tgt(b);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+        if (va < vb) return -dir; if (va > vb) return dir; return 0;
+      });
+    }
     const val = (r) => {
       switch (key) {
         case 'score': return this._score(r);
@@ -37444,12 +37471,36 @@ const RaidView = {
     return s.charAt(0).toUpperCase() + s.slice(1);
   },
 
+  // D5: risk target proximity — "overdue" (red), "in Nd" (red within RISK_NEAR_DAYS,
+  // muted otherwise), or "—" when no target_date. Mirrors the Attention panel wording.
+  _targetCell(row, today) {
+    const esc = Dashboard.esc;
+    if (!row.target_date) return '<span style="color:var(--text-muted)">—</span>';
+    const d = RaidIntel._daysBetween(today, row.target_date);
+    if (d === null) return '<span style="color:var(--text-muted)">—</span>';
+    const near = RaidIntel.riskNearTarget(row, today);
+    const label = d < 0 ? 'overdue' : 'in ' + d + 'd';
+    const color = d < 0 ? 'var(--status-red)' : near ? 'var(--status-red)' : 'var(--text-muted)';
+    return '<span style="font-weight:700;color:' + color + '">' + esc(label) + '</span>';
+  },
+  // D5: issue age — "open Nd" coloured amber/red via RaidIntel.issueAging.
+  _ageCell(row, today) {
+    const esc = Dashboard.esc;
+    const age = RaidIntel.issueAgeDays(row, today);
+    if (age === null) return '<span style="color:var(--text-muted)">—</span>';
+    const band = RaidIntel.issueAging(row, today);
+    const color = band === 'red' ? 'var(--status-red)' : band === 'amber' ? 'var(--status-amber)' : 'var(--text-muted)';
+    return '<span style="font-weight:700;color:' + color + '">open ' + esc(String(age)) + 'd</span>';
+  },
+
   _renderTable(kind, rows) {
     const esc = Dashboard.esc;
     const isRisks = kind === 'risks';
-    const sortable = { Project: 'project', Owner: 'owner', Score: 'score', Status: 'status' };
-    const effKey = this.sortKey || (isRisks ? 'score' : 'project');
-    const effDir = this.sortKey ? this.sortDir : (isRisks ? 'desc' : 'asc');
+    const isIssues = kind === 'issues';
+    const today = RaidIntel._today();
+    const sortable = { Project: 'project', Owner: 'owner', Score: 'score', Status: 'status', Target: 'target', Age: 'Age' };
+    const effKey = this.sortKey || (isRisks ? 'score' : isIssues ? 'Age' : 'project');
+    const effDir = this.sortKey ? this.sortDir : (isRisks || isIssues ? 'desc' : 'asc');
     const dateField = isRisks ? 'resolution_date'
       : kind === 'issues' ? 'resolution_date'
       : kind === 'decisions' ? 'date'
@@ -37470,11 +37521,18 @@ const RaidView = {
     const hasScore = isRisks && varies(rows.map(r => this._score(r)));
     const datedVals = rows.filter(r => !!r.row[dateField]).map(r => this._fmtDate(r.row[dateField]));
     const hasDate = datedVals.length > 0 && varies(datedVals);
+    // D5: Target column (risks) appears only when at least one risk carries a
+    // target_date; Age column (issues) only when at least one issue has an
+    // opened_date — same has-value gating as the other optional columns.
+    const hasTarget = isRisks && rows.some(r => !!r.row.target_date);
+    const hasAge = isIssues && rows.some(r => !!r.row.opened_date);
     // Per-kind date column label so an empty header is never ambiguous.
     const dateLabel = (isRisks || kind === 'issues') ? 'Resolved' : 'Decided';
     const headers = ['Project']
       .concat(['Description', 'Owner'])
       .concat(hasScore ? ['Score'] : [])
+      .concat(hasTarget ? ['Target'] : [])
+      .concat(hasAge ? ['Age'] : [])
       .concat(hasStatus ? ['Status'] : [])
       .concat(hasDate ? [dateLabel] : [])
       .concat(['Updated', '']);
@@ -37489,7 +37547,8 @@ const RaidView = {
     // <th> / <td> maps to a real, labelled-or-action column (signoff crit 4).
     const colWidth = {
       'Project': '180px', 'Description': '380px', 'Owner': '130px',
-      'Score': '84px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
+      'Score': '84px', 'Target': '110px', 'Age': '110px', 'Status': '100px',
+      'Resolved': '120px', 'Decided': '120px',
       'Updated': '120px', '': 'auto',
     };
     const colgroup = '<colgroup>' + headers.map(h =>
@@ -37515,6 +37574,8 @@ const RaidView = {
         '<td class="raid-cell-desc" title="' + esc(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
         (hasScore ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + this._scoreChip(score) + '</td>' : '') +
+        (hasTarget ? '<td style="padding:6px 10px;font-size:var(--fs-2xs)">' + this._targetCell(row, today) + '</td>' : '') +
+        (hasAge ? '<td style="padding:6px 10px;font-size:var(--fs-2xs)">' + this._ageCell(row, today) + '</td>' : '') +
         (hasStatus ? '<td style="padding:6px 10px;font-size:11px">' + esc(this._statusFor(kind, row)) + '</td>' : '') +
         (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +
