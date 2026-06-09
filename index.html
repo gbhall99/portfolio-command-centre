@@ -4942,6 +4942,8 @@ const App = {
         if (r.impact === undefined) r.impact = 3;
         if (r.probability === undefined) r.probability = 3;
       });
+      // Ensure issues_register exists (opened_date is NOT defaulted — absence = unknown for user data)
+      if (!p.issues_register) p.issues_register = [];
       // Ensure rag_manual_override exists
       if (!p.rag_manual_override) p.rag_manual_override = {};
       // Ensure data_sourcing object exists
@@ -21678,6 +21680,8 @@ const DetailPanel = {
             })() + '</div>' +
           '<div><div class="risk-field-label">Resolution Date</div>' +
             '<input type="date" data-risk-idx="' + i + '" data-risk-field="resolution_date" value="' + (r.resolution_date || '') + '" onchange="DetailPanel.onRiskChange(this)"></div>' +
+          '<div><div class="risk-field-label">Target Date</div>' +
+            '<input type="date" data-risk-idx="' + i + '" data-risk-field="target_date" data-raid-field="target_date" value="' + (r.target_date || '') + '" style="font-size:var(--fs-sm);border-color:var(--border-dim)" onchange="DetailPanel.onRiskChange(this)"></div>' +
           '<div class="full"><div class="risk-field-label">Escalation</div>' +
             (function() {
               const sev = r.escalation_severity || null;
@@ -21867,6 +21871,8 @@ const DetailPanel = {
             '<textarea data-issue-idx="' + i + '" data-issue-field="action" onchange="DetailPanel.onIssueChange(this)">' + Dashboard.esc(r.action || '') + '</textarea></div>' +
           '<div><div class="risk-field-label">Owner</div>' +
             '<input type="text" data-issue-idx="' + i + '" data-issue-field="owner" value="' + Dashboard.esc(r.owner || '') + '" onchange="DetailPanel.onIssueChange(this)"></div>' +
+          '<div><div class="risk-field-label">Opened Date</div>' +
+            '<input type="date" data-issue-idx="' + i + '" data-issue-field="opened_date" data-raid-field="opened_date" value="' + (r.opened_date || '') + '" style="font-size:var(--fs-sm);border-color:var(--border-dim)" onchange="DetailPanel.onIssueChange(this)"></div>' +
           '<div><div class="risk-field-label">Resolution Date</div>' +
             '<input type="date" data-issue-idx="' + i + '" data-issue-field="resolution_date" value="' + (r.resolution_date || '') + '" onchange="DetailPanel.onIssueChange(this)"></div>' +
         '</div></div>';
@@ -21877,7 +21883,7 @@ const DetailPanel = {
     const p = App.data.projects.find(pr => pr.id === this.currentId);
     if (!p) return;
     if (!p.issues_register) p.issues_register = [];
-    p.issues_register.push({ description: '', action: '', owner: '', resolution_date: null });
+    p.issues_register.push({ description: '', action: '', owner: '', opened_date: new Date().toISOString().split('T')[0], resolution_date: null });
     p.last_updated = new Date().toISOString();
     App.markDirty();
     App.saveToLocalStorage();
@@ -37191,6 +37197,43 @@ const Report = {
   }
 };
 /* ============================================================
+   RaidIntel — pure-function urgency helpers: severity + target/age proximity.
+   Used by the Attention panel and enriched RAID tables.
+   ============================================================ */
+const RaidIntel = {
+  ISSUE_AMBER: 30, ISSUE_RED: 60, DECISION_AGING: 21, RISK_NEAR_DAYS: 30,
+  _daysBetween(fromISO, toISO) {
+    if (!fromISO || !toISO) return null;
+    const a = new Date(fromISO + 'T00:00:00Z').getTime();
+    const b = new Date(toISO + 'T00:00:00Z').getTime();
+    if (isNaN(a) || isNaN(b)) return null;
+    return Math.round((b - a) / 86400000);
+  },
+  riskSeverity(r) { return (parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0); },
+  severityBand(score) { return score >= 15 ? 'high' : score >= 8 ? 'medium' : 'low'; },
+  riskNearTarget(r, today) {
+    if (!r.target_date) return false;
+    const d = this._daysBetween(today, r.target_date);
+    return d === null ? false : d <= this.RISK_NEAR_DAYS;
+  },
+  riskUrgency(r, today) {
+    const sev = this.riskSeverity(r);
+    return this.riskNearTarget(r, today) ? sev * 2 + 100 : sev;
+  },
+  issueAgeDays(i, today) { return i.opened_date ? this._daysBetween(i.opened_date, today) : null; },
+  issueAging(i, today) {
+    const age = this.issueAgeDays(i, today);
+    if (age === null) return null;
+    return age >= this.ISSUE_RED ? 'red' : age >= this.ISSUE_AMBER ? 'amber' : null;
+  },
+  decisionAgeDays(d, today) { return d.date ? this._daysBetween(d.date, today) : null; },
+  decisionAging(d, today) {
+    const age = this.decisionAgeDays(d, today);
+    return age !== null && age >= this.DECISION_AGING;
+  },
+  _today() { return new Date().toISOString().split('T')[0]; }
+};
+/* ============================================================
    RaidView — Slot H / Item 20: top-level cross-portfolio RAID view with 4 tabs.
    ============================================================ */
 const RaidView = {
@@ -37230,8 +37273,35 @@ const RaidView = {
     return '<span style="display:inline-block;min-width:22px;text-align:center;padding:1px 7px;border-radius:var(--radius-pill);background:' + bg + ';color:white;font-size:var(--fs-2xs);font-weight:700">' + score + '</span>';
   },
   _sortRows(rows, kind) {
-    const key = this.sortKey || (kind === 'risks' ? 'score' : 'project');
-    const dir = this.sortKey ? (this.sortDir === 'asc' ? 1 : -1) : (kind === 'risks' ? -1 : 1);
+    const today = RaidIntel._today();
+    // Per-kind default sort key/dir. D5: issues default to age desc (oldest open
+    // first); risks stay score desc; assumptions/decisions stay project asc.
+    const defaultKey = kind === 'risks' ? 'score' : kind === 'issues' ? 'Age' : 'project';
+    const defaultDir = (kind === 'risks' || kind === 'issues') ? -1 : 1;
+    const key = this.sortKey || defaultKey;
+    const dir = this.sortKey ? (this.sortDir === 'asc' ? 1 : -1) : defaultDir;
+    // Age sorts numerically with null ages always last regardless of direction.
+    if (key === 'Age') {
+      const age = (r) => RaidIntel.issueAgeDays(r.row, today);
+      return rows.slice().sort((a, b) => {
+        const va = age(a), vb = age(b);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;   // nulls last
+        if (vb === null) return -1;
+        if (va < vb) return -dir; if (va > vb) return dir; return 0;
+      });
+    }
+    if (key === 'target') {
+      // Sort by days-to-target; risks without a target_date sort last.
+      const tgt = (r) => r.row.target_date ? RaidIntel._daysBetween(today, r.row.target_date) : null;
+      return rows.slice().sort((a, b) => {
+        const va = tgt(a), vb = tgt(b);
+        if (va === null && vb === null) return 0;
+        if (va === null) return 1;
+        if (vb === null) return -1;
+        if (va < vb) return -dir; if (va > vb) return dir; return 0;
+      });
+    }
     const val = (r) => {
       switch (key) {
         case 'score': return this._score(r);
@@ -37298,8 +37368,80 @@ const RaidView = {
     const body = rows.length
       ? this._renderTable(this.activeTab, rows)
       : '<div class="raid-empty" style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No ' + this.activeTab + ' recorded for ' + (App.activeCustomer || 'this customer') + '.</div>';
-    const html = toolbar + body;
+    const html = this._renderAttention() + toolbar + body;
     host.innerHTML = html;
+  },
+
+  // D4: collect governance-forum decisions for the active customer that are still
+  // pending a verdict (Proposed/Discussed). Returns the forum, its index (for nav),
+  // the decision and its index within the forum.
+  _pendingDecisions() {
+    const out = [];
+    const cust = App.activeCustomer;
+    ((App.data && App.data.governance_forums) || []).forEach((forum, forumIdx) => {
+      if (cust && forum.customer !== cust) return;
+      (forum.decisions || []).forEach((d, dIdx) => {
+        const state = d.state || 'Proposed';
+        if (state === 'Proposed' || state === 'Discussed') out.push({ forum, forumIdx, decision: d, dIdx });
+      });
+    });
+    return out;
+  },
+
+  // D4: Attention triage panel — three customer-scoped groups surfaced above the
+  // RAID table. Each row deep-links: risks/issues open the project detail panel on
+  // the RAID tab (reusing openDetailPanelFor); decisions navigate to the governance
+  // forum. Empty groups show "All clear". Pure presentation over RaidIntel helpers.
+  _renderAttention() {
+    const esc = Dashboard.esc;
+    const today = RaidIntel._today();
+    const isOpen = (row) => { const s = (row.status || '').toLowerCase(); return s !== 'closed' && s !== 'resolved' && s !== 'done' && s !== 'mitigated'; };
+    const risks = this._collect('risks').filter(r => isOpen(r.row))
+      .map(r => ({ ...r, sev: RaidIntel.riskSeverity(r.row), urg: RaidIntel.riskUrgency(r.row, today), near: RaidIntel.riskNearTarget(r.row, today) }))
+      .filter(r => r.sev >= 15 || (r.sev >= 8 && r.near))
+      .sort((a, b) => b.urg - a.urg).slice(0, 5);
+    const issues = this._collect('issues').filter(r => isOpen(r.row))
+      .map(r => ({ ...r, age: RaidIntel.issueAgeDays(r.row, today) }))
+      .filter(r => r.age !== null && r.age >= RaidIntel.ISSUE_AMBER)
+      .sort((a, b) => b.age - a.age).slice(0, 5);
+    const decisions = this._pendingDecisions()
+      .map(d => ({ ...d, age: RaidIntel.decisionAgeDays(d.decision, today) }))
+      .filter(d => d.age !== null && d.age >= RaidIntel.DECISION_AGING)
+      .sort((a, b) => b.age - a.age).slice(0, 5);
+    const group = (title, count, itemsHtml) =>
+      '<div class="raid-attn-group" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border-dim);border-radius:var(--radius-md);padding:10px 12px">' +
+        '<div style="font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);font-weight:700;margin-bottom:6px">' + esc(title) + ' <span style="color:var(--text-dark)">' + count + '</span></div>' +
+        (count ? itemsHtml : '<div style="font-size:var(--fs-2xs);color:var(--text-muted)">All clear</div>') +
+      '</div>';
+    const riskItems = risks.map(r => {
+      const d = r.row.target_date ? RaidIntel._daysBetween(today, r.row.target_date) : null;
+      const dueStr = d === null ? '' : (d < 0 ? 'overdue' : 'in ' + d + 'd');
+      return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'risks\',' + r.idx + ')">' +
+        this._scoreChip(r.sev) + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);color:' + (r.near ? 'var(--status-red)' : 'var(--text-muted)') + '">' + dueStr + '</span>' +
+      '</div>';
+    }).join('');
+    const issueItems = issues.map(r =>
+      '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'issues\',' + r.idx + ')">' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);font-weight:700;color:' + (RaidIntel.issueAging(r.row, today) === 'red' ? 'var(--status-red)' : 'var(--status-amber)') + '">open ' + r.age + 'd</span>' +
+      '</div>').join('');
+    const decisionItems = decisions.map(d =>
+      '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView._openForum(' + d.forumIdx + ')">' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(d.decision.text || '') + '">' + esc((d.decision.text || '').slice(0, 60)) + '</span>' +
+        '<span style="font-size:var(--fs-2xs);font-weight:700;color:var(--status-amber)">pending ' + d.age + 'd</span>' +
+      '</div>').join('');
+    return '<div class="raid-attention" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+      group('Risks to watch', risks.length, riskItems) +
+      group('Oldest open issues', issues.length, issueItems) +
+      group('Aging decisions', decisions.length, decisionItems) +
+    '</div>';
+  },
+
+  // D4: mirror MyActions.openForum — navigate to governance and scroll the forum card.
+  _openForum(forumIdx) {
+    App.navigate('governance');
+    setTimeout(() => { const cards = document.querySelectorAll('.forum-card'); if (cards[forumIdx]) cards[forumIdx].scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 80);
   },
 
   // PO refinement: render a stored ISO timestamp ("2026-05-02T14:20:00") as a
@@ -37329,12 +37471,36 @@ const RaidView = {
     return s.charAt(0).toUpperCase() + s.slice(1);
   },
 
+  // D5: risk target proximity — "overdue" (red), "in Nd" (red within RISK_NEAR_DAYS,
+  // muted otherwise), or "—" when no target_date. Mirrors the Attention panel wording.
+  _targetCell(row, today) {
+    const esc = Dashboard.esc;
+    if (!row.target_date) return '<span style="color:var(--text-muted)">—</span>';
+    const d = RaidIntel._daysBetween(today, row.target_date);
+    if (d === null) return '<span style="color:var(--text-muted)">—</span>';
+    const near = RaidIntel.riskNearTarget(row, today);
+    const label = d < 0 ? 'overdue' : 'in ' + d + 'd';
+    const color = d < 0 ? 'var(--status-red)' : near ? 'var(--status-red)' : 'var(--text-muted)';
+    return '<span style="font-weight:700;color:' + color + '">' + esc(label) + '</span>';
+  },
+  // D5: issue age — "open Nd" coloured amber/red via RaidIntel.issueAging.
+  _ageCell(row, today) {
+    const esc = Dashboard.esc;
+    const age = RaidIntel.issueAgeDays(row, today);
+    if (age === null) return '<span style="color:var(--text-muted)">—</span>';
+    const band = RaidIntel.issueAging(row, today);
+    const color = band === 'red' ? 'var(--status-red)' : band === 'amber' ? 'var(--status-amber)' : 'var(--text-muted)';
+    return '<span style="font-weight:700;color:' + color + '">open ' + esc(String(age)) + 'd</span>';
+  },
+
   _renderTable(kind, rows) {
     const esc = Dashboard.esc;
     const isRisks = kind === 'risks';
-    const sortable = { Project: 'project', Owner: 'owner', Score: 'score', Status: 'status' };
-    const effKey = this.sortKey || (isRisks ? 'score' : 'project');
-    const effDir = this.sortKey ? this.sortDir : (isRisks ? 'desc' : 'asc');
+    const isIssues = kind === 'issues';
+    const today = RaidIntel._today();
+    const sortable = { Project: 'project', Owner: 'owner', Score: 'score', Status: 'status', Target: 'target', Age: 'Age' };
+    const effKey = this.sortKey || (isRisks ? 'score' : isIssues ? 'Age' : 'project');
+    const effDir = this.sortKey ? this.sortDir : (isRisks || isIssues ? 'desc' : 'asc');
     const dateField = isRisks ? 'resolution_date'
       : kind === 'issues' ? 'resolution_date'
       : kind === 'decisions' ? 'date'
@@ -37355,11 +37521,18 @@ const RaidView = {
     const hasScore = isRisks && varies(rows.map(r => this._score(r)));
     const datedVals = rows.filter(r => !!r.row[dateField]).map(r => this._fmtDate(r.row[dateField]));
     const hasDate = datedVals.length > 0 && varies(datedVals);
+    // D5: Target column (risks) appears only when at least one risk carries a
+    // target_date; Age column (issues) only when at least one issue has an
+    // opened_date — same has-value gating as the other optional columns.
+    const hasTarget = isRisks && rows.some(r => !!r.row.target_date);
+    const hasAge = isIssues && rows.some(r => !!r.row.opened_date);
     // Per-kind date column label so an empty header is never ambiguous.
     const dateLabel = (isRisks || kind === 'issues') ? 'Resolved' : 'Decided';
     const headers = ['Project']
       .concat(['Description', 'Owner'])
       .concat(hasScore ? ['Score'] : [])
+      .concat(hasTarget ? ['Target'] : [])
+      .concat(hasAge ? ['Age'] : [])
       .concat(hasStatus ? ['Status'] : [])
       .concat(hasDate ? [dateLabel] : [])
       .concat(['Updated', '']);
@@ -37374,7 +37547,8 @@ const RaidView = {
     // <th> / <td> maps to a real, labelled-or-action column (signoff crit 4).
     const colWidth = {
       'Project': '180px', 'Description': '380px', 'Owner': '130px',
-      'Score': '84px', 'Status': '100px', 'Resolved': '120px', 'Decided': '120px',
+      'Score': '84px', 'Target': '110px', 'Age': '110px', 'Status': '100px',
+      'Resolved': '120px', 'Decided': '120px',
       'Updated': '120px', '': 'auto',
     };
     const colgroup = '<colgroup>' + headers.map(h =>
@@ -37395,11 +37569,13 @@ const RaidView = {
       const desc = row.description || row.decision || row.text || '(no description)';
       const dateStr = this._fmtDate(row[dateField]);
       const updatedStr = this._fmtUpdated(row.ts || project.last_updated);
-      return '<tr class="raid-row" data-raid-row data-kind="' + kind + '" data-project-id="' + esc(project.id) + '" data-row-idx="' + idx + '" tabindex="0" role="button" onclick="RaidView.openDetailPanelFor(\'' + esc(project.id) + '\',\'' + kind + '\',' + idx + ')" style="cursor:pointer;border-bottom:1px solid var(--border-light)">' +
+      return '<tr class="raid-row" data-raid-row data-kind="' + kind + '" data-project-id="' + esc(project.id) + '" data-row-idx="' + idx + '" tabindex="0" role="button" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(project.id)) + ',' + esc(JSON.stringify(kind)) + ',' + idx + ')" style="cursor:pointer;border-bottom:1px solid var(--border-light)">' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dark)">' + esc(project.name) + '</td>' +
         '<td class="raid-cell-desc" title="' + esc(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
         (hasScore ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + this._scoreChip(score) + '</td>' : '') +
+        (hasTarget ? '<td style="padding:6px 10px;font-size:var(--fs-2xs)">' + this._targetCell(row, today) + '</td>' : '') +
+        (hasAge ? '<td style="padding:6px 10px;font-size:var(--fs-2xs)">' + this._ageCell(row, today) + '</td>' : '') +
         (hasStatus ? '<td style="padding:6px 10px;font-size:11px">' + esc(this._statusFor(kind, row)) + '</td>' : '') +
         (hasDate ? '<td style="padding:6px 10px;font-size:11px;color:var(--text-muted)">' + esc(dateStr || '—') + '</td>' : '') +
         '<td style="padding:6px 10px;font-size:var(--fs-2xs);color:var(--text-muted)">' + esc(updatedStr || '—') + '</td>' +
@@ -37870,8 +38046,7 @@ const Onboarding = {
   </div>
 </div>
 <!-- The old slide-in Audit Panel was promoted to a full page; see #viewActivity above. -->
-<script type="application/json" id="demoDataset">
-{
+<script type="application/json" id="demoDataset">{
   "meta": {
     "version": "1.1",
     "exported_at": "2026-05-06T10:00:00Z",
@@ -37883,38 +38058,84 @@ const Onboarding = {
       "name": "Acme Industries",
       "color": "#3b82f6",
       "staleThreshold": 14,
-      "sponsors": ["Sam Carter", "Riley Chen"],
+      "sponsors": [
+        "Sam Carter",
+        "Riley Chen"
+      ],
       "logo": ""
     },
     {
       "name": "Globex",
       "color": "#10b981",
       "staleThreshold": 21,
-      "sponsors": ["Jordan Patel"],
+      "sponsors": [
+        "Jordan Patel"
+      ],
       "logo": ""
     },
     {
       "name": "Initech",
       "color": "#a855f7",
       "staleThreshold": 14,
-      "sponsors": ["Casey Reyes"],
+      "sponsors": [
+        "Casey Reyes"
+      ],
       "logo": ""
     }
   ],
   "sprints": [
-    { "sprint_id": "CY26-S1", "customer": "Acme Industries", "start_date": "2026-02-09", "capacity_points": 0, "committed_points": 0 },
-    { "sprint_id": "CY26-S2", "customer": "Acme Industries", "start_date": "2026-03-16", "capacity_points": 0, "committed_points": 0 },
-    { "sprint_id": "CY26-S3", "customer": "Acme Industries", "start_date": "2026-04-20", "capacity_points": 0, "committed_points": 0 },
-    { "sprint_id": "CY26-S4", "customer": "Acme Industries", "start_date": "2026-05-25", "capacity_points": 0, "committed_points": 0 },
-    { "sprint_id": "CY26-S5", "customer": "Acme Industries", "start_date": "2026-06-29", "capacity_points": 0, "committed_points": 0 },
-    { "sprint_id": "CY26-S6", "customer": "Acme Industries", "start_date": "2026-08-03", "capacity_points": 0, "committed_points": 0 }
+    {
+      "sprint_id": "CY26-S1",
+      "customer": "Acme Industries",
+      "start_date": "2026-02-09",
+      "capacity_points": 0,
+      "committed_points": 0
+    },
+    {
+      "sprint_id": "CY26-S2",
+      "customer": "Acme Industries",
+      "start_date": "2026-03-16",
+      "capacity_points": 0,
+      "committed_points": 0
+    },
+    {
+      "sprint_id": "CY26-S3",
+      "customer": "Acme Industries",
+      "start_date": "2026-04-20",
+      "capacity_points": 0,
+      "committed_points": 0
+    },
+    {
+      "sprint_id": "CY26-S4",
+      "customer": "Acme Industries",
+      "start_date": "2026-05-25",
+      "capacity_points": 0,
+      "committed_points": 0
+    },
+    {
+      "sprint_id": "CY26-S5",
+      "customer": "Acme Industries",
+      "start_date": "2026-06-29",
+      "capacity_points": 0,
+      "committed_points": 0
+    },
+    {
+      "sprint_id": "CY26-S6",
+      "customer": "Acme Industries",
+      "start_date": "2026-08-03",
+      "capacity_points": 0,
+      "committed_points": 0
+    }
   ],
   "team_members": [
     {
       "name": "Avery Nolan",
       "role": "Senior Analyst",
       "customer": "Acme Industries",
-      "primary_skills": ["Requirements", "Tableau"],
+      "primary_skills": [
+        "Requirements",
+        "Tableau"
+      ],
       "secondary_skills": [],
       "available_points_per_sprint": 11,
       "holidays": [],
@@ -37924,8 +38145,12 @@ const Onboarding = {
       "name": "Blair Okafor",
       "role": "Data Engineer",
       "customer": "Acme Industries",
-      "primary_skills": ["Data Engineering"],
-      "secondary_skills": ["Data Science"],
+      "primary_skills": [
+        "Data Engineering"
+      ],
+      "secondary_skills": [
+        "Data Science"
+      ],
       "available_points_per_sprint": 12,
       "holidays": [],
       "sprint_overrides": {}
@@ -37934,8 +38159,12 @@ const Onboarding = {
       "name": "Cameron Diaz-Lee",
       "role": "Data Scientist",
       "customer": "Globex",
-      "primary_skills": ["Data Science"],
-      "secondary_skills": ["Data Engineering"],
+      "primary_skills": [
+        "Data Science"
+      ],
+      "secondary_skills": [
+        "Data Engineering"
+      ],
       "available_points_per_sprint": 10,
       "holidays": [],
       "sprint_overrides": {}
@@ -37944,8 +38173,12 @@ const Onboarding = {
       "name": "Devon Park",
       "role": "Tableau Developer",
       "customer": "Globex",
-      "primary_skills": ["Tableau"],
-      "secondary_skills": ["UAT"],
+      "primary_skills": [
+        "Tableau"
+      ],
+      "secondary_skills": [
+        "UAT"
+      ],
       "available_points_per_sprint": 9,
       "holidays": [],
       "sprint_overrides": {}
@@ -37954,7 +38187,10 @@ const Onboarding = {
       "name": "Emerson Wu",
       "role": "Business Analyst",
       "customer": "Initech",
-      "primary_skills": ["Requirements", "UAT"],
+      "primary_skills": [
+        "Requirements",
+        "UAT"
+      ],
       "secondary_skills": [],
       "available_points_per_sprint": 8,
       "holidays": [],
@@ -37964,8 +38200,13 @@ const Onboarding = {
       "name": "Frankie Hollis",
       "role": "Lead Engineer",
       "customer": "Both",
-      "primary_skills": ["Data Engineering", "Tableau"],
-      "secondary_skills": ["Requirements"],
+      "primary_skills": [
+        "Data Engineering",
+        "Tableau"
+      ],
+      "secondary_skills": [
+        "Requirements"
+      ],
       "available_points_per_sprint": 12,
       "holidays": [],
       "sprint_overrides": {}
@@ -38021,49 +38262,153 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": "CY26-S5",
       "assumptions_register": [
-        { "date": "2026-02-12", "made_by": "Avery Nolan", "text": "Source CRM extracts available daily by 06:00 UTC", "notes": "Confirmed with Acme IT" }
+        {
+          "date": "2026-02-12",
+          "made_by": "Avery Nolan",
+          "text": "Source CRM extracts available daily by 06:00 UTC",
+          "notes": "Confirmed with Acme IT"
+        }
       ],
       "risks_register": [
-        { "description": "Identity matching rules may produce duplicates above 2% tolerance", "action": "Build dedupe ruleset workshop", "owner": "Blair Okafor", "resolution_date": null },
-        { "description": "Vendor SOC 2 audit may delay external feed", "action": "Track via dependency log", "owner": "Avery Nolan", "resolution_date": null }
+        {
+          "description": "Identity matching rules may produce duplicates above 2% tolerance",
+          "action": "Build dedupe ruleset workshop",
+          "owner": "Blair Okafor",
+          "resolution_date": null,
+          "impact": 5,
+          "probability": 5,
+          "target_date": "2026-05-15"
+        },
+        {
+          "description": "Vendor SOC 2 audit may delay external feed",
+          "action": "Track via dependency log",
+          "owner": "Avery Nolan",
+          "resolution_date": null,
+          "impact": 4,
+          "probability": 4,
+          "target_date": "2026-05-28"
+        }
       ],
       "decisions_register": [
-        { "date": "2026-03-04", "decision": "Adopt MDM canonical key for customer_id", "decided_by": "Steering Group", "notes": "Replaces legacy CRM key" }
+        {
+          "date": "2026-03-04",
+          "decision": "Adopt MDM canonical key for customer_id",
+          "decided_by": "Steering Group",
+          "notes": "Replaces legacy CRM key"
+        }
       ],
       "issues_register": [
-        { "id": "iss-acm001-1", "description": "Source CRM extract dropped two columns in last week's load — investigating with vendor", "owner": "Blair Okafor", "status": "open", "resolution_date": null },
-        { "id": "iss-acm001-2", "description": "Tableau publish failing intermittently for the dashboard prototype", "owner": "Frankie Hollis", "status": "open", "resolution_date": null }
+        {
+          "id": "iss-acm001-1",
+          "description": "Source CRM extract dropped two columns in last week's load — investigating with vendor",
+          "owner": "Blair Okafor",
+          "status": "open",
+          "resolution_date": null,
+          "opened_date": "2026-02-20"
+        },
+        {
+          "id": "iss-acm001-2",
+          "description": "Tableau publish failing intermittently for the dashboard prototype",
+          "owner": "Frankie Hollis",
+          "status": "open",
+          "resolution_date": null,
+          "opened_date": "2026-05-28"
+        }
       ],
       "benefits": [
-        { "type": "time_saving", "amount": 120, "units": "hours/month", "description": "Eliminate manual customer reconciliation" },
-        { "type": "cost_saving", "amount": 45000, "units": "GBP/year", "description": "Retire legacy MDM tool" }
+        {
+          "type": "time_saving",
+          "amount": 120,
+          "units": "hours/month",
+          "description": "Eliminate manual customer reconciliation"
+        },
+        {
+          "type": "cost_saving",
+          "amount": 45000,
+          "units": "GBP/year",
+          "description": "Retire legacy MDM tool"
+        }
       ],
       "success_criteria": [
-        { "name": "Active users", "target": "150 weekly", "measure": "Tableau Server analytics", "tag": "Adoption" },
-        { "name": "Match rate", "target": ">= 98%", "measure": "Reconciliation report", "tag": "Quality" }
+        {
+          "name": "Active users",
+          "target": "150 weekly",
+          "measure": "Tableau Server analytics",
+          "tag": "Adoption"
+        },
+        {
+          "name": "Match rate",
+          "target": ">= 98%",
+          "measure": "Reconciliation report",
+          "tag": "Quality"
+        }
       ],
       "dependencies": [
-        { "label": "Vendor SOC 2 audit", "owner": "External", "due_date": "2026-06-30", "status": "In Progress" }
+        {
+          "label": "Vendor SOC 2 audit",
+          "owner": "External",
+          "due_date": "2026-06-30",
+          "status": "In Progress"
+        }
       ],
       "skill_splits": {
         "size_requirements": [
-          { "sprint": "CY26-S2", "points": 5, "status": "complete", "completed": 5, "assignee": "Avery Nolan" }
+          {
+            "sprint": "CY26-S2",
+            "points": 5,
+            "status": "complete",
+            "completed": 5,
+            "assignee": "Avery Nolan"
+          }
         ],
         "size_engineering": [
-          { "sprint": "CY26-S2", "points": 6, "status": "complete", "completed": 6, "assignee": "Blair Okafor" },
-          { "sprint": "CY26-S3", "points": 6, "status": "in_progress", "completed": 3, "assignee": "Blair Okafor" }
+          {
+            "sprint": "CY26-S2",
+            "points": 6,
+            "status": "complete",
+            "completed": 6,
+            "assignee": "Blair Okafor"
+          },
+          {
+            "sprint": "CY26-S3",
+            "points": 6,
+            "status": "in_progress",
+            "completed": 3,
+            "assignee": "Blair Okafor"
+          }
         ],
         "size_tableau": [
-          { "sprint": "CY26-S3", "points": 5, "status": "in_progress", "completed": 1, "assignee": "Frankie Hollis" },
-          { "sprint": "CY26-S4", "points": 5, "status": "pending", "completed": 0, "assignee": "Frankie Hollis" }
+          {
+            "sprint": "CY26-S3",
+            "points": 5,
+            "status": "in_progress",
+            "completed": 1,
+            "assignee": "Frankie Hollis"
+          },
+          {
+            "sprint": "CY26-S4",
+            "points": 5,
+            "status": "pending",
+            "completed": 0,
+            "assignee": "Frankie Hollis"
+          }
         ],
         "size_uat_adoption": [
-          { "sprint": "CY26-S4", "points": 5, "status": "pending", "completed": 0, "assignee": "Avery Nolan" }
+          {
+            "sprint": "CY26-S4",
+            "points": 5,
+            "status": "pending",
+            "completed": 0,
+            "assignee": "Avery Nolan"
+          }
         ]
       },
       "notes": "Phase 1 covers top 30 attributes across CRM and ERP sources.",
       "last_updated": "2026-05-02T14:20:00",
-      "metric_ids": ["M-Acme-REV", "M-Acme-CSAT"],
+      "metric_ids": [
+        "M-Acme-REV",
+        "M-Acme-CSAT"
+      ],
       "persona_ids": []
     },
     {
@@ -38095,35 +38440,85 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": "CY26-S5",
       "assumptions_register": [
-        { "date": "2026-03-18", "made_by": "Blair Okafor", "text": "Warehouse extracts remain in CSV format", "notes": "" }
+        {
+          "date": "2026-03-18",
+          "made_by": "Blair Okafor",
+          "text": "Warehouse extracts remain in CSV format",
+          "notes": ""
+        }
       ],
       "risks_register": [
-        { "description": "Stocktake calendar conflicts with cutover window", "action": "Align with ops planner", "owner": "Blair Okafor", "resolution_date": null }
+        {
+          "description": "Stocktake calendar conflicts with cutover window",
+          "action": "Align with ops planner",
+          "owner": "Blair Okafor",
+          "resolution_date": null,
+          "impact": 2,
+          "probability": 3,
+          "target_date": "2026-06-20"
+        }
       ],
       "decisions_register": [],
       "benefits": [
-        { "type": "time_saving", "amount": 30, "units": "hours/week", "description": "Auto-refresh replaces manual Excel pulls" }
+        {
+          "type": "time_saving",
+          "amount": 30,
+          "units": "hours/week",
+          "description": "Auto-refresh replaces manual Excel pulls"
+        }
       ],
       "success_criteria": [],
       "dependencies": [],
       "skill_splits": {
         "size_requirements": [
-          { "sprint": "CY26-S2", "points": 3, "status": "complete", "completed": 3, "assignee": "Avery Nolan" }
+          {
+            "sprint": "CY26-S2",
+            "points": 3,
+            "status": "complete",
+            "completed": 3,
+            "assignee": "Avery Nolan"
+          }
         ],
         "size_engineering": [
-          { "sprint": "CY26-S3", "points": 5, "status": "in_progress", "completed": 2, "assignee": "Blair Okafor" },
-          { "sprint": "CY26-S4", "points": 3, "status": "pending", "completed": 0, "assignee": "Frankie Hollis" }
+          {
+            "sprint": "CY26-S3",
+            "points": 5,
+            "status": "in_progress",
+            "completed": 2,
+            "assignee": "Blair Okafor"
+          },
+          {
+            "sprint": "CY26-S4",
+            "points": 3,
+            "status": "pending",
+            "completed": 0,
+            "assignee": "Frankie Hollis"
+          }
         ],
         "size_tableau": [
-          { "sprint": "CY26-S4", "points": 5, "status": "pending", "completed": 0, "assignee": "Frankie Hollis" }
+          {
+            "sprint": "CY26-S4",
+            "points": 5,
+            "status": "pending",
+            "completed": 0,
+            "assignee": "Frankie Hollis"
+          }
         ],
         "size_uat_adoption": [
-          { "sprint": "CY26-S5", "points": 2, "status": "pending", "completed": 0, "assignee": "Avery Nolan" }
+          {
+            "sprint": "CY26-S5",
+            "points": 2,
+            "status": "pending",
+            "completed": 0,
+            "assignee": "Avery Nolan"
+          }
         ]
       },
       "notes": "Daily inventory refresh with delta loads from warehouse system.",
       "last_updated": "2026-04-29T09:45:00",
-      "metric_ids": ["M-Acme-OPEX"],
+      "metric_ids": [
+        "M-Acme-OPEX"
+      ],
       "persona_ids": []
     },
     {
@@ -38155,8 +38550,18 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": null,
       "assumptions_register": [
-        { "date": "2026-04-22", "made_by": "Avery Nolan", "text": "Discovery findings will reshape scope before build", "notes": "Workshops booked" },
-        { "date": "2026-04-25", "made_by": "Sam Carter", "text": "Existing onboarding data is reusable", "notes": "" }
+        {
+          "date": "2026-04-22",
+          "made_by": "Avery Nolan",
+          "text": "Discovery findings will reshape scope before build",
+          "notes": "Workshops booked"
+        },
+        {
+          "date": "2026-04-25",
+          "made_by": "Sam Carter",
+          "text": "Existing onboarding data is reusable",
+          "notes": ""
+        }
       ],
       "risks_register": [],
       "decisions_register": [],
@@ -38166,7 +38571,10 @@ const Onboarding = {
       "skill_splits": {},
       "notes": "Discovery phase — outputs feed into solution design.",
       "last_updated": "2026-05-01T11:00:00",
-      "metric_ids": ["M-Acme-CSAT", "M-Acme-COMPLAINTS"],
+      "metric_ids": [
+        "M-Acme-CSAT",
+        "M-Acme-COMPLAINTS"
+      ],
       "persona_ids": []
     },
     {
@@ -38200,17 +38608,29 @@ const Onboarding = {
       "assumptions_register": [],
       "risks_register": [],
       "decisions_register": [
-        { "date": "2026-02-10", "decision": "Move DQ rules into orchestration layer", "decided_by": "Blair Okafor", "notes": "Reduces reconciliation effort" }
+        {
+          "date": "2026-02-10",
+          "decision": "Move DQ rules into orchestration layer",
+          "decided_by": "Blair Okafor",
+          "notes": "Reduces reconciliation effort"
+        }
       ],
       "benefits": [
-        { "type": "cost_saving", "amount": 12000, "units": "GBP/year", "description": "Less manual remediation" }
+        {
+          "type": "cost_saving",
+          "amount": 12000,
+          "units": "GBP/year",
+          "description": "Less manual remediation"
+        }
       ],
       "success_criteria": [],
       "dependencies": [],
       "skill_splits": {},
       "notes": "Closed Feb 2026; rules now run as part of standard ETL.",
       "last_updated": "2026-03-05T10:00:00",
-      "metric_ids": ["M-Acme-RECON"],
+      "metric_ids": [
+        "M-Acme-RECON"
+      ],
       "persona_ids": []
     },
     {
@@ -38243,18 +38663,33 @@ const Onboarding = {
       "target_sprint": null,
       "assumptions_register": [],
       "risks_register": [
-        { "description": "Awaiting Legal review before further build", "action": "Re-plan when legal sign-off lands", "owner": "Frankie Hollis", "resolution_date": null }
+        {
+          "description": "Awaiting Legal review before further build",
+          "action": "Re-plan when legal sign-off lands",
+          "owner": "Frankie Hollis",
+          "resolution_date": null,
+          "impact": 3,
+          "probability": 5,
+          "target_date": "2026-07-02"
+        }
       ],
       "decisions_register": [],
       "benefits": [],
       "success_criteria": [],
       "dependencies": [
-        { "label": "Legal review", "owner": "External", "due_date": "2026-06-01", "status": "Pending" }
+        {
+          "label": "Legal review",
+          "owner": "External",
+          "due_date": "2026-06-01",
+          "status": "Pending"
+        }
       ],
       "skill_splits": {},
       "notes": "Paused pending Legal review. Resume target Q3.",
       "last_updated": "2026-04-12T16:30:00",
-      "metric_ids": ["M-Acme-CTRL"],
+      "metric_ids": [
+        "M-Acme-CTRL"
+      ],
       "persona_ids": []
     },
     {
@@ -38286,22 +38721,51 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": "CY26-S4",
       "assumptions_register": [
-        { "date": "2026-03-20", "made_by": "Avery Nolan", "text": "KPI definitions stable from prior quarter", "notes": "" }
+        {
+          "date": "2026-03-20",
+          "made_by": "Avery Nolan",
+          "text": "KPI definitions stable from prior quarter",
+          "notes": ""
+        }
       ],
       "risks_register": [
-        { "description": "Tableau capacity constrained by Customer 360 work", "action": "Re-plan in next sprint review", "owner": "Avery Nolan", "resolution_date": null },
-        { "description": "Late changes to KPI list from Finance", "action": "Lock scope at next forum", "owner": "Sam Carter", "resolution_date": null }
+        {
+          "description": "Tableau capacity constrained by Customer 360 work",
+          "action": "Re-plan in next sprint review",
+          "owner": "Avery Nolan",
+          "resolution_date": null,
+          "impact": 1,
+          "probability": 2,
+          "target_date": "2026-09-30"
+        },
+        {
+          "description": "Late changes to KPI list from Finance",
+          "action": "Lock scope at next forum",
+          "owner": "Sam Carter",
+          "resolution_date": null,
+          "impact": 5,
+          "probability": 3,
+          "target_date": "2026-11-15"
+        }
       ],
       "decisions_register": [],
       "benefits": [
-        { "type": "time_saving", "amount": 40, "units": "hours/quarter", "description": "Replaces manual QBR pack assembly" }
+        {
+          "type": "time_saving",
+          "amount": 40,
+          "units": "hours/quarter",
+          "description": "Replaces manual QBR pack assembly"
+        }
       ],
       "success_criteria": [],
       "dependencies": [],
       "skill_splits": {},
       "notes": "Quarter-aligned — schedule risk acute due to fixed board date.",
       "last_updated": "2026-05-04T08:15:00",
-      "metric_ids": ["M-Acme-REV", "M-Acme-OPEX"],
+      "metric_ids": [
+        "M-Acme-REV",
+        "M-Acme-OPEX"
+      ],
       "persona_ids": []
     },
     {
@@ -38333,32 +38797,96 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": "CY26-S6",
       "assumptions_register": [
-        { "date": "2026-02-15", "made_by": "Cameron Diaz-Lee", "text": "Existing routing API supports new payload", "notes": "Confirmed via spike" }
+        {
+          "date": "2026-02-15",
+          "made_by": "Cameron Diaz-Lee",
+          "text": "Existing routing API supports new payload",
+          "notes": "Confirmed via spike"
+        }
       ],
       "risks_register": [
-        { "description": "Model retrain cadence not agreed with Ops", "action": "Schedule MLOps workshop", "owner": "Cameron Diaz-Lee", "resolution_date": null },
-        { "description": "DPIA approval outstanding for new attributes", "action": "Submit DPIA pack to compliance", "owner": "Jordan Patel", "resolution_date": null },
-        { "description": "Ops team availability for shadow run", "action": "Book in advance via Ops director", "owner": "Cameron Diaz-Lee", "resolution_date": null }
+        {
+          "description": "Model retrain cadence not agreed with Ops",
+          "action": "Schedule MLOps workshop",
+          "owner": "Cameron Diaz-Lee",
+          "resolution_date": null,
+          "impact": 2,
+          "probability": 2,
+          "target_date": null
+        },
+        {
+          "description": "DPIA approval outstanding for new attributes",
+          "action": "Submit DPIA pack to compliance",
+          "owner": "Jordan Patel",
+          "resolution_date": null,
+          "impact": 4,
+          "probability": 5,
+          "target_date": "2026-06-25"
+        },
+        {
+          "description": "Ops team availability for shadow run",
+          "action": "Book in advance via Ops director",
+          "owner": "Cameron Diaz-Lee",
+          "resolution_date": null,
+          "impact": 3,
+          "probability": 3,
+          "target_date": "2026-08-10"
+        }
       ],
       "issues_register": [
-        { "id": "iss-glb001-1", "description": "Training data missing 2025-Q4 driver feedback batch", "owner": "Cameron Diaz-Lee", "status": "open", "resolution_date": null }
+        {
+          "id": "iss-glb001-1",
+          "description": "Training data missing 2025-Q4 driver feedback batch",
+          "owner": "Cameron Diaz-Lee",
+          "status": "open",
+          "resolution_date": null,
+          "opened_date": "2026-03-15"
+        }
       ],
       "decisions_register": [
-        { "date": "2026-03-12", "decision": "Adopt cost-aware routing model", "decided_by": "Steering Group", "notes": "" },
-        { "date": "2026-04-01", "decision": "Pilot region: South-East", "decided_by": "Jordan Patel", "notes": "" }
+        {
+          "date": "2026-03-12",
+          "decision": "Adopt cost-aware routing model",
+          "decided_by": "Steering Group",
+          "notes": ""
+        },
+        {
+          "date": "2026-04-01",
+          "decision": "Pilot region: South-East",
+          "decided_by": "Jordan Patel",
+          "notes": ""
+        }
       ],
       "benefits": [
-        { "type": "cost_saving", "amount": 220000, "units": "GBP/year", "description": "Reduced fulfilment cost via smarter routing" },
-        { "type": "time_saving", "amount": 8, "units": "hours/day", "description": "Less manual escalation handling" }
+        {
+          "type": "cost_saving",
+          "amount": 220000,
+          "units": "GBP/year",
+          "description": "Reduced fulfilment cost via smarter routing"
+        },
+        {
+          "type": "time_saving",
+          "amount": 8,
+          "units": "hours/day",
+          "description": "Less manual escalation handling"
+        }
       ],
       "success_criteria": [],
       "dependencies": [
-        { "label": "DPIA approval", "owner": "Compliance", "due_date": "2026-07-01", "status": "Pending" }
+        {
+          "label": "DPIA approval",
+          "owner": "Compliance",
+          "due_date": "2026-07-01",
+          "status": "Pending"
+        }
       ],
       "skill_splits": {},
       "notes": "Replaces v2 with cost-aware optimisation. Pilot in South-East.",
       "last_updated": "2026-05-03T13:00:00",
-      "metric_ids": ["M-Glb-THRUPUT", "M-Glb-OEE"],
+      "metric_ids": [
+        "M-Glb-THRUPUT",
+        "M-Glb-OEE"
+      ],
       "persona_ids": []
     },
     {
@@ -38393,14 +38921,21 @@ const Onboarding = {
       "risks_register": [],
       "decisions_register": [],
       "benefits": [
-        { "type": "time_saving", "amount": 12, "units": "hours/week", "description": "Replaces ad-hoc cycle time reporting" }
+        {
+          "type": "time_saving",
+          "amount": 12,
+          "units": "hours/week",
+          "description": "Replaces ad-hoc cycle time reporting"
+        }
       ],
       "success_criteria": [],
       "dependencies": [],
       "skill_splits": {},
       "notes": "Cycle time dashboards across the four core process flows.",
       "last_updated": "2026-04-30T17:00:00",
-      "metric_ids": ["M-Glb-OEE"],
+      "metric_ids": [
+        "M-Glb-OEE"
+      ],
       "persona_ids": []
     },
     {
@@ -38433,7 +38968,15 @@ const Onboarding = {
       "target_sprint": null,
       "assumptions_register": [],
       "risks_register": [
-        { "description": "ATS export schema undocumented", "action": "Vendor escalation in flight", "owner": "Devon Park", "resolution_date": null }
+        {
+          "description": "ATS export schema undocumented",
+          "action": "Vendor escalation in flight",
+          "owner": "Devon Park",
+          "resolution_date": null,
+          "impact": 1,
+          "probability": 4,
+          "target_date": "2026-05-10"
+        }
       ],
       "decisions_register": [],
       "benefits": [],
@@ -38442,7 +38985,9 @@ const Onboarding = {
       "skill_splits": {},
       "notes": "Blocked — awaiting ATS export schema from vendor.",
       "last_updated": "2026-04-22T10:30:00",
-      "metric_ids": ["M-Glb-CSAT"],
+      "metric_ids": [
+        "M-Glb-CSAT"
+      ],
       "persona_ids": []
     },
     {
@@ -38475,10 +39020,23 @@ const Onboarding = {
       "target_sprint": null,
       "assumptions_register": [],
       "risks_register": [
-        { "description": "Field tablet rollout pace uncertain", "action": "Coordinate with field ops lead", "owner": "Frankie Hollis", "resolution_date": null }
+        {
+          "description": "Field tablet rollout pace uncertain",
+          "action": "Coordinate with field ops lead",
+          "owner": "Frankie Hollis",
+          "resolution_date": null,
+          "impact": 3,
+          "probability": 4,
+          "target_date": "2026-07-20"
+        }
       ],
       "decisions_register": [
-        { "date": "2026-04-28", "decision": "POC scope: 3 depots only", "decided_by": "Jordan Patel", "notes": "" }
+        {
+          "date": "2026-04-28",
+          "decision": "POC scope: 3 depots only",
+          "decided_by": "Jordan Patel",
+          "notes": ""
+        }
       ],
       "benefits": [],
       "success_criteria": [],
@@ -38486,7 +39044,10 @@ const Onboarding = {
       "skill_splits": {},
       "notes": "POC across 3 depots; widen if uptake exceeds 70%.",
       "last_updated": "2026-05-01T15:00:00",
-      "metric_ids": ["M-Glb-DEFECT", "M-Glb-REWORK"],
+      "metric_ids": [
+        "M-Glb-DEFECT",
+        "M-Glb-REWORK"
+      ],
       "persona_ids": []
     },
     {
@@ -38521,14 +39082,21 @@ const Onboarding = {
       "risks_register": [],
       "decisions_register": [],
       "benefits": [
-        { "type": "cost_saving", "amount": 95000, "units": "GBP/year", "description": "Decommissioned legacy telemetry stack" }
+        {
+          "type": "cost_saving",
+          "amount": 95000,
+          "units": "GBP/year",
+          "description": "Decommissioned legacy telemetry stack"
+        }
       ],
       "success_criteria": [],
       "dependencies": [],
       "skill_splits": {},
       "notes": "Closed March 2026 — running as BAU on the new stack.",
       "last_updated": "2026-04-04T09:00:00",
-      "metric_ids": ["M-Glb-OEE"],
+      "metric_ids": [
+        "M-Glb-OEE"
+      ],
       "persona_ids": []
     },
     {
@@ -38560,16 +39128,41 @@ const Onboarding = {
       "current_sprint": null,
       "target_sprint": null,
       "assumptions_register": [
-        { "date": "2026-04-22", "made_by": "Emerson Wu", "text": "Loyalty data is co-located with CRM extracts", "notes": "" }
+        {
+          "date": "2026-04-22",
+          "made_by": "Emerson Wu",
+          "text": "Loyalty data is co-located with CRM extracts",
+          "notes": ""
+        }
       ],
       "risks_register": [
-        { "description": "Loyalty data may not be linkable across legacy IDs", "action": "Spike on key-matching feasibility", "owner": "Emerson Wu", "resolution_date": null }
+        {
+          "description": "Loyalty data may not be linkable across legacy IDs",
+          "action": "Spike on key-matching feasibility",
+          "owner": "Emerson Wu",
+          "resolution_date": null,
+          "impact": 4,
+          "probability": 3,
+          "target_date": "2026-10-31"
+        }
       ],
       "issues_register": [
-        { "id": "iss-ini001-1", "description": "GDPR review for loyalty cohort modelling not yet scheduled", "owner": "Emerson Wu", "status": "open", "resolution_date": null }
+        {
+          "id": "iss-ini001-1",
+          "description": "GDPR review for loyalty cohort modelling not yet scheduled",
+          "owner": "Emerson Wu",
+          "status": "open",
+          "resolution_date": null,
+          "opened_date": "2026-04-25"
+        }
       ],
       "decisions_register": [
-        { "date": "2026-04-25", "decision": "Treat loyalty cohorting as an exploration spike (no commitment to productionise)", "decided_by": "Emerson Wu", "notes": "Review at next steerco" }
+        {
+          "date": "2026-04-25",
+          "decision": "Treat loyalty cohorting as an exploration spike (no commitment to productionise)",
+          "decided_by": "Emerson Wu",
+          "notes": "Review at next steerco"
+        }
       ],
       "benefits": [],
       "success_criteria": [],
@@ -38578,7 +39171,9 @@ const Onboarding = {
       "notes": "Idea-stage exploration of loyalty cohort modelling.",
       "last_invoked": null,
       "last_updated": "2026-05-02T12:00:00",
-      "metric_ids": ["M-Ini-NPS"],
+      "metric_ids": [
+        "M-Ini-NPS"
+      ],
       "persona_ids": []
     },
     {
@@ -38610,23 +39205,48 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": "CY26-S5",
       "assumptions_register": [
-        { "date": "2026-03-20", "made_by": "Emerson Wu", "text": "Cost centre hierarchy is owned by Finance Ops", "notes": "" }
+        {
+          "date": "2026-03-20",
+          "made_by": "Emerson Wu",
+          "text": "Cost centre hierarchy is owned by Finance Ops",
+          "notes": ""
+        }
       ],
       "risks_register": [
-        { "description": "Hierarchy changes mid-year not yet flagged", "action": "Confirm with Finance Ops", "owner": "Emerson Wu", "resolution_date": null }
+        {
+          "description": "Hierarchy changes mid-year not yet flagged",
+          "action": "Confirm with Finance Ops",
+          "owner": "Emerson Wu",
+          "resolution_date": null,
+          "impact": 2,
+          "probability": 4,
+          "target_date": null
+        }
       ],
       "decisions_register": [],
       "benefits": [
-        { "type": "time_saving", "amount": 25, "units": "hours/month", "description": "Automates monthly cost roll-up pack" }
+        {
+          "type": "time_saving",
+          "amount": 25,
+          "units": "hours/month",
+          "description": "Automates monthly cost roll-up pack"
+        }
       ],
       "success_criteria": [
-        { "name": "Reconciliation accuracy", "target": ">= 99.5%", "measure": "Finance month-end check", "tag": "Quality" }
+        {
+          "name": "Reconciliation accuracy",
+          "target": ">= 99.5%",
+          "measure": "Finance month-end check",
+          "tag": "Quality"
+        }
       ],
       "dependencies": [],
       "skill_splits": {},
       "notes": "Replaces month-end manual roll-up with automated dataset.",
       "last_updated": "2026-05-04T11:00:00",
-      "metric_ids": ["M-Ini-DEPLOY"],
+      "metric_ids": [
+        "M-Ini-DEPLOY"
+      ],
       "persona_ids": []
     },
     {
@@ -38658,11 +39278,29 @@ const Onboarding = {
       "current_sprint": "CY26-S3",
       "target_sprint": null,
       "assumptions_register": [
-        { "date": "2026-02-12", "made_by": "Cameron Diaz-Lee", "text": "Historical demand 36 months is sufficient signal", "notes": "Tested in spike" },
-        { "date": "2026-03-08", "made_by": "Casey Reyes", "text": "POC will inform full investment decision", "notes": "" }
+        {
+          "date": "2026-02-12",
+          "made_by": "Cameron Diaz-Lee",
+          "text": "Historical demand 36 months is sufficient signal",
+          "notes": "Tested in spike"
+        },
+        {
+          "date": "2026-03-08",
+          "made_by": "Casey Reyes",
+          "text": "POC will inform full investment decision",
+          "notes": ""
+        }
       ],
       "risks_register": [
-        { "description": "Single-threaded data scientist on critical path", "action": "Identify backup analyst", "owner": "Cameron Diaz-Lee", "resolution_date": null }
+        {
+          "description": "Single-threaded data scientist on critical path",
+          "action": "Identify backup analyst",
+          "owner": "Cameron Diaz-Lee",
+          "resolution_date": null,
+          "impact": 5,
+          "probability": 2,
+          "target_date": "2026-06-15"
+        }
       ],
       "decisions_register": [],
       "benefits": [],
@@ -38671,7 +39309,10 @@ const Onboarding = {
       "skill_splits": {},
       "notes": "POC funded for two quarters; staffing risk under active mitigation.",
       "last_updated": "2026-05-05T09:30:00",
-      "metric_ids": ["M-Ini-LATENCY", "M-Ini-MTTR"],
+      "metric_ids": [
+        "M-Ini-LATENCY",
+        "M-Ini-MTTR"
+      ],
       "persona_ids": []
     }
   ],
@@ -38689,139 +39330,1817 @@ const Onboarding = {
     "hardening_duration_weeks": 1
   },
   "personas": [
-    { "id": "P-Acme-CFO", "customer": "Acme Industries", "name": "CFO", "definition": "Owns Acme financial strategy.", "key_responsibilities": "Budget, forecast, capital allocation.", "parent_persona_id": null, "metric_holdings": [
-      { "id": "H-Acme-REV-CFO",  "metric_id": "M-Acme-REV",  "filter": {}, "targets": [{ "period": "2026",   "value": 400000000, "period_type": "annual"    }, { "period": "2026Q3", "value": 110000000, "period_type": "quarterly" }], "notes": "Group-level revenue target" },
-      { "id": "H-Acme-OPEX-CFO", "metric_id": "M-Acme-OPEX", "filter": {}, "targets": [{ "period": "2026",   "value": 250000000, "period_type": "annual"    }, { "period": "2026Q3", "value":  62000000, "period_type": "quarterly" }], "notes": "Group-level opex ceiling" },
-      { "id": "H-Acme-CTRL-CFO", "metric_id": "M-Acme-CTRL", "filter": {}, "targets": [{ "period": "2026",   "value": 100,       "period_type": "annual"    }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Acme-Ops", "customer": "Acme Industries", "name": "Head of Operations", "definition": "Runs operations division.", "key_responsibilities": "Service delivery, ops cost.", "parent_persona_id": "P-Acme-CFO", "metric_holdings": [
-      { "id": "H-Acme-OPEX-OPS",  "metric_id": "M-Acme-OPEX",  "filter": {}, "targets": [{ "period": "2026", "value": 240000000, "period_type": "annual" }], "notes": "Stretch on opex" },
-      { "id": "H-Acme-RECON-OPS",      "metric_id": "M-Acme-RECON",      "filter": {}, "targets": [{ "period": "2026", "value": 3,  "period_type": "annual" }], "notes": "Days to close month-end" },
-      { "id": "H-Acme-COMPLAINTS-OPS", "metric_id": "M-Acme-COMPLAINTS", "filter": {}, "targets": [{ "period": "2026", "value": 12, "period_type": "annual" }], "notes": "Per 1k orders" },
-      { "id": "H-Acme-NPS-OPS",        "metric_id": "M-Acme-NPS",        "filter": {}, "targets": [{ "period": "2026", "value": 35, "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Acme-FIN", "customer": "Acme Industries", "name": "Finance Manager", "definition": "Finance reporting & controls.", "key_responsibilities": "Month-end close, board reporting.", "parent_persona_id": "P-Acme-CFO", "metric_holdings": [
-      { "id": "H-Acme-RECON-FIN", "metric_id": "M-Acme-RECON", "filter": {}, "targets": [{ "period": "2026Q3", "value": 4, "period_type": "quarterly" }], "notes": "Stretch close target" },
-      { "id": "H-Acme-CTRL-FIN",  "metric_id": "M-Acme-CTRL",  "filter": {}, "targets": [{ "period": "2026",   "value": 100, "period_type": "annual"   }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Acme-COMP", "customer": "Acme Industries", "name": "Compliance Lead", "definition": "Owns SOX programme & audit response.", "key_responsibilities": "Controls inventory, audit liaison.", "parent_persona_id": "P-Acme-CFO", "metric_holdings": [
-      { "id": "H-Acme-CTRL-COMP", "metric_id": "M-Acme-CTRL", "filter": {}, "targets": [{ "period": "2026", "value": 100, "period_type": "annual" }], "notes": "All key controls passing" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Acme-RGM-N", "customer": "Acme Industries", "name": "Regional GM — North", "definition": "GM for North region.", "key_responsibilities": "Regional P&L.", "parent_persona_id": "P-Acme-Ops", "metric_holdings": [
-      { "id": "H-Acme-REV-RGMN",  "metric_id": "M-Acme-REV",  "filter": { "region": "North" }, "targets": [{ "period": "2026", "value": 200000000, "period_type": "annual" }, { "period": "2026Q3", "value": 55000000, "period_type": "quarterly" }], "notes": "" },
-      { "id": "H-Acme-OPEX-RGMN", "metric_id": "M-Acme-OPEX", "filter": { "region": "North" }, "targets": [{ "period": "2026", "value": 125000000, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Acme-CSAT-RGMN", "metric_id": "M-Acme-CSAT", "filter": { "region": "North" }, "targets": [{ "period": "2026", "value": 8.5, "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Acme-RGM-S", "customer": "Acme Industries", "name": "Regional GM — South", "definition": "GM for South region.", "key_responsibilities": "Regional P&L.", "parent_persona_id": "P-Acme-Ops", "metric_holdings": [
-      { "id": "H-Acme-REV-RGMS",  "metric_id": "M-Acme-REV",  "filter": { "region": "South" }, "targets": [{ "period": "2026", "value": 200000000, "period_type": "annual" }, { "period": "2026Q3", "value": 55000000, "period_type": "quarterly" }], "notes": "" },
-      { "id": "H-Acme-OPEX-RGMS", "metric_id": "M-Acme-OPEX", "filter": { "region": "South" }, "targets": [{ "period": "2026", "value": 125000000, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Acme-CSAT-RGMS", "metric_id": "M-Acme-CSAT", "filter": { "region": "South" }, "targets": [{ "period": "2026", "value": 8.3, "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-
-    { "id": "P-Glb-COO", "customer": "Globex", "name": "COO", "definition": "Globex operations lead.", "key_responsibilities": "Production throughput.", "parent_persona_id": null, "metric_holdings": [
-      { "id": "H-Glb-DEFECT-COO", "metric_id": "M-Glb-DEFECT", "filter": {}, "targets": [{ "period": "2026", "value": 0.5, "period_type": "annual" }], "notes": "Group defect target" },
-      { "id": "H-Glb-OEE-COO",    "metric_id": "M-Glb-OEE",    "filter": {}, "targets": [{ "period": "2026", "value": 82,  "period_type": "annual" }, { "period": "2026Q3", "value": 80, "period_type": "quarterly" }], "notes": "" },
-      { "id": "H-Glb-SAFE-COO",   "metric_id": "M-Glb-SAFETY", "filter": {}, "targets": [{ "period": "2026", "value": 6,   "period_type": "annual" }], "notes": "Recordable incidents" },
-      { "id": "H-Glb-CSAT-COO",   "metric_id": "M-Glb-CSAT",   "filter": {}, "targets": [{ "period": "2026", "value": 8.0, "period_type": "annual" }], "notes": "Post-delivery survey" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Glb-PLANT", "customer": "Globex", "name": "Plant Manager", "definition": "Runs the manufacturing plants.", "key_responsibilities": "Throughput, uptime, plant-level cost.", "parent_persona_id": "P-Glb-COO", "metric_holdings": [
-      { "id": "H-Glb-OEE-PLANTN",     "metric_id": "M-Glb-OEE",    "filter": { "plant": "North" }, "targets": [{ "period": "2026", "value": 84, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Glb-OEE-PLANTS",     "metric_id": "M-Glb-OEE",    "filter": { "plant": "South" }, "targets": [{ "period": "2026", "value": 80, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Glb-DEFECT-PLANTN",  "metric_id": "M-Glb-DEFECT", "filter": { "plant": "North" }, "targets": [{ "period": "2026", "value": 0.4, "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Glb-QM", "customer": "Globex", "name": "Quality Manager", "definition": "Owns quality + rework reduction programmes.", "key_responsibilities": "Defect investigation, rework loops.", "parent_persona_id": "P-Glb-COO", "metric_holdings": [
-      { "id": "H-Glb-DEFECT-QM", "metric_id": "M-Glb-DEFECT", "filter": {}, "targets": [{ "period": "2026Q3", "value": 0.6, "period_type": "quarterly" }], "notes": "Quarterly stretch" },
-      { "id": "H-Glb-REWORK-QM", "metric_id": "M-Glb-REWORK", "filter": {}, "targets": [{ "period": "2026", "value": 1.5, "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Glb-SHIFT-N", "customer": "Globex", "name": "Shift Lead — North", "definition": "Shift floor lead, North plant.", "key_responsibilities": "Daily throughput, safety briefs.", "parent_persona_id": "P-Glb-PLANT", "metric_holdings": [
-      { "id": "H-Glb-THRU-SHIFTN", "metric_id": "M-Glb-THRUPUT", "filter": { "shift": "North" }, "targets": [{ "period": "2026", "value": 1200, "period_type": "annual" }], "notes": "Units/shift target" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Glb-SHIFT-S", "customer": "Globex", "name": "Shift Lead — South", "definition": "Shift floor lead, South plant.", "key_responsibilities": "Daily throughput, safety briefs.", "parent_persona_id": "P-Glb-PLANT", "metric_holdings": [], "business_questions": [], "notes": "Junior shift lead — no metric ownership yet" },
-
-    { "id": "P-Ini-CTO", "customer": "Initech", "name": "CTO", "definition": "Initech tech leadership.", "key_responsibilities": "Platform reliability and innovation.", "parent_persona_id": null, "metric_holdings": [
-      { "id": "H-Ini-UPTIME-CTO", "metric_id": "M-Ini-UPTIME",    "filter": {}, "targets": [{ "period": "2026", "value": 99.9, "period_type": "annual" }], "notes": "Group SLO" },
-      { "id": "H-Ini-INC-CTO",    "metric_id": "M-Ini-INCIDENTS", "filter": {}, "targets": [{ "period": "2026", "value": 4,    "period_type": "annual" }], "notes": "Major incidents per year" },
-      { "id": "H-Ini-NPS-CTO",    "metric_id": "M-Ini-NPS",       "filter": {}, "targets": [{ "period": "2026", "value": 45,   "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Ini-VPE", "customer": "Initech", "name": "VP Engineering", "definition": "Owns engineering org outcomes.", "key_responsibilities": "Throughput, deploy frequency, hiring.", "parent_persona_id": "P-Ini-CTO", "metric_holdings": [
-      { "id": "H-Ini-DEPLOY-VPE", "metric_id": "M-Ini-DEPLOY",  "filter": {}, "targets": [{ "period": "2026", "value": 30,  "period_type": "annual" }], "notes": "Deploys/week" },
-      { "id": "H-Ini-MTTR-VPE",   "metric_id": "M-Ini-MTTR",    "filter": {}, "targets": [{ "period": "2026", "value": 25,  "period_type": "annual" }], "notes": "Minutes" },
-      { "id": "H-Ini-LAT-VPE",    "metric_id": "M-Ini-LATENCY", "filter": {}, "targets": [{ "period": "2026", "value": 250, "period_type": "annual" }], "notes": "P95 ms" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Ini-SRE", "customer": "Initech", "name": "Lead SRE", "definition": "Site reliability lead.", "key_responsibilities": "Incident response, MTTR, runbooks.", "parent_persona_id": "P-Ini-VPE", "metric_holdings": [
-      { "id": "H-Ini-MTTR-SRE",    "metric_id": "M-Ini-MTTR",      "filter": { "team": "SRE" },        "targets": [{ "period": "2026", "value": 20, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Ini-INC-SRE",     "metric_id": "M-Ini-INCIDENTS", "filter": {},                       "targets": [{ "period": "2026Q3", "value": 1,  "period_type": "quarterly" }], "notes": "" },
-      { "id": "H-Ini-UPTIME-SRE",  "metric_id": "M-Ini-UPTIME",    "filter": {},                       "targets": [{ "period": "2026", "value": 99.95, "period_type": "annual" }], "notes": "Stretch SLO" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Ini-BACKEND", "customer": "Initech", "name": "Lead Backend Eng", "definition": "Backend platform lead.", "key_responsibilities": "API latency, deploy hygiene.", "parent_persona_id": "P-Ini-VPE", "metric_holdings": [
-      { "id": "H-Ini-DEPLOY-BE", "metric_id": "M-Ini-DEPLOY",  "filter": { "team": "Backend" },  "targets": [{ "period": "2026", "value": 40,  "period_type": "annual" }], "notes": "" },
-      { "id": "H-Ini-LAT-BE",    "metric_id": "M-Ini-LATENCY", "filter": { "service": "api" },   "targets": [{ "period": "2026", "value": 200, "period_type": "annual" }], "notes": "" },
-      { "id": "H-Ini-MTTR-BE",   "metric_id": "M-Ini-MTTR",    "filter": { "team": "Backend" },  "targets": [{ "period": "2026", "value": 30,  "period_type": "annual" }], "notes": "" }
-    ], "business_questions": [], "notes": "" },
-    { "id": "P-Ini-FE", "customer": "Initech", "name": "Lead Frontend Eng", "definition": "Frontend platform lead.", "key_responsibilities": "UI quality, deploy cadence.", "parent_persona_id": "P-Ini-VPE", "metric_holdings": [], "business_questions": [], "notes": "Recently appointed — no metric ownership yet" }
+    {
+      "id": "P-Acme-CFO",
+      "customer": "Acme Industries",
+      "name": "CFO",
+      "definition": "Owns Acme financial strategy.",
+      "key_responsibilities": "Budget, forecast, capital allocation.",
+      "parent_persona_id": null,
+      "metric_holdings": [
+        {
+          "id": "H-Acme-REV-CFO",
+          "metric_id": "M-Acme-REV",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 400000000,
+              "period_type": "annual"
+            },
+            {
+              "period": "2026Q3",
+              "value": 110000000,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": "Group-level revenue target"
+        },
+        {
+          "id": "H-Acme-OPEX-CFO",
+          "metric_id": "M-Acme-OPEX",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 250000000,
+              "period_type": "annual"
+            },
+            {
+              "period": "2026Q3",
+              "value": 62000000,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": "Group-level opex ceiling"
+        },
+        {
+          "id": "H-Acme-CTRL-CFO",
+          "metric_id": "M-Acme-CTRL",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 100,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Acme-Ops",
+      "customer": "Acme Industries",
+      "name": "Head of Operations",
+      "definition": "Runs operations division.",
+      "key_responsibilities": "Service delivery, ops cost.",
+      "parent_persona_id": "P-Acme-CFO",
+      "metric_holdings": [
+        {
+          "id": "H-Acme-OPEX-OPS",
+          "metric_id": "M-Acme-OPEX",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 240000000,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Stretch on opex"
+        },
+        {
+          "id": "H-Acme-RECON-OPS",
+          "metric_id": "M-Acme-RECON",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 3,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Days to close month-end"
+        },
+        {
+          "id": "H-Acme-COMPLAINTS-OPS",
+          "metric_id": "M-Acme-COMPLAINTS",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 12,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Per 1k orders"
+        },
+        {
+          "id": "H-Acme-NPS-OPS",
+          "metric_id": "M-Acme-NPS",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 35,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Acme-FIN",
+      "customer": "Acme Industries",
+      "name": "Finance Manager",
+      "definition": "Finance reporting & controls.",
+      "key_responsibilities": "Month-end close, board reporting.",
+      "parent_persona_id": "P-Acme-CFO",
+      "metric_holdings": [
+        {
+          "id": "H-Acme-RECON-FIN",
+          "metric_id": "M-Acme-RECON",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026Q3",
+              "value": 4,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": "Stretch close target"
+        },
+        {
+          "id": "H-Acme-CTRL-FIN",
+          "metric_id": "M-Acme-CTRL",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 100,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Acme-COMP",
+      "customer": "Acme Industries",
+      "name": "Compliance Lead",
+      "definition": "Owns SOX programme & audit response.",
+      "key_responsibilities": "Controls inventory, audit liaison.",
+      "parent_persona_id": "P-Acme-CFO",
+      "metric_holdings": [
+        {
+          "id": "H-Acme-CTRL-COMP",
+          "metric_id": "M-Acme-CTRL",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 100,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "All key controls passing"
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Acme-RGM-N",
+      "customer": "Acme Industries",
+      "name": "Regional GM — North",
+      "definition": "GM for North region.",
+      "key_responsibilities": "Regional P&L.",
+      "parent_persona_id": "P-Acme-Ops",
+      "metric_holdings": [
+        {
+          "id": "H-Acme-REV-RGMN",
+          "metric_id": "M-Acme-REV",
+          "filter": {
+            "region": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 200000000,
+              "period_type": "annual"
+            },
+            {
+              "period": "2026Q3",
+              "value": 55000000,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Acme-OPEX-RGMN",
+          "metric_id": "M-Acme-OPEX",
+          "filter": {
+            "region": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 125000000,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Acme-CSAT-RGMN",
+          "metric_id": "M-Acme-CSAT",
+          "filter": {
+            "region": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 8.5,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Acme-RGM-S",
+      "customer": "Acme Industries",
+      "name": "Regional GM — South",
+      "definition": "GM for South region.",
+      "key_responsibilities": "Regional P&L.",
+      "parent_persona_id": "P-Acme-Ops",
+      "metric_holdings": [
+        {
+          "id": "H-Acme-REV-RGMS",
+          "metric_id": "M-Acme-REV",
+          "filter": {
+            "region": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 200000000,
+              "period_type": "annual"
+            },
+            {
+              "period": "2026Q3",
+              "value": 55000000,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Acme-OPEX-RGMS",
+          "metric_id": "M-Acme-OPEX",
+          "filter": {
+            "region": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 125000000,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Acme-CSAT-RGMS",
+          "metric_id": "M-Acme-CSAT",
+          "filter": {
+            "region": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 8.3,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Glb-COO",
+      "customer": "Globex",
+      "name": "COO",
+      "definition": "Globex operations lead.",
+      "key_responsibilities": "Production throughput.",
+      "parent_persona_id": null,
+      "metric_holdings": [
+        {
+          "id": "H-Glb-DEFECT-COO",
+          "metric_id": "M-Glb-DEFECT",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 0.5,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Group defect target"
+        },
+        {
+          "id": "H-Glb-OEE-COO",
+          "metric_id": "M-Glb-OEE",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 82,
+              "period_type": "annual"
+            },
+            {
+              "period": "2026Q3",
+              "value": 80,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Glb-SAFE-COO",
+          "metric_id": "M-Glb-SAFETY",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 6,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Recordable incidents"
+        },
+        {
+          "id": "H-Glb-CSAT-COO",
+          "metric_id": "M-Glb-CSAT",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 8,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Post-delivery survey"
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Glb-PLANT",
+      "customer": "Globex",
+      "name": "Plant Manager",
+      "definition": "Runs the manufacturing plants.",
+      "key_responsibilities": "Throughput, uptime, plant-level cost.",
+      "parent_persona_id": "P-Glb-COO",
+      "metric_holdings": [
+        {
+          "id": "H-Glb-OEE-PLANTN",
+          "metric_id": "M-Glb-OEE",
+          "filter": {
+            "plant": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 84,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Glb-OEE-PLANTS",
+          "metric_id": "M-Glb-OEE",
+          "filter": {
+            "plant": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 80,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Glb-DEFECT-PLANTN",
+          "metric_id": "M-Glb-DEFECT",
+          "filter": {
+            "plant": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 0.4,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Glb-QM",
+      "customer": "Globex",
+      "name": "Quality Manager",
+      "definition": "Owns quality + rework reduction programmes.",
+      "key_responsibilities": "Defect investigation, rework loops.",
+      "parent_persona_id": "P-Glb-COO",
+      "metric_holdings": [
+        {
+          "id": "H-Glb-DEFECT-QM",
+          "metric_id": "M-Glb-DEFECT",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026Q3",
+              "value": 0.6,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": "Quarterly stretch"
+        },
+        {
+          "id": "H-Glb-REWORK-QM",
+          "metric_id": "M-Glb-REWORK",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 1.5,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Glb-SHIFT-N",
+      "customer": "Globex",
+      "name": "Shift Lead — North",
+      "definition": "Shift floor lead, North plant.",
+      "key_responsibilities": "Daily throughput, safety briefs.",
+      "parent_persona_id": "P-Glb-PLANT",
+      "metric_holdings": [
+        {
+          "id": "H-Glb-THRU-SHIFTN",
+          "metric_id": "M-Glb-THRUPUT",
+          "filter": {
+            "shift": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 1200,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Units/shift target"
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Glb-SHIFT-S",
+      "customer": "Globex",
+      "name": "Shift Lead — South",
+      "definition": "Shift floor lead, South plant.",
+      "key_responsibilities": "Daily throughput, safety briefs.",
+      "parent_persona_id": "P-Glb-PLANT",
+      "metric_holdings": [],
+      "business_questions": [],
+      "notes": "Junior shift lead — no metric ownership yet"
+    },
+    {
+      "id": "P-Ini-CTO",
+      "customer": "Initech",
+      "name": "CTO",
+      "definition": "Initech tech leadership.",
+      "key_responsibilities": "Platform reliability and innovation.",
+      "parent_persona_id": null,
+      "metric_holdings": [
+        {
+          "id": "H-Ini-UPTIME-CTO",
+          "metric_id": "M-Ini-UPTIME",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 99.9,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Group SLO"
+        },
+        {
+          "id": "H-Ini-INC-CTO",
+          "metric_id": "M-Ini-INCIDENTS",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 4,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Major incidents per year"
+        },
+        {
+          "id": "H-Ini-NPS-CTO",
+          "metric_id": "M-Ini-NPS",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 45,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Ini-VPE",
+      "customer": "Initech",
+      "name": "VP Engineering",
+      "definition": "Owns engineering org outcomes.",
+      "key_responsibilities": "Throughput, deploy frequency, hiring.",
+      "parent_persona_id": "P-Ini-CTO",
+      "metric_holdings": [
+        {
+          "id": "H-Ini-DEPLOY-VPE",
+          "metric_id": "M-Ini-DEPLOY",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 30,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Deploys/week"
+        },
+        {
+          "id": "H-Ini-MTTR-VPE",
+          "metric_id": "M-Ini-MTTR",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 25,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Minutes"
+        },
+        {
+          "id": "H-Ini-LAT-VPE",
+          "metric_id": "M-Ini-LATENCY",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 250,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "P95 ms"
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Ini-SRE",
+      "customer": "Initech",
+      "name": "Lead SRE",
+      "definition": "Site reliability lead.",
+      "key_responsibilities": "Incident response, MTTR, runbooks.",
+      "parent_persona_id": "P-Ini-VPE",
+      "metric_holdings": [
+        {
+          "id": "H-Ini-MTTR-SRE",
+          "metric_id": "M-Ini-MTTR",
+          "filter": {
+            "team": "SRE"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 20,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Ini-INC-SRE",
+          "metric_id": "M-Ini-INCIDENTS",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026Q3",
+              "value": 1,
+              "period_type": "quarterly"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Ini-UPTIME-SRE",
+          "metric_id": "M-Ini-UPTIME",
+          "filter": {},
+          "targets": [
+            {
+              "period": "2026",
+              "value": 99.95,
+              "period_type": "annual"
+            }
+          ],
+          "notes": "Stretch SLO"
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Ini-BACKEND",
+      "customer": "Initech",
+      "name": "Lead Backend Eng",
+      "definition": "Backend platform lead.",
+      "key_responsibilities": "API latency, deploy hygiene.",
+      "parent_persona_id": "P-Ini-VPE",
+      "metric_holdings": [
+        {
+          "id": "H-Ini-DEPLOY-BE",
+          "metric_id": "M-Ini-DEPLOY",
+          "filter": {
+            "team": "Backend"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 40,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Ini-LAT-BE",
+          "metric_id": "M-Ini-LATENCY",
+          "filter": {
+            "service": "api"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 200,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        },
+        {
+          "id": "H-Ini-MTTR-BE",
+          "metric_id": "M-Ini-MTTR",
+          "filter": {
+            "team": "Backend"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 30,
+              "period_type": "annual"
+            }
+          ],
+          "notes": ""
+        }
+      ],
+      "business_questions": [],
+      "notes": ""
+    },
+    {
+      "id": "P-Ini-FE",
+      "customer": "Initech",
+      "name": "Lead Frontend Eng",
+      "definition": "Frontend platform lead.",
+      "key_responsibilities": "UI quality, deploy cadence.",
+      "parent_persona_id": "P-Ini-VPE",
+      "metric_holdings": [],
+      "business_questions": [],
+      "notes": "Recently appointed — no metric ownership yet"
+    }
   ],
   "objectives": [
-    { "id": "O-Acme-OPEX",  "customer": "Acme Industries", "name": "Reduce operating costs by 15%",     "description": "Drive opex efficiencies across regions.",      "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Acme-REV",   "customer": "Acme Industries", "name": "Grow regional revenue 12%",         "description": "Hit £400M total recognised revenue.",          "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Acme-SOX",   "customer": "Acme Industries", "name": "Achieve SOX compliance readiness",  "description": "All key SOX 404 controls passing audit.",      "status": "achieved", "time_horizon": { "start_date": "2025-04-01", "target_date": "2025-09-30" }, "notes": "Closed Sep 2025 — controls signed off." },
-    { "id": "O-Acme-CSAT",  "customer": "Acme Industries", "name": "Lift customer satisfaction to 8.5", "description": "Across all regions; reduce complaint rate.",   "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-
-    { "id": "O-Glb-QUAL",   "customer": "Globex",          "name": "Halve manufacturing defects",       "description": "Reach 0.5% defect rate across all plants.",     "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Glb-OEE",    "customer": "Globex",          "name": "Lift OEE to 82% group-wide",        "description": "Drive plant-level Overall Equipment Effectiveness.", "status": "active", "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Glb-SAFETY", "customer": "Globex",          "name": "Zero recordable incidents",          "description": "Programme paused pending external safety audit.","status": "paused",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "Resume after Q3 audit." },
-
-    { "id": "O-Ini-REL",    "customer": "Initech",         "name": "Hit 99.9% platform uptime",         "description": "Improve reliability across all services.",     "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Ini-DEPLOY", "customer": "Initech",         "name": "Reach 30 deploys/week",             "description": "Speed safe delivery via CI/CD investments.",   "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" },
-    { "id": "O-Ini-CSAT",   "customer": "Initech",         "name": "Lift product NPS to 45",            "description": "Customer-facing reliability + UX gains.",      "status": "active",   "time_horizon": { "start_date": "2025-06-01", "target_date": "2026-05-31" }, "notes": "" }
+    {
+      "id": "O-Acme-OPEX",
+      "customer": "Acme Industries",
+      "name": "Reduce operating costs by 15%",
+      "description": "Drive opex efficiencies across regions.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Acme-REV",
+      "customer": "Acme Industries",
+      "name": "Grow regional revenue 12%",
+      "description": "Hit £400M total recognised revenue.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Acme-SOX",
+      "customer": "Acme Industries",
+      "name": "Achieve SOX compliance readiness",
+      "description": "All key SOX 404 controls passing audit.",
+      "status": "achieved",
+      "time_horizon": {
+        "start_date": "2025-04-01",
+        "target_date": "2025-09-30"
+      },
+      "notes": "Closed Sep 2025 — controls signed off."
+    },
+    {
+      "id": "O-Acme-CSAT",
+      "customer": "Acme Industries",
+      "name": "Lift customer satisfaction to 8.5",
+      "description": "Across all regions; reduce complaint rate.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Glb-QUAL",
+      "customer": "Globex",
+      "name": "Halve manufacturing defects",
+      "description": "Reach 0.5% defect rate across all plants.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Glb-OEE",
+      "customer": "Globex",
+      "name": "Lift OEE to 82% group-wide",
+      "description": "Drive plant-level Overall Equipment Effectiveness.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Glb-SAFETY",
+      "customer": "Globex",
+      "name": "Zero recordable incidents",
+      "description": "Programme paused pending external safety audit.",
+      "status": "paused",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": "Resume after Q3 audit."
+    },
+    {
+      "id": "O-Ini-REL",
+      "customer": "Initech",
+      "name": "Hit 99.9% platform uptime",
+      "description": "Improve reliability across all services.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Ini-DEPLOY",
+      "customer": "Initech",
+      "name": "Reach 30 deploys/week",
+      "description": "Speed safe delivery via CI/CD investments.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    },
+    {
+      "id": "O-Ini-CSAT",
+      "customer": "Initech",
+      "name": "Lift product NPS to 45",
+      "description": "Customer-facing reliability + UX gains.",
+      "status": "active",
+      "time_horizon": {
+        "start_date": "2025-06-01",
+        "target_date": "2026-05-31"
+      },
+      "notes": ""
+    }
   ],
   "metrics": [
-    { "id": "M-Acme-REV",         "customer": "Acme Industries", "name": "Revenue",                      "definition": "Total recognised revenue.",                                "pseudo_logic": "SUM(orders.recognised_amount)",       "unit": "£",       "direction": "higher_is_better", "group_id": "performance", "source": "Snowflake · prod.fct_revenue",      "status": "live",  "dimensions": ["region"],            "objective_ids": ["O-Acme-REV"],                      "raci": { "accountable": ["P-Acme-CFO"],  "responsible": ["P-Acme-RGM-N", "P-Acme-RGM-S"], "consulted": ["P-Acme-Ops"], "informed": ["P-Acme-FIN"] }, "department": "ELT", "actuals": [], "notes": "" },
-    { "id": "M-Acme-OPEX",        "customer": "Acme Industries", "name": "Total opex",                   "definition": "Sum of operating expenditures.",                           "pseudo_logic": "SUM(opex_lines.amount)",              "unit": "£",       "direction": "lower_is_better",  "group_id": "performance", "source": "Snowflake · prod.fct_opex",         "status": "live",  "dimensions": ["region"],            "objective_ids": ["O-Acme-OPEX"],                     "raci": { "accountable": ["P-Acme-CFO"],  "responsible": ["P-Acme-Ops"],                  "consulted": ["P-Acme-RGM-N", "P-Acme-RGM-S"], "informed": ["P-Acme-FIN"] }, "department": "ELT", "actuals": [], "notes": "" },
-    { "id": "M-Acme-CSAT",        "customer": "Acme Industries", "name": "Customer satisfaction",        "definition": "Mean CSAT score across post-interaction surveys.",         "pseudo_logic": "AVG(surveys.csat) WHERE response_at >= window_start", "unit": "/10",     "direction": "higher_is_better", "group_id": "customer",    "source": "Qualtrics · csat_responses",        "status": "live",  "dimensions": ["region"],            "objective_ids": ["O-Acme-CSAT"],                     "raci": { "accountable": ["P-Acme-Ops"],  "responsible": ["P-Acme-RGM-N", "P-Acme-RGM-S"], "consulted": [],                                "informed": ["P-Acme-CFO"] }, "department": "Operations", "actuals": [], "notes": "" },
-    { "id": "M-Acme-NPS",         "customer": "Acme Industries", "name": "Net Promoter Score",           "definition": "Standard NPS across the active customer base.",            "pseudo_logic": "promoters - detractors AS PCT",       "unit": "score",   "direction": "higher_is_better", "group_id": "customer",    "source": "Qualtrics · nps_quarterly",         "status": "draft", "dimensions": [],                    "objective_ids": ["O-Acme-CSAT"],                     "raci": { "accountable": ["P-Acme-Ops"],  "responsible": [],                              "consulted": ["P-Acme-RGM-N", "P-Acme-RGM-S"], "informed": ["P-Acme-CFO"] }, "department": "Operations", "actuals": [], "notes": "Quarterly cadence; draft until Q3 instrumentation lands." },
-    { "id": "M-Acme-COMPLAINTS",  "customer": "Acme Industries", "name": "Complaint rate",               "definition": "Complaints per 1k orders, rolling 30 days.",                "pseudo_logic": "complaints / orders * 1000",          "unit": "per 1k",  "direction": "lower_is_better",  "group_id": "customer",    "source": "Service desk · zendesk_export",     "status": "live",  "dimensions": ["region", "channel"], "objective_ids": ["O-Acme-CSAT"],                     "raci": { "accountable": ["P-Acme-Ops"],  "responsible": ["P-Acme-RGM-N", "P-Acme-RGM-S"], "consulted": [],                                "informed": ["P-Acme-CFO"] }, "department": "Operations", "actuals": [], "notes": "" },
-    { "id": "M-Acme-CTRL",        "customer": "Acme Industries", "name": "SOX controls passing",         "definition": "Percent of key SOX controls passing in the latest audit.",  "pseudo_logic": "controls_passed / controls_total",    "unit": "%",       "direction": "higher_is_better", "group_id": "performance", "source": "GRC platform · controls_results",   "status": "live",  "dimensions": [],                    "objective_ids": ["O-Acme-SOX"],                      "raci": { "accountable": ["P-Acme-COMP"], "responsible": ["P-Acme-FIN"],                  "consulted": ["P-Acme-CFO"],                    "informed": [] },              "department": "Risk", "actuals": [], "notes": "" },
-    { "id": "M-Acme-RECON",       "customer": "Acme Industries", "name": "Month-end close days",         "definition": "Working days from month-end to signed accounts.",          "pseudo_logic": "DATEDIFF(close_date, period_end_date)", "unit": "days",   "direction": "lower_is_better",  "group_id": "performance", "source": "Finance ledger · close_log",        "status": "live",  "dimensions": [],                    "objective_ids": ["O-Acme-OPEX"],                     "raci": { "accountable": ["P-Acme-FIN"],  "responsible": ["P-Acme-Ops"],                  "consulted": [],                                "informed": ["P-Acme-CFO"] }, "department": "Finance", "actuals": [], "notes": "" },
-
-    { "id": "M-Glb-DEFECT",       "customer": "Globex",          "name": "Defect rate",                  "definition": "Percentage of units failing QC.",                          "pseudo_logic": "qc_failed / qc_total",                "unit": "%",       "direction": "lower_is_better",  "group_id": "operations",  "source": "MES · qc_runs",                     "status": "live",  "dimensions": ["plant"],             "objective_ids": ["O-Glb-QUAL"],                      "raci": { "accountable": ["P-Glb-COO"],   "responsible": ["P-Glb-QM"],                    "consulted": ["P-Glb-PLANT"],                   "informed": [] },              "department": "Quality", "actuals": [], "notes": "" },
-    { "id": "M-Glb-OEE",          "customer": "Globex",          "name": "Overall Equipment Effectiveness", "definition": "OEE = availability × performance × quality.",            "pseudo_logic": "availability * performance * quality", "unit": "%",      "direction": "higher_is_better", "group_id": "operations",  "source": "MES · oee_hourly",                  "status": "live",  "dimensions": ["plant"],             "objective_ids": ["O-Glb-OEE"],                       "raci": { "accountable": ["P-Glb-COO"],   "responsible": ["P-Glb-PLANT"],                 "consulted": ["P-Glb-QM"],                      "informed": [] },              "department": "ELT", "actuals": [], "notes": "" },
-    { "id": "M-Glb-SAFETY",       "customer": "Globex",          "name": "Recordable incidents",         "definition": "Recordable safety incidents YTD.",                          "pseudo_logic": "COUNT(*) WHERE classification = 'recordable'", "unit": "count",   "direction": "lower_is_better",  "group_id": "operations",  "source": "EHS portal · incident_register",    "status": "live",  "dimensions": [],                    "objective_ids": ["O-Glb-SAFETY"],                    "raci": { "accountable": ["P-Glb-COO"],   "responsible": ["P-Glb-PLANT"],                 "consulted": ["P-Glb-QM"],                      "informed": [] },              "department": "Operations", "actuals": [], "notes": "" },
-    { "id": "M-Glb-THRUPUT",      "customer": "Globex",          "name": "Throughput per shift",         "definition": "Units completed per production shift.",                     "pseudo_logic": "SUM(units_completed) / shifts",       "unit": "units",   "direction": "higher_is_better", "group_id": "performance", "source": "MES · production_log",              "status": "live",  "dimensions": ["shift", "plant"],    "objective_ids": ["O-Glb-OEE"],                       "raci": { "accountable": ["P-Glb-PLANT"], "responsible": ["P-Glb-SHIFT-N", "P-Glb-SHIFT-S"], "consulted": ["P-Glb-QM"],                  "informed": ["P-Glb-COO"] }, "department": "Operations", "actuals": [], "notes": "" },
-    { "id": "M-Glb-CSAT",         "customer": "Globex",          "name": "Customer satisfaction",        "definition": "Post-delivery customer survey score.",                      "pseudo_logic": "AVG(surveys.csat)",                   "unit": "/10",     "direction": "higher_is_better", "group_id": "customer",    "source": "Qualtrics · csat_responses",        "status": "draft", "dimensions": [],                    "objective_ids": ["O-Glb-QUAL"],                      "raci": { "accountable": ["P-Glb-COO"],   "responsible": [],                              "consulted": ["P-Glb-QM"],                      "informed": [] },              "department": "ELT", "actuals": [], "notes": "Draft until Q3 launch." },
-    { "id": "M-Glb-REWORK",       "customer": "Globex",          "name": "Rework rate",                  "definition": "Percentage of finished units sent back for rework.",        "pseudo_logic": "rework_count / units_completed",      "unit": "%",       "direction": "lower_is_better",  "group_id": "operations",  "source": "MES · rework_log",                  "status": "live",  "dimensions": ["plant"],             "objective_ids": ["O-Glb-QUAL"],                      "raci": { "accountable": ["P-Glb-QM"],    "responsible": ["P-Glb-PLANT"],                 "consulted": [],                                "informed": ["P-Glb-COO"] }, "department": "Quality", "actuals": [], "notes": "" },
-
-    { "id": "M-Ini-UPTIME",       "customer": "Initech",         "name": "Service uptime",               "definition": "Percentage of minutes services are healthy.",               "pseudo_logic": "healthy_minutes / total_minutes",     "unit": "%",       "direction": "higher_is_better", "group_id": "operations",  "source": "Datadog SLOs",                      "status": "live",  "dimensions": [],                    "objective_ids": ["O-Ini-REL"],                       "raci": { "accountable": ["P-Ini-CTO"],   "responsible": ["P-Ini-SRE"],                   "consulted": ["P-Ini-VPE"],                     "informed": [] },              "department": "ELT", "actuals": [], "notes": "" },
-    { "id": "M-Ini-MTTR",         "customer": "Initech",         "name": "Mean time to recovery",        "definition": "Mean minutes from incident open to resolution.",            "pseudo_logic": "AVG(resolved_at - opened_at)",        "unit": "minutes", "direction": "lower_is_better",  "group_id": "operations",  "source": "PagerDuty · incidents_export",      "status": "live",  "dimensions": ["team"],              "objective_ids": ["O-Ini-REL"],                       "raci": { "accountable": ["P-Ini-VPE"],   "responsible": ["P-Ini-SRE", "P-Ini-BACKEND"],  "consulted": [],                                "informed": ["P-Ini-CTO"] }, "department": "Engineering", "actuals": [], "notes": "" },
-    { "id": "M-Ini-DEPLOY",       "customer": "Initech",         "name": "Deploy frequency",             "definition": "Production deploys per week.",                              "pseudo_logic": "COUNT(deploys) / weeks_in_window",    "unit": "/week",   "direction": "higher_is_better", "group_id": "operations",  "source": "GitHub Actions · deploys_log",      "status": "live",  "dimensions": ["team"],              "objective_ids": ["O-Ini-DEPLOY"],                    "raci": { "accountable": ["P-Ini-VPE"],   "responsible": ["P-Ini-BACKEND"],               "consulted": ["P-Ini-SRE"],                     "informed": ["P-Ini-CTO"] }, "department": "Engineering", "actuals": [], "notes": "" },
-    { "id": "M-Ini-NPS",          "customer": "Initech",         "name": "Net Promoter Score",           "definition": "NPS across the customer base.",                             "pseudo_logic": "promoters - detractors AS PCT",       "unit": "score",   "direction": "higher_is_better", "group_id": "customer",    "source": "Qualtrics · nps_quarterly",         "status": "live",  "dimensions": [],                    "objective_ids": ["O-Ini-CSAT"],                      "raci": { "accountable": ["P-Ini-CTO"],   "responsible": [],                              "consulted": ["P-Ini-VPE"],                     "informed": [] },              "department": "ELT", "actuals": [], "notes": "" },
-    { "id": "M-Ini-INCIDENTS",    "customer": "Initech",         "name": "Major incidents",              "definition": "Count of Sev1/Sev2 incidents in the period.",               "pseudo_logic": "COUNT(*) WHERE severity IN ('S1','S2')","unit": "count",  "direction": "lower_is_better",  "group_id": "operations",  "source": "PagerDuty · incidents_export",      "status": "live",  "dimensions": [],                    "objective_ids": ["O-Ini-REL"],                       "raci": { "accountable": ["P-Ini-CTO"],   "responsible": ["P-Ini-SRE"],                   "consulted": ["P-Ini-VPE"],                     "informed": [] },              "department": "Engineering", "actuals": [], "notes": "" },
-    { "id": "M-Ini-LATENCY",      "customer": "Initech",         "name": "P95 latency",                  "definition": "95th-percentile API response latency.",                     "pseudo_logic": "PERCENTILE(response_ms, 0.95)",       "unit": "ms",      "direction": "lower_is_better",  "group_id": "performance", "source": "Datadog APM · web.requests",        "status": "live",  "dimensions": ["service"],           "objective_ids": ["O-Ini-REL"],                       "raci": { "accountable": ["P-Ini-VPE"],   "responsible": ["P-Ini-BACKEND"],               "consulted": ["P-Ini-SRE"],                     "informed": [] },              "department": "Engineering", "actuals": [], "notes": "" }
+    {
+      "id": "M-Acme-REV",
+      "customer": "Acme Industries",
+      "name": "Revenue",
+      "definition": "Total recognised revenue.",
+      "pseudo_logic": "SUM(orders.recognised_amount)",
+      "unit": "£",
+      "direction": "higher_is_better",
+      "group_id": "performance",
+      "source": "Snowflake · prod.fct_revenue",
+      "status": "live",
+      "dimensions": [
+        "region"
+      ],
+      "objective_ids": [
+        "O-Acme-REV"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-CFO"
+        ],
+        "responsible": [
+          "P-Acme-RGM-N",
+          "P-Acme-RGM-S"
+        ],
+        "consulted": [
+          "P-Acme-Ops"
+        ],
+        "informed": [
+          "P-Acme-FIN"
+        ]
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Acme-OPEX",
+      "customer": "Acme Industries",
+      "name": "Total opex",
+      "definition": "Sum of operating expenditures.",
+      "pseudo_logic": "SUM(opex_lines.amount)",
+      "unit": "£",
+      "direction": "lower_is_better",
+      "group_id": "performance",
+      "source": "Snowflake · prod.fct_opex",
+      "status": "live",
+      "dimensions": [
+        "region"
+      ],
+      "objective_ids": [
+        "O-Acme-OPEX"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-CFO"
+        ],
+        "responsible": [
+          "P-Acme-Ops"
+        ],
+        "consulted": [
+          "P-Acme-RGM-N",
+          "P-Acme-RGM-S"
+        ],
+        "informed": [
+          "P-Acme-FIN"
+        ]
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Acme-CSAT",
+      "customer": "Acme Industries",
+      "name": "Customer satisfaction",
+      "definition": "Mean CSAT score across post-interaction surveys.",
+      "pseudo_logic": "AVG(surveys.csat) WHERE response_at >= window_start",
+      "unit": "/10",
+      "direction": "higher_is_better",
+      "group_id": "customer",
+      "source": "Qualtrics · csat_responses",
+      "status": "live",
+      "dimensions": [
+        "region"
+      ],
+      "objective_ids": [
+        "O-Acme-CSAT"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-Ops"
+        ],
+        "responsible": [
+          "P-Acme-RGM-N",
+          "P-Acme-RGM-S"
+        ],
+        "consulted": [],
+        "informed": [
+          "P-Acme-CFO"
+        ]
+      },
+      "department": "Operations",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Acme-NPS",
+      "customer": "Acme Industries",
+      "name": "Net Promoter Score",
+      "definition": "Standard NPS across the active customer base.",
+      "pseudo_logic": "promoters - detractors AS PCT",
+      "unit": "score",
+      "direction": "higher_is_better",
+      "group_id": "customer",
+      "source": "Qualtrics · nps_quarterly",
+      "status": "draft",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Acme-CSAT"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-Ops"
+        ],
+        "responsible": [],
+        "consulted": [
+          "P-Acme-RGM-N",
+          "P-Acme-RGM-S"
+        ],
+        "informed": [
+          "P-Acme-CFO"
+        ]
+      },
+      "department": "Operations",
+      "actuals": [],
+      "notes": "Quarterly cadence; draft until Q3 instrumentation lands."
+    },
+    {
+      "id": "M-Acme-COMPLAINTS",
+      "customer": "Acme Industries",
+      "name": "Complaint rate",
+      "definition": "Complaints per 1k orders, rolling 30 days.",
+      "pseudo_logic": "complaints / orders * 1000",
+      "unit": "per 1k",
+      "direction": "lower_is_better",
+      "group_id": "customer",
+      "source": "Service desk · zendesk_export",
+      "status": "live",
+      "dimensions": [
+        "region",
+        "channel"
+      ],
+      "objective_ids": [
+        "O-Acme-CSAT"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-Ops"
+        ],
+        "responsible": [
+          "P-Acme-RGM-N",
+          "P-Acme-RGM-S"
+        ],
+        "consulted": [],
+        "informed": [
+          "P-Acme-CFO"
+        ]
+      },
+      "department": "Operations",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Acme-CTRL",
+      "customer": "Acme Industries",
+      "name": "SOX controls passing",
+      "definition": "Percent of key SOX controls passing in the latest audit.",
+      "pseudo_logic": "controls_passed / controls_total",
+      "unit": "%",
+      "direction": "higher_is_better",
+      "group_id": "performance",
+      "source": "GRC platform · controls_results",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Acme-SOX"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-COMP"
+        ],
+        "responsible": [
+          "P-Acme-FIN"
+        ],
+        "consulted": [
+          "P-Acme-CFO"
+        ],
+        "informed": []
+      },
+      "department": "Risk",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Acme-RECON",
+      "customer": "Acme Industries",
+      "name": "Month-end close days",
+      "definition": "Working days from month-end to signed accounts.",
+      "pseudo_logic": "DATEDIFF(close_date, period_end_date)",
+      "unit": "days",
+      "direction": "lower_is_better",
+      "group_id": "performance",
+      "source": "Finance ledger · close_log",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Acme-OPEX"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Acme-FIN"
+        ],
+        "responsible": [
+          "P-Acme-Ops"
+        ],
+        "consulted": [],
+        "informed": [
+          "P-Acme-CFO"
+        ]
+      },
+      "department": "Finance",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Glb-DEFECT",
+      "customer": "Globex",
+      "name": "Defect rate",
+      "definition": "Percentage of units failing QC.",
+      "pseudo_logic": "qc_failed / qc_total",
+      "unit": "%",
+      "direction": "lower_is_better",
+      "group_id": "operations",
+      "source": "MES · qc_runs",
+      "status": "live",
+      "dimensions": [
+        "plant"
+      ],
+      "objective_ids": [
+        "O-Glb-QUAL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-COO"
+        ],
+        "responsible": [
+          "P-Glb-QM"
+        ],
+        "consulted": [
+          "P-Glb-PLANT"
+        ],
+        "informed": []
+      },
+      "department": "Quality",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Glb-OEE",
+      "customer": "Globex",
+      "name": "Overall Equipment Effectiveness",
+      "definition": "OEE = availability × performance × quality.",
+      "pseudo_logic": "availability * performance * quality",
+      "unit": "%",
+      "direction": "higher_is_better",
+      "group_id": "operations",
+      "source": "MES · oee_hourly",
+      "status": "live",
+      "dimensions": [
+        "plant"
+      ],
+      "objective_ids": [
+        "O-Glb-OEE"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-COO"
+        ],
+        "responsible": [
+          "P-Glb-PLANT"
+        ],
+        "consulted": [
+          "P-Glb-QM"
+        ],
+        "informed": []
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Glb-SAFETY",
+      "customer": "Globex",
+      "name": "Recordable incidents",
+      "definition": "Recordable safety incidents YTD.",
+      "pseudo_logic": "COUNT(*) WHERE classification = 'recordable'",
+      "unit": "count",
+      "direction": "lower_is_better",
+      "group_id": "operations",
+      "source": "EHS portal · incident_register",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Glb-SAFETY"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-COO"
+        ],
+        "responsible": [
+          "P-Glb-PLANT"
+        ],
+        "consulted": [
+          "P-Glb-QM"
+        ],
+        "informed": []
+      },
+      "department": "Operations",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Glb-THRUPUT",
+      "customer": "Globex",
+      "name": "Throughput per shift",
+      "definition": "Units completed per production shift.",
+      "pseudo_logic": "SUM(units_completed) / shifts",
+      "unit": "units",
+      "direction": "higher_is_better",
+      "group_id": "performance",
+      "source": "MES · production_log",
+      "status": "live",
+      "dimensions": [
+        "shift",
+        "plant"
+      ],
+      "objective_ids": [
+        "O-Glb-OEE"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-PLANT"
+        ],
+        "responsible": [
+          "P-Glb-SHIFT-N",
+          "P-Glb-SHIFT-S"
+        ],
+        "consulted": [
+          "P-Glb-QM"
+        ],
+        "informed": [
+          "P-Glb-COO"
+        ]
+      },
+      "department": "Operations",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Glb-CSAT",
+      "customer": "Globex",
+      "name": "Customer satisfaction",
+      "definition": "Post-delivery customer survey score.",
+      "pseudo_logic": "AVG(surveys.csat)",
+      "unit": "/10",
+      "direction": "higher_is_better",
+      "group_id": "customer",
+      "source": "Qualtrics · csat_responses",
+      "status": "draft",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Glb-QUAL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-COO"
+        ],
+        "responsible": [],
+        "consulted": [
+          "P-Glb-QM"
+        ],
+        "informed": []
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": "Draft until Q3 launch."
+    },
+    {
+      "id": "M-Glb-REWORK",
+      "customer": "Globex",
+      "name": "Rework rate",
+      "definition": "Percentage of finished units sent back for rework.",
+      "pseudo_logic": "rework_count / units_completed",
+      "unit": "%",
+      "direction": "lower_is_better",
+      "group_id": "operations",
+      "source": "MES · rework_log",
+      "status": "live",
+      "dimensions": [
+        "plant"
+      ],
+      "objective_ids": [
+        "O-Glb-QUAL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Glb-QM"
+        ],
+        "responsible": [
+          "P-Glb-PLANT"
+        ],
+        "consulted": [],
+        "informed": [
+          "P-Glb-COO"
+        ]
+      },
+      "department": "Quality",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-UPTIME",
+      "customer": "Initech",
+      "name": "Service uptime",
+      "definition": "Percentage of minutes services are healthy.",
+      "pseudo_logic": "healthy_minutes / total_minutes",
+      "unit": "%",
+      "direction": "higher_is_better",
+      "group_id": "operations",
+      "source": "Datadog SLOs",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Ini-REL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-CTO"
+        ],
+        "responsible": [
+          "P-Ini-SRE"
+        ],
+        "consulted": [
+          "P-Ini-VPE"
+        ],
+        "informed": []
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-MTTR",
+      "customer": "Initech",
+      "name": "Mean time to recovery",
+      "definition": "Mean minutes from incident open to resolution.",
+      "pseudo_logic": "AVG(resolved_at - opened_at)",
+      "unit": "minutes",
+      "direction": "lower_is_better",
+      "group_id": "operations",
+      "source": "PagerDuty · incidents_export",
+      "status": "live",
+      "dimensions": [
+        "team"
+      ],
+      "objective_ids": [
+        "O-Ini-REL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-VPE"
+        ],
+        "responsible": [
+          "P-Ini-SRE",
+          "P-Ini-BACKEND"
+        ],
+        "consulted": [],
+        "informed": [
+          "P-Ini-CTO"
+        ]
+      },
+      "department": "Engineering",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-DEPLOY",
+      "customer": "Initech",
+      "name": "Deploy frequency",
+      "definition": "Production deploys per week.",
+      "pseudo_logic": "COUNT(deploys) / weeks_in_window",
+      "unit": "/week",
+      "direction": "higher_is_better",
+      "group_id": "operations",
+      "source": "GitHub Actions · deploys_log",
+      "status": "live",
+      "dimensions": [
+        "team"
+      ],
+      "objective_ids": [
+        "O-Ini-DEPLOY"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-VPE"
+        ],
+        "responsible": [
+          "P-Ini-BACKEND"
+        ],
+        "consulted": [
+          "P-Ini-SRE"
+        ],
+        "informed": [
+          "P-Ini-CTO"
+        ]
+      },
+      "department": "Engineering",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-NPS",
+      "customer": "Initech",
+      "name": "Net Promoter Score",
+      "definition": "NPS across the customer base.",
+      "pseudo_logic": "promoters - detractors AS PCT",
+      "unit": "score",
+      "direction": "higher_is_better",
+      "group_id": "customer",
+      "source": "Qualtrics · nps_quarterly",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Ini-CSAT"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-CTO"
+        ],
+        "responsible": [],
+        "consulted": [
+          "P-Ini-VPE"
+        ],
+        "informed": []
+      },
+      "department": "ELT",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-INCIDENTS",
+      "customer": "Initech",
+      "name": "Major incidents",
+      "definition": "Count of Sev1/Sev2 incidents in the period.",
+      "pseudo_logic": "COUNT(*) WHERE severity IN ('S1','S2')",
+      "unit": "count",
+      "direction": "lower_is_better",
+      "group_id": "operations",
+      "source": "PagerDuty · incidents_export",
+      "status": "live",
+      "dimensions": [],
+      "objective_ids": [
+        "O-Ini-REL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-CTO"
+        ],
+        "responsible": [
+          "P-Ini-SRE"
+        ],
+        "consulted": [
+          "P-Ini-VPE"
+        ],
+        "informed": []
+      },
+      "department": "Engineering",
+      "actuals": [],
+      "notes": ""
+    },
+    {
+      "id": "M-Ini-LATENCY",
+      "customer": "Initech",
+      "name": "P95 latency",
+      "definition": "95th-percentile API response latency.",
+      "pseudo_logic": "PERCENTILE(response_ms, 0.95)",
+      "unit": "ms",
+      "direction": "lower_is_better",
+      "group_id": "performance",
+      "source": "Datadog APM · web.requests",
+      "status": "live",
+      "dimensions": [
+        "service"
+      ],
+      "objective_ids": [
+        "O-Ini-REL"
+      ],
+      "raci": {
+        "accountable": [
+          "P-Ini-VPE"
+        ],
+        "responsible": [
+          "P-Ini-BACKEND"
+        ],
+        "consulted": [
+          "P-Ini-SRE"
+        ],
+        "informed": []
+      },
+      "department": "Engineering",
+      "actuals": [],
+      "notes": ""
+    }
   ],
   "metric_groups": [],
   "people": [
-    { "id": "PRSN-Acme-001", "customer": "Acme Industries", "name": "Sarah Chen",       "email": "schen@acme.example",   "role_title": "CFO",                     "department": "Finance",     "region": "Group",  "manager_id": null,             "active": true,  "persona_id": "P-Acme-CFO",   "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Acme-002", "customer": "Acme Industries", "name": "Tom Lee",          "email": "tlee@acme.example",    "role_title": "Head of Operations",      "department": "Operations",  "region": "Group",  "manager_id": "PRSN-Acme-001",  "active": true,  "persona_id": "P-Acme-Ops",   "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Acme-003", "customer": "Acme Industries", "name": "Priya Shah",       "email": "pshah@acme.example",   "role_title": "Finance Manager",         "department": "Finance",     "region": "Group",  "manager_id": "PRSN-Acme-001",  "active": true,  "persona_id": "P-Acme-FIN",   "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Acme-004", "customer": "Acme Industries", "name": "Hugo Bennett",     "email": "hbennett@acme.example","role_title": "Compliance Lead",         "department": "Risk",        "region": "Group",  "manager_id": "PRSN-Acme-001",  "active": true,  "persona_id": "P-Acme-COMP",  "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Acme-005", "customer": "Acme Industries", "name": "Diane Yuen",       "email": "dyuen@acme.example",   "role_title": "Regional GM — North",     "department": "Operations",  "region": "North",  "manager_id": "PRSN-Acme-002",  "active": true,  "persona_id": "P-Acme-RGM-N", "notes": "", "target_overrides": [{ "metric_id": "M-Acme-REV", "filter": { "region": "North" }, "targets": [{ "period": "2026", "value": 220, "period_type": "annual" }] }] },
-    { "id": "PRSN-Acme-006", "customer": "Acme Industries", "name": "Marco Rivera",     "email": "mrivera@acme.example", "role_title": "Regional GM — South",     "department": "Operations",  "region": "South",  "manager_id": "PRSN-Acme-002",  "active": true,  "persona_id": "P-Acme-RGM-S", "notes": "", "target_overrides": [{ "metric_id": "M-Acme-REV", "filter": { "region": "South" }, "targets": [{ "period": "2026", "value": 180, "period_type": "annual" }] }] },
-    { "id": "PRSN-Acme-007", "customer": "Acme Industries", "name": "Iris Almeida",     "email": "ialmeida@acme.example","role_title": "Treasury Analyst",        "department": "Finance",     "region": "Group",  "manager_id": "PRSN-Acme-003",  "active": true,  "persona_id": "P-Acme-FIN",   "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Acme-008", "customer": "Acme Industries", "name": "Owen Pratt",       "email": "opratt@acme.example",  "role_title": "Internal Auditor",        "department": "Risk",        "region": "Group",  "manager_id": "PRSN-Acme-004",  "active": false, "persona_id": "P-Acme-COMP",  "notes": "Left Apr 2026 — historical record kept.", "target_overrides": [] },
-
-    { "id": "PRSN-Glb-001",  "customer": "Globex",          "name": "Morgan Wei",       "email": "mwei@globex.example",  "role_title": "COO",                     "department": "Operations",  "region": "Group",  "manager_id": null,             "active": true,  "persona_id": "P-Glb-COO",    "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Glb-002",  "customer": "Globex",          "name": "Ravi Iyer",        "email": "riyer@globex.example", "role_title": "Plant Manager — North",   "department": "Manufacturing","region": "North",  "manager_id": "PRSN-Glb-001",   "active": true,  "persona_id": "P-Glb-PLANT",  "notes": "", "target_overrides": [{ "metric_id": "M-Glb-DEFECT", "filter": { "plant": "North" }, "targets": [{ "period": "2026", "value": 1.5, "period_type": "annual" }] }] },
-    { "id": "PRSN-Glb-003",  "customer": "Globex",          "name": "Linda Moss",       "email": "lmoss@globex.example", "role_title": "Quality Manager",         "department": "Quality",     "region": "Group",  "manager_id": "PRSN-Glb-001",   "active": true,  "persona_id": "P-Glb-QM",     "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Glb-004",  "customer": "Globex",          "name": "Jamal Booker",     "email": "jbooker@globex.example","role_title": "Shift Lead — North",      "department": "Manufacturing","region": "North",  "manager_id": "PRSN-Glb-002",   "active": true,  "persona_id": "P-Glb-SHIFT-N","notes": "", "target_overrides": [] },
-    { "id": "PRSN-Glb-005",  "customer": "Globex",          "name": "Ana Petrov",       "email": "apetrov@globex.example","role_title": "Shift Lead — South",      "department": "Manufacturing","region": "South",  "manager_id": "PRSN-Glb-002",   "active": true,  "persona_id": "P-Glb-SHIFT-S","notes": "", "target_overrides": [] },
-    { "id": "PRSN-Glb-006",  "customer": "Globex",          "name": "Chen Kowalski",    "email": "ckowalski@globex.example","role_title": "Plant Manager — South", "department": "Manufacturing","region": "South",  "manager_id": "PRSN-Glb-001",   "active": true,  "persona_id": "P-Glb-PLANT",  "notes": "", "target_overrides": [{ "metric_id": "M-Glb-DEFECT", "filter": { "plant": "South" }, "targets": [{ "period": "2026", "value": 1.8, "period_type": "annual" }] }] },
-
-    { "id": "PRSN-Ini-001",  "customer": "Initech",         "name": "Casey Park",       "email": "cpark@initech.example","role_title": "CTO",                     "department": "Engineering", "region": "Global", "manager_id": null,             "active": true,  "persona_id": "P-Ini-CTO",    "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Ini-002",  "customer": "Initech",         "name": "Lena Diaz",        "email": "ldiaz@initech.example","role_title": "VP Engineering",          "department": "Engineering", "region": "Global", "manager_id": "PRSN-Ini-001",   "active": true,  "persona_id": "P-Ini-VPE",    "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Ini-003",  "customer": "Initech",         "name": "Akira Tanaka",     "email": "atanaka@initech.example","role_title": "Lead SRE",              "department": "Platform",    "region": "APAC",   "manager_id": "PRSN-Ini-002",   "active": true,  "persona_id": "P-Ini-SRE",    "notes": "", "target_overrides": [] },
-    { "id": "PRSN-Ini-004",  "customer": "Initech",         "name": "Jordan Vega",      "email": "jvega@initech.example","role_title": "Lead Backend Eng",        "department": "Platform",    "region": "AMER",   "manager_id": "PRSN-Ini-002",   "active": true,  "persona_id": "P-Ini-BACKEND","notes": "", "target_overrides": [] },
-    { "id": "PRSN-Ini-005",  "customer": "Initech",         "name": "Rohan Mehta",      "email": "rmehta@initech.example","role_title": "SRE",                    "department": "Platform",    "region": "EMEA",   "manager_id": "PRSN-Ini-003",   "active": true,  "persona_id": "P-Ini-SRE",    "notes": "", "target_overrides": [] }
+    {
+      "id": "PRSN-Acme-001",
+      "customer": "Acme Industries",
+      "name": "Sarah Chen",
+      "email": "schen@acme.example",
+      "role_title": "CFO",
+      "department": "Finance",
+      "region": "Group",
+      "manager_id": null,
+      "active": true,
+      "persona_id": "P-Acme-CFO",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Acme-002",
+      "customer": "Acme Industries",
+      "name": "Tom Lee",
+      "email": "tlee@acme.example",
+      "role_title": "Head of Operations",
+      "department": "Operations",
+      "region": "Group",
+      "manager_id": "PRSN-Acme-001",
+      "active": true,
+      "persona_id": "P-Acme-Ops",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Acme-003",
+      "customer": "Acme Industries",
+      "name": "Priya Shah",
+      "email": "pshah@acme.example",
+      "role_title": "Finance Manager",
+      "department": "Finance",
+      "region": "Group",
+      "manager_id": "PRSN-Acme-001",
+      "active": true,
+      "persona_id": "P-Acme-FIN",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Acme-004",
+      "customer": "Acme Industries",
+      "name": "Hugo Bennett",
+      "email": "hbennett@acme.example",
+      "role_title": "Compliance Lead",
+      "department": "Risk",
+      "region": "Group",
+      "manager_id": "PRSN-Acme-001",
+      "active": true,
+      "persona_id": "P-Acme-COMP",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Acme-005",
+      "customer": "Acme Industries",
+      "name": "Diane Yuen",
+      "email": "dyuen@acme.example",
+      "role_title": "Regional GM — North",
+      "department": "Operations",
+      "region": "North",
+      "manager_id": "PRSN-Acme-002",
+      "active": true,
+      "persona_id": "P-Acme-RGM-N",
+      "notes": "",
+      "target_overrides": [
+        {
+          "metric_id": "M-Acme-REV",
+          "filter": {
+            "region": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 220,
+              "period_type": "annual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRSN-Acme-006",
+      "customer": "Acme Industries",
+      "name": "Marco Rivera",
+      "email": "mrivera@acme.example",
+      "role_title": "Regional GM — South",
+      "department": "Operations",
+      "region": "South",
+      "manager_id": "PRSN-Acme-002",
+      "active": true,
+      "persona_id": "P-Acme-RGM-S",
+      "notes": "",
+      "target_overrides": [
+        {
+          "metric_id": "M-Acme-REV",
+          "filter": {
+            "region": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 180,
+              "period_type": "annual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRSN-Acme-007",
+      "customer": "Acme Industries",
+      "name": "Iris Almeida",
+      "email": "ialmeida@acme.example",
+      "role_title": "Treasury Analyst",
+      "department": "Finance",
+      "region": "Group",
+      "manager_id": "PRSN-Acme-003",
+      "active": true,
+      "persona_id": "P-Acme-FIN",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Acme-008",
+      "customer": "Acme Industries",
+      "name": "Owen Pratt",
+      "email": "opratt@acme.example",
+      "role_title": "Internal Auditor",
+      "department": "Risk",
+      "region": "Group",
+      "manager_id": "PRSN-Acme-004",
+      "active": false,
+      "persona_id": "P-Acme-COMP",
+      "notes": "Left Apr 2026 — historical record kept.",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Glb-001",
+      "customer": "Globex",
+      "name": "Morgan Wei",
+      "email": "mwei@globex.example",
+      "role_title": "COO",
+      "department": "Operations",
+      "region": "Group",
+      "manager_id": null,
+      "active": true,
+      "persona_id": "P-Glb-COO",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Glb-002",
+      "customer": "Globex",
+      "name": "Ravi Iyer",
+      "email": "riyer@globex.example",
+      "role_title": "Plant Manager — North",
+      "department": "Manufacturing",
+      "region": "North",
+      "manager_id": "PRSN-Glb-001",
+      "active": true,
+      "persona_id": "P-Glb-PLANT",
+      "notes": "",
+      "target_overrides": [
+        {
+          "metric_id": "M-Glb-DEFECT",
+          "filter": {
+            "plant": "North"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 1.5,
+              "period_type": "annual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRSN-Glb-003",
+      "customer": "Globex",
+      "name": "Linda Moss",
+      "email": "lmoss@globex.example",
+      "role_title": "Quality Manager",
+      "department": "Quality",
+      "region": "Group",
+      "manager_id": "PRSN-Glb-001",
+      "active": true,
+      "persona_id": "P-Glb-QM",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Glb-004",
+      "customer": "Globex",
+      "name": "Jamal Booker",
+      "email": "jbooker@globex.example",
+      "role_title": "Shift Lead — North",
+      "department": "Manufacturing",
+      "region": "North",
+      "manager_id": "PRSN-Glb-002",
+      "active": true,
+      "persona_id": "P-Glb-SHIFT-N",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Glb-005",
+      "customer": "Globex",
+      "name": "Ana Petrov",
+      "email": "apetrov@globex.example",
+      "role_title": "Shift Lead — South",
+      "department": "Manufacturing",
+      "region": "South",
+      "manager_id": "PRSN-Glb-002",
+      "active": true,
+      "persona_id": "P-Glb-SHIFT-S",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Glb-006",
+      "customer": "Globex",
+      "name": "Chen Kowalski",
+      "email": "ckowalski@globex.example",
+      "role_title": "Plant Manager — South",
+      "department": "Manufacturing",
+      "region": "South",
+      "manager_id": "PRSN-Glb-001",
+      "active": true,
+      "persona_id": "P-Glb-PLANT",
+      "notes": "",
+      "target_overrides": [
+        {
+          "metric_id": "M-Glb-DEFECT",
+          "filter": {
+            "plant": "South"
+          },
+          "targets": [
+            {
+              "period": "2026",
+              "value": 1.8,
+              "period_type": "annual"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "PRSN-Ini-001",
+      "customer": "Initech",
+      "name": "Casey Park",
+      "email": "cpark@initech.example",
+      "role_title": "CTO",
+      "department": "Engineering",
+      "region": "Global",
+      "manager_id": null,
+      "active": true,
+      "persona_id": "P-Ini-CTO",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Ini-002",
+      "customer": "Initech",
+      "name": "Lena Diaz",
+      "email": "ldiaz@initech.example",
+      "role_title": "VP Engineering",
+      "department": "Engineering",
+      "region": "Global",
+      "manager_id": "PRSN-Ini-001",
+      "active": true,
+      "persona_id": "P-Ini-VPE",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Ini-003",
+      "customer": "Initech",
+      "name": "Akira Tanaka",
+      "email": "atanaka@initech.example",
+      "role_title": "Lead SRE",
+      "department": "Platform",
+      "region": "APAC",
+      "manager_id": "PRSN-Ini-002",
+      "active": true,
+      "persona_id": "P-Ini-SRE",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Ini-004",
+      "customer": "Initech",
+      "name": "Jordan Vega",
+      "email": "jvega@initech.example",
+      "role_title": "Lead Backend Eng",
+      "department": "Platform",
+      "region": "AMER",
+      "manager_id": "PRSN-Ini-002",
+      "active": true,
+      "persona_id": "P-Ini-BACKEND",
+      "notes": "",
+      "target_overrides": []
+    },
+    {
+      "id": "PRSN-Ini-005",
+      "customer": "Initech",
+      "name": "Rohan Mehta",
+      "email": "rmehta@initech.example",
+      "role_title": "SRE",
+      "department": "Platform",
+      "region": "EMEA",
+      "manager_id": "PRSN-Ini-003",
+      "active": true,
+      "persona_id": "P-Ini-SRE",
+      "notes": "",
+      "target_overrides": []
+    }
   ]
-}
-</script>
+}</script>
 </body>
 </html>
