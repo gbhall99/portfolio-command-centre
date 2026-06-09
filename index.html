@@ -37197,6 +37197,43 @@ const Report = {
   }
 };
 /* ============================================================
+   RaidIntel — pure-function urgency helpers: severity + target/age proximity.
+   Used by the Attention panel and enriched RAID tables.
+   ============================================================ */
+const RaidIntel = {
+  ISSUE_AMBER: 30, ISSUE_RED: 60, DECISION_AGING: 21, RISK_NEAR_DAYS: 30,
+  _daysBetween(fromISO, toISO) {
+    if (!fromISO || !toISO) return null;
+    const a = new Date(fromISO + 'T00:00:00Z').getTime();
+    const b = new Date(toISO + 'T00:00:00Z').getTime();
+    if (isNaN(a) || isNaN(b)) return null;
+    return Math.round((b - a) / 86400000);
+  },
+  riskSeverity(r) { return (parseInt(r.impact, 10) || 0) * (parseInt(r.probability, 10) || 0); },
+  severityBand(score) { return score >= 15 ? 'high' : score >= 8 ? 'medium' : 'low'; },
+  riskNearTarget(r, today) {
+    if (!r.target_date) return false;
+    const d = this._daysBetween(today, r.target_date);
+    return d === null ? false : d <= this.RISK_NEAR_DAYS;
+  },
+  riskUrgency(r, today) {
+    const sev = this.riskSeverity(r);
+    return this.riskNearTarget(r, today) ? sev * 2 + 100 : sev;
+  },
+  issueAgeDays(i, today) { return i.opened_date ? this._daysBetween(i.opened_date, today) : null; },
+  issueAging(i, today) {
+    const age = this.issueAgeDays(i, today);
+    if (age === null) return null;
+    return age >= this.ISSUE_RED ? 'red' : age >= this.ISSUE_AMBER ? 'amber' : null;
+  },
+  decisionAgeDays(d, today) { return d.date ? this._daysBetween(d.date, today) : null; },
+  decisionAging(d, today) {
+    const age = this.decisionAgeDays(d, today);
+    return age !== null && age >= this.DECISION_AGING;
+  },
+  _today() { return new Date().toISOString().split('T')[0]; }
+};
+/* ============================================================
    RaidView — Slot H / Item 20: top-level cross-portfolio RAID view with 4 tabs.
    ============================================================ */
 const RaidView = {
