@@ -3,10 +3,10 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makeProject } from '../harness/fixtures.mjs';
 
 describe('Settings IA registry', () => {
-  it('App.CONFIG_CATEGORIES has 12 entries', async () => {
+  it('App.CONFIG_CATEGORIES has 13 entries', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
     expect(Array.isArray(app.App.CONFIG_CATEGORIES)).toBe(true);
-    expect(app.App.CONFIG_CATEGORIES.length).toBe(12);
+    expect(app.App.CONFIG_CATEGORIES.length).toBe(13);
     app.teardown();
   });
 
@@ -24,7 +24,7 @@ describe('Settings IA registry', () => {
   it('expected category ids are present', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
     const ids = app.App.CONFIG_CATEGORIES.map(c => c.id);
-    expect(ids.sort()).toEqual(['customers','data','display','metrics','objectives','people','personas','scheduler','scoring','sprints','team','templates']);
+    expect(ids.sort()).toEqual(['ai','customers','data','display','metrics','objectives','people','personas','scheduler','scoring','sprints','team','templates']);
     app.teardown();
   });
 });
@@ -56,12 +56,12 @@ describe('Settings IA navigation', () => {
 });
 
 describe('Dashboard rendering', () => {
-  it('renders 12 tile buttons by default', async () => {
+  it('renders 13 tile buttons by default', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
     app.App.activeCustomer = 'Acme Industries';
     app.App.navigate('config');
     const tiles = app.window.document.querySelectorAll('#configBody .config-tile');
-    expect(tiles.length).toBe(12);
+    expect(tiles.length).toBe(13);
     app.teardown();
   });
 
