@@ -1,4 +1,5 @@
-// Delivery nav: chronological reorder — RAID/Governance/Actions at top with Projects,
+// Delivery nav: chronological reorder — Board (execution tracking) and
+// RAID/Governance/Actions at top with Projects (the Delivery cluster),
 // then a Planning subsection (Backlog first), then a Customer Profile subsection (Personas before
 // Metrics). No nav-strategy-group wrapper (the vertical line is gone).
 
@@ -28,7 +29,7 @@ describe('Delivery nav — chronological order', () => {
     const topViews = children.slice(0, firstSubLabelIdx)
       .filter(c => c.classList.contains('nav-item'))
       .map(c => c.getAttribute('data-view'));
-    expect(topViews).toEqual(['dashboard', 'raid', 'governance', 'myactions']);
+    expect(topViews).toEqual(['dashboard', 'board', 'raid', 'governance', 'myactions']);
     app.teardown();
   });
 
