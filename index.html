@@ -3911,6 +3911,7 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
               <option value="user">User</option>
               <option value="auto">Auto</option>
               <option value="drag">Drag</option>
+              <option value="ai">AI</option>
             </select>
           </label>
           <input type="text" id="activitySearch" oninput="AuditPanel.setSearch(this.value)" placeholder="Search project / field / person…" style="font-size:12px;padding:4px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);min-width:200px">
@@ -18255,10 +18256,17 @@ const Dashboard = {
     }).join(' ');
   },
 
+  // esc escapes &, <, > but NOT quotes (textContent serialisation) — safe for
+  // element text, NOT for attribute values or inline JS strings. Use escAttr
+  // for anything interpolated into an HTML attribute.
   esc(str) {
     const d = document.createElement('div');
     d.textContent = str;
     return d.innerHTML;
+  },
+
+  escAttr(str) {
+    return Dashboard.esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 };
 
@@ -38428,7 +38436,9 @@ const AI = {
       },
       async chat(profile, messages, opts) {
         const req = this.buildRequest(profile, messages, opts);
-        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, opts);
+        const reqOpts = Object.assign({}, opts);
+        if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
+        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts);
         return this.parseResponse(json);
       }
     },
@@ -38478,7 +38488,9 @@ const AI = {
       },
       async chat(profile, messages, opts) {
         const req = this.buildRequest(profile, messages, opts);
-        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, opts);
+        const reqOpts = Object.assign({}, opts);
+        if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
+        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts);
         return this.parseResponse(json);
       }
     },
@@ -38526,7 +38538,9 @@ const AI = {
       },
       async chat(profile, messages, opts) {
         const req = this.buildRequest(profile, messages, opts);
-        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, opts);
+        const reqOpts = Object.assign({}, opts);
+        if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
+        const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts);
         return this.parseResponse(json);
       }
     },
@@ -38623,7 +38637,7 @@ const AI = {
     const isNew = this._editingProfileId === 'new';
     const fld = (id, label, value, type, placeholder) =>
       '<div style="margin-bottom:8px"><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px">' + label + '</label>' +
-      '<input class="field-input" id="aiProf_' + id + '" type="' + (type || 'text') + '" value="' + esc(value === undefined || value === null ? '' : String(value)) + '" placeholder="' + esc(placeholder || '') + '" autocomplete="off"></div>';
+      '<input class="field-input" id="aiProf_' + id + '" type="' + (type || 'text') + '" value="' + Dashboard.escAttr(value === undefined || value === null ? '' : String(value)) + '" placeholder="' + Dashboard.escAttr(placeholder || '') + '" autocomplete="off"></div>';
     const adapterOpts = Object.keys(this.ADAPTERS).filter(a => a !== 'mock').map(a =>
       '<option value="' + a + '"' + ((p.adapter || 'openai') === a ? ' selected' : '') + '>' + esc(this.ADAPTERS[a].label) + '</option>').join('');
     const toolModeOpts = [['auto', 'Auto (native when supported)'], ['native', 'Native tool calling'], ['json', 'JSON fallback (no tool calling)']].map(o =>
@@ -38639,6 +38653,7 @@ const AI = {
         '<div style="margin-bottom:8px"><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px">Tool mode</label><select class="field-input" id="aiProf_toolMode">' + toolModeOpts + '</select></div>' +
         fld('temperature', 'Temperature', typeof p.temperature === 'number' ? p.temperature : 0.4, 'number', '') +
         fld('maxTokens', 'Max output tokens (blank = provider default)', p.maxTokens || '', 'number', '4096') +
+        fld('timeoutSecs', 'Request timeout seconds (blank = 60; raise for local models)', p.timeoutMs ? Math.round(p.timeoutMs / 1000) : '', 'number', '60') +
       '</div>' +
       '<div style="display:flex;gap:8px;margin-top:4px">' +
         '<button class="btn btn-primary btn-sm" onclick="AI.uiSaveProfile()">Save profile</button>' +
@@ -38668,7 +38683,8 @@ const AI = {
       model, apiKey: get('apiKey'),
       toolMode: get('toolMode') || 'auto',
       temperature: isFinite(temp) ? temp : 0.4,
-      maxTokens: maxTok > 0 ? maxTok : null
+      maxTokens: maxTok > 0 ? maxTok : null,
+      timeoutMs: App.toInteger(get('timeoutSecs')) > 0 ? App.toInteger(get('timeoutSecs')) * 1000 : null
     });
     this.upsertProfile(profile);
     this._editingProfileId = null;
@@ -39191,7 +39207,15 @@ const Assistant = {
     if (!AI.isConfigured()) { this.render(); return; }
     input.value = '';
     input.style.height = 'auto';
-    const items = this._items();
+    // Capture the customer at send time: the user may switch customers while
+    // the request is in flight, and BOTH the transcript and the model-facing
+    // thread must land on the customer the question was asked about — never
+    // bleed conversation context across customers.
+    const key = this._customerKey();
+    const customer = App.activeCustomer;
+    if (!this._rendered[key]) this._rendered[key] = [];
+    if (!this._threads[key]) this._threads[key] = [];
+    const items = this._rendered[key];
     items.push({ kind: 'user', text });
     this._pending = true;
     this.render();
@@ -39199,10 +39223,11 @@ const Assistant = {
     try {
       const res = await Agent.run(text, {
         task: 'chat',
-        history: this._thread().slice(-12),
+        customer,
+        history: this._threads[key].slice(-12),
         signal: this._abort.signal
       });
-      const thread = this._thread();
+      const thread = this._threads[key];
       thread.push({ role: 'user', content: text });
       thread.push({ role: 'assistant', content: res.text });
       items.push({ kind: 'assistant', text: res.text });
@@ -39436,7 +39461,7 @@ const Kanban = {
     const esc = Dashboard.esc;
     const lanes = this.SWIMLANES.map(l => '<option value="' + l.id + '"' + (this.swimlane() === l.id ? ' selected' : '') + '>' + l.label + '</option>').join('');
     let html =
-      '<input class="filter-select kb-search" id="kbSearch" type="search" placeholder="Filter cards…" value="' + esc(this._search) + '" oninput="Kanban.setSearch(this.value)" aria-label="Filter board cards">' +
+      '<input class="filter-select kb-search" id="kbSearch" type="search" placeholder="Filter cards…" value="' + Dashboard.escAttr(this._search) + '" oninput="Kanban.setSearch(this.value)" aria-label="Filter board cards">' +
       '<select class="filter-select" onchange="Kanban.setSwimlane(this.value)" aria-label="Swimlanes">' + lanes + '</select>' +
       '<button class="btn btn-outline btn-sm" onclick="Kanban.toggleConfig()" aria-expanded="' + (this._configOpen ? 'true' : 'false') + '">Columns &amp; WIP</button>';
     if (this._configOpen) {
@@ -39462,7 +39487,7 @@ const Kanban = {
       ' ondragstart="Kanban.onDragStart(event)" ondragend="Kanban.onDragEnd(event)"' +
       ' onclick="DetailPanel.open(this.dataset.projectId)"' +
       ' onkeydown="if(event.key===\'Enter\'){DetailPanel.open(this.dataset.projectId)}"' +
-      ' aria-label="' + esc(p.name) + ', status ' + esc(p.status) + '">' +
+      ' aria-label="' + Dashboard.escAttr(p.name) + ', status ' + esc(p.status) + '">' +
       this.CARD_FIELDS.map(f => f.render(p, esc)).join('') +
     '</div>';
   },
@@ -39659,6 +39684,22 @@ const Skills = {
     App.saveToLocalStorage();
   },
 
+  // Index-based UI handlers: customer names are user input and may contain
+  // quotes, so they never go into onclick attributes — handlers read the
+  // active customer themselves.
+  uiToggle(idx, on) {
+    const s = this.REGISTRY[idx];
+    if (s) { this.setEnabled(s.id, App.activeCustomer, on); App.renderConfig(); }
+  },
+  uiSetTemplate(idx, value) {
+    const s = this.REGISTRY[idx];
+    if (s && s.definitionKind) { Definitions.setSelectedSetId(s.definitionKind, App.activeCustomer, value); App.renderConfig(); }
+  },
+  uiLaunch(idx) {
+    const s = this.REGISTRY[idx];
+    if (s) this.launch(s.id);
+  },
+
   launch(id, opts) {
     const skill = this.get(id);
     if (!skill) return;
@@ -39676,12 +39717,12 @@ const Skills = {
     const esc = Dashboard.esc;
     const customer = App.activeCustomer;
     if (!this.REGISTRY.length) return '';
-    const rows = this.REGISTRY.map(s => {
+    const rows = this.REGISTRY.map((s, idx) => {
       const enabled = this.isEnabled(s.id, customer);
       const sets = Definitions.templateSets(s.definitionKind || '');
       const selected = s.definitionKind ? Definitions.selectedSetId(s.definitionKind, customer) : null;
       const setPicker = sets.length
-        ? '<select class="field-input" style="max-width:220px" onchange="Definitions.setSelectedSetId(\'' + esc(s.definitionKind) + '\',\'' + esc(customer) + '\', this.value);App.renderConfig()" aria-label="Template set for ' + esc(s.name) + '">' +
+        ? '<select class="field-input" style="max-width:220px" onchange="Skills.uiSetTemplate(' + idx + ', this.value)" aria-label="Template set for ' + esc(s.name) + '">' +
             sets.map(t => '<option value="' + esc(t.id) + '"' + (t.id === selected ? ' selected' : '') + '>' + esc(t.name) + '</option>').join('') +
           '</select>'
         : '<span style="color:var(--text-muted);font-size:11px">No template set</span>';
@@ -39692,8 +39733,8 @@ const Skills = {
           '<div style="font-size:11px;color:var(--text-muted)">' + esc(s.description) + ' · produces: ' + esc(s.produces) + ' · approval: ' + esc(s.approval || 'review') + '</div>' +
         '</div>' +
         setPicker +
-        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;flex-shrink:0"><input type="checkbox"' + (enabled ? ' checked' : '') + ' onchange="Skills.setEnabled(\'' + esc(s.id) + '\',\'' + esc(customer) + '\', this.checked);App.renderConfig()"> Enabled</label>' +
-        '<button class="btn btn-outline btn-sm" style="flex-shrink:0" onclick="Skills.launch(\'' + esc(s.id) + '\')">Open</button>' +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;flex-shrink:0"><input type="checkbox"' + (enabled ? ' checked' : '') + ' onchange="Skills.uiToggle(' + idx + ', this.checked)"> Enabled</label>' +
+        '<button class="btn btn-outline btn-sm" style="flex-shrink:0" onclick="Skills.uiLaunch(' + idx + ')">Open</button>' +
       '</div>';
     }).join('');
     return '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
@@ -40784,7 +40825,7 @@ const WireframeSkill = {
       ? '<div class="wf-props">' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Selected: ' + esc(sel.type) + '</div>' +
           '<label for="wfTitleInput">Title</label>' +
-          '<input id="wfTitleInput" class="field-input" value="' + esc(sel.title || '') + '" oninput="WireframeSkill.uiTitleChange(this)">' +
+          '<input id="wfTitleInput" class="field-input" value="' + Dashboard.escAttr(sel.title || '') + '" oninput="WireframeSkill.uiTitleChange(this)">' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + sel.w + '×' + sel.h + ' at (' + sel.x + ',' + sel.y + ') — drag to move, corner handle to resize</div>' +
           '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
         '</div>'
@@ -40793,7 +40834,7 @@ const WireframeSkill = {
       '<div class="wf-body">' +
         '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
         '<div class="wf-side">' +
-          '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + esc(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
+          '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + Dashboard.escAttr(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
           '<div class="wf-conf" id="wfConf">' + this.renderConfHtml() + '</div>' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Component palette (governed vocabulary)</div>' +
           '<div class="wf-palette">' + palette + '</div>' +
