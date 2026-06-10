@@ -4849,6 +4849,7 @@ const App = {
     // artifacts. Always-run, idempotent — existing sessions gain empty arrays.
     if (!Array.isArray(data.sows)) data.sows = [];
     if (!Array.isArray(data.wireframes)) data.wireframes = [];
+    if (!Array.isArray(data.billing_arrangements)) data.billing_arrangements = [];
 
     // Lifecycle rework (2026-05): collapse 'Phase-1 Build' into 'Implementation'.
     (data.projects || []).forEach(p => {
@@ -6096,6 +6097,10 @@ const App = {
     // WS4: per-customer skill enablement + governed template-set selection.
     if (!s.skill_templates || typeof s.skill_templates !== 'object') s.skill_templates = {};
     if (!s.skills_enabled || typeof s.skills_enabled !== 'object') s.skills_enabled = {};
+
+    // Billing: sell-side config. settings.rate_card (cost side) is unchanged.
+    s.billing = Object.assign({ currency: 'GBP', sell_rates: {} }, s.billing || {});
+    if (!s.billing.sell_rates || typeof s.billing.sell_rates !== 'object') s.billing.sell_rates = {};
 
     // Display colour-band thresholds previously hard-coded at dozens of call sites.
     s.thresholds = Object.assign({
@@ -8190,6 +8195,13 @@ const App = {
         return n ? n + ' model profile' + (n === 1 ? '' : 's') : 'Not connected';
       },
       render: () => (typeof AI !== 'undefined') ? AI.renderSettingsCard() : '' },
+    { id: 'billing', label: 'Billing & rates',
+      icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+      summary: () => {
+        const n = (App.data && App.data.billing_arrangements || []).length;
+        return (typeof Billing !== 'undefined' ? Billing.currency() : 'GBP') + ' · ' + n + ' arrangement' + (n === 1 ? '' : 's');
+      },
+      render: () => (typeof Billing !== 'undefined') ? Billing.renderSettingsCard() : '' },
     { id: 'display', label: 'Display & white-labelling',
       icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>',
       summary: () => 'Theme & thresholds',
@@ -15556,6 +15568,7 @@ const CommandPalette = {
       { title: 'Assistant — chat with your portfolio', action: () => Assistant.open(), meta: 'Ctrl/Cmd+J' },
       { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template' },
       { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules' },
+      { title: 'Billing & Costs report (active customer)', action: () => Billing.exportReport(App.activeCustomer), meta: 'Prepaid drawdown · T&M · margin' },
       { title: 'Activity feed', action: () => AuditPanel.open(), meta: 'Audit log' },
       { title: 'Trends', action: () => TrendsModal.open(), meta: 'Portfolio health trends' },
       { title: 'Undo', action: () => App.undo(), meta: 'Ctrl/Cmd+Z' },
@@ -39742,6 +39755,367 @@ const Skills = {
       '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Per-customer: enable/disable each skill and pick which governed template set it follows for <b>' + esc(customer || '—') + '</b>. Template sets are version-controlled definition files (see SKILLS.md).</div>' +
       rows +
     '</div>';
+  }
+};
+
+/* ============================================================================
+   Billing — sell-side rates, prepaid/fixed arrangements, drawdown and
+   reporting (by customer and by project).
+   Two sides of the money model:
+     - COST  — settings.rate_card (existing; per-SP internal cost; EVM).
+     - SELL  — settings.billing.sell_rates (per-SP charge) + customer-scoped
+       data.billing_arrangements: blocks of capacity paid for upfront
+       (prepaid_points at amount_invoiced). Consumed work draws prepaid
+       blocks down FIRST (deterministically); the remainder bills as T&M.
+   Billing.customerSummary is the single source of truth — the report, the
+   project view and the SOW quote all derive from the same drawdown.
+   ============================================================================ */
+const Billing = {
+  SKILLS: [
+    ['size_requirements', 'Requirements'],
+    ['size_tableau', 'Tableau'],
+    ['size_engineering', 'Data Engineering'],
+    ['size_data_science', 'Data Science'],
+    ['size_uat_adoption', 'UAT']
+  ],
+
+  settings() {
+    return (App.data && App.data.settings && App.data.settings.billing) || { currency: 'GBP', sell_rates: {} };
+  },
+  currency() { return this.settings().currency || 'GBP'; },
+  fmtMoney(n) {
+    const cur = this.currency();
+    try { return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
+    catch (e) { return cur + ' ' + Math.round(n || 0).toLocaleString('en-GB'); }
+  },
+  sellRate(skillKey) {
+    const r = Number(this.settings().sell_rates[skillKey]);
+    return isFinite(r) && r > 0 ? r : 0;
+  },
+  setSellRate(skillKey, rate) {
+    if (!App.data) return;
+    App.pushUndo('Set sell rate for ' + skillKey);
+    const r = Number(rate);
+    App.data.settings.billing.sell_rates[skillKey] = isFinite(r) && r > 0 ? r : 0;
+    App.logChange(null, 'billing_sell_rate:' + skillKey, '', String(rate), 'user', { event_type: 'billing' });
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+  setCurrency(cur) {
+    if (!App.data || !cur) return;
+    App.pushUndo('Set billing currency');
+    App.data.settings.billing.currency = String(cur).toUpperCase().slice(0, 3);
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // Completed-work points per skill — same EV semantics as App.computeProjectCost,
+  // so cost and billing always describe the same work.
+  consumedBySkill(p) {
+    const out = {};
+    this.SKILLS.forEach(([sk]) => {
+      let ev = 0;
+      ((p.skill_splits || {})[sk] || []).forEach(sp => {
+        ev += sp.status === 'complete' ? (sp.points || 0) : (sp.completed || 0);
+      });
+      if (ev > 0) out[sk] = App.toInteger(ev);
+    });
+    return out;
+  },
+
+  // --- Arrangements (customer-scoped prepaid/fixed blocks) ---
+  arrangements(customer) {
+    return (App.data && App.data.billing_arrangements || []).filter(a => !customer || a.customer === customer);
+  },
+  getArrangement(id) { return (App.data && App.data.billing_arrangements || []).find(a => a.id === id) || null; },
+  addArrangement(fields) {
+    if (!App.data || !fields || !fields.customer) return null;
+    const arr = {
+      id: 'BA-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      customer: fields.customer,
+      label: String(fields.label || 'Prepaid block').slice(0, 120),
+      skill: fields.skill && this.SKILLS.some(s => s[0] === fields.skill) ? fields.skill : 'any',
+      prepaid_points: Math.max(0, App.toInteger(fields.prepaid_points)),
+      amount_invoiced: Math.max(0, Number(fields.amount_invoiced) || 0),
+      start_date: fields.start_date || null,
+      end_date: fields.end_date || null,
+      notes: String(fields.notes || '').slice(0, 500),
+      created_at: new Date().toISOString()
+    };
+    App.pushUndo('Add billing arrangement ' + arr.label);
+    App.data.billing_arrangements.push(arr);
+    App.logChange(null, 'billing_arrangement_added', '', arr.label + ' (' + arr.customer + ')', 'user', { event_type: 'billing' });
+    App.markDirty();
+    App.saveToLocalStorage();
+    return arr;
+  },
+  removeArrangement(id) {
+    const arr = this.getArrangement(id);
+    if (!arr) return;
+    App.pushUndo('Delete billing arrangement ' + arr.label);
+    App.data.billing_arrangements = App.data.billing_arrangements.filter(a => a.id !== id);
+    App.logChange(null, 'billing_arrangement_removed', arr.label, '', 'user', { event_type: 'billing' });
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // --- The drawdown engine (single source of truth) ---
+  // Deterministic: projects by id, skills in SKILLS order, arrangements by
+  // start_date then id; skill-specific pools drain before 'any' pools.
+  customerSummary(customer) {
+    const projects = (App.data && App.data.projects || [])
+      .filter(p => p.customer === customer)
+      .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const pools = this.arrangements(customer)
+      .slice().sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')) || String(a.id).localeCompare(String(b.id)))
+      .map(a => ({
+        arrangement: a,
+        remaining: Math.max(0, App.toInteger(a.prepaid_points)),
+        drawn: 0,
+        // Revenue already recognised per point: amount invoiced upfront / points bought.
+        impliedRate: App.toInteger(a.prepaid_points) > 0 ? (Number(a.amount_invoiced) || 0) / App.toInteger(a.prepaid_points) : 0
+      }));
+    const poolsFor = (sk) => pools.filter(p => p.arrangement.skill === sk).concat(pools.filter(p => p.arrangement.skill === 'any'));
+
+    const projectRows = projects.map(p => {
+      const consumed = this.consumedBySkill(p);
+      let consumedTotal = 0, covered = 0, billableAmount = 0, prepaidValue = 0;
+      const bySkill = {};
+      this.SKILLS.forEach(([sk, label]) => {
+        let need = consumed[sk] || 0;
+        if (!need) return;
+        consumedTotal += need;
+        let coveredHere = 0;
+        poolsFor(sk).forEach(pool => {
+          if (!need || !pool.remaining) return;
+          const take = Math.min(need, pool.remaining);
+          pool.remaining -= take;
+          pool.drawn += take;
+          prepaidValue += take * pool.impliedRate;
+          coveredHere += take;
+          need -= take;
+        });
+        covered += coveredHere;
+        billableAmount += need * this.sellRate(sk);
+        bySkill[sk] = { label, consumed: consumed[sk], prepaid_covered: coveredHere, billable_points: need, rate: this.sellRate(sk), billable_amount: need * this.sellRate(sk) };
+      });
+      const cost = App.computeProjectCost(p);
+      const revenue = billableAmount + prepaidValue;
+      return {
+        id: p.id, name: p.name, status: p.status,
+        consumed_points: consumedTotal,
+        prepaid_covered_points: covered,
+        billable_points: consumedTotal - covered,
+        billable_amount: Math.round(billableAmount),
+        prepaid_value: Math.round(prepaidValue),
+        revenue: Math.round(revenue),
+        cost: cost.EV,
+        margin: Math.round(revenue - cost.EV),
+        by_skill: bySkill
+      };
+    }).filter(r => r.consumed_points > 0);
+
+    const totals = projectRows.reduce((t, r) => {
+      t.consumed_points += r.consumed_points;
+      t.prepaid_covered_points += r.prepaid_covered_points;
+      t.billable_points += r.billable_points;
+      t.billable_amount += r.billable_amount;
+      t.revenue += r.revenue;
+      t.cost += r.cost;
+      t.margin += r.margin;
+      return t;
+    }, { consumed_points: 0, prepaid_covered_points: 0, billable_points: 0, billable_amount: 0, revenue: 0, cost: 0, margin: 0 });
+    totals.fixed_invoiced = this.arrangements(customer).reduce((s, a) => s + (Number(a.amount_invoiced) || 0), 0);
+
+    return {
+      customer,
+      currency: this.currency(),
+      projects: projectRows,
+      arrangements: pools.map(pl => ({
+        id: pl.arrangement.id, label: pl.arrangement.label, skill: pl.arrangement.skill,
+        prepaid_points: App.toInteger(pl.arrangement.prepaid_points),
+        drawn_points: pl.drawn, remaining_points: pl.remaining,
+        amount_invoiced: Number(pl.arrangement.amount_invoiced) || 0,
+        start_date: pl.arrangement.start_date, end_date: pl.arrangement.end_date
+      })),
+      totals
+    };
+  },
+
+  projectBreakdown(projectId) {
+    const p = (App.data && App.data.projects || []).find(x => x.id === projectId);
+    if (!p) return null;
+    const summary = this.customerSummary(p.customer);
+    return summary.projects.find(r => r.id === projectId) ||
+      { id: p.id, name: p.name, consumed_points: 0, prepaid_covered_points: 0, billable_points: 0, billable_amount: 0, prepaid_value: 0, revenue: 0, cost: 0, margin: 0, by_skill: {} };
+  },
+
+  // Quote for PLANNED work (SOW time): nets the customer's REMAINING prepaid
+  // capacity (after consumed drawdown) against the project's planned points.
+  quoteForProject(project) {
+    const summary = this.customerSummary(project.customer);
+    const remainingPools = summary.arrangements.map(a => ({ skill: a.skill, remaining: a.remaining_points, label: a.label }));
+    const poolsFor = (sk) => remainingPools.filter(p => p.skill === sk).concat(remainingPools.filter(p => p.skill === 'any'));
+    const lines = [];
+    let totalPoints = 0, coveredPoints = 0, amount = 0;
+    this.SKILLS.forEach(([sk, label]) => {
+      const planned = App.toInteger(project[sk] || 0);
+      if (!planned) return;
+      totalPoints += planned;
+      let need = planned, covered = 0;
+      poolsFor(sk).forEach(pool => {
+        if (!need || !pool.remaining) return;
+        const take = Math.min(need, pool.remaining);
+        pool.remaining -= take;
+        covered += take;
+        need -= take;
+      });
+      coveredPoints += covered;
+      const rate = this.sellRate(sk);
+      lines.push({ skill: sk, label, points: planned, prepaid_covered: covered, billable_points: need, rate, amount: need * rate });
+      amount += need * rate;
+    });
+    return {
+      project_id: project.id, customer: project.customer, currency: this.currency(),
+      generated_at: new Date().toISOString(),
+      lines,
+      totals: { points: totalPoints, prepaid_covered: coveredPoints, billable_points: totalPoints - coveredPoints, amount: Math.round(amount) }
+    };
+  },
+
+  // Plain-text quote block for the SOW Commercials section.
+  quoteAsText(quote) {
+    if (!quote || !quote.lines.length) return 'No sized work to quote.';
+    const lines = quote.lines.map(l =>
+      '- ' + l.label + ': ' + App.fmtPoints(l.points) + ' SP' +
+      (l.prepaid_covered ? ' (' + App.fmtPoints(l.prepaid_covered) + ' SP covered by prepaid arrangement)' : '') +
+      (l.billable_points ? ' — ' + App.fmtPoints(l.billable_points) + ' SP at ' + this.fmtMoney(l.rate) + '/SP = ' + this.fmtMoney(l.amount) : ' — no charge')
+    );
+    lines.push('');
+    lines.push('Total scope: ' + App.fmtPoints(quote.totals.points) + ' SP. Covered by prepaid: ' + App.fmtPoints(quote.totals.prepaid_covered) + ' SP. Billable: ' + App.fmtPoints(quote.totals.billable_points) + ' SP.');
+    lines.push('Quoted amount (' + quote.currency + ', excl. taxes): ' + this.fmtMoney(quote.totals.amount) + '.');
+    lines.push('Prices hold for 30 days from the date of this document. Prepaid coverage is subject to remaining balance at engagement start.');
+    return lines.join('\n');
+  },
+
+  // --- Billing & Costs report (print window; by customer with per-project lines) ---
+  exportReport(customer) {
+    customer = customer || App.activeCustomer;
+    const s = this.customerSummary(customer);
+    const esc = Dashboard.esc;
+    const money = (n) => this.fmtMoney(n);
+    const skillLabel = (sk) => sk === 'any' ? 'Any skill' : (this.SKILLS.find(x => x[0] === sk) || ['', sk])[1];
+    const arrRows = s.arrangements.map(a =>
+      '<tr><td>' + esc(a.label) + '</td><td>' + esc(skillLabel(a.skill)) + '</td>' +
+      '<td class="num">' + a.prepaid_points + '</td><td class="num">' + a.drawn_points + '</td><td class="num">' + a.remaining_points + '</td>' +
+      '<td class="num">' + money(a.amount_invoiced) + '</td></tr>').join('');
+    const projRows = s.projects.map(r =>
+      '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.status) + '</td>' +
+      '<td class="num">' + r.consumed_points + '</td><td class="num">' + r.prepaid_covered_points + '</td><td class="num">' + r.billable_points + '</td>' +
+      '<td class="num">' + money(r.billable_amount) + '</td><td class="num">' + money(r.cost) + '</td><td class="num">' + money(r.margin) + '</td></tr>').join('');
+    const w = window.open('', '_blank');
+    if (!w) { App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><title>Billing &amp; Costs — ' + esc(customer) + '</title>' +
+      '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:880px;margin:28px auto;padding:0 24px;color:#111;font-size:12.5px}h1{font-size:19px;border-bottom:2px solid #2563eb;padding-bottom:8px}h2{font-size:13px;color:#2563eb;text-transform:uppercase;letter-spacing:.4px;margin-top:20px}table{width:100%;border-collapse:collapse;margin-top:6px}th,td{padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:12px}th{font-size:10.5px;text-transform:uppercase;color:#64748b}.num{text-align:right;font-variant-numeric:tabular-nums}.meta{font-size:11px;color:#64748b}.totals td{font-weight:700;border-top:2px solid #94a3b8}@media print{body{margin:14mm}}</style>' +
+      '</head><body><h1>Billing &amp; Costs — ' + esc(customer) + '</h1>' +
+      '<div class="meta">Internal · ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + ' · currency ' + esc(s.currency) + ' · billing basis: completed work (EV); prepaid blocks draw down before T&amp;M</div>' +
+      '<h2>Prepaid / fixed arrangements</h2>' +
+      (s.arrangements.length
+        ? '<table><thead><tr><th>Arrangement</th><th>Skill</th><th class="num">Prepaid SP</th><th class="num">Drawn SP</th><th class="num">Remaining SP</th><th class="num">Invoiced upfront</th></tr></thead><tbody>' + arrRows + '</tbody></table>'
+        : '<div class="meta">None — all work bills as T&amp;M.</div>') +
+      '<h2>Projects (completed work to date)</h2>' +
+      (s.projects.length
+        ? '<table><thead><tr><th>Project</th><th>Status</th><th class="num">Done SP</th><th class="num">Prepaid SP</th><th class="num">T&amp;M SP</th><th class="num">T&amp;M billable</th><th class="num">Internal cost</th><th class="num">Margin</th></tr></thead><tbody>' + projRows +
+          '<tr class="totals"><td colspan="2">Totals</td><td class="num">' + s.totals.consumed_points + '</td><td class="num">' + s.totals.prepaid_covered_points + '</td><td class="num">' + s.totals.billable_points + '</td><td class="num">' + money(s.totals.billable_amount) + '</td><td class="num">' + money(s.totals.cost) + '</td><td class="num">' + money(s.totals.margin) + '</td></tr></tbody></table>'
+        : '<div class="meta">No completed work yet.</div>') +
+      '<h2>Summary</h2>' +
+      '<table><tbody>' +
+      '<tr><td>Fixed/prepaid invoiced upfront</td><td class="num">' + money(s.totals.fixed_invoiced) + '</td></tr>' +
+      '<tr><td>T&amp;M billable to date</td><td class="num">' + money(s.totals.billable_amount) + '</td></tr>' +
+      '<tr><td>Revenue recognised (prepaid drawdown + T&amp;M)</td><td class="num">' + money(s.totals.revenue) + '</td></tr>' +
+      '<tr><td>Internal cost of completed work</td><td class="num">' + money(s.totals.cost) + '</td></tr>' +
+      '<tr class="totals"><td>Margin</td><td class="num">' + money(s.totals.margin) + '</td></tr>' +
+      '</tbody></table>' +
+      '<script>window.onload=function(){window.print()}<\/script></body></html>');
+    w.document.close();
+    App.logChange(null, 'report_generated', '', 'billing_costs:' + customer, 'user', { event_type: 'report_generated' });
+  },
+
+  // --- Settings → Billing & Rates ---
+  renderSettingsCard() {
+    const esc = Dashboard.esc;
+    const escAttr = Dashboard.escAttr;
+    const s = this.settings();
+    const rateCard = (App.data.settings.rate_card) || {};
+    const skillLabel = (sk) => sk === 'any' ? 'Any' : (this.SKILLS.find(x => x[0] === sk) || ['', sk])[1];
+    const rateRows = this.SKILLS.map(([sk, label], i) =>
+      '<tr><td style="padding:5px 8px;font-weight:600">' + label + '</td>' +
+      '<td style="padding:5px 8px"><input type="number" min="0" step="1" class="field-input" style="width:110px" value="' + escAttr(s.sell_rates[sk] || '') + '" onchange="Billing.uiSetRate(' + i + ', this.value)" aria-label="Sell rate for ' + label + '"></td>' +
+      '<td style="padding:5px 8px;color:var(--text-muted);font-size:11px">' + (rateCard[sk] && (rateCard[sk].perm || rateCard[sk].contract) ? 'cost ' + this.fmtMoney(rateCard[sk].perm || rateCard[sk].contract) + '/SP' : 'no cost rate set') + '</td></tr>'
+    ).join('');
+    const customers = App.getCustomers();
+    const custOpts = (sel) => customers.map(c => '<option value="' + escAttr(c) + '"' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+    const skillOpts = '<option value="any">Any skill</option>' + this.SKILLS.map(([sk, label]) => '<option value="' + sk + '">' + label + '</option>').join('');
+    const summaries = {};
+    const arrRows = (App.data.billing_arrangements || []).map(a => {
+      if (!summaries[a.customer]) summaries[a.customer] = this.customerSummary(a.customer);
+      const live = summaries[a.customer].arrangements.find(x => x.id === a.id) || { drawn_points: 0, remaining_points: a.prepaid_points };
+      return '<tr>' +
+        '<td style="padding:5px 8px">' + esc(a.customer) + '</td>' +
+        '<td style="padding:5px 8px;font-weight:600">' + esc(a.label) + '</td>' +
+        '<td style="padding:5px 8px">' + esc(skillLabel(a.skill)) + '</td>' +
+        '<td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">' + App.fmtPoints(a.prepaid_points) + ' SP</td>' +
+        '<td style="padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums">' + App.fmtPoints(live.drawn_points) + ' / ' + App.fmtPoints(live.remaining_points) + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + this.fmtMoney(a.amount_invoiced) + '</td>' +
+        '<td style="padding:5px 8px;text-align:right"><button class="btn btn-outline btn-sm" onclick="Billing.uiRemoveArrangement(\'' + esc(a.id) + '\')">Delete</button></td>' +
+      '</tr>';
+    }).join('');
+    return '' +
+      '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
+        '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Sell rates &amp; currency</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">What you charge per story point, by skill. Internal cost rates stay in the scheduler rate card; both feed the Billing &amp; Costs report and SOW quotes.</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:12px;font-weight:600">Currency</span>' +
+          '<select class="field-input" style="max-width:110px" onchange="Billing.setCurrency(this.value);App.renderConfig()">' +
+          ['GBP', 'USD', 'EUR', 'AUD', 'CAD'].map(c => '<option value="' + c + '"' + (this.currency() === c ? ' selected' : '') + '>' + c + '</option>').join('') +
+          '</select></div>' +
+        '<table style="border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:5px 8px">Skill</th><th style="padding:5px 8px">Sell rate / SP</th><th style="padding:5px 8px"></th></tr></thead><tbody>' + rateRows + '</tbody></table>' +
+      '</div>' +
+      '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
+        '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Prepaid / fixed arrangements</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Capacity a customer has already paid for upfront. Completed work draws these down before anything bills as T&amp;M — in SOW quotes and in the billing report.</div>' +
+        (arrRows ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:5px 8px">Customer</th><th style="padding:5px 8px">Arrangement</th><th style="padding:5px 8px">Skill</th><th style="padding:5px 8px;text-align:right">Prepaid</th><th style="padding:5px 8px;text-align:right">Drawn / left</th><th style="padding:5px 8px;text-align:right">Invoiced</th><th></th></tr></thead><tbody>' + arrRows + '</tbody></table>' : '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">No arrangements yet — all work bills as T&amp;M.</div>') +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">' +
+          '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Customer</label><select id="baCustomer" class="field-input">' + custOpts(App.activeCustomer) + '</select></div>' +
+          '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Label</label><input id="baLabel" class="field-input" placeholder="FY27 retainer"></div>' +
+          '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Skill</label><select id="baSkill" class="field-input">' + skillOpts + '</select></div>' +
+          '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Prepaid SP</label><input id="baPoints" type="number" min="1" class="field-input" style="width:90px"></div>' +
+          '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Invoiced amount</label><input id="baAmount" type="number" min="0" class="field-input" style="width:110px"></div>' +
+          '<button class="btn btn-primary btn-sm" onclick="Billing.uiAddArrangement()">Add</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
+        '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Billing &amp; Costs report</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Per customer: arrangement balances, per-project billable/cost/margin lines, and totals. Print-ready.</div>' +
+        '<div style="display:flex;gap:8px;align-items:center"><select id="billingReportCustomer" class="field-input" style="max-width:240px">' + custOpts(App.activeCustomer) + '</select>' +
+        '<button class="btn btn-primary btn-sm" onclick="Billing.exportReport(document.getElementById(\'billingReportCustomer\').value)">Generate report</button></div>' +
+      '</div>';
+  },
+  uiSetRate(skillIdx, value) {
+    const sk = this.SKILLS[skillIdx] && this.SKILLS[skillIdx][0];
+    if (sk) { this.setSellRate(sk, value); App.renderConfig(); }
+  },
+  uiAddArrangement() {
+    const get = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const points = App.toInteger(get('baPoints'));
+    if (!get('baCustomer') || points <= 0) { App.toast('An arrangement needs a customer and prepaid points', 'error'); return; }
+    this.addArrangement({ customer: get('baCustomer'), label: get('baLabel') || 'Prepaid block', skill: get('baSkill'), prepaid_points: points, amount_invoiced: get('baAmount') });
+    App.renderConfig();
+    App.toast('Arrangement added', 'success');
+  },
+  uiRemoveArrangement(id) {
+    if (!confirm('Delete this arrangement? (Undo with Ctrl+Z)')) return;
+    this.removeArrangement(id);
+    App.renderConfig();
   }
 };
 
