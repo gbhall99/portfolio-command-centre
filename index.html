@@ -40224,6 +40224,32 @@ const Sow = {
     this._persist(sow, 'sow_comment:' + sectionId, '', String(text).slice(0, 60), 'user');
   },
 
+  // Generate + store the structured quote for the linked project and render
+  // it into the Commercials section. Figures always come from Billing —
+  // project sizing × sell rates, prepaid balances netted off.
+  setQuote(sowId) {
+    const sow = this.get(sowId);
+    if (!sow) return { ok: false, error: 'No SOW' };
+    if (!sow.project_id) return { ok: false, error: 'Link a project first — the quote prices that project’s sizing.' };
+    const project = (App.data.projects || []).find(p => p.id === sow.project_id);
+    if (!project) return { ok: false, error: 'Linked project no longer exists' };
+    const quote = Billing.quoteForProject(project);
+    if (!quote.lines.length) return { ok: false, error: 'The linked project has no sized work to quote — set skill points first.' };
+    const missingRates = quote.lines.filter(l => l.billable_points > 0 && !l.rate);
+    if (missingRates.length) return { ok: false, error: 'No sell rate configured for: ' + missingRates.map(l => l.label).join(', ') + ' (Settings → Billing & rates).' };
+    App.pushUndo('Generate SOW quote');
+    sow.quote = quote;
+    const sec = sow.sections.find(s => s.id === 'commercials');
+    if (sec) {
+      sec.content = Billing.quoteAsText(quote);
+      sec.flagged = false;
+      sec.flag_reason = '';
+    }
+    this._history(sow, 'quote_generated', Billing.fmtMoney(quote.totals.amount) + ' (' + App.fmtPoints(quote.totals.prepaid_covered) + ' SP prepaid-covered)');
+    this._persist(sow, 'sow_quote', '', Billing.fmtMoney(quote.totals.amount), 'user');
+    return { ok: true, quote };
+  },
+
   attachProject(sowId, projectId) {
     const sow = this.get(sowId);
     if (!sow) return;
@@ -40261,6 +40287,13 @@ const Sow = {
       deliverables.phases.forEach(ph => {
         if (mapping.valid_phases.indexOf(ph) === -1) errors.push('Deliverables map to unknown phase "' + ph + '"');
       });
+    }
+    if (def.validation && def.validation.requires_quote) {
+      if (!sow.quote || !Array.isArray(sow.quote.lines) || !sow.quote.lines.length) {
+        errors.push('This template requires a generated quote — link a sized project and use “Generate quote”.');
+      } else if (sow.quote.project_id !== sow.project_id) {
+        errors.push('The quote was generated for a different project — regenerate it for the linked project.');
+      }
     }
     const unresolved = sow.sections.filter(s => s.flagged);
     if (unresolved.length) {
@@ -40513,6 +40546,12 @@ const SowSkill = {
     this.render();
   },
   uiAttach(sel) { Sow.attachProject(this._sowId, sel.value || null); this.render(); },
+  uiGenerateQuote() {
+    const res = Sow.setQuote(this._sowId);
+    if (!res.ok) { App.toast(res.error, 'error'); return; }
+    App.toast('Quote generated: ' + Billing.fmtMoney(res.quote.totals.amount) + ' billable', 'success');
+    this.render();
+  },
   uiCreateProject() {
     const def = this._def();
     const proj = Sow.createLinkedProject(this._sowId, def.files.definition);
@@ -40670,6 +40709,18 @@ const SowSkill = {
       '<select class="field-input" onchange="SowSkill.uiAttach(this)" aria-label="Linked project">' + projOpts + '</select>' +
       (!sow.project_id ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="SowSkill.uiCreateProject()">Create project from this SOW</button>' : '') +
     '</div>';
+    const requiresQuote = def && def.files.definition && def.files.definition.validation && def.files.definition.validation.requires_quote;
+    const quoteBlock = '<div style="margin-bottom:12px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Quote' + (requiresQuote ? ' (required by this template)' : '') + '</div>' +
+      (sow.quote
+        ? '<div style="font-size:12px;color:var(--text-dark);margin-bottom:6px">' +
+            esc(Billing.fmtMoney(sow.quote.totals.amount)) + ' billable · ' + App.fmtPoints(sow.quote.totals.prepaid_covered) + ' of ' + App.fmtPoints(sow.quote.totals.points) + ' SP covered by prepaid · ' + esc(sow.quote.currency) +
+          '</div>'
+        : '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Prices the linked project’s sizing at the sell rates, netting off remaining prepaid arrangements.</div>') +
+      (sow.status !== 'Approved'
+        ? '<button class="btn btn-outline btn-sm" onclick="SowSkill.uiGenerateQuote()"' + (sow.project_id ? '' : ' disabled title="Link a project first"') + '>' + (sow.quote ? 'Regenerate quote' : 'Generate quote') + '</button>'
+        : '') +
+    '</div>';
     const source = sow.source_excerpt
       ? '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Source material (excerpt)</div><div class="sow-source-box">' + esc(sow.source_excerpt) + '</div>'
       : '';
@@ -40677,7 +40728,7 @@ const SowSkill = {
       '<div class="sow-history">' + sow.history.slice(-15).reverse().map(h =>
         '<div>' + new Date(h.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' — ' + esc(h.event) + (h.detail ? ': ' + esc(h.detail) : '') + '</div>'
       ).join('') + '</div></div>';
-    return validation + statusBtns + linkage + source + history;
+    return validation + statusBtns + linkage + quoteBlock + source + history;
   }
 };
 
@@ -41357,6 +41408,16 @@ Skills.register({
         "definition": "sow/sow-definition.json",
         "style": "sow/sow-style.md"
       }
+    },
+    {
+      "id": "quoted",
+      "name": "Quoted SOW (prepaid + T&M)",
+      "dir": "sow-quoted",
+      "files": {
+        "template": "sow/sow-template.md",
+        "definition": "sow-quoted/sow-definition.json",
+        "style": "sow/sow-style.md"
+      }
     }
   ],
   "tableau": [
@@ -41606,6 +41667,142 @@ expected — these rules are the boundaries, not a script.
 ---
 
 *This Statement of Work was drafted with AI assistance from source material supplied by the customer and reviewed by the delivery team. Sections flagged "needs review" were not fully supported by the source material.*
+</script>
+<script type="text/plain" data-definition="sow-quoted/sow-definition.json">
+{
+  "id": "quoted",
+  "kind": "sow",
+  "name": "Quoted SOW (prepaid + T&M)",
+  "version": 1,
+  "comment": "Same section structure as the default set but Commercials is mandatory and must carry a generated quote: planned scope priced at the sell rates, netting off whatever the customer's prepaid/fixed arrangements still cover. Template and style files are shared with the default set (see manifest).",
+  "sections": [
+    {
+      "id": "executive_summary",
+      "title": "Executive Summary",
+      "order": 1,
+      "required": true,
+      "min_words": 40,
+      "guidance": "One to two paragraphs: who the customer is, what is being delivered, why now, and the headline outcome. No pricing detail here."
+    },
+    {
+      "id": "background",
+      "title": "Background",
+      "order": 2,
+      "required": true,
+      "min_words": 30,
+      "guidance": "Business context and the problem being solved, grounded in the source material. Name the systems, teams and constraints that matter."
+    },
+    {
+      "id": "scope",
+      "title": "Scope",
+      "order": 3,
+      "required": true,
+      "min_words": 30,
+      "guidance": "Bullet list of in-scope workstreams. Each bullet starts with a verb. Scope items must trace to the source material or be flagged."
+    },
+    {
+      "id": "out_of_scope",
+      "title": "Out of Scope",
+      "order": 4,
+      "required": true,
+      "min_words": 10,
+      "guidance": "Explicit exclusions that prevent scope disputes. If the source is silent, propose standard exclusions and flag them for review."
+    },
+    {
+      "id": "deliverables",
+      "title": "Deliverables",
+      "order": 5,
+      "required": true,
+      "min_words": 20,
+      "maps_to": "delivery_phases",
+      "guidance": "Concrete artefacts with acceptance owners. Each deliverable maps to one or more delivery phases (Requirements, Data Sourcing, Data Engineering, Data Science, Tableau, UAT)."
+    },
+    {
+      "id": "assumptions_dependencies",
+      "title": "Assumptions & Dependencies",
+      "order": 6,
+      "required": true,
+      "min_words": 15,
+      "maps_to": "assumptions_register",
+      "guidance": "Numbered assumptions (access, data quality, availability) and external dependencies. These seed the project's assumptions register."
+    },
+    {
+      "id": "timeline_milestones",
+      "title": "Timeline & Milestones",
+      "order": 7,
+      "required": true,
+      "min_words": 15,
+      "maps_to": "sprints",
+      "guidance": "Milestones expressed against the 5-week sprint cadence (4 dev + 1 hardening). Dates are indicative until sprint allocation is confirmed."
+    },
+    {
+      "id": "commercials",
+      "title": "Commercials",
+      "order": 8,
+      "required": true,
+      "min_words": 20,
+      "maps_to": "billing_quote",
+      "guidance": "MANDATORY in this template. Carries the generated quote: per-skill scope in story points priced at the agreed sell rates, with any portion covered by the customer's prepaid/fixed arrangements explicitly netted off and labelled. State the currency, tax treatment and price-validity window. Never hand-write figures — the quote is generated from project sizing, the rate card and the live prepaid balances."
+    },
+    {
+      "id": "roles_responsibilities",
+      "title": "Roles & Responsibilities",
+      "order": 9,
+      "required": true,
+      "min_words": 15,
+      "guidance": "Delivery-side and customer-side roles with their responsibilities. Use role archetypes (matching personas) rather than named individuals unless the source names them."
+    },
+    {
+      "id": "acceptance_criteria",
+      "title": "Acceptance Criteria",
+      "order": 10,
+      "required": true,
+      "min_words": 15,
+      "guidance": "Measurable conditions for acceptance per deliverable, plus the review window and sign-off mechanism."
+    },
+    {
+      "id": "signoff",
+      "title": "Sign-off",
+      "order": 11,
+      "required": true,
+      "min_words": 5,
+      "guidance": "Signature block for both parties: name, role, date. No content beyond the block and any validity period."
+    }
+  ],
+  "metadata_fields": [
+    { "id": "project_name", "type": "string", "required": true },
+    { "id": "customer", "type": "string", "required": true },
+    { "id": "prepared_by", "type": "string", "required": false },
+    { "id": "date", "type": "string", "required": true },
+    { "id": "version", "type": "string", "required": true },
+    { "id": "status", "type": "string", "required": true, "enum": ["Draft", "Review", "Approved"] }
+  ],
+  "entity_mappings": {
+    "deliverables": {
+      "entity": "delivery_phase",
+      "valid_phases": ["Requirements", "Data Sourcing", "Data Engineering", "Data Science", "Tableau", "UAT"],
+      "rule": "Every deliverable carries a phases array drawn from valid_phases; the union of phases becomes the project's delivery_config.phase_order candidate."
+    },
+    "assumptions_dependencies": {
+      "entity": "assumption",
+      "rule": "Each numbered assumption becomes one assumptions_register entry on the linked project."
+    },
+    "timeline_milestones": {
+      "entity": "sprint",
+      "rule": "Milestones reference sprint ids where known; otherwise they remain indicative dates and are flagged."
+    },
+    "commercials": {
+      "entity": "billing_quote",
+      "rule": "The SOW stores the structured quote (per-skill points, prepaid coverage, rates, totals, currency) generated by Billing.quoteForProject for the linked project; the section text renders it."
+    }
+  },
+  "validation": {
+    "enforce_section_order": true,
+    "require_flag_when_unsupported": true,
+    "requires_quote": true,
+    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags", "quote_present"]
+  }
+}
 </script>
 <script type="text/plain" data-definition="tableau/tableau-design-guidelines.md">
 # Tableau Dashboard Design Guidelines
