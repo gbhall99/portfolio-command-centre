@@ -3,23 +3,36 @@
 *Authored by Gareth Hall and Claude. (Formerly "Portfolio Command Centre" — renamed 2026-05-13. The repo path and localStorage keys are unchanged to preserve existing sessions.)*
 
 ## What This Is
-A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across multiple customer accounts. Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. Every view is **customer-scoped** — a customer must always be selected; there is no "All" option. Demo data ships with three fictional customers (Acme Industries, Globex, Initech); rename or replace them in Settings → Customers.
+A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across multiple customer accounts. Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. Every view is **customer-scoped** — a customer must always be selected; there is no "All" option. Demo data ships with three fictional customers (Acme Industries, Globex, Initech); rename or replace them in Settings → Customers. An optional, provider-agnostic AI layer adds an Assistant and governed generation skills — the app stays fully functional with no model configured.
 
 ## Files
 - `index.html` — The complete single-file app (~18,000 lines). All CSS, HTML, and JS in one file.
 - `portfolio-data.json` — Sample (fictional) data shipped with the repo for first-time loaders. For private/local data, drop a file matching `*.local.json` (gitignored).
-- `portfolio-data-demo.json` — Same sample data, fetched by the **Load demo dataset** button in Settings → Data.
+- `portfolio-data-demo.json` — Same sample data, also embedded inline for the **Load demo dataset** button (file:// safe).
+- `definitions/` — Governed template/definition files for AI skills (SOW sections + style, Tableau wireframe vocabulary + design rules, manifest of template sets). Authored files are the source of truth; `scripts/embed-definitions.mjs` mirrors them into `index.html` as data islands and `tests/unit/skills.test.mjs` fails on drift. **Run the script after any edit under `definitions/`.**
 - `SOLVER.md` — Technical reference for the auto-allocation solver: settings, rules R1–R12, algorithm passes, warnings, scoring, and known limitations. Read this before tweaking `Solver.solve` or `Sprint.allocSettings`.
+- `SKILLS.md` — How to add a skill, a template/definition set, or an AI provider adapter. Read this before touching `AI`, `AgentTools`, `Skills`, `Sow`, or `Wireframe`.
 
 ## Architecture
 - **Single HTML file** — no build step, no dependencies, no framework. Opens directly in any browser.
-- **Seven views**: Dashboard, Projects, Sprint Planning, Roadmap/Gantt, Capacity & Workload, Governance Meetings, Configuration. Dashboard + Projects share the same DOM container with a `view-mode-*` class toggling section visibility.
+- **Views**: Dashboard/Projects (shared DOM container with a `view-mode-*` class toggling section visibility), Backlog, Sprint Planning, **Board (Kanban)**, Roadmap/Gantt, Capacity & Workload, Governance, RAID, Strategy (Objectives/Personas/Metrics/Products), Activity, Configuration. Plus the dockable **Assistant** panel (Ctrl/Cmd+J) available on every view.
 - **Data model**: Projects → Delivery Config → Phases/Skills → Sprints. Team Members with flexible capacity. Governance Meetings with project mapping.
-- **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal` — all as plain JS objects in a single `<script>` block.
+- **JS modules**: `App` (core), `Dashboard`, `DetailPanel`, `Gantt`, `Sprint`, `Capacity`, `Governance`, `Solver`, `AuditPanel`, `TrendsModal`, plus the agentic layer: `AI` (provider adapters), `AgentTools` (tool registry), `Agent` (runtime), `Assistant` (chat panel), `Kanban` (board), `Definitions` (governed file loader), `Skills` (plugin registry + gallery), `Sow`/`SowSkill`, `Wireframe`/`WireframeSkill` — all as plain JS objects in a single `<script>` block.
 - **No emojis** — all icons are inline SVGs throughout.
 - **Schema-driven Projects table** — `Dashboard.COLUMNS` is the single source of truth for header (`renderHeader`), row body (`buildRowHtml`), the column picker (`ColumnPicker`), and the inline editor (`openQuickEdit`). Add a column = one entry. Inline edits dispatch on `col.edit.type` (text/number/date/select/textarea/sprint/rag/derived) and write through `App.updateProject`. Visibility/order/width persist globally via `App.uiStateSet('dashboard.columns', …)`. Single-click row opens the detail panel (deferred ~280 ms so a double-click on a `data-quick-edit` cell can take over and open the inline editor instead). `.project-table` uses `table-layout: fixed` so column widths are authoritative.
 - **Customer-scoped** — `App.activeCustomer` is the single source of truth. Defaults to the first configured customer. Syncs across all views.
 - **Skill colors** — defined in `Sprint.SKILL_COLORS`. Avoid green/amber/red (RAG confusion). Current: Indigo (Req), Cyan (Tab), Blue (DE), Violet (DS), Pink (UAT).
+- **Schema-driven Kanban cards** — `Kanban.CARD_FIELDS` mirrors the `Dashboard.COLUMNS` pattern: adding a card field = one entry. Transitions go through `Kanban.moveCard` → `App.updateProject(id, 'status', value, 'board-drag')`.
+
+## AI Layer (WS1–WS6)
+- **Provider profiles live ONLY in localStorage** (`pcc_ai_settings`), never in `App.data` — keys can never reach exports or the repo. Configure in Settings → AI & Assistant: multiple profiles, per-task defaults (chat / drafting / design).
+- **Adapters** in `AI.ADAPTERS`: `openai` (any OpenAI-compatible endpoint incl. Ollama/LM Studio/vLLM/llama.cpp), `anthropic`, `gemini`, `mock` (tests only — `AI.ADAPTERS.mock.program([...])`). Each has pure `buildRequest`/`parseResponse` so tests never network. All transport goes through `AI._request` (timeout, retry/backoff, Retry-After, CORS guidance, cancellation).
+- **Capability negotiation**: `AI.capabilities(profile)`; models without native tool-calling run the same `AgentTools` registry through a constrained-JSON fallback (`Agent._runJsonFallback`) with strict parse + repair loop. Never let a feature exist only on the native path.
+- **AgentTools registry**: declarative descriptors; read tools filter by `ctx.customer`; **write tools return proposals** (`{summary, changes, apply()}`) — they never mutate. `apply()` routes through `App.addProject`/`App.updateProject` with source `'ai'`, so AI writes are confirmed, audited and undoable. Tool args are validated (`validateArgs`) before any handler runs.
+- **Assistant**: per-customer in-memory threads (chat history never enters `App.data`); citations deep-link entities; proposals render diff cards with Confirm/Discard.
+- **Skills**: one descriptor in `Skills.REGISTRY` per skill (see `SKILLS.md`). Output must land as a real entity (`data.sows`, `data.wireframes`, projects) and conform to its definition file before leaving Draft. `Sow.validate` / `Wireframe.checkConformance` enforce structure; content nuance is never flagged.
+- **Untrusted content rules**: uploaded documents are wrapped in `<untrusted_document>` tags with a never-follow-instructions system rule; every model/document string rendered goes through `Dashboard.esc()`; `Dashboard.esc()` does NOT escape double quotes — never interpolate untrusted values into double-quoted onclick attributes (use index-based handlers).
+- **Entity mutators contract**: `App.pushUndo(label)` BEFORE mutating (see `Sow`/`Wireframe` `_persist` note) — snapshots must capture pre-change state.
 
 ## Data Model Key Facts
 - **Customer** is always single-select and mandatory; configured in Settings → Customers.
@@ -31,11 +44,14 @@ A zero-infrastructure, single-file HTML+JS portfolio management app for managing
 - **Sprints**: 4-week dev + 1-week hardening = 5-week cycle. End date auto-computed from start_date.
 - **Team Members**: `available_points_per_sprint` is available for ANY skill (primary + secondary). Per-sprint overrides via `sprint_overrides`.
 - **FY boundary**: 1 June each year
-- **Status options**: Not Started, In Progress, On Hold, At Risk, Blocked, Complete, Closed
+- **Status options**: Not Started, In Progress, On Hold, At Risk, Blocked, Complete, Closed (also the Kanban board's columns)
 - **RAG**: rag_schedule, rag_resourcing, rag_scope — labelled Schedule Health, Resource Health, Scope Health
 - **WSJF prioritisation**: Projects may set `business_value`, `time_criticality`, `risk_reduction_opportunity` (each 1–10) and `moscow` ("Must"/"Should"/"Could"/"Won't"). When any WSJF input is populated, `App.calculateWsjf(project)` drives scoring; otherwise the legacy hybrid (status × RAG × risk × size × deadline) is used. Solver sort: hard_deadline → MoSCoW band → WSJF → priority.
 - **Story points are integers** everywhere except statistics (velocity avg, days-per-SP). Use `App.toInteger(v)` to parse, `App.fmtPoints(n)` to render. `App.fmtAverage(n, decimals)` for sanctioned decimal statistics.
 - **R12 concurrent guard**: a member is never assigned to two overlapping deliveries unless both are in `concurrentOverlapAllowedSkills` (default: Req + UAT). Toggle via `enforceConcurrentSinglePerson`.
+- **SOWs** (`data.sows`): customer-scoped, optional `project_id`, `status` Draft/Review/Approved, `sections[]` in definition order with `flagged`/`flag_reason`/`comments`, `history[]`. Approval gated by `Sow.validate` against the selected `definitions/sow/` set.
+- **Wireframes** (`data.wireframes`): customer-scoped, optional `project_id`, `grid {cols,rows}`, `components[{type,x,y,w,h,title}]` drawn only from the `definitions/tableau/` vocabulary; `Wireframe.checkConformance` enforces the machine-checkable rules.
+- **Skill settings**: `settings.skill_templates[customer][kind]` (template-set id) and `settings.skills_enabled[customer][skillId]` (default enabled).
 
 ## Strategy Entities — Persona vs Person
 
@@ -66,6 +82,7 @@ Open index.html in a browser. Click "Load JSON" and select portfolio-data.json (
 
 ### Automated
 `npm test` runs a three-tier suite (see `tests/README.md`):
-- **Unit + render** (vitest + jsdom, ~2s) — solver R1–R12 invariants, scoring (incl. WSJF + MoSCoW), integer-points enforcement, migration, integrity, capacity, HTML snapshots.
-- **E2E** (Playwright + chromium-headless-shell, ~3s) — navigation, edit-project refresh, add-project flow, priority chip, Gantt hover.
+- **Unit + render** (vitest + jsdom) — solver R1–R12 invariants, scoring (incl. WSJF + MoSCoW), integer-points enforcement, migration, integrity, capacity, HTML snapshots, AI layer (adapters/agent runtime via the mock provider, BOTH native-tool and JSON-fallback paths), kanban, skills/definitions sync (authored vs embedded), SOW + wireframe conformance.
+- **E2E** (Playwright + chromium-headless-shell) — navigation, edit-project refresh, add-project flow, priority chip, Gantt hover, assistant round trip, kanban drag, SOW review, wireframe build.
 - CI runs both jobs in parallel on push/PR via `.github/workflows/test.yml`.
+- **AI tests never network** — program the mock adapter: `AI.ADAPTERS.mock.program([{toolCalls:[…]},{text:'…'}])`.
