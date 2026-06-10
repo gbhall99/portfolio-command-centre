@@ -29969,7 +29969,7 @@ const Sprint = {
     return out;
   },
 
-  moveSkillToSprint(projectId, skillKey, fromSprint, toSprint, points) {
+  moveSkillToSprint(projectId, skillKey, fromSprint, toSprint, points, source) {
     const p = App.data.projects.find(pr => pr.id === projectId);
     if (!p) return;
     App.pushUndo('Move skill to sprint');
@@ -30041,7 +30041,7 @@ const Sprint = {
     // stay in sync (see _syncDatesFromSplits).
     this._syncDatesFromSplits(p);
 
-    App.logChange(projectId, 'skill_splits.' + skillKey, fromSprint, toSprint, 'swimlane-drag');
+    App.logChange(projectId, 'skill_splits.' + skillKey, fromSprint, toSprint, source || 'swimlane-drag');
     if (isPastSprint) {
       App.logChange(projectId, 'skill_auto_complete', fromSprint, toSprint, 'past-sprint-move');
     }
@@ -38908,14 +38908,20 @@ const AgentTools = {
       handler(args, ctx) {
         const rows = [];
         AgentTools._projects(ctx).forEach(p => {
-          const push = (kind, e, text) => rows.push({ kind, project_id: p.id, project_name: p.name, text: String(text || '').slice(0, 300), status: e.status || '', severity: e.severity || null, owner: e.owner || e.made_by || '' });
-          if (!args.kind || args.kind === 'risk') (p.risks_register || []).forEach(e => push('risk', e, e.description || e.text));
-          if (!args.kind || args.kind === 'assumption') (p.assumptions_register || []).forEach(e => push('assumption', e, e.text));
-          if (!args.kind || args.kind === 'issue') (p.issues_register || []).forEach(e => push('issue', e, e.description || e.text));
-          if (!args.kind || args.kind === 'decision') (p.decisions_register || []).forEach(e => push('decision', e, e.text || e.description));
+          const push = (kind, e, idx, text) => rows.push({
+            kind, project_id: p.id, project_name: p.name, index: idx,
+            text: String(text || '').slice(0, 300),
+            closed: !!(e.resolution_date || e.status === 'closed'),
+            owner: e.owner || e.made_by || '',
+            impact: e.impact != null ? e.impact : null, probability: e.probability != null ? e.probability : null
+          });
+          if (!args.kind || args.kind === 'risk') (p.risks_register || []).forEach((e, i) => push('risk', e, i, e.description || e.text));
+          if (!args.kind || args.kind === 'assumption') (p.assumptions_register || []).forEach((e, i) => push('assumption', e, i, e.text));
+          if (!args.kind || args.kind === 'issue') (p.issues_register || []).forEach((e, i) => push('issue', e, i, e.description || e.text));
+          if (!args.kind || args.kind === 'decision') (p.decisions_register || []).forEach((e, i) => push('decision', e, i, e.decision || e.text || e.description));
         });
         rows.slice(0, 50).forEach(r => AgentTools._cite(ctx, 'project', r.project_id, r.project_name));
-        return { count: rows.length, items: rows.slice(0, 200) };
+        return { count: rows.length, note: 'index is per project per kind — use it with create/close raid tools', items: rows.slice(0, 200) };
       }
     },
     {
@@ -38949,7 +38955,158 @@ const AgentTools = {
       }
     },
 
+    {
+      name: 'billing_summary', scope: 'read',
+      description: 'Billing position for the active customer: prepaid/fixed arrangement balances (drawn vs remaining), per-project billable amounts, internal cost and margin, totals. Use for questions about retainers, what is billable, or what is left on a prepaid block.',
+      params: {},
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const s = Billing.customerSummary(ctx.customer);
+        s.projects.forEach(r => AgentTools._cite(ctx, 'project', r.id, r.name));
+        return {
+          customer: s.customer, currency: s.currency,
+          arrangements: s.arrangements.map(a => ({ label: a.label, skill: a.skill, prepaid_points: a.prepaid_points, drawn_points: a.drawn_points, remaining_points: a.remaining_points, amount_invoiced: a.amount_invoiced })),
+          projects: s.projects.map(r => ({ id: r.id, name: r.name, consumed_points: r.consumed_points, prepaid_covered_points: r.prepaid_covered_points, billable_points: r.billable_points, billable_amount: r.billable_amount, cost: r.cost, margin: r.margin })),
+          totals: s.totals
+        };
+      }
+    },
+
     // --- Write tools: proposal-only, confirmation-gated ---
+    {
+      name: 'create_raid_item', scope: 'write',
+      description: 'Propose adding a RAID entry (risk, assumption, issue or decision) to a project. The user must confirm before it is applied. Risks take impact/probability 1-5 and an optional mitigation.',
+      params: {
+        project_id: { type: 'string', description: 'The project id' },
+        kind: { type: 'string', enum: ['risk', 'assumption', 'issue', 'decision'], description: 'RAID kind' },
+        description: { type: 'string', description: 'The entry text' },
+        owner: { type: 'string', optional: true, description: 'Owner / raised-by' },
+        impact: { type: 'integer', optional: true, description: 'Risks only: 1-5' },
+        probability: { type: 'integer', optional: true, description: 'Risks only: 1-5' },
+        mitigation: { type: 'string', optional: true, description: 'Risks/issues: mitigation or next action' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        const desc = String(args.description || '').trim().slice(0, 500);
+        if (desc.length < 5) return { error: 'description is too short to be useful' };
+        const clamp5 = (v, dflt) => Math.min(5, Math.max(1, App.toInteger(v) || dflt));
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'create_raid', summary: 'Add ' + args.kind + ' to “' + p.name + '”',
+          reason: args.reason || '', entity: { type: 'project', id: p.id, name: p.name },
+          changes: [{ field: args.kind, before: '', after: desc }]
+            .concat(args.kind === 'risk' ? [{ field: 'impact × probability', before: '', after: clamp5(args.impact, 3) + ' × ' + clamp5(args.probability, 3) }] : [])
+            .concat(args.mitigation ? [{ field: 'mitigation', before: '', after: String(args.mitigation).slice(0, 200) }] : []),
+          apply() {
+            App.pushUndo('Add ' + args.kind + ' to ' + p.name);
+            const today = new Date().toISOString().split('T')[0];
+            if (args.kind === 'risk') {
+              if (!Array.isArray(p.risks_register)) p.risks_register = [];
+              p.risks_register.push({ description: desc, action: String(args.mitigation || '').slice(0, 300), owner: String(args.owner || '').slice(0, 80), resolution_date: null, impact: clamp5(args.impact, 3), probability: clamp5(args.probability, 3) });
+            } else if (args.kind === 'assumption') {
+              if (!Array.isArray(p.assumptions_register)) p.assumptions_register = [];
+              p.assumptions_register.push({ date: today, made_by: String(args.owner || 'Assistant').slice(0, 80), text: desc, notes: '' });
+            } else if (args.kind === 'issue') {
+              if (!Array.isArray(p.issues_register)) p.issues_register = [];
+              p.issues_register.push({ description: desc, action: String(args.mitigation || '').slice(0, 300), owner: String(args.owner || '').slice(0, 80), opened_date: today, resolution_date: null });
+            } else {
+              if (!Array.isArray(p.decisions_register)) p.decisions_register = [];
+              p.decisions_register.push({ id: 'dec-ai-' + Date.now().toString(36), date: today, decision: desc, tag: 'assistant', rationale: args.reason || '', meta: {} });
+            }
+            p.last_updated = new Date().toISOString();
+            App.logChange(p.id, 'raid_' + args.kind + '_added', '', desc.slice(0, 80), 'ai');
+            App.markDirty();
+            App.saveToLocalStorage();
+            App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'close_raid_item', scope: 'write',
+      description: 'Propose closing an open risk or issue on a project. Identify it by the index returned from list_raid_items. The user must confirm.',
+      params: {
+        project_id: { type: 'string', description: 'The project id' },
+        kind: { type: 'string', enum: ['risk', 'issue'], description: 'What to close' },
+        index: { type: 'integer', description: 'The index from list_raid_items (per project, per kind)' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        const reg = args.kind === 'risk' ? (p.risks_register || []) : (p.issues_register || []);
+        const entry = reg[args.index];
+        if (!entry) return { error: 'No ' + args.kind + ' at index ' + args.index + ' on ' + p.name + ' (it has ' + reg.length + ')' };
+        if (entry.resolution_date || entry.status === 'closed') return { error: 'That ' + args.kind + ' is already closed' };
+        const text = String(entry.description || entry.text || '').slice(0, 120);
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'close_raid', summary: 'Close ' + args.kind + ' on “' + p.name + '”',
+          reason: args.reason || '', entity: { type: 'project', id: p.id, name: p.name },
+          changes: [{ field: args.kind + ' #' + args.index, before: text || '(no description)', after: 'closed' }],
+          apply() {
+            App.pushUndo('Close ' + args.kind + ' on ' + p.name);
+            entry.resolution_date = new Date().toISOString().split('T')[0];
+            if (args.kind === 'issue') entry.status = 'closed';
+            p.last_updated = new Date().toISOString();
+            App.logChange(p.id, 'raid_' + args.kind + '_closed', text.slice(0, 60), 'closed', 'ai');
+            App.markDirty();
+            App.saveToLocalStorage();
+            App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'move_skill_split', scope: 'write',
+      description: 'Propose moving allocated skill points from one sprint to another for a project. Validated against the plan (capacity, deadlines, phase order) before proposing; the user must confirm. Use list_sprints and get_project (skill_splits) first to find the slice.',
+      params: {
+        project_id: { type: 'string', description: 'The project id' },
+        skill: { type: 'string', enum: ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'], description: 'The skill key' },
+        from_sprint: { type: 'string', description: 'Sprint id the points are currently in (or _backlog)' },
+        to_sprint: { type: 'string', description: 'Destination sprint id (or _backlog)' },
+        points: { type: 'integer', optional: true, description: 'Points to move; defaults to the whole slice' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        if (args.from_sprint === args.to_sprint) return { error: 'from_sprint and to_sprint are the same' };
+        const sprintIds = (App.data.sprints || []).map(s => s.sprint_id);
+        if (args.to_sprint !== '_backlog' && sprintIds.indexOf(args.to_sprint) === -1) return { error: 'Unknown destination sprint ' + args.to_sprint + '. Known: ' + sprintIds.join(', ') + ', _backlog' };
+        const slice = ((p.skill_splits || {})[args.skill] || []).find(sp => sp.sprint === args.from_sprint);
+        if (!slice) return { error: 'No ' + args.skill + ' slice in ' + args.from_sprint + ' for ' + p.name };
+        if (slice.status === 'complete') return { error: 'That slice is complete — completed work does not move' };
+        const points = Math.min(App.toInteger(args.points) || App.toInteger(slice.points), App.toInteger(slice.points));
+        if (points <= 0) return { error: 'Nothing to move' };
+        const verdict = Sprint._validateSliceMove({ projectId: p.id, skillKey: args.skill, fromSprint: args.from_sprint, toSprint: args.to_sprint, points });
+        if (verdict.hardFail) return { error: 'Move refused by plan validation: ' + verdict.warnings.join('; ') };
+        const warningNote = verdict.warnings.length ? ' Warnings: ' + verdict.warnings.join('; ') : '';
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'move_split', summary: 'Move ' + App.fmtPoints(points) + ' SP ' + args.skill.replace('size_', '') + ' on “' + p.name + '” to ' + args.to_sprint,
+          reason: ((args.reason || '') + warningNote).trim(), entity: { type: 'project', id: p.id, name: p.name },
+          changes: [{ field: args.skill + ' (' + App.fmtPoints(points) + ' SP)', before: args.from_sprint, after: args.to_sprint }],
+          apply() {
+            Sprint.moveSkillToSprint(p.id, args.skill, args.from_sprint, args.to_sprint, points, 'ai');
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, warnings: verdict.warnings, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
     {
       name: 'update_project_field', scope: 'write',
       description: 'Propose updating one field on a project. The user must confirm before it is applied. Allowed fields: name, status, priority, category, hard_deadline, target_date, start_date, sponsor, manager, notes, rag_schedule, rag_resourcing, rag_scope, business_value, time_criticality, risk_reduction_opportunity, moscow, size_requirements, size_tableau, size_engineering, size_data_science, size_uat_adoption.',
