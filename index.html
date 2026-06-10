@@ -3289,6 +3289,37 @@ html[data-theme="dark"] .sow-side { background: var(--bg-tertiary); }
 .sow-list-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--border-light); font-size: 13px; cursor: pointer; }
 .sow-list-row:hover { background: var(--surface-2, #f1f5f9); }
 
+/* Tableau wireframe builder (WS6) */
+.wf-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 300; display: none; align-items: center; justify-content: center; }
+.wf-modal-overlay.open { display: flex; }
+.wf-modal { background: white; border-radius: var(--radius-lg, 12px); width: 1180px; max-width: 97vw; height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+html[data-theme="dark"] .wf-modal { background: var(--bg-card); }
+.wf-body { flex: 1; display: flex; overflow: hidden; }
+.wf-canvas-wrap { flex: 1.8; overflow: auto; padding: 16px; background: var(--bg-content, #f8fafc); display: flex; align-items: flex-start; justify-content: center; }
+html[data-theme="dark"] .wf-canvas-wrap { background: var(--bg-tertiary); }
+.wf-side { flex: 1; min-width: 300px; max-width: 360px; overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--border-light); }
+.wf-canvas { background: white; border: 1px solid var(--border-light); border-radius: 6px; user-select: none; touch-action: none; }
+html[data-theme="dark"] .wf-canvas { background: var(--bg-card); }
+.wf-grid-line { stroke: rgba(100,116,139,0.12); stroke-width: 1; }
+.wf-comp { cursor: grab; }
+.wf-comp rect.body { fill: rgba(59,130,246,0.06); stroke: var(--accent-blue); stroke-width: 1.2; rx: 4; }
+.wf-comp.selected rect.body { stroke-width: 2.4; fill: rgba(59,130,246,0.12); }
+.wf-comp.violating rect.body { stroke: var(--status-amber, #d97706); stroke-dasharray: 5 3; }
+.wf-comp text.type { font-size: 9px; font-weight: 700; text-transform: uppercase; fill: var(--accent-blue); letter-spacing: 0.4px; }
+.wf-comp text.title { font-size: 11px; font-weight: 600; fill: #1e293b; }
+html[data-theme="dark"] .wf-comp text.title { fill: #e2e8f0; }
+.wf-resize { fill: var(--accent-blue); cursor: nwse-resize; }
+.wf-palette { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.wf-palette button { font-size: 11px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: var(--radius-sm); background: var(--bg-surface, white); color: var(--text-dark); cursor: pointer; text-align: left; }
+.wf-palette button:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.wf-conf { border: 1px solid var(--border-light); border-radius: var(--radius-md); padding: 8px 10px; font-size: 11.5px; margin-bottom: 12px; background: var(--bg-surface, white); }
+.wf-conf .ok { color: var(--status-green, #16a34a); font-weight: 700; }
+.wf-conf .err { color: var(--status-red, #dc2626); padding: 2px 0; }
+.wf-conf .warn { color: var(--status-amber, #d97706); padding: 2px 0; }
+.wf-list-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--border-light); font-size: 13px; cursor: pointer; }
+.wf-list-row:hover { background: var(--surface-2, #f1f5f9); }
+.wf-props label { display: block; font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin: 8px 0 3px; }
+
 /* Assistant — dockable conversational panel (WS2) */
 .assistant-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 94vw;
@@ -3953,6 +3984,10 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
 <div class="panel-overlay" id="panelOverlay" onclick="DetailPanel.close()"></div>
 
 <!-- Detail Panel -->
+<div class="wf-modal-overlay" id="wfModalOverlay" onclick="if(event.target===this)WireframeSkill.close()">
+  <div class="wf-modal" id="wfModal" role="dialog" aria-modal="true" aria-label="Tableau wireframe"></div>
+</div>
+
 <div class="sow-modal-overlay" id="sowModalOverlay" onclick="if(event.target===this)SowSkill.close()">
   <div class="sow-modal" id="sowModal" role="dialog" aria-modal="true" aria-label="Statement of Work"></div>
 </div>
@@ -15511,6 +15546,7 @@ const CommandPalette = {
       { title: 'Toggle RAG patterns', action: () => App.toggleRagPattern(), meta: 'Colour-blind safe' },
       { title: 'Assistant — chat with your portfolio', action: () => Assistant.open(), meta: 'Ctrl/Cmd+J' },
       { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template' },
+      { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules' },
       { title: 'Activity feed', action: () => AuditPanel.open(), meta: 'Audit log' },
       { title: 'Trends', action: () => TrendsModal.open(), meta: 'Portfolio health trends' },
       { title: 'Undo', action: () => App.undo(), meta: 'Ctrl/Cmd+Z' },
@@ -39676,8 +39712,9 @@ const Sow = {
   },
   get(id) { return (App.data && App.data.sows || []).find(s => s.id === id) || null; },
 
-  _persist(sow, undoLabel, field, oldValue, newValue, source) {
-    App.pushUndo(undoLabel);
+  // NOTE: callers must App.pushUndo() BEFORE mutating so the snapshot
+  // captures the pre-change state (same contract as App.updateProject).
+  _persist(sow, field, oldValue, newValue, source) {
     App.logChange(sow.project_id || null, field, oldValue, newValue, source || 'ai-sow', { event_type: 'sow' });
     sow.updated_at = new Date().toISOString();
     App.markDirty();
@@ -39723,8 +39760,9 @@ const Sow = {
       updated_at: new Date().toISOString()
     };
     this._history(sow, 'created', 'Drafted from ' + (opts.source_text ? 'source material' : 'blank template') + ' using template "' + def.name + '"');
+    App.pushUndo('Create SOW ' + sow.name);
     App.data.sows.push(sow);
-    this._persist(sow, 'Create SOW ' + sow.name, 'sow_created', '', sow.name, opts.source ? opts.source : 'ai-sow');
+    this._persist(sow, 'sow_created', '', sow.name, opts.source ? opts.source : 'ai-sow');
     return sow;
   },
 
@@ -39734,9 +39772,10 @@ const Sow = {
     const sec = sow.sections.find(s => s.id === sectionId);
     if (!sec || sec.content === content) return;
     const old = sec.content;
+    App.pushUndo('Edit SOW section ' + sec.title);
     sec.content = content;
     this._history(sow, 'section_edited', sec.title);
-    this._persist(sow, 'Edit SOW section ' + sec.title, 'sow_section:' + sectionId, old.slice(0, 60), String(content).slice(0, 60), source || 'user');
+    this._persist(sow, 'sow_section:' + sectionId, old.slice(0, 60), String(content).slice(0, 60), source || 'user');
   },
 
   resolveFlag(sowId, sectionId) {
@@ -39744,10 +39783,11 @@ const Sow = {
     if (!sow) return;
     const sec = sow.sections.find(s => s.id === sectionId);
     if (!sec || !sec.flagged) return;
+    App.pushUndo('Resolve SOW flag on ' + sec.title);
     sec.flagged = false;
     sec.flag_reason = '';
     this._history(sow, 'flag_resolved', sec.title);
-    this._persist(sow, 'Resolve SOW flag on ' + sec.title, 'sow_flag:' + sectionId, 'flagged', 'resolved', 'user');
+    this._persist(sow, 'sow_flag:' + sectionId, 'flagged', 'resolved', 'user');
   },
 
   addComment(sowId, sectionId, text) {
@@ -39755,18 +39795,20 @@ const Sow = {
     if (!sow || !text || !text.trim()) return;
     const sec = sow.sections.find(s => s.id === sectionId);
     if (!sec) return;
+    App.pushUndo('Comment on SOW section ' + sec.title);
     sec.comments.push({ at: new Date().toISOString(), text: String(text).trim().slice(0, 500) });
     this._history(sow, 'comment', sec.title);
-    this._persist(sow, 'Comment on SOW section ' + sec.title, 'sow_comment:' + sectionId, '', String(text).slice(0, 60), 'user');
+    this._persist(sow, 'sow_comment:' + sectionId, '', String(text).slice(0, 60), 'user');
   },
 
   attachProject(sowId, projectId) {
     const sow = this.get(sowId);
     if (!sow) return;
     const old = sow.project_id;
+    App.pushUndo('Link SOW to project');
     sow.project_id = projectId || null;
     this._history(sow, 'linked', projectId ? ('Attached to project ' + projectId) : 'Detached from project');
-    this._persist(sow, 'Link SOW to project', 'sow_project_link', old || '', projectId || '', 'user');
+    this._persist(sow, 'sow_project_link', old || '', projectId || '', 'user');
   },
 
   // Definition-driven validation. Structure is enforced; content nuance is not.
@@ -39812,20 +39854,21 @@ const Sow = {
     if (status === 'Approved') {
       const v = this.validate(sow, def);
       if (!v.ok) return { ok: false, errors: v.errors };
-      sow.version = '1.0';
     }
+    App.pushUndo('SOW status ' + status);
+    if (status === 'Approved') sow.version = '1.0';
     const old = sow.status;
     sow.status = status;
     this._history(sow, 'status', old + ' → ' + status);
-    this._persist(sow, 'SOW status ' + status, 'sow_status', old, status, 'user');
+    this._persist(sow, 'sow_status', old, status, 'user');
     return { ok: true, errors: [] };
   },
 
   remove(sowId) {
     const sow = this.get(sowId);
     if (!sow) return;
-    App.data.sows = App.data.sows.filter(s => s.id !== sowId);
     App.pushUndo('Delete SOW ' + sow.name);
+    App.data.sows = App.data.sows.filter(s => s.id !== sowId);
     App.logChange(sow.project_id || null, 'sow_deleted', sow.name, '', 'user', { event_type: 'sow' });
     App.markDirty();
     App.saveToLocalStorage();
@@ -40225,6 +40268,553 @@ Skills.register({
   requiredCapabilities: [],   // browsing/blank SOWs work without AI; Generate gates itself
   approval: 'review-required',
   open(ctx) { SowSkill.open(ctx); }
+});
+
+/* ============================================================================
+   Wireframe — Tableau dashboard concept entity + conformance checker (WS6).
+   Wireframes live in App.data.wireframes, customer-scoped, optionally linked
+   to a project. Components come ONLY from the governed vocabulary in
+   definitions/tableau/wireframe-definition.json; checkConformance enforces
+   the machine-checkable rules (structure), never content choices.
+   ============================================================================ */
+const Wireframe = {
+  list(customer) {
+    return (App.data && App.data.wireframes || []).filter(w => !customer || w.customer === customer);
+  },
+  get(id) { return (App.data && App.data.wireframes || []).find(w => w.id === id) || null; },
+
+  // NOTE: callers must App.pushUndo() BEFORE mutating so the snapshot
+  // captures the pre-change state (same contract as App.updateProject).
+  _persist(wf, field, oldValue, newValue, source) {
+    App.logChange(wf.project_id || null, field, oldValue, newValue, source || 'user', { event_type: 'wireframe' });
+    wf.updated_at = new Date().toISOString();
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  componentSpec(def, type) { return (def.components || []).find(c => c.type === type) || null; },
+
+  create(opts) {
+    const def = opts.definition;
+    const wf = {
+      id: 'WF-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      customer: opts.customer,
+      project_id: opts.project_id || null,
+      name: opts.name || 'Dashboard concept',
+      template_id: def.id,
+      template_kind: 'tableau',
+      status: 'Concept',
+      grid: { cols: def.grid.cols, rows: def.grid.rows },
+      components: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    App.pushUndo('Create wireframe ' + wf.name);
+    App.data.wireframes.push(wf);
+    this._persist(wf, 'wireframe_created', '', wf.name, opts.source || 'user');
+    return wf;
+  },
+
+  remove(id) {
+    const wf = this.get(id);
+    if (!wf) return;
+    App.pushUndo('Delete wireframe ' + wf.name);
+    App.data.wireframes = App.data.wireframes.filter(w => w.id !== id);
+    App.logChange(wf.project_id || null, 'wireframe_deleted', wf.name, '', 'user', { event_type: 'wireframe' });
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  // Vocabulary-enforced component creation. Returns the component or an error string.
+  addComponent(wfId, type, def, at) {
+    const wf = this.get(wfId);
+    if (!wf) return 'No wireframe';
+    const spec = this.componentSpec(def, type);
+    if (!spec) return 'Component type "' + type + '" is not in the governed vocabulary';
+    const w = Math.max(spec.min_w, 2), h = Math.max(spec.min_h, 1);
+    if (spec.max_per_dashboard && wf.components.filter(c => c.type === type).length >= spec.max_per_dashboard) {
+      return 'Only ' + spec.max_per_dashboard + ' "' + type + '" allowed per dashboard';
+    }
+    const spot = at || this._findFreeSpot(wf, w, h);
+    const comp = {
+      id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      type, x: spot.x, y: spot.y, w, h,
+      title: type === 'title' ? 'Dashboard title — what question does this answer?' : '',
+      props: {}
+    };
+    App.pushUndo('Add ' + type + ' to wireframe');
+    wf.components.push(comp);
+    this._persist(wf, 'wireframe_component', '', type, 'user');
+    return comp;
+  },
+
+  _findFreeSpot(wf, w, h) {
+    for (let y = 0; y <= wf.grid.rows - h; y++) {
+      for (let x = 0; x <= wf.grid.cols - w; x++) {
+        const cand = { x, y, w, h };
+        if (!wf.components.some(c => this._overlaps(c, cand))) return { x, y };
+      }
+    }
+    return { x: 0, y: 0 }; // full board — overlap, checker will flag it
+  },
+  _overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  },
+
+  updateComponent(wfId, compId, patch, def) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return;
+    // Clamp to grid; sizes respect the vocabulary minimums.
+    const spec = def ? this.componentSpec(def, c.type) : null;
+    if (patch.w !== undefined) patch.w = Math.max(spec ? spec.min_w : 1, Math.min(patch.w, wf.grid.cols));
+    if (patch.h !== undefined) patch.h = Math.max(spec ? spec.min_h : 1, Math.min(patch.h, wf.grid.rows));
+    if (patch.x !== undefined) patch.x = Math.max(0, Math.min(patch.x, wf.grid.cols - (patch.w || c.w)));
+    if (patch.y !== undefined) patch.y = Math.max(0, Math.min(patch.y, wf.grid.rows - (patch.h || c.h)));
+    // No-op guard: drag handlers fire per mousemove tick — only snapshot real changes.
+    if (Object.keys(patch).every(k => c[k] === patch[k])) return;
+    App.pushUndo('Edit wireframe component');
+    Object.assign(c, patch);
+    this._persist(wf, 'wireframe_component', c.type, JSON.stringify({ x: c.x, y: c.y, w: c.w, h: c.h }).slice(0, 60), 'user');
+  },
+
+  removeComponent(wfId, compId) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return;
+    App.pushUndo('Remove wireframe component');
+    wf.components = wf.components.filter(x => x.id !== compId);
+    this._persist(wf, 'wireframe_component', c.type, '', 'user');
+  },
+
+  attachProject(wfId, projectId) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const old = wf.project_id;
+    App.pushUndo('Link wireframe to project');
+    wf.project_id = projectId || null;
+    this._persist(wf, 'wireframe_project_link', old || '', projectId || '', 'user');
+  },
+
+  // Machine-checkable subset of the design guidelines. Returns
+  // { ok, errors[], warnings[], violatingIds:Set-like object } — errors are
+  // structural; nuance is never flagged.
+  checkConformance(wf, def) {
+    const errors = [], warnings = [];
+    const violating = {};
+    const flag = (sev, compIds, msg) => {
+      (sev === 'error' ? errors : warnings).push(msg);
+      (compIds || []).forEach(id => { violating[id] = true; });
+    };
+    const ruleOn = (id) => (def.rules || []).find(r => r.id === id);
+    const chartTypes = ['bar', 'line', 'area', 'scatter', 'table', 'map'];
+
+    let r = ruleOn('title_required');
+    if (r) {
+      const titles = wf.components.filter(c => c.type === 'title');
+      if (titles.length !== 1) flag(r.severity, titles.map(c => c.id), 'Exactly one dashboard title is required (found ' + titles.length + ').');
+      else if (titles[0].y !== 0) flag(r.severity, [titles[0].id], 'The dashboard title belongs in the top row.');
+    }
+    r = ruleOn('on_grid');
+    if (r) wf.components.forEach(c => {
+      if (c.x < 0 || c.y < 0 || c.x + c.w > wf.grid.cols || c.y + c.h > wf.grid.rows) flag(r.severity, [c.id], 'A ' + c.type + ' component lies outside the ' + wf.grid.cols + '×' + wf.grid.rows + ' grid.');
+    });
+    r = ruleOn('min_size');
+    if (r) wf.components.forEach(c => {
+      const spec = this.componentSpec(def, c.type);
+      if (spec && (c.w < spec.min_w || c.h < spec.min_h)) flag(r.severity, [c.id], 'The ' + c.type + ' component is below its minimum size (' + spec.min_w + '×' + spec.min_h + ').');
+    });
+    r = ruleOn('no_overlap');
+    if (r) {
+      for (let i = 0; i < wf.components.length; i++) {
+        for (let j = i + 1; j < wf.components.length; j++) {
+          if (this._overlaps(wf.components[i], wf.components[j])) {
+            flag(r.severity, [wf.components[i].id, wf.components[j].id], wf.components[i].type + ' and ' + wf.components[j].type + ' components overlap.');
+          }
+        }
+      }
+    }
+    r = ruleOn('filters_edge');
+    if (r) wf.components.filter(c => c.type === 'filter').forEach(c => {
+      if (!(c.y <= 1 || c.x >= wf.grid.cols - 3)) flag(r.severity, [c.id], 'A filter sits mid-canvas — keep filters in the top band or right rail.');
+    });
+    r = ruleOn('kpi_band_top');
+    if (r) wf.components.filter(c => c.type === 'kpi').forEach(c => {
+      if (c.y > 2) flag(r.severity, [c.id], 'A KPI sits low on the canvas — headline numbers belong in the upper third.');
+    });
+    r = ruleOn('max_components');
+    if (r && wf.components.length > (r.threshold || 12)) flag(r.severity, [], wf.components.length + ' components — more than ' + (r.threshold || 12) + ' is cognitive overload; consider splitting.');
+    r = ruleOn('chart_needs_title');
+    if (r) wf.components.filter(c => chartTypes.indexOf(c.type) >= 0 && !(c.title || '').trim()).forEach(c => {
+      flag(r.severity, [c.id], 'A ' + c.type + ' chart has no title — titles carry the takeaway.');
+    });
+    return { ok: errors.length === 0, errors, warnings, violating };
+  }
+};
+
+/* ============================================================================
+   WireframeSkill — canvas UI for Tableau dashboard concepts (WS6).
+   Inline-SVG grid canvas; the palette is drawn from the governed component
+   vocabulary; drag to move, handle to resize, click to select. Conformance
+   panel re-checks on every change. AI assist drafts a conforming starting
+   layout via structured output. Exports JSON and a print view.
+   ============================================================================ */
+const WireframeSkill = {
+  CELL: 64,
+  CELL_H: 56,
+  _mode: 'list',
+  _wfId: null,
+  _selId: null,
+  _drag: null,
+  _busy: false,
+
+  open(ctx) { this._mode = 'list'; this._wfId = null; this._selId = null; const ov = document.getElementById('wfModalOverlay'); if (!ov) return; ov.classList.add('open'); this.render(); },
+  close() { const ov = document.getElementById('wfModalOverlay'); if (ov) ov.classList.remove('open'); },
+  edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this.render(); },
+  backToList() { this._mode = 'list'; this._wfId = null; this.render(); },
+
+  _def() { const r = Definitions.resolve('tableau', App.activeCustomer); return r && r.files.definition; },
+
+  startNew() {
+    const def = this._def();
+    if (!def) { App.toast('No wireframe definition available', 'error'); return; }
+    const wf = Wireframe.create({ customer: App.activeCustomer, definition: def, name: 'Dashboard concept — ' + App.activeCustomer });
+    Wireframe.addComponent(wf.id, 'title', def);
+    this.edit(wf.id);
+  },
+
+  // --- AI assist ---
+  _layoutSchema(def) {
+    return {
+      type: 'object', required: ['name', 'components'],
+      properties: {
+        name: { type: 'string' },
+        components: {
+          type: 'array',
+          items: {
+            type: 'object', required: ['type', 'x', 'y', 'w', 'h'],
+            properties: {
+              type: { type: 'string', enum: def.components.map(c => c.type) },
+              x: { type: 'integer' }, y: { type: 'integer' },
+              w: { type: 'integer' }, h: { type: 'integer' },
+              title: { type: 'string' }
+            }
+          }
+        }
+      }
+    };
+  },
+
+  async aiDraft() {
+    if (this._busy) return;
+    const def = this._def();
+    const input = document.getElementById('wfAiPrompt');
+    const brief = input ? input.value.trim() : '';
+    if (!brief) { App.toast('Describe the dashboard first (e.g. "exec sales dashboard")', 'error'); return; }
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    this._busy = true;
+    this.render();
+    try {
+      const profile = AI.profileForTask('design');
+      const guidelines = Definitions.resolve('tableau', App.activeCustomer);
+      const project = this._wfId && Wireframe.get(this._wfId) && Wireframe.get(this._wfId).project_id;
+      const messages = [
+        {
+          role: 'system',
+          content: 'You design Tableau dashboard wireframes on a ' + def.grid.cols + '×' + def.grid.rows + ' grid (x,y zero-based; w,h spans).\n' +
+            'Use ONLY these component types with their minimum sizes:\n' +
+            def.components.map(c => '- ' + c.type + ' (min ' + c.min_w + '×' + c.min_h + ')').join('\n') +
+            '\nDESIGN RULES (mandatory): exactly one title at y=0; KPIs in the top third; filters in the top band or right rail; no overlaps; everything on-grid; every chart needs a takeaway-style title; at most 12 components.\n' +
+            'GUIDELINES:\n' + String(guidelines.files.guidelines || '').slice(0, 2500)
+        },
+        { role: 'user', content: 'Design a wireframe for: ' + brief }
+      ];
+      const out = await AI.structuredOutput(profile, messages, this._layoutSchema(def));
+      const wf = Wireframe.create({ customer: App.activeCustomer, definition: def, name: out.name || brief, source: 'ai-wireframe' });
+      let rejected = 0;
+      out.components.slice(0, 16).forEach(c => {
+        const spec = Wireframe.componentSpec(def, c.type);
+        if (!spec) { rejected++; return; }
+        const comp = Wireframe.addComponent(wf.id, c.type, def, { x: 0, y: 0 });
+        if (typeof comp === 'string') { rejected++; return; }
+        Wireframe.updateComponent(wf.id, comp.id, {
+          x: App.toInteger(c.x), y: App.toInteger(c.y),
+          w: Math.max(spec.min_w, App.toInteger(c.w)), h: Math.max(spec.min_h, App.toInteger(c.h)),
+          title: typeof c.title === 'string' ? c.title.slice(0, 120) : ''
+        }, def);
+      });
+      if (rejected) App.toast(rejected + ' component(s) outside the governed vocabulary were dropped', 'info');
+      this.edit(wf.id);
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._busy = false;
+      if (this._mode !== 'edit') this.render();
+    }
+  },
+
+  // --- canvas interactions ---
+  select(compId) { this._selId = compId; this.render(); },
+  uiAddComponent(type) {
+    const def = this._def();
+    const res = Wireframe.addComponent(this._wfId, type, def);
+    if (typeof res === 'string') { App.toast(res, 'error'); return; }
+    this._selId = res.id;
+    this.render();
+  },
+  uiRemoveSelected() {
+    if (!this._selId) return;
+    Wireframe.removeComponent(this._wfId, this._selId);
+    this._selId = null;
+    this.render();
+  },
+  uiTitleChange(el) {
+    if (!this._selId) return;
+    Wireframe.updateComponent(this._wfId, this._selId, { title: el.value.slice(0, 160) }, this._def());
+    this.renderCanvasAndConf();
+  },
+  uiAttach(sel) { Wireframe.attachProject(this._wfId, sel.value || null); this.render(); },
+  uiDelete() {
+    if (!confirm('Delete this wireframe? (Undo with Ctrl+Z)')) return;
+    Wireframe.remove(this._wfId);
+    this.backToList();
+  },
+  uiRename(el) {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    App.pushUndo('Rename wireframe');
+    wf.name = el.value.slice(0, 120);
+    Wireframe._persist(wf, 'wireframe_renamed', '', wf.name, 'user');
+  },
+
+  onCompDown(e, compId, resize) {
+    e.preventDefault();
+    e.stopPropagation();
+    const wf = Wireframe.get(this._wfId);
+    const c = wf && wf.components.find(x => x.id === compId);
+    if (!c) return;
+    this._selId = compId;
+    const svg = document.getElementById('wfCanvas');
+    const rect = svg.getBoundingClientRect();
+    this._drag = { compId, resize: !!resize, startX: e.clientX, startY: e.clientY, orig: { x: c.x, y: c.y, w: c.w, h: c.h }, rect };
+    this.render();
+  },
+  onCanvasMove(e) {
+    if (!this._drag) return;
+    const d = this._drag;
+    const dx = Math.round((e.clientX - d.startX) / this.CELL);
+    const dy = Math.round((e.clientY - d.startY) / this.CELL_H);
+    if (!dx && !dy) return;
+    const def = this._def();
+    if (d.resize) Wireframe.updateComponent(this._wfId, d.compId, { w: d.orig.w + dx, h: d.orig.h + dy }, def);
+    else Wireframe.updateComponent(this._wfId, d.compId, { x: d.orig.x + dx, y: d.orig.y + dy }, def);
+    this.renderCanvasAndConf();
+  },
+  onCanvasUp() {
+    if (this._drag) { this._drag = null; this.render(); }
+  },
+
+  // --- exports ---
+  exportJson() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    const blob = new Blob([JSON.stringify(wf, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = wf.name.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.wireframe.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+  exportPng() {
+    const svg = document.getElementById('wfCanvas');
+    const wf = Wireframe.get(this._wfId);
+    if (!svg || !wf) return;
+    try {
+      const xml = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = svg.viewBox.baseVal.width * 2;
+        canvas.height = svg.viewBox.baseVal.height * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = wf.name.replace(/[^a-z0-9-]+/gi, '-').toLowerCase() + '.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      };
+      img.onerror = () => App.toast('PNG export failed in this browser — use Export JSON or Print', 'error');
+      img.src = url;
+    } catch (e) {
+      App.toast('PNG export failed: ' + (e && e.message || e), 'error');
+    }
+  },
+  exportPrint() {
+    const svg = document.getElementById('wfCanvas');
+    const wf = Wireframe.get(this._wfId);
+    if (!svg || !wf) return;
+    const esc = Dashboard.esc;
+    const def = this._def();
+    const conf = Wireframe.checkConformance(wf, def);
+    const w = window.open('', '_blank');
+    if (!w) { App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><title>' + esc(wf.name) + '</title>' +
+      '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:900px;margin:28px auto;padding:0 24px;color:#111}h1{font-size:19px;border-bottom:2px solid #2563eb;padding-bottom:8px}svg{max-width:100%;height:auto;border:1px solid #e2e8f0;border-radius:6px}.meta{font-size:12px;color:#475569;margin-bottom:14px}ul{font-size:12px}@media print{body{margin:14mm}}</style>' +
+      '</head><body><h1>' + esc(wf.name) + '</h1>' +
+      '<div class="meta">' + esc(wf.customer) + ' · ' + wf.components.length + ' components · conformance: ' + (conf.ok ? 'passes' : conf.errors.length + ' error(s)') + ' · ' + new Date().toLocaleDateString('en-GB') + '</div>' +
+      new XMLSerializer().serializeToString(svg) +
+      (conf.errors.length || conf.warnings.length ? '<ul>' + conf.errors.concat(conf.warnings).map(m => '<li>' + esc(m) + '</li>').join('') + '</ul>' : '') +
+      '<script>window.onload=function(){window.print()}<\/script></body></html>');
+    w.document.close();
+  },
+
+  // --- rendering ---
+  render() {
+    const el = document.getElementById('wfModal');
+    if (!el) return;
+    el.innerHTML = this._mode === 'edit' ? this.renderEditHtml() : this.renderListHtml();
+  },
+  renderCanvasAndConf() {
+    const wrap = document.getElementById('wfCanvasWrap');
+    if (wrap) wrap.innerHTML = this.renderCanvasSvg();
+    const conf = document.getElementById('wfConf');
+    if (conf) conf.innerHTML = this.renderConfHtml();
+  },
+
+  _header(title, backBtn) {
+    const esc = Dashboard.esc;
+    return '<div class="sow-modal-header">' +
+      (backBtn ? '<button class="btn btn-ghost btn-sm" onclick="WireframeSkill.backToList()" aria-label="Back to wireframe list">&larr;</button>' : '') +
+      '<div class="sow-modal-title">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>' +
+        esc(title) +
+      '</div>' +
+      '<button class="panel-close" onclick="WireframeSkill.close()" aria-label="Close">&times;</button>' +
+    '</div>';
+  },
+
+  renderListHtml() {
+    const esc = Dashboard.esc;
+    const wfs = Wireframe.list(App.activeCustomer);
+    const rows = wfs.map(w => {
+      const proj = w.project_id ? (App.data.projects.find(p => p.id === w.project_id) || {}).name : null;
+      return '<div class="wf-list-row" onclick="WireframeSkill.edit(\'' + esc(w.id) + '\')">' +
+        '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(w.name) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted)">' + w.components.length + ' components</span>' +
+        (proj ? '<span style="font-size:11px;color:var(--text-muted)">→ ' + esc(proj) + '</span>' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">not linked</span>') +
+      '</div>';
+    }).join('');
+    return this._header('Tableau wireframes — ' + (App.activeCustomer || '')) +
+      '<div class="wf-body"><div style="flex:1;overflow-y:auto;padding:16px 20px">' +
+        (wfs.length ? rows : '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No wireframes yet for this customer.</div>') +
+        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+          '<button class="btn btn-primary btn-sm" onclick="WireframeSkill.startNew()">+ New blank wireframe</button>' +
+          '<input id="wfAiPrompt" class="field-input" style="min-width:280px;max-width:420px" placeholder="…or describe it: exec sales dashboard with regional drilldown" aria-label="AI wireframe brief">' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.aiDraft()"' + (this._busy ? ' disabled' : '') + '>' + (this._busy ? 'Designing…' : 'AI draft') + '</button>' +
+          (AI.isConfigured() ? '' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">AI draft needs a model — Settings → AI &amp; Assistant</span>') +
+        '</div>' +
+      '</div></div>';
+  },
+
+  renderCanvasSvg() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return '';
+    const esc = Dashboard.esc;
+    const def = this._def();
+    const conf = Wireframe.checkConformance(wf, def);
+    const W = wf.grid.cols * this.CELL, H = wf.grid.rows * this.CELL_H;
+    let grid = '';
+    for (let x = 1; x < wf.grid.cols; x++) grid += '<line class="wf-grid-line" x1="' + (x * this.CELL) + '" y1="0" x2="' + (x * this.CELL) + '" y2="' + H + '"/>';
+    for (let y = 1; y < wf.grid.rows; y++) grid += '<line class="wf-grid-line" x1="0" y1="' + (y * this.CELL_H) + '" x2="' + W + '" y2="' + (y * this.CELL_H) + '"/>';
+    const comps = wf.components.map(c => {
+      const px = c.x * this.CELL, py = c.y * this.CELL_H, pw = c.w * this.CELL, ph = c.h * this.CELL_H;
+      const sel = c.id === this._selId;
+      const viol = conf.violating[c.id];
+      const title = (c.title || '').slice(0, Math.max(8, Math.floor(pw / 7)));
+      return '<g class="wf-comp' + (sel ? ' selected' : '') + (viol ? ' violating' : '') + '" ' +
+        'onmousedown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\')" onclick="event.stopPropagation()">' +
+        '<rect class="body" x="' + (px + 3) + '" y="' + (py + 3) + '" width="' + (pw - 6) + '" height="' + (ph - 6) + '" rx="4"/>' +
+        '<text class="type" x="' + (px + 10) + '" y="' + (py + 17) + '">' + esc(c.type) + '</text>' +
+        (title ? '<text class="title" x="' + (px + 10) + '" y="' + (py + 32) + '">' + esc(title) + '</text>' : '') +
+        (sel ? '<rect class="wf-resize" x="' + (px + pw - 12) + '" y="' + (py + ph - 12) + '" width="9" height="9" rx="2" onmousedown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\', true)"/>' : '') +
+      '</g>';
+    }).join('');
+    return '<svg id="wfCanvas" class="wf-canvas" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" ' +
+      'onmousemove="WireframeSkill.onCanvasMove(event)" onmouseup="WireframeSkill.onCanvasUp()" onmouseleave="WireframeSkill.onCanvasUp()" onclick="WireframeSkill.select(null)" role="img" aria-label="Wireframe canvas">' +
+      grid + comps + '</svg>';
+  },
+
+  renderConfHtml() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return '';
+    const esc = Dashboard.esc;
+    const conf = Wireframe.checkConformance(wf, this._def());
+    return '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Definition conformance</div>' +
+      (conf.ok && !conf.warnings.length ? '<div class="ok">Layout conforms to the design guidelines.</div>' : '') +
+      conf.errors.map(e => '<div class="err">• ' + esc(e) + '</div>').join('') +
+      conf.warnings.map(w => '<div class="warn">• ' + esc(w) + '</div>').join('');
+  },
+
+  renderEditHtml() {
+    const esc = Dashboard.esc;
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return this.renderListHtml();
+    const def = this._def();
+    const sel = this._selId ? wf.components.find(c => c.id === this._selId) : null;
+    const palette = def.components.map(c =>
+      '<button onclick="WireframeSkill.uiAddComponent(\'' + esc(c.type) + '\')" title="min ' + c.min_w + '×' + c.min_h + '">+ ' + esc(c.label) + '</button>'
+    ).join('');
+    const projects = (App.data.projects || []).filter(p => p.customer === wf.customer && p.status !== 'Closed');
+    const projOpts = '<option value="">Not linked to a project</option>' +
+      projects.map(p => '<option value="' + esc(p.id) + '"' + (wf.project_id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+    const props = sel
+      ? '<div class="wf-props">' +
+          '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Selected: ' + esc(sel.type) + '</div>' +
+          '<label for="wfTitleInput">Title</label>' +
+          '<input id="wfTitleInput" class="field-input" value="' + esc(sel.title || '') + '" oninput="WireframeSkill.uiTitleChange(this)">' +
+          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + sel.w + '×' + sel.h + ' at (' + sel.x + ',' + sel.y + ') — drag to move, corner handle to resize</div>' +
+          '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
+        '</div>'
+      : '<div style="font-size:11px;color:var(--text-muted)">Select a component to edit its title or remove it.</div>';
+    return this._header(wf.name, true) +
+      '<div class="wf-body">' +
+        '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
+        '<div class="wf-side">' +
+          '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + esc(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
+          '<div class="wf-conf" id="wfConf">' + this.renderConfHtml() + '</div>' +
+          '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Component palette (governed vocabulary)</div>' +
+          '<div class="wf-palette">' + palette + '</div>' +
+          props +
+          '<div style="margin-top:12px">' +
+            '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Linked project</div>' +
+            '<select class="field-input" onchange="WireframeSkill.uiAttach(this)" aria-label="Linked project">' + projOpts + '</select>' +
+          '</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportJson()">Export JSON</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportPng()">PNG</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportPrint()">Print / PDF</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiDelete()">Delete</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+};
+
+Skills.register({
+  id: 'tableau-wireframe',
+  name: 'Tableau Wireframe Builder',
+  icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+  description: 'Grid-based dashboard concepts that conform to the governed design guidelines',
+  produces: 'wireframe',
+  definitionKind: 'tableau',
+  requiredCapabilities: [],   // canvas works without AI; AI draft gates itself
+  approval: 'conformance-checked',
+  open(ctx) { WireframeSkill.open(ctx); }
 });
 </script>
 <!-- Trends Modal -->
