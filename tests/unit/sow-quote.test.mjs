@@ -15,7 +15,7 @@ beforeEach(async () => {
       makeProject({ id: 'A-1', name: 'Acme Alpha', customer: 'Acme Industries', size_engineering: 10, size_tableau: 4 }),
       makeProject({ id: 'A-2', name: 'Acme Beta', customer: 'Acme Industries', size_engineering: 6 })
     ],
-    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { EMEA: { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { region: 'EMEA', level: 'Consultant' } } } }
+    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { 'United Kingdom': { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' } } } }
   }));
   app.App.activeCustomer = 'Acme Industries';
 });
@@ -75,7 +75,7 @@ describe('quote generation', () => {
     expect(q.project_id).toBe('A-1');
     expect(q.totals.points).toBe(14);
     expect(q.totals.prepaid_covered).toBe(8);
-    expect(q.rate_band).toBe('EMEA / Consultant');
+    expect(q.rate_band).toBe('United Kingdom / Consultant');
     expect(q.totals.amount).toBe(6 * 8 * 100);
     // Commercials section now carries the rendered quote and is unflagged.
     const comm = Sow.get(sow.id).sections.find(s => s.id === 'commercials');

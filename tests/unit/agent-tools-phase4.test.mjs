@@ -28,7 +28,7 @@ beforeEach(async () => {
     ],
     sprints: makeSprintSequence(3),
     team_members: [makeMember({ name: 'Dana', available_points_per_sprint: 20 })],
-    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { EMEA: { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { region: 'EMEA', level: 'Consultant' } } } }
+    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { 'United Kingdom': { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' } } } }
   }));
   app.App.activeCustomer = 'Acme Industries';
 });

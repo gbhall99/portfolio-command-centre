@@ -6099,14 +6099,19 @@ const App = {
     if (!s.skills_enabled || typeof s.skills_enabled !== 'object') s.skills_enabled = {};
 
     // Billing: sell-side config. settings.rate_card (cost side) is unchanged.
-    // Sell rates are HOURLY, by region x level; story points convert via
-    // hours_per_point. customer_defaults picks the region/level used for
+    // Sell rates are HOURLY, by country x level; story points convert via
+    // hours_per_point. customer_defaults picks the country/level used for
     // quotes and for work with no assigned member.
     s.billing = Object.assign({ currency: 'GBP', hours_per_point: 8, rate_table: {}, customer_defaults: {} }, s.billing || {});
     if (!s.billing.rate_table || typeof s.billing.rate_table !== 'object') s.billing.rate_table = {};
     if (!s.billing.customer_defaults || typeof s.billing.customer_defaults !== 'object') s.billing.customer_defaults = {};
     if (!(Number(s.billing.hours_per_point) > 0)) s.billing.hours_per_point = 8;
     if ('sell_rates' in s.billing) delete s.billing.sell_rates; // pre-release shape, never shipped
+    // Pre-release rename: customer default bands briefly used 'region'.
+    Object.keys(s.billing.customer_defaults).forEach(c => {
+      const d = s.billing.customer_defaults[c];
+      if (d && d.region && !d.country) { d.country = d.region; delete d.region; }
+    });
 
     // Display colour-band thresholds previously hard-coded at dozens of call sites.
     s.thresholds = Object.assign({
@@ -40040,7 +40045,7 @@ const Skills = {
    reporting (by customer and by project).
    Two sides of the money model:
      - COST  — settings.rate_card (existing; per-SP internal cost; EVM).
-     - SELL  — settings.billing: HOURLY rates by region x level
+     - SELL  — settings.billing: HOURLY rates by country x level
        (rate_table), hours_per_point conversion, per-customer default band,
        plus customer-scoped data.billing_arrangements: blocks of capacity
        paid for upfront (prepaid_points at amount_invoiced). Consumed work
@@ -40071,7 +40076,7 @@ const Billing = {
     const h = Number(this.settings().hours_per_point);
     return isFinite(h) && h > 0 ? h : 8;
   },
-  regions() { return Object.keys(this.settings().rate_table); },
+  countries() { return Object.keys(this.settings().rate_table); },
   levels() {
     const set = [];
     Object.values(this.settings().rate_table).forEach(byLevel => {
@@ -40079,64 +40084,66 @@ const Billing = {
     });
     return set;
   },
-  hourlyRate(region, level) {
+  hourlyRate(country, level) {
     const t = this.settings().rate_table;
-    const r = t[region] && Number(t[region][level]);
+    const r = t[country] && Number(t[country][level]);
     return isFinite(r) && r > 0 ? r : 0;
   },
-  setHourlyRate(region, level, rate) {
-    if (!App.data || !region || !level) return;
-    App.pushUndo('Set hourly rate ' + region + '/' + level);
+  setHourlyRate(country, level, rate) {
+    if (!App.data || !country || !level) return;
+    App.pushUndo('Set hourly rate ' + country + '/' + level);
     const t = App.data.settings.billing.rate_table;
-    if (!t[region]) t[region] = {};
+    if (!t[country]) t[country] = {};
     const r = Number(rate);
-    t[region][level] = isFinite(r) && r > 0 ? r : 0;
-    App.logChange(null, 'billing_rate:' + region + '/' + level, '', String(rate), 'user', { event_type: 'billing' });
+    t[country][level] = isFinite(r) && r > 0 ? r : 0;
+    App.logChange(null, 'billing_rate:' + country + '/' + level, '', String(rate), 'user', { event_type: 'billing' });
     App.markDirty();
     App.saveToLocalStorage();
   },
   // The rate used for quotes and for work with no assigned member: the
-  // customer's default region/level, else the first priced cell in the table.
+  // customer's default country/level, else the first priced cell in the table.
   customerDefault(customer) {
     const d = this.settings().customer_defaults[customer];
-    if (d && this.hourlyRate(d.region, d.level) > 0) return d;
+    if (d && this.hourlyRate(d.country, d.level) > 0) return d;
     const t = this.settings().rate_table;
-    for (const region of Object.keys(t)) {
-      for (const level of Object.keys(t[region])) {
-        if (Number(t[region][level]) > 0) return { region, level };
+    for (const country of Object.keys(t)) {
+      for (const level of Object.keys(t[country])) {
+        if (Number(t[country][level]) > 0) return { country, level };
       }
     }
     return null;
   },
-  setCustomerDefault(customer, region, level) {
+  setCustomerDefault(customer, country, level) {
     if (!App.data || !customer) return;
     App.pushUndo('Set billing default for ' + customer);
-    App.data.settings.billing.customer_defaults[customer] = { region, level };
-    App.logChange(null, 'billing_customer_default', '', customer + ': ' + region + '/' + level, 'user', { event_type: 'billing' });
+    App.data.settings.billing.customer_defaults[customer] = { country, level };
+    App.logChange(null, 'billing_customer_default', '', customer + ': ' + country + '/' + level, 'user', { event_type: 'billing' });
     App.markDirty();
     App.saveToLocalStorage();
   },
   defaultHourlyRate(customer) {
     const d = this.customerDefault(customer);
-    return d ? this.hourlyRate(d.region, d.level) : 0;
+    return d ? this.hourlyRate(d.country, d.level) : 0;
   },
-  // A member's hourly rate from their region/level assignment; falls back to
+  // A member's hourly rate from their country/level assignment; falls back to
   // the customer default so unassigned/unmapped work still prices.
   memberRate(memberName, customer) {
     const m = (App.data.team_members || []).find(x => x.name === memberName);
-    if (m && m.region && m.level) {
-      const r = this.hourlyRate(m.region, m.level);
+    if (m && m.country && m.level) {
+      const r = this.hourlyRate(m.country, m.level);
       if (r > 0) return r;
     }
     return this.defaultHourlyRate(customer);
   },
-  setMemberRateBand(memberName, region, level) {
+  setMemberRateBand(memberName, country, level) {
     const m = (App.data.team_members || []).find(x => x.name === memberName);
     if (!m) return;
     App.pushUndo('Set rate band for ' + memberName);
-    m.region = region || null;
+    // Pre-release cleanup: drop the briefly-used 'region' key.
+    if ('region' in m && m.level !== undefined) delete m.region;
+    m.country = country || null;
     m.level = level || null;
-    App.logChange(null, 'billing_member_band', '', memberName + ': ' + (region || '—') + '/' + (level || '—'), 'user', { event_type: 'billing' });
+    App.logChange(null, 'billing_member_band', '', memberName + ': ' + (country || '—') + '/' + (level || '—'), 'user', { event_type: 'billing' });
     App.markDirty();
     App.saveToLocalStorage();
   },
@@ -40164,7 +40171,7 @@ const Billing = {
 
   // Per-skill consumed points + blended hourly value. Each split's completed
   // points are valued at the rate of whoever did them (assigned_to / assignee),
-  // falling back to the customer's default region/level band.
+  // falling back to the customer's default country/level band.
   _skillBilling(p, customer) {
     const out = {};
     this.SKILLS.forEach(([sk]) => {
@@ -40322,14 +40329,14 @@ const Billing = {
   // Quote for PLANNED work (SOW time): nets the customer's REMAINING prepaid
   // capacity (after consumed drawdown) against the project's planned points.
   // Planned points convert to hours and price at the customer's default
-  // region/level band (assignees aren't known until allocation).
+  // country/level band (assignees aren't known until allocation).
   quoteForProject(project) {
     const summary = this.customerSummary(project.customer);
     const remainingPools = summary.arrangements.map(a => ({ skill: a.skill, remaining: a.remaining_points, label: a.label }));
     const poolsFor = (sk) => remainingPools.filter(p => p.skill === sk).concat(remainingPools.filter(p => p.skill === 'any'));
     const hpp = this.hoursPerPoint();
     const band = this.customerDefault(project.customer);
-    const rate = band ? this.hourlyRate(band.region, band.level) : 0;
+    const rate = band ? this.hourlyRate(band.country, band.level) : 0;
     const lines = [];
     let totalPoints = 0, coveredPoints = 0, amount = 0;
     this.SKILLS.forEach(([sk, label]) => {
@@ -40353,7 +40360,7 @@ const Billing = {
       project_id: project.id, customer: project.customer, currency: this.currency(),
       generated_at: new Date().toISOString(),
       hours_per_point: hpp,
-      rate_band: band ? band.region + ' / ' + band.level : null,
+      rate_band: band ? band.country + ' / ' + band.level : null,
       hourly_rate: rate,
       lines,
       totals: { points: totalPoints, prepaid_covered: coveredPoints, billable_points: totalPoints - coveredPoints, hours: (totalPoints - coveredPoints) * hpp, amount: Math.round(amount) }
@@ -40423,58 +40430,58 @@ const Billing = {
   renderSettingsCard() {
     const esc = Dashboard.esc;
     const escAttr = Dashboard.escAttr;
-    const regions = this.regions();
+    const countries = this.countries();
     const levels = this.levels();
     const skillLabel = (sk) => sk === 'any' ? 'Any' : (this.SKILLS.find(x => x[0] === sk) || ['', sk])[1];
 
-    // Rate table grid: rows = regions, columns = levels, cells = hourly rate.
+    // Rate table grid: rows = countries, columns = levels, cells = hourly rate.
     let rateGrid;
-    if (!regions.length) {
-      rateGrid = '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">No rate table yet. Add your first region and level below, or seed a starter table.</div>' +
-        '<button class="btn btn-outline btn-sm" onclick="Billing.uiSeedRateTable()">Seed starter table (EMEA / AMER / APAC × Analyst → Principal)</button>';
+    if (!countries.length) {
+      rateGrid = '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">No rate table yet. Add your first country and level below, or seed a starter table.</div>' +
+        '<button class="btn btn-outline btn-sm" onclick="Billing.uiSeedRateTable()">Seed starter table (UK / USA / India × Analyst → Principal)</button>';
     } else {
-      const head = '<tr><th style="padding:5px 8px;text-align:left;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Region \\ Level</th>' +
+      const head = '<tr><th style="padding:5px 8px;text-align:left;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">Country \\ Level</th>' +
         levels.map(l => '<th style="padding:5px 8px;font-size:var(--fs-2xs);text-transform:uppercase;color:var(--text-muted)">' + esc(l) + '</th>').join('') + '<th></th></tr>';
-      const rows = regions.map(region =>
-        '<tr><td style="padding:5px 8px;font-weight:600">' + esc(region) + '</td>' +
+      const rows = countries.map(country =>
+        '<tr><td style="padding:5px 8px;font-weight:600">' + esc(country) + '</td>' +
         levels.map(level =>
-          '<td style="padding:3px 4px;text-align:center"><input type="number" min="0" step="5" class="field-input" style="width:84px" value="' + escAttr(this.hourlyRate(region, level) || '') + '"' +
-          ' onchange="Billing.uiSetCell(this)" data-region="' + escAttr(region) + '" data-level="' + escAttr(level) + '" aria-label="Hourly rate for ' + escAttr(region) + ' ' + escAttr(level) + '"></td>'
+          '<td style="padding:3px 4px;text-align:center"><input type="number" min="0" step="5" class="field-input" style="width:84px" value="' + escAttr(this.hourlyRate(country, level) || '') + '"' +
+          ' onchange="Billing.uiSetCell(this)" data-country="' + escAttr(country) + '" data-level="' + escAttr(level) + '" aria-label="Hourly rate for ' + escAttr(country) + ' ' + escAttr(level) + '"></td>'
         ).join('') +
-        '<td style="padding:3px 4px"><button class="btn btn-ghost btn-sm" onclick="Billing.uiRemoveRegion(this)" data-region="' + escAttr(region) + '" title="Remove region" aria-label="Remove region ' + escAttr(region) + '">&times;</button></td></tr>'
+        '<td style="padding:3px 4px"><button class="btn btn-ghost btn-sm" onclick="Billing.uiRemoveCountry(this)" data-country="' + escAttr(country) + '" title="Remove country" aria-label="Remove country ' + escAttr(country) + '">&times;</button></td></tr>'
       ).join('');
       rateGrid = '<table style="border-collapse:collapse;font-size:12px"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
     }
     const addControls = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">' +
-      '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">New region</label><input id="bRegionNew" class="field-input" style="width:110px" placeholder="EMEA"></div>' +
-      '<button class="btn btn-outline btn-sm" onclick="Billing.uiAddRegion()">Add region</button>' +
+      '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">New country</label><input id="bCountryNew" class="field-input" style="width:130px" placeholder="United Kingdom"></div>' +
+      '<button class="btn btn-outline btn-sm" onclick="Billing.uiAddCountry()">Add country</button>' +
       '<div><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">New level</label><input id="bLevelNew" class="field-input" style="width:130px" placeholder="Senior Consultant"></div>' +
       '<button class="btn btn-outline btn-sm" onclick="Billing.uiAddLevel()">Add level</button>' +
     '</div>';
 
-    const bandOpts = (selRegion, selLevel) =>
-      '<option value="">—</option>' + regions.map(r => '<option value="' + escAttr(r) + '"' + (r === selRegion ? ' selected' : '') + '>' + esc(r) + '</option>').join('') +
+    const bandOpts = (selCountry, selLevel) =>
+      '<option value="">—</option>' + countries.map(c => '<option value="' + escAttr(c) + '"' + (c === selCountry ? ' selected' : '') + '>' + esc(c) + '</option>').join('') +
       '|' + // split marker replaced below
       '<option value="">—</option>' + levels.map(l => '<option value="' + escAttr(l) + '"' + (l === selLevel ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
 
     const memberRows = (App.data.team_members || []).map(m => {
-      const opts = bandOpts(m.region || '', m.level || '').split('|');
+      const opts = bandOpts(m.country || '', m.level || '').split('|');
       return '<tr><td style="padding:4px 8px;font-weight:600">' + esc(m.name) + '</td>' +
         '<td style="padding:4px 8px;color:var(--text-muted);font-size:11px">' + esc(m.customer || '') + '</td>' +
-        '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetMemberBand(this)" data-member="' + escAttr(m.name) + '" data-kind="region" aria-label="Region for ' + escAttr(m.name) + '">' + opts[0] + '</select></td>' +
+        '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetMemberBand(this)" data-member="' + escAttr(m.name) + '" data-kind="country" aria-label="Country for ' + escAttr(m.name) + '">' + opts[0] + '</select></td>' +
         '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetMemberBand(this)" data-member="' + escAttr(m.name) + '" data-kind="level" aria-label="Level for ' + escAttr(m.name) + '">' + opts[1] + '</select></td>' +
-        '<td style="padding:4px 8px;text-align:right;color:var(--text-muted);font-size:11px">' + (m.region && m.level && this.hourlyRate(m.region, m.level) ? this.fmtMoney(this.hourlyRate(m.region, m.level)) + '/h' : 'uses customer default') + '</td></tr>';
+        '<td style="padding:4px 8px;text-align:right;color:var(--text-muted);font-size:11px">' + (m.country && m.level && this.hourlyRate(m.country, m.level) ? this.fmtMoney(this.hourlyRate(m.country, m.level)) + '/h' : 'uses customer default') + '</td></tr>';
     }).join('');
 
     const customers = App.getCustomers();
     const custDefaultRows = customers.map(c => {
       const d = this.settings().customer_defaults[c] || {};
-      const opts = bandOpts(d.region || '', d.level || '').split('|');
+      const opts = bandOpts(d.country || '', d.level || '').split('|');
       const eff = this.customerDefault(c);
       return '<tr><td style="padding:4px 8px;font-weight:600">' + esc(c) + '</td>' +
-        '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetCustomerDefault(this)" data-customer="' + escAttr(c) + '" data-kind="region" aria-label="Default region for ' + escAttr(c) + '">' + opts[0] + '</select></td>' +
+        '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetCustomerDefault(this)" data-customer="' + escAttr(c) + '" data-kind="country" aria-label="Default country for ' + escAttr(c) + '">' + opts[0] + '</select></td>' +
         '<td style="padding:3px 4px"><select class="field-input" onchange="Billing.uiSetCustomerDefault(this)" data-customer="' + escAttr(c) + '" data-kind="level" aria-label="Default level for ' + escAttr(c) + '">' + opts[1] + '</select></td>' +
-        '<td style="padding:4px 8px;text-align:right;color:var(--text-muted);font-size:11px">' + (eff ? esc(eff.region + ' / ' + eff.level) + ' · ' + this.fmtMoney(this.hourlyRate(eff.region, eff.level)) + '/h' : 'no priced band') + '</td></tr>';
+        '<td style="padding:4px 8px;text-align:right;color:var(--text-muted);font-size:11px">' + (eff ? esc(eff.country + ' / ' + eff.level) + ' · ' + this.fmtMoney(this.hourlyRate(eff.country, eff.level)) + '/h' : 'no priced band') + '</td></tr>';
     }).join('');
 
     const custOpts = (sel) => customers.map(c => '<option value="' + escAttr(c) + '"' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
@@ -40496,8 +40503,8 @@ const Billing = {
 
     return '' +
       '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
-        '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Hourly rate table — region × level</div>' +
-        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">What you charge per hour by delivery region and seniority level. Story points convert via hours-per-point. Internal cost rates stay in the scheduler rate card.</div>' +
+        '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Hourly rate table — country × level</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">What you charge per hour by delivery country and seniority level. Story points convert via hours-per-point. Internal cost rates stay in the scheduler rate card.</div>' +
         '<div style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap">' +
           '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600">Currency <select class="field-input" style="max-width:110px" onchange="Billing.setCurrency(this.value);App.renderConfig()">' +
           ['GBP', 'USD', 'EUR', 'AUD', 'CAD'].map(c => '<option value="' + c + '"' + (this.currency() === c ? ' selected' : '') + '>' + c + '</option>').join('') +
@@ -40508,13 +40515,13 @@ const Billing = {
       '</div>' +
       '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
         '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Team rate bands</div>' +
-        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Each member\'s region and level decide the hourly rate their completed work bills at. Unassigned members bill at the customer\'s default band.</div>' +
-        (memberRows ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:4px 8px">Member</th><th style="padding:4px 8px">Customer</th><th style="padding:4px 8px">Region</th><th style="padding:4px 8px">Level</th><th style="padding:4px 8px;text-align:right">Rate</th></tr></thead><tbody>' + memberRows + '</tbody></table>' : '<div style="font-size:12px;color:var(--text-muted)">No team members configured yet.</div>') +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Each member\'s country and level decide the hourly rate their completed work bills at. Unassigned members bill at the customer\'s default band.</div>' +
+        (memberRows ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:4px 8px">Member</th><th style="padding:4px 8px">Customer</th><th style="padding:4px 8px">Country</th><th style="padding:4px 8px">Level</th><th style="padding:4px 8px;text-align:right">Rate</th></tr></thead><tbody>' + memberRows + '</tbody></table>' : '<div style="font-size:12px;color:var(--text-muted)">No team members configured yet.</div>') +
       '</div>' +
       '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
         '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Customer default band</div>' +
         '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Used for quotes (assignees aren\'t known yet) and for completed work with no assigned member. Falls back to the first priced cell in the table.</div>' +
-        '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:4px 8px">Customer</th><th style="padding:4px 8px">Region</th><th style="padding:4px 8px">Level</th><th style="padding:4px 8px;text-align:right">Effective</th></tr></thead><tbody>' + custDefaultRows + '</tbody></table>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:4px 8px">Customer</th><th style="padding:4px 8px">Country</th><th style="padding:4px 8px">Level</th><th style="padding:4px 8px;text-align:right">Effective</th></tr></thead><tbody>' + custDefaultRows + '</tbody></table>' +
       '</div>' +
       '<div class="config-card" style="background:var(--bg-surface,white);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
         '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Prepaid / fixed arrangements</div>' +
@@ -40538,7 +40545,7 @@ const Billing = {
   },
   // data-attribute handlers: region/level/member/customer names are user input
   // and never enter onclick JS strings.
-  uiSetCell(el) { this.setHourlyRate(el.dataset.region, el.dataset.level, el.value); App.renderConfig(); },
+  uiSetCell(el) { this.setHourlyRate(el.dataset.country, el.dataset.level, el.value); App.renderConfig(); },
   uiSetHoursPerPoint(v) {
     if (!App.data) return;
     App.pushUndo('Set hours per story point');
@@ -40549,12 +40556,12 @@ const Billing = {
     App.saveToLocalStorage();
     App.renderConfig();
   },
-  uiAddRegion() {
-    const el = document.getElementById('bRegionNew');
+  uiAddCountry() {
+    const el = document.getElementById('bCountryNew');
     const name = el ? el.value.trim().slice(0, 40) : '';
     if (!name) return;
-    if (this.regions().indexOf(name) >= 0) { App.toast('Region already exists', 'error'); return; }
-    App.pushUndo('Add billing region ' + name);
+    if (this.countries().indexOf(name) >= 0) { App.toast('Country already exists', 'error'); return; }
+    App.pushUndo('Add billing country ' + name);
     const levels = this.levels();
     App.data.settings.billing.rate_table[name] = {};
     levels.forEach(l => { App.data.settings.billing.rate_table[name][l] = 0; });
@@ -40568,23 +40575,23 @@ const Billing = {
     if (this.levels().indexOf(name) >= 0) { App.toast('Level already exists', 'error'); return; }
     App.pushUndo('Add billing level ' + name);
     const t = App.data.settings.billing.rate_table;
-    if (!Object.keys(t).length) t['EMEA'] = {};
+    if (!Object.keys(t).length) t['United Kingdom'] = {};
     Object.keys(t).forEach(r => { t[r][name] = 0; });
     App.markDirty(); App.saveToLocalStorage(); App.renderConfig();
   },
-  uiRemoveRegion(el) {
-    const region = el.dataset.region;
-    if (!region || !confirm('Remove region "' + region + '" and its rates? (Undo with Ctrl+Z)')) return;
-    App.pushUndo('Remove billing region ' + region);
-    delete App.data.settings.billing.rate_table[region];
+  uiRemoveCountry(el) {
+    const country = el.dataset.country;
+    if (!country || !confirm('Remove country "' + country + '" and its rates? (Undo with Ctrl+Z)')) return;
+    App.pushUndo('Remove billing country ' + country);
+    delete App.data.settings.billing.rate_table[country];
     App.markDirty(); App.saveToLocalStorage(); App.renderConfig();
   },
   uiSeedRateTable() {
     App.pushUndo('Seed billing rate table');
     App.data.settings.billing.rate_table = {
-      'EMEA': { 'Analyst': 70, 'Consultant': 95, 'Senior Consultant': 120, 'Principal': 150 },
-      'AMER': { 'Analyst': 90, 'Consultant': 120, 'Senior Consultant': 150, 'Principal': 190 },
-      'APAC': { 'Analyst': 60, 'Consultant': 80, 'Senior Consultant': 105, 'Principal': 130 }
+      'United Kingdom': { 'Analyst': 70, 'Consultant': 95, 'Senior Consultant': 120, 'Principal': 150 },
+      'United States': { 'Analyst': 90, 'Consultant': 120, 'Senior Consultant': 150, 'Principal': 190 },
+      'India': { 'Analyst': 40, 'Consultant': 55, 'Senior Consultant': 75, 'Principal': 95 }
     };
     App.markDirty(); App.saveToLocalStorage(); App.renderConfig();
     App.toast('Starter rate table added — adjust to your card', 'success');
@@ -40592,17 +40599,17 @@ const Billing = {
   uiSetMemberBand(el) {
     const m = (App.data.team_members || []).find(x => x.name === el.dataset.member);
     if (!m) return;
-    const region = el.dataset.kind === 'region' ? el.value : (m.region || '');
+    const country = el.dataset.kind === 'country' ? el.value : (m.country || '');
     const level = el.dataset.kind === 'level' ? el.value : (m.level || '');
-    this.setMemberRateBand(m.name, region || null, level || null);
+    this.setMemberRateBand(m.name, country || null, level || null);
     App.renderConfig();
   },
   uiSetCustomerDefault(el) {
     const customer = el.dataset.customer;
     const cur = this.settings().customer_defaults[customer] || {};
-    const region = el.dataset.kind === 'region' ? el.value : (cur.region || '');
+    const country = el.dataset.kind === 'country' ? el.value : (cur.country || '');
     const level = el.dataset.kind === 'level' ? el.value : (cur.level || '');
-    this.setCustomerDefault(customer, region, level);
+    this.setCustomerDefault(customer, country, level);
     App.renderConfig();
   },
   uiAddArrangement() {

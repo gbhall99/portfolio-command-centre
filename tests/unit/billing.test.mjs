@@ -41,8 +41,8 @@ function fixture() {
       rate_card: { size_engineering: { perm: 500 }, size_tableau: { perm: 400 } },
       billing: {
         currency: 'GBP', hours_per_point: 8,
-        rate_table: { EMEA: { Consultant: 100, Principal: 150 } },
-        customer_defaults: { 'Acme Industries': { region: 'EMEA', level: 'Consultant' }, 'Globex': { region: 'EMEA', level: 'Consultant' } }
+        rate_table: { 'United Kingdom': { Consultant: 100, Principal: 150 } },
+        customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' }, 'Globex': { country: 'United Kingdom', level: 'Consultant' } }
       }
     }
   });
@@ -72,7 +72,7 @@ describe('migration + settings', () => {
 describe('pure T&M (no arrangements)', () => {
   it('bills completed work as hours at the default band and reports margin vs internal cost', () => {
     const { Billing } = app;
-    // 1 SP = 8h at EMEA/Consultant £100/h => £800 per SP.
+    // 1 SP = 8h at UK/Consultant £100/h => £800 per SP.
     const s = Billing.customerSummary('Acme Industries');
     expect(s.projects.map(r => r.id)).toEqual(['A-1', 'A-2']);
     const a1 = s.projects[0];
@@ -90,7 +90,7 @@ describe('pure T&M (no arrangements)', () => {
   it('work done by a member with a rate band bills at that band (blended per skill)', () => {
     const { Billing, App } = app;
     // Make the A-2 split attributable to a Principal (£150/h).
-    App.data.team_members.push({ name: 'Pat', customer: 'Acme Industries', region: 'EMEA', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 });
+    App.data.team_members.push({ name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 });
     App.data.projects.find(p => p.id === 'A-2').skill_splits.size_engineering[0].assigned_to = [{ member: 'Pat', points: 6 }];
     const s = Billing.customerSummary('Acme Industries');
     const a2 = s.projects.find(r => r.id === 'A-2');
@@ -178,7 +178,7 @@ describe('quoting (planned work, prepaid netting)', () => {
     let q = Billing.quoteForProject(newProj);
     expect(q.totals.points).toBe(14);
     expect(q.totals.prepaid_covered).toBe(0);   // pool already exhausted by consumed work
-    expect(q.rate_band).toBe('EMEA / Consultant');
+    expect(q.rate_band).toBe('United Kingdom / Consultant');
     expect(q.hourly_rate).toBe(100);
     expect(q.totals.hours).toBe(14 * 8);
     expect(q.totals.amount).toBe(14 * 8 * 100);
@@ -198,7 +198,7 @@ describe('quoting (planned work, prepaid netting)', () => {
     const text = Billing.quoteAsText(q);
     expect(text).toContain('Data Engineering: 8 SP');
     expect(text).toContain('covered by prepaid');
-    expect(text).toContain('Rates basis: EMEA / Consultant');
+    expect(text).toContain('Rates basis: United Kingdom / Consultant');
     expect(text).toContain('/hour');
     expect(text).toContain('1 story point = 8 hours');
     expect(text).toContain('Prices hold for 30 days');
@@ -220,9 +220,9 @@ describe('settings UI + report', () => {
     expect(body.textContent).toContain('Billing & Costs report');
     expect(body.querySelector('#billingReportCustomer')).not.toBeNull();
     // Rate edits go through the audited setter.
-    Billing.setHourlyRate('EMEA', 'Principal', '175');
-    expect(App.data.settings.billing.rate_table.EMEA.Principal).toBe(175);
-    expect(App.data.audit_log.some(e => e.field === 'billing_rate:EMEA/Principal')).toBe(true);
+    Billing.setHourlyRate('United Kingdom', 'Principal', '175');
+    expect(App.data.settings.billing.rate_table['United Kingdom'].Principal).toBe(175);
+    expect(App.data.audit_log.some(e => e.field === 'billing_rate:United Kingdom/Principal')).toBe(true);
   });
 
   it('exportReport writes a print document and logs report_generated', () => {
