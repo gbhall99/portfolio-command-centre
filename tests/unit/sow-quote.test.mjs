@@ -15,7 +15,7 @@ beforeEach(async () => {
       makeProject({ id: 'A-1', name: 'Acme Alpha', customer: 'Acme Industries', size_engineering: 10, size_tableau: 4 }),
       makeProject({ id: 'A-2', name: 'Acme Beta', customer: 'Acme Industries', size_engineering: 6 })
     ],
-    settings: { billing: { currency: 'GBP', sell_rates: { size_engineering: 900, size_tableau: 700 } } }
+    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { EMEA: { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { region: 'EMEA', level: 'Consultant' } } } }
   }));
   app.App.activeCustomer = 'Acme Industries';
 });
@@ -75,7 +75,8 @@ describe('quote generation', () => {
     expect(q.project_id).toBe('A-1');
     expect(q.totals.points).toBe(14);
     expect(q.totals.prepaid_covered).toBe(8);
-    expect(q.totals.amount).toBe(2 * 900 + 4 * 700);
+    expect(q.rate_band).toBe('EMEA / Consultant');
+    expect(q.totals.amount).toBe(6 * 8 * 100);
     // Commercials section now carries the rendered quote and is unflagged.
     const comm = Sow.get(sow.id).sections.find(s => s.id === 'commercials');
     expect(comm.content).toContain('covered by prepaid');
@@ -88,14 +89,14 @@ describe('quote generation', () => {
     expect(Sow.get(sow.id).quote).toBeUndefined();
   });
 
-  it('refuses to quote when billable skills have no sell rate', () => {
+  it('refuses to quote when the customer has no priced rate band', () => {
     const { Sow, App } = app;
     const { sow } = makeQuotedSow();
     Sow.attachProject(sow.id, 'A-1');
-    App.data.settings.billing.sell_rates = { size_engineering: 900 }; // tableau missing
+    App.data.settings.billing.rate_table = {}; // nothing priced
     const res = Sow.setQuote(sow.id);
     expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/No sell rate configured for: Tableau/);
+    expect(res.error).toMatch(/No priced rate band/);
   });
 });
 

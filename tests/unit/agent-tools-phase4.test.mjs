@@ -28,7 +28,7 @@ beforeEach(async () => {
     ],
     sprints: makeSprintSequence(3),
     team_members: [makeMember({ name: 'Dana', available_points_per_sprint: 20 })],
-    settings: { billing: { currency: 'GBP', sell_rates: { size_engineering: 900 } } }
+    settings: { billing: { currency: 'GBP', hours_per_point: 8, rate_table: { EMEA: { Consultant: 100 } }, customer_defaults: { 'Acme Industries': { region: 'EMEA', level: 'Consultant' } } } }
   }));
   app.App.activeCustomer = 'Acme Industries';
 });
@@ -44,7 +44,7 @@ describe('billing_summary read tool', () => {
     const res = AgentTools.invoke('billing_summary', {}, c);
     expect(res.error).toBeUndefined();
     expect(res.arrangements[0]).toMatchObject({ label: 'Retainer', drawn_points: 4, remaining_points: 0 });
-    expect(res.projects[0]).toMatchObject({ id: 'A-1', consumed_points: 6, prepaid_covered_points: 4, billable_points: 2, billable_amount: 1800 });
+    expect(res.projects[0]).toMatchObject({ id: 'A-1', consumed_points: 6, prepaid_covered_points: 4, billable_points: 2, billable_amount: 2 * 8 * 100 });
     expect(res.projects.some(p => p.id === 'G-1')).toBe(false);
     expect(c.citations.some(x => x.id === 'A-1')).toBe(true);
   });
