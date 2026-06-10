@@ -6102,11 +6102,14 @@ const App = {
     // Sell rates are HOURLY, by country x level; story points convert via
     // hours_per_point. customer_defaults picks the country/level used for
     // quotes and for work with no assigned member.
-    s.billing = Object.assign({ currency: 'GBP', hours_per_point: 8, rate_table: {}, customer_defaults: {} }, s.billing || {});
+    s.billing = Object.assign({ currency: 'USD', hours_per_point: 8, rate_table: {}, customer_defaults: {} }, s.billing || {});
     if (!s.billing.rate_table || typeof s.billing.rate_table !== 'object') s.billing.rate_table = {};
     if (!s.billing.customer_defaults || typeof s.billing.customer_defaults !== 'object') s.billing.customer_defaults = {};
     if (!(Number(s.billing.hours_per_point) > 0)) s.billing.hours_per_point = 8;
     if ('sell_rates' in s.billing) delete s.billing.sell_rates; // pre-release shape, never shipped
+    // Pre-release default flip: GBP was the seeded default before USD; only
+    // an explicit pick (currency_set) survives a load.
+    if (!s.billing.currency_set && s.billing.currency === 'GBP') s.billing.currency = 'USD';
     // Pre-release rename: customer default bands briefly used 'region'.
     Object.keys(s.billing.customer_defaults).forEach(c => {
       const d = s.billing.customer_defaults[c];
@@ -40064,13 +40067,14 @@ const Billing = {
   ],
 
   settings() {
-    return (App.data && App.data.settings && App.data.settings.billing) || { currency: 'GBP', hours_per_point: 8, rate_table: {}, customer_defaults: {} };
+    return (App.data && App.data.settings && App.data.settings.billing) || { currency: 'USD', hours_per_point: 8, rate_table: {}, customer_defaults: {} };
   },
-  currency() { return this.settings().currency || 'GBP'; },
+  currency() { return this.settings().currency || 'USD'; },
   fmtMoney(n) {
     const cur = this.currency();
-    try { return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
-    catch (e) { return cur + ' ' + Math.round(n || 0).toLocaleString('en-GB'); }
+    // en-US locale renders USD as plain "$1,234" rather than "US$1,234".
+    try { return new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
+    catch (e) { return cur + ' ' + Math.round(n || 0).toLocaleString('en-US'); }
   },
   hoursPerPoint() {
     const h = Number(this.settings().hours_per_point);
@@ -40151,6 +40155,7 @@ const Billing = {
     if (!App.data || !cur) return;
     App.pushUndo('Set billing currency');
     App.data.settings.billing.currency = String(cur).toUpperCase().slice(0, 3);
+    App.data.settings.billing.currency_set = true; // explicit pick — never auto-flipped
     App.markDirty();
     App.saveToLocalStorage();
   },
@@ -40507,7 +40512,7 @@ const Billing = {
         '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">What you charge per hour by delivery country and seniority level. Story points convert via hours-per-point. Internal cost rates stay in the scheduler rate card.</div>' +
         '<div style="display:flex;align-items:center;gap:16px;margin-bottom:10px;flex-wrap:wrap">' +
           '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600">Currency <select class="field-input" style="max-width:110px" onchange="Billing.setCurrency(this.value);App.renderConfig()">' +
-          ['GBP', 'USD', 'EUR', 'AUD', 'CAD'].map(c => '<option value="' + c + '"' + (this.currency() === c ? ' selected' : '') + '>' + c + '</option>').join('') +
+          ['USD', 'GBP', 'EUR', 'AUD', 'CAD'].map(c => '<option value="' + c + '"' + (this.currency() === c ? ' selected' : '') + '>' + c + '</option>').join('') +
           '</select></span>' +
           '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600">Hours per story point <input type="number" min="1" max="40" class="field-input" style="width:70px" value="' + this.hoursPerPoint() + '" onchange="Billing.uiSetHoursPerPoint(this.value)" aria-label="Hours per story point"></span>' +
         '</div>' +
@@ -42105,7 +42110,7 @@ expected — these rules are the boundaries, not a script.
   numbered lists; narrative sections (summary, background) are prose.
 - Bullets start with a verb, are one to two lines, and never nest more
   than one level.
-- Dates in the form `12 June 2026`. Currency with ISO code (GBP 12,000).
+- Dates in the form `12 June 2026`. Currency in USD with the $ symbol (e.g. $12,000); state "USD, excl. taxes" once in Commercials.
 - Story-point or effort references use whole numbers.
 - Keep the whole document under ~1,800 words unless the source demands
   more; an SOW is a contract aid, not a proposal deck.

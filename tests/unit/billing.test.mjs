@@ -40,7 +40,7 @@ function fixture() {
     settings: {
       rate_card: { size_engineering: { perm: 500 }, size_tableau: { perm: 400 } },
       billing: {
-        currency: 'GBP', hours_per_point: 8,
+        currency: 'USD', hours_per_point: 8,
         rate_table: { 'United Kingdom': { Consultant: 100, Principal: 150 } },
         customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' }, 'Globex': { country: 'United Kingdom', level: 'Consultant' } }
       }
@@ -61,7 +61,7 @@ describe('migration + settings', () => {
     delete legacy.billing_arrangements;
     const a2 = await loadApp(legacy);
     expect(Array.isArray(a2.App.data.billing_arrangements)).toBe(true);
-    expect(a2.App.data.settings.billing.currency).toBe('GBP');
+    expect(a2.App.data.settings.billing.currency).toBe('USD');
     expect(a2.App.data.settings.billing.rate_table).toEqual({});
     expect(a2.App.data.settings.billing.customer_defaults).toEqual({});
     expect(a2.App.data.settings.billing.hours_per_point).toBe(8);
@@ -72,7 +72,7 @@ describe('migration + settings', () => {
 describe('pure T&M (no arrangements)', () => {
   it('bills completed work as hours at the default band and reports margin vs internal cost', () => {
     const { Billing } = app;
-    // 1 SP = 8h at UK/Consultant £100/h => £800 per SP.
+    // 1 SP = 8h at UK/Consultant $100/h => $800 per SP.
     const s = Billing.customerSummary('Acme Industries');
     expect(s.projects.map(r => r.id)).toEqual(['A-1', 'A-2']);
     const a1 = s.projects[0];
@@ -89,7 +89,7 @@ describe('pure T&M (no arrangements)', () => {
 
   it('work done by a member with a rate band bills at that band (blended per skill)', () => {
     const { Billing, App } = app;
-    // Make the A-2 split attributable to a Principal (£150/h).
+    // Make the A-2 split attributable to a Principal ($150/h).
     App.data.team_members.push({ name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 });
     App.data.projects.find(p => p.id === 'A-2').skill_splits.size_engineering[0].assigned_to = [{ member: 'Pat', points: 6 }];
     const s = Billing.customerSummary('Acme Industries');
