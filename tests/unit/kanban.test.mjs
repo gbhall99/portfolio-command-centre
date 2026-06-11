@@ -107,11 +107,15 @@ describe('column configuration', () => {
     Kanban.setColumnVisible('Closed', false);
     Kanban.setColumnVisible('Complete', false);
     expect(document.querySelectorAll('#kbBoard .kb-col').length).toBe(5);
-    expect(App.uiStateGet('board.columns', null)).not.toContain('Closed');
+    expect(App.uiStateGet('board.columns.Acme Industries', null)).not.toContain('Closed');
     // Try to hide everything — the guard keeps at least one.
     Kanban.STATUSES.forEach(s => Kanban.setColumnVisible(s, false));
     expect(document.querySelectorAll('#kbBoard .kb-col').length).toBeGreaterThanOrEqual(1);
-    App.uiStateSet('board.columns', null);
+    // Prefs are per customer: Globex's board is unaffected by Acme's choices.
+    App.activeCustomer = 'Globex';
+    expect(Kanban.visibleColumns().length).toBe(Kanban.STATUSES.length);
+    App.activeCustomer = 'Acme Industries';
+    App.uiStateSet('board.columns.Acme Industries', null);
   });
 });
 
