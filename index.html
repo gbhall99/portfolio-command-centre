@@ -41503,27 +41503,24 @@ const SowSkill = {
 
   exportPrint() {
     const sow = Sow.get(this._sowId);
-    const def = this._def();
-    if (!sow || !def) return;
+    if (!sow) return;
     const esc = Dashboard.esc;
-    let md = def.files.template || '';
-    const meta = { project_name: sow.name.replace(/^Statement of Work\s*[-—:]?\s*/i, ''), customer: sow.customer, prepared_by: '', date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), version: sow.version, status: sow.status };
-    Object.keys(meta).forEach(k => { md = md.split('{{' + k + '}}').join(meta[k]); });
-    sow.sections.forEach(sec => { md = md.split('{{' + sec.id + '}}').join(sec.content || '(not provided)'); });
-    const body = md.split(/\n/).map(line => {
-      if (/^# /.test(line)) return '<h1>' + esc(line.slice(2)) + '</h1>';
-      if (/^## /.test(line)) return '<h2>' + esc(line.slice(3)) + '</h2>';
-      if (/^---/.test(line)) return '<hr>';
-      if (/^[-*] /.test(line)) return '<li>' + esc(line.slice(2)) + '</li>';
-      if (!line.trim()) return '';
-      return '<p>' + esc(line) + '</p>';
-    }).join('\n');
-    const w = window.open('', '_blank');
-    if (!w) { App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return; }
-    w.document.write('<!DOCTYPE html><html><head><title>' + esc(sow.name) + '</title>' +
-      '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 28px;font-size:13px;line-height:1.6;color:#111}h1{font-size:21px;border-bottom:2px solid #2563eb;padding-bottom:8px}h2{font-size:14px;color:#2563eb;text-transform:uppercase;letter-spacing:.4px;margin-top:20px}li{margin:2px 0}@media print{body{margin:18mm 14mm}}</style>' +
-      '</head><body>' + body + '<script>window.onload=function(){window.print()}<\/script></body></html>');
-    w.document.close();
+    const toHtml = (content) => (content || '').split(/\n+/).map(line =>
+      /^[-*] /.test(line) ? '<li>' + esc(line.slice(2)) + '</li>' : '<p>' + esc(line) + '</p>'
+    ).join('');
+    const sections = sow.sections.filter(s => (s.content || '').trim())
+      .map(s => ({ id: s.id, title: s.title, html: toHtml(s.content), audiences: ['customer', 'internal'] }));
+    // A SOW prints with the customer_pack treatment: full density, cover + ToC, Confidential.
+    const doc = Reports.Doc.buildDoc(Object.assign({}, Reports._DEFAULTS_BY_TYPE.customer_pack, {
+      reportType: 'sow',
+      title: sow.name,
+      subtitle: 'Version ' + sow.version + ' · ' + sow.status,
+      customer: sow.customer,
+      sections,
+      audience: 'customer'
+    }));
+    Reports.open(Reports.Doc.toHtml(doc, Reports.Brand.for(sow.customer)));
+    Reports.recordExport('sow', sow.customer, {});
   },
 
   // --- rendering ---

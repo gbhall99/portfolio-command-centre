@@ -614,12 +614,12 @@ git commit -m "feat(reports): status report skill renders through the unified en
 
 **Files:** Modify `index.html` (the SOW print/export path in `SowSkill`/`Sow`); Modify `tests/unit/sow.test.mjs`
 
-- [ ] **Step 1: Locate the SOW print path.** In `SowSkill` (41220+) find the export/print method (mirror of `StatusReportSkill.exportPrint`). Read it.
-- [ ] **Step 2: Write the failing test** — add to `tests/unit/sow.test.mjs` a test asserting the SOW export calls `Reports.open` with a `<!DOCTYPE html>` doc containing the SOW section content and `<style>` from the engine (mirror Task 9's test, using `Sow.create` with a minimal definition + generatedSections).
-- [ ] **Step 3: Run, verify FAIL.**
-- [ ] **Step 4: Rewrite the SOW export** to map the SOW entity's `sections[]` ({id,title,content}) into the `{id,title,html,audiences:['customer','internal']}` contract, `buildDoc({reportType:'sponsor_pack'|'sow', ...})` (use `customer_pack` defaults — full/cover/toc; classification Confidential), serialize via `Reports.Doc.toHtml`, deliver via `Reports.open`, `recordExport('sow', customer)`. Remove its bespoke HTML/print.
-- [ ] **Step 5: Run test + regression** — `npx vitest run tests/unit/sow.test.mjs && npx vitest run && npx playwright test tests/e2e/sow.spec.ts`. If `sow.spec.ts` asserts old print markup, update it to assert the engine path.
-- [ ] **Step 6: Commit**
+- [x] **Step 1: Locate the SOW print path.** In `SowSkill` (41220+) find the export/print method (mirror of `StatusReportSkill.exportPrint`). Read it.
+- [x] **Step 2: Write the failing test** — add to `tests/unit/sow.test.mjs` a test asserting the SOW export calls `Reports.open` with a `<!DOCTYPE html>` doc containing the SOW section content and `<style>` from the engine (mirror Task 9's test, using `Sow.create` with a minimal definition + generatedSections).
+- [x] **Step 3: Run, verify FAIL.**
+- [x] **Step 4: Rewrite the SOW export** to map the SOW entity's `sections[]` ({id,title,content}) into the `{id,title,html,audiences:['customer','internal']}` contract, `buildDoc({reportType:'sponsor_pack'|'sow', ...})` (use `customer_pack` defaults — full/cover/toc; classification Confidential), serialize via `Reports.Doc.toHtml`, deliver via `Reports.open`, `recordExport('sow', customer)`. Remove its bespoke HTML/print.
+- [x] **Step 5: Run test + regression** — `npx vitest run tests/unit/sow.test.mjs && npx vitest run && npx playwright test tests/e2e/sow.spec.ts`. If `sow.spec.ts` asserts old print markup, update it to assert the engine path.
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html tests/unit/sow.test.mjs tests/e2e/sow.spec.ts
