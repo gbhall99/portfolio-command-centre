@@ -43,7 +43,7 @@
 
 **Files:** Modify `index.html` (add inside `Reports`, after `_CLASSIFICATION_BAND_COLOR` ~line 36454); Create `tests/render/reports-tokens.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — `tests/render/reports-tokens.test.mjs`:
+- [x] **Step 1: Write the failing test** — `tests/render/reports-tokens.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -74,9 +74,9 @@ describe('Reports.tokens — parity stylesheet', () => {
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-tokens.test.mjs` (`Reports.tokens` is not a function).
+- [x] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-tokens.test.mjs` (`Reports.tokens` is not a function).
 
-- [ ] **Step 3: Implement `Reports.tokens`.** Insert as a method of the `Reports` object (after `_CLASSIFICATION_BAND_COLOR`, ~line 36454). Port the legacy `_baseStyles` layout rules but source colours/sizes from the APP tokens (RAG = `#0d9488`/`#d97706`/`#dc2626`; type scale 11–26px; `--font-sans`). White A4 canvas, fixed running header/footer, ink-friendly:
+- [x] **Step 3: Implement `Reports.tokens`.** Insert as a method of the `Reports` object (after `_CLASSIFICATION_BAND_COLOR`, ~line 36454). Port the legacy `_baseStyles` layout rules but source colours/sizes from the APP tokens (RAG = `#0d9488`/`#d97706`/`#dc2626`; type scale 11–26px; `--font-sans`). White A4 canvas, fixed running header/footer, ink-friendly:
 
 ```javascript
   tokens(brand) {
@@ -112,9 +112,9 @@ describe('Reports.tokens — parity stylesheet', () => {
   },
 ```
 
-- [ ] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-tokens.test.mjs`.
+- [x] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-tokens.test.mjs`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/render/reports-tokens.test.mjs
