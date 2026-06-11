@@ -47,7 +47,7 @@ Velocity's AI layer is **provider-agnostic** — point it at whatever model you 
 
 | Provider | Adapter | Base URL | Notes |
 |---|---|---|---|
-| **Ollama** (local) | OpenAI-compatible | `http://localhost:11434/v1` | Start with `OLLAMA_ORIGINS=*` (or this page's origin) so the browser may call it. No key needed. |
+| **Ollama** (local) | OpenAI-compatible | `http://localhost:11434/v1` | Allow browser origins: macOS app — `launchctl setenv OLLAMA_ORIGINS "*"` then quit/reopen Ollama from the menu bar; or run `OLLAMA_ORIGINS="*" ollama serve`. Verify with a GET (HEAD is rejected with a misleading 403): `curl -s -D - -o /dev/null -H "Origin: null" http://localhost:11434/v1/models` — expect `HTTP/1.1 200` and an `Access-Control-Allow-Origin` header. If the server keeps answering after you quit the menu-bar app, something else owns port 11434 (often a Homebrew service: `brew services stop ollama`), and the guaranteed route is `OLLAMA_ORIGINS="*" ollama serve` in a Terminal tab. The base URL needs the `/v1`. No key needed. Models without native tool calling (e.g. Gemma) should use **Tool mode: JSON fallback**. |
 | **LM Studio** (local) | OpenAI-compatible | `http://localhost:1234/v1` | Enable CORS in the Local Server tab. |
 | **llama.cpp / llamafile / vLLM / text-generation-webui** | OpenAI-compatible | your server's `/v1` | All expose the OpenAI chat-completions shape. |
 | **Anthropic (Claude)** | Anthropic | default | Works browser-direct (the adapter sends the required browser-access header). Recommended default when available. |
@@ -56,7 +56,8 @@ Velocity's AI layer is **provider-agnostic** — point it at whatever model you 
 
 - **Multiple profiles + per-task defaults** — e.g. a strong cloud model for SOW drafting, a fast local model for interactive chat.
 - **Capability negotiation** — models without native tool calling (common locally) automatically run through a constrained-JSON fallback with strict parsing and a repair loop. Set **Tool mode: JSON fallback** on the profile if auto-detection guesses wrong. Features degrade to the fallback path; they never disappear.
-- **No model configured?** Every AI surface shows a "Connect a model" empty state; the rest of the app is fully functional.
+- **Out of the box** the app seeds a local Ollama profile (`http://localhost:11434/v1`, model `gemma4`, JSON tool mode, 120s timeout) — edit the model name in Settings → AI to match `ollama list`, or use the one-click presets (Ollama / LM Studio / Claude) when adding a profile.
+- **No model configured?** If you delete every profile, AI surfaces show a "Connect a model" empty state; the rest of the app is fully functional.
 - **Optional thin proxy** — if a cloud provider rejects browser-origin calls (CORS), run any minimal forwarding proxy you trust on localhost and set the profile's Base URL to it, adding your key as a header there. The default path stays serverless; the proxy is only for providers that refuse browser calls.
 
 ## Tech notes

@@ -38280,17 +38280,40 @@ const AI = {
   TIMEOUT_MS: 60000,
   MAX_RETRIES: 3,
 
+  // First-run default: a local Ollama profile, ready to chat the moment the
+  // server allows browser origins (OLLAMA_ORIGINS). Gemma models in Ollama
+  // have no native tool calling, so the seed runs the JSON fallback; the
+  // timeout is generous because local models page in on first use.
+  SEED_PROFILE: {
+    id: 'seed-ollama',
+    name: 'Ollama (local) — gemma4',
+    adapter: 'openai',
+    baseUrl: 'http://localhost:11434/v1',
+    model: 'gemma4',
+    apiKey: '',
+    toolMode: 'json',
+    temperature: 0.4,
+    maxTokens: null,
+    timeoutMs: 120000
+  },
+
   // --- Settings (localStorage only — see header note) ---
   getSettings() {
-    try {
-      const raw = localStorage.getItem(this.STORAGE_KEY);
-      const s = raw ? JSON.parse(raw) : null;
-      if (s && Array.isArray(s.profiles)) {
-        if (!s.taskDefaults || typeof s.taskDefaults !== 'object') s.taskDefaults = {};
-        return s;
-      }
-    } catch (e) { /* corrupt settings degrade to empty */ }
-    return { profiles: [], defaultProfileId: null, taskDefaults: {} };
+    let raw = null;
+    try { raw = localStorage.getItem(this.STORAGE_KEY); } catch (e) { /* private mode */ }
+    if (raw !== null) {
+      try {
+        const s = JSON.parse(raw);
+        if (s && Array.isArray(s.profiles)) {
+          if (!s.taskDefaults || typeof s.taskDefaults !== 'object') s.taskDefaults = {};
+          return s;
+        }
+      } catch (e) { /* corrupt settings degrade to empty */ }
+      return { profiles: [], defaultProfileId: null, taskDefaults: {} };
+    }
+    // Key never written: seed the local default. It materialises into
+    // storage on the first edit; deleting it stores an explicit empty list.
+    return { profiles: [JSON.parse(JSON.stringify(this.SEED_PROFILE))], defaultProfileId: 'seed-ollama', taskDefaults: {} };
   },
   saveSettings(s) {
     try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(s)); }
@@ -38882,6 +38905,13 @@ const AI = {
       '<option value="' + o[0] + '"' + ((p.toolMode || 'auto') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>').join('');
     return '<div id="aiProfileForm" style="margin-top:14px;border-top:1px solid var(--border-light);padding-top:12px">' +
       '<div style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--text-dark)">' + (isNew ? 'New profile' : 'Edit profile') + '</div>' +
+      (isNew
+        ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">' +
+            '<button class="btn btn-outline btn-sm" onclick="AI.uiApplyPreset(\'ollama\')">Preset: Ollama (local)</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="AI.uiApplyPreset(\'lmstudio\')">Preset: LM Studio (local)</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="AI.uiApplyPreset(\'anthropic\')">Preset: Claude (cloud)</button>' +
+          '</div>'
+        : '') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">' +
         fld('name', 'Name', p.name, 'text', 'e.g. Claude (cloud) or Local Llama') +
         '<div style="margin-bottom:8px"><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px">Adapter</label><select class="field-input" id="aiProf_adapter">' + adapterOpts + '</select></div>' +
@@ -38900,6 +38930,18 @@ const AI = {
     '</div>';
   },
 
+  PRESETS: {
+    ollama: { name: 'Ollama (local)', adapter: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'gemma4', toolMode: 'json', timeoutSecs: 120 },
+    lmstudio: { name: 'LM Studio (local)', adapter: 'openai', baseUrl: 'http://localhost:1234/v1', model: '', toolMode: 'json', timeoutSecs: 120 },
+    anthropic: { name: 'Claude (cloud)', adapter: 'anthropic', baseUrl: '', model: 'claude-fable-5', toolMode: 'auto', timeoutSecs: 60 }
+  },
+  uiApplyPreset(key) {
+    const p = this.PRESETS[key];
+    if (!p) return;
+    const set = (id, v) => { const el = document.getElementById('aiProf_' + id); if (el) el.value = v; };
+    set('name', p.name); set('adapter', p.adapter); set('baseUrl', p.baseUrl);
+    set('model', p.model); set('toolMode', p.toolMode); set('timeoutSecs', p.timeoutSecs);
+  },
   uiEditProfile(id) { this._editingProfileId = id; App.renderConfig(); },
   uiDeleteProfile(id) {
     const p = this.getProfile(id);

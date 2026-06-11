@@ -185,10 +185,27 @@ describe('write proposals — confirmation-gated, audited', () => {
 });
 
 describe('no-AI mode', () => {
-  it('Agent.run without any configured profile throws a clear config error', async () => {
+  it('Agent.run with an explicitly emptied profile list throws a clear config error', async () => {
     const { Agent, AI, window } = app;
-    window.localStorage.removeItem(AI.STORAGE_KEY);
+    // First-run state seeds a local Ollama profile; "no AI" is the state
+    // after the user deletes every profile (stored empty list).
+    window.localStorage.setItem(AI.STORAGE_KEY, JSON.stringify({ profiles: [], defaultProfileId: null, taskDefaults: {} }));
     await expect(Agent.run('hello', {})).rejects.toThrow(/Settings → AI/);
+  });
+
+  it('a fresh install seeds a ready local Ollama profile (gemma4, /v1, JSON fallback)', () => {
+    const { AI, window } = app;
+    window.localStorage.removeItem(AI.STORAGE_KEY);
+    const p = AI.profileForTask('chat');
+    expect(p.id).toBe('seed-ollama');
+    expect(p.baseUrl).toBe('http://localhost:11434/v1');
+    expect(p.model).toBe('gemma4');
+    expect(p.toolMode).toBe('json');
+    expect(p.timeoutMs).toBe(120000);
+    expect(AI.isConfigured()).toBe(true);
+    // Deleting it stores an explicit empty list — the seed never resurrects.
+    AI.deleteProfile('seed-ollama');
+    expect(AI.isConfigured()).toBe(false);
   });
 });
 
