@@ -15,12 +15,12 @@ describe('Business case generator', () => {
       projects: [proj], sprints: makeSprintSequence(2), team_members: [makeMember()],
       settings: { rate_card: { size_engineering: { perm: 750 } }, business_case_discount_rate: 0.07 }
     }));
-    const Report = app.window.__pcc__.Report;
-    const doc = Report.buildBusinessCaseDoc(proj.id);
+    const Reports = app.window.__pcc__.Reports;
+    const doc = Reports.Builders.businessCase(proj.id);
     expect(doc).toBeDefined();
-    const html = String(doc);
+    const html = Reports.Doc.toHtml(doc, {});
     expect(html).toMatch(/Cost/);
-    expect(html).toMatch(/Benefit/);
+    expect(html).toMatch(/benefit/i);
     expect(html).toMatch(/NPV/);
     app.teardown();
   });

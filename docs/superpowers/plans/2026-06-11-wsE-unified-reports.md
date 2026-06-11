@@ -506,9 +506,9 @@ git commit -m "feat(reports): route brief export buttons through Reports.generat
 
 **Files:** Modify `index.html` (delete the now-unused legacy `Report.*` brief builders/exports that the migrated briefs replaced); Create `tests/unit/reports-no-legacy-briefs.test.mjs`
 
-- [ ] **Step 1: Confirm no remaining callers.** Grep for `Report.exportProjectPack`, `Report.exportBusinessCase`, `Report.exportCustomerPack`, `Report.exportPortfolioPack`, `Report.buildProjectPackDoc`, `Report.buildCustomerPackDoc`. Every UI caller must already route through `Reports.generate` (Task 6). The walkthrough export (`Report.exportWalkthroughMinutes`, 36810) and `Report.open`/`_baseStyles` stay until Phase 3 — only remove brief-specific methods now.
+- [x] **Step 1: Confirm no remaining callers.** Grep for `Report.exportProjectPack`, `Report.exportBusinessCase`, `Report.exportCustomerPack`, `Report.exportPortfolioPack`, `Report.buildProjectPackDoc`, `Report.buildCustomerPackDoc`. Every UI caller must already route through `Reports.generate` (Task 6). The walkthrough export (`Report.exportWalkthroughMinutes`, 36810) and `Report.open`/`_baseStyles` stay until Phase 3 — only remove brief-specific methods now.
 
-- [ ] **Step 2: Write the guard test** — `tests/unit/reports-no-legacy-briefs.test.mjs`:
+- [x] **Step 2: Write the guard test** — `tests/unit/reports-no-legacy-briefs.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -527,13 +527,13 @@ describe('legacy brief renderers removed', () => {
 });
 ```
 
-- [ ] **Step 3: Run, verify FAIL** — `npx vitest run tests/unit/reports-no-legacy-briefs.test.mjs` (methods still present).
+- [x] **Step 3: Run, verify FAIL** — `npx vitest run tests/unit/reports-no-legacy-briefs.test.mjs` (methods still present).
 
-- [ ] **Step 4: Delete the legacy brief methods** from the `Report` object: `exportProjectPack` (36713), `exportBusinessCase` (37023), `exportCustomerPack` (37018), `exportPortfolioPack` (37322–37418), `buildProjectPackDoc` (36664–36711), `buildCustomerPackDoc` (36976–37016), `buildBusinessCaseDoc` (36724–36754). Keep `open`, `_baseStyles`, `_coverPage`, `branding`, `setBranding`, `configureBranding`, `exportSprintBrief`/`buildSprintBriefDoc`, `exportWalkthroughMinutes`/`buildWalkthroughMinutesDoc`, `openSprintBriefPicker` for now (Phase 3 sweeps the rest). Verify the object literal stays syntactically valid.
+- [x] **Step 4: Delete the legacy brief methods** from the `Report` object: `exportProjectPack` (36713), `exportBusinessCase` (37023), `exportCustomerPack` (37018), `exportPortfolioPack` (37322–37418), `buildProjectPackDoc` (36664–36711), `buildCustomerPackDoc` (36976–37016), `buildBusinessCaseDoc` (36724–36754). Keep `open`, `_baseStyles`, `_coverPage`, `branding`, `setBranding`, `configureBranding`, `exportSprintBrief`/`buildSprintBriefDoc`, `exportWalkthroughMinutes`/`buildWalkthroughMinutesDoc`, `openSprintBriefPicker` for now (Phase 3 sweeps the rest). Verify the object literal stays syntactically valid.
 
-- [ ] **Step 5: Run guard + full regression** — `npx vitest run tests/unit/reports-no-legacy-briefs.test.mjs && npm test`. All green.
+- [x] **Step 5: Run guard + full regression** — `npx vitest run tests/unit/reports-no-legacy-briefs.test.mjs && npm test`. All green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html tests/unit/reports-no-legacy-briefs.test.mjs

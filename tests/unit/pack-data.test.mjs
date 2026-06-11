@@ -47,18 +47,19 @@ describe('App.computeCustomerPackData', () => {
   });
 });
 
-describe('Report.buildCustomerPackDoc', () => {
-  it('returns an HTML doc with the 6 sections', async () => {
+describe('Reports.Builders.customerPack', () => {
+  it('returns an HTML doc with the customer-facing sections', async () => {
     resetIdSeq();
     const a = makeProject({ id: 'Acme Industries-RP1', name: 'Alpha' });
     a.narrative = { headline: 'Phase 1 on track', wins: ['win'], asks: ['ask'], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
     const app = await loadApp(makeDataset({ projects: [a], sprints: makeSprintSequence(2) }));
-    const html = app.Report.buildCustomerPackDoc('Acme Industries');
+    const doc = app.Reports.Builders.customerPack('Acme Industries');
+    const html = app.Reports.Doc.toHtml(doc, {});
     expect(html).toMatch(/<html/);
-    expect(html).toMatch(/Headlines/);
+    expect(html).toMatch(/Lifecycle headlines/);
     expect(html).toMatch(/Wins/);
     expect(html).toMatch(/We need from you/);
-    expect(html).toMatch(/Risks we're managing/i);
+    expect(html).toMatch(/Customer-visible risks/i);
     expect(html).toMatch(/What's next/);
     expect(html).toMatch(/Phase 1 on track/);
     app.teardown();
@@ -71,7 +72,7 @@ describe('Pack enrichment from project.narrative', () => {
     const a = makeProject({ id: 'Acme Industries-SP1', name: 'Project Alpha' });
     a.narrative = { headline: 'Phase 1 on track for end-Q2', wins: ['win'], asks: [], customer_visible_risk_ids: [], updated_at: null, updated_by_walkthrough_id: null };
     const app = await loadApp(makeDataset({ projects: [a], sprints: makeSprintSequence(2) }));
-    const html = app.Report.buildProjectPackDoc('Acme Industries-SP1');
+    const html = app.Reports.Doc.toHtml(app.Reports.Builders.sponsorPack('Acme Industries-SP1'), {});
     expect(html).toMatch(/Phase 1 on track for end-Q2/);
     app.teardown();
   });
