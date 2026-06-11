@@ -558,7 +558,7 @@ git commit -m "refactor(reports): delete legacy brief builders now served by Rep
 
 **Files:** Modify `index.html` (`StatusReportSkill.exportPrint` 42368–42386 → build sections + call `Reports`); add a `status_report` builder path; Modify `tests/unit/status-report.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — add to `tests/unit/status-report.test.mjs`:
+- [x] **Step 1: Write the failing test** — add to `tests/unit/status-report.test.mjs`:
 
 ```javascript
 it('exportPrint renders the saved report through Reports engine (no bespoke HTML)', async () => {
@@ -579,9 +579,9 @@ it('exportPrint renders the saved report through Reports engine (no bespoke HTML
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `npx vitest run tests/unit/status-report.test.mjs`.
+- [x] **Step 2: Run, verify FAIL** — `npx vitest run tests/unit/status-report.test.mjs`.
 
-- [ ] **Step 3: Rewrite `StatusReportSkill.exportPrint`** (42368–42386) to map the saved `status_report` entity's sections to the `{id,title,html,audiences}` contract, build a doc via `Reports.Doc.buildDoc({reportType:'status_report', title:'Status Report — '+customer, customer, sections, audience:'internal'})`, serialize with `Reports.Doc.toHtml`, and deliver via `Reports.open`. Convert section content (newline/`- ` bullets) into escaped HTML. Remove the bespoke `<style>…#2563eb…</style>` block and the inline print `<script>`.
+- [x] **Step 3: Rewrite `StatusReportSkill.exportPrint`** (42368–42386) to map the saved `status_report` entity's sections to the `{id,title,html,audiences}` contract, build a doc via `Reports.Doc.buildDoc({reportType:'status_report', title:'Status Report — '+customer, customer, sections, audience:'internal'})`, serialize with `Reports.Doc.toHtml`, and deliver via `Reports.open`. Convert section content (newline/`- ` bullets) into escaped HTML. Remove the bespoke `<style>…#2563eb…</style>` block and the inline print `<script>`.
 
 ```javascript
     exportPrint() {
@@ -599,9 +599,9 @@ it('exportPrint renders the saved report through Reports engine (no bespoke HTML
     },
 ```
 
-- [ ] **Step 4: Run, verify PASS + regression** — `npx vitest run tests/unit/status-report.test.mjs && npx vitest run`.
+- [x] **Step 4: Run, verify PASS + regression** — `npx vitest run tests/unit/status-report.test.mjs && npx vitest run`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/unit/status-report.test.mjs

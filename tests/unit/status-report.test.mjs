@@ -108,6 +108,23 @@ describe('editor + export safety', () => {
     StatusReportSkill.exportPrint();
     expect(written).toContain('Status Report — Acme Industries');
     expect(written).not.toContain('<img src=x');
-    expect(App.data.audit_log.some(e => e.field === 'report_generated' && e.newValue === 'status_report:Acme Industries')).toBe(true);
+    expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'status_report' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
+  });
+
+  it('exportPrint renders the saved report through Reports engine (no bespoke HTML)', async () => {
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ id: 'A-1', name: 'Acme Alpha', customer: 'Acme Industries', status: 'At Risk' })],
+      settings: { billing: { currency: 'USD', hours_per_point: 8, rate_table: {}, customer_defaults: {} } }
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const r = app.StatusReport.create({ customer: 'Acme Industries', period: 'June 2026', definition: { sections: [{ id: 'exec', title: 'Executive summary', order: 1, required: true }] }, generatedSections: [{ id: 'exec', content: 'On track.' }] });
+    let openedHtml = '';
+    app.Reports.open = (html) => { openedHtml = html; return {}; };
+    app.StatusReportSkill._id = r.id;
+    app.StatusReportSkill.exportPrint();
+    expect(openedHtml).toMatch(/^<!DOCTYPE html>/);
+    expect(openedHtml).toContain('On track.');
+    expect(openedHtml).toContain('<style>'); // engine tokens, not the old inline 2563eb style
+    app.teardown();
   });
 });
