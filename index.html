@@ -36720,6 +36720,41 @@ const Reports = {
       });
     }
   },
+  // Delivery wrapper: writes the serialized HTML into a print window. No audit side-effects.
+  open(html) {
+    const w = window.open('', '_blank');
+    if (!w) { if (typeof App !== 'undefined' && App.toast) App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return null; }
+    w.document.write(html + '<script>window.onload=function(){setTimeout(function(){window.print()},200)}<\/script>');
+    w.document.close();
+    return w;
+  },
+  // Catalogue id → builder dispatch.
+  _build(reportId, args) {
+    args = args || {};
+    const B = Reports.Builders;
+    switch (reportId) {
+      case 'sponsor_pack':
+      case 'project_report': return B.sponsorPack(args.projectId);
+      case 'business_case': return B.businessCase(args.projectId);
+      case 'sprint_brief': return B.sprintBrief(args.customer, args.sprintId);
+      case 'customer_pack':
+      case 'portfolio_pack':
+      case 'portfolio_report': return (args.audience === 'customer') ? B.customerPack(args.customer) : B.portfolioPack(args.customer);
+      case 'meeting_agenda': return B.forumAgenda(args.forumId);
+      case 'status_report': return B.statusReport(args.customer);
+      default: return null;
+    }
+  },
+  // Single entry point: build → thread audience → serialize → open → audit.
+  generate(reportId, args) {
+    args = args || {};
+    const doc = this._build(reportId, args);
+    if (!doc) { if (App.toast) App.toast('Unknown report: ' + reportId, 'error'); return; }
+    doc.audience = args.audience || doc.audience || 'internal';
+    const html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer));
+    this.open(html);
+    this.recordExport(reportId, args.customer || args.projectId || args.forumId || '', { outputSizeBytes: html.length });
+  },
   // R11: every export emits an audit_log entry with event_type='report_generated'.
   recordExport(reportType, scopeArg, opts) {
     opts = opts || {};

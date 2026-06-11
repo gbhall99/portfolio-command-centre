@@ -305,7 +305,7 @@ git commit -m "feat(reports): Reports.Doc.toHtml serializer + audience section f
 
 **Files:** Modify `index.html` (`Reports`, add `open` + `generate`); Create `tests/render/reports-generate.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — `tests/render/reports-generate.test.mjs`:
+- [x] **Step 1: Write the failing test** — `tests/render/reports-generate.test.mjs`:
 
 ```javascript
 import { describe, it, expect, vi } from 'vitest';
@@ -339,9 +339,9 @@ describe('Reports.open + Reports.generate', () => {
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-generate.test.mjs`.
+- [x] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-generate.test.mjs`.
 
-- [ ] **Step 3: Implement `open` + `generate`** on the `Reports` object. `generate` maps a catalogue id → the matching `Builders.*` call (using `args`), threads `audience`, serializes, opens, and records the export. Map builder per catalogue id:
+- [x] **Step 3: Implement `open` + `generate`** on the `Reports` object. `generate` maps a catalogue id → the matching `Builders.*` call (using `args`), threads `audience`, serializes, opens, and records the export. Map builder per catalogue id:
 
 ```javascript
   open(html) {
@@ -378,9 +378,9 @@ describe('Reports.open + Reports.generate', () => {
   },
 ```
 
-- [ ] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-generate.test.mjs`. NOTE: this exercises `Builders.portfolioPack`/`customerPack`/`statusReport` — if any builder returns sections not matching the `{id,title,html,audiences}` contract, fix that builder's section objects in Task 5/6 (this test only requires `portfolio_pack` internal to serialize; adjust the builder if it throws).
+- [x] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-generate.test.mjs`. NOTE: this exercises `Builders.portfolioPack`/`customerPack`/`statusReport` — if any builder returns sections not matching the `{id,title,html,audiences}` contract, fix that builder's section objects in Task 5/6 (this test only requires `portfolio_pack` internal to serialize; adjust the builder if it throws).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/render/reports-generate.test.mjs
