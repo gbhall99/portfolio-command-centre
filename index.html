@@ -3226,6 +3226,16 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .wt-cust-gen { background: white; border: 2px dashed #7c3aed; border-radius: 6px; padding: 9px; font-size: 10.5px; color: #5b21b6; text-align: center; cursor: pointer; }
 .wt-cust-gen:hover { background: #ede9fe; }
 
+/* Projects table — phone card-list (each row becomes a labelled card) */
+@media (max-width: 540px) {
+  .project-table thead { display: none; }
+  .project-table, .project-table tbody, .project-table tr, .project-table td { display: block; width: 100% !important; }
+  .project-table tr { border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 8px; background: var(--bg-card); padding: 4px 0; }
+  .project-table td { border: none !important; padding: 4px 12px; white-space: normal; overflow: visible; }
+  .project-table td::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); font-weight: 700; margin-bottom: 1px; }
+  .project-table td:empty { display: none; }
+}
+
 /* Kanban board (WS3) */
 .kb-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .kb-toolbar .kb-search { min-width: 220px; }
@@ -3356,6 +3366,8 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
 .assistant-proposal-actions { display: flex; gap: 6px; }
 .assistant-proposal.applied { opacity: 0.65; border-color: var(--status-green, #16a34a); background: rgba(22,163,74,0.05); }
 .assistant-proposal.discarded { opacity: 0.5; border-color: var(--border-light); background: transparent; }
+.assistant-caret { display: inline-block; color: var(--accent-blue); animation: assistantSpin 1s steps(2) infinite; transform: none; }
+@media (prefers-reduced-motion: reduce) { .assistant-caret { animation: none; } }
 .assistant-thinking { align-self: flex-start; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
 .assistant-thinking .spin { width: 12px; height: 12px; border: 2px solid var(--border-light); border-top-color: var(--accent-blue); border-radius: 50%; animation: assistantSpin 0.8s linear infinite; }
 @keyframes assistantSpin { to { transform: rotate(360deg); } }
@@ -3990,11 +4002,15 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
 
 <!-- Detail Panel -->
 <div class="wf-modal-overlay" id="wfModalOverlay" onclick="if(event.target===this)WireframeSkill.close()">
-  <div class="wf-modal" id="wfModal" role="dialog" aria-modal="true" aria-label="Tableau wireframe"></div>
+  <div class="wf-modal" id="wfModal" role="dialog" aria-modal="true" aria-label="Tableau wireframe" tabindex="-1" onkeydown="App._modalTabTrap(event, this); WireframeSkill.onModalKey(event)"></div>
+</div>
+
+<div class="sow-modal-overlay" id="srModalOverlay" onclick="if(event.target===this)StatusReportSkill.close()">
+  <div class="sow-modal" id="srModal" role="dialog" aria-modal="true" aria-label="Status report" tabindex="-1" onkeydown="App._modalTabTrap(event, this)"></div>
 </div>
 
 <div class="sow-modal-overlay" id="sowModalOverlay" onclick="if(event.target===this)SowSkill.close()">
-  <div class="sow-modal" id="sowModal" role="dialog" aria-modal="true" aria-label="Statement of Work"></div>
+  <div class="sow-modal" id="sowModal" role="dialog" aria-modal="true" aria-label="Statement of Work" tabindex="-1" onkeydown="App._modalTabTrap(event, this)"></div>
 </div>
 
 <aside class="assistant-panel" id="assistantPanel" role="complementary" aria-label="Assistant" aria-hidden="true">
@@ -4004,6 +4020,7 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
       Assistant
       <span class="assistant-scope" id="assistantScope">—</span>
     </div>
+    <label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-muted);cursor:pointer" title="Keep conversations across reloads (this browser only; proposals are not saved)"><input type="checkbox" id="assistantPersist" onchange="Assistant.setPersist(this.checked)">Remember</label>
     <button class="btn btn-ghost btn-sm" id="assistantClear" onclick="Assistant.clearThread()" title="Clear this conversation" aria-label="Clear conversation"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
     <button class="panel-close" onclick="Assistant.close()" aria-label="Close Assistant">&times;</button>
   </div>
@@ -4854,6 +4871,7 @@ const App = {
     if (!Array.isArray(data.sows)) data.sows = [];
     if (!Array.isArray(data.wireframes)) data.wireframes = [];
     if (!Array.isArray(data.billing_arrangements)) data.billing_arrangements = [];
+    if (!Array.isArray(data.status_reports)) data.status_reports = [];
 
     // Lifecycle rework (2026-05): collapse 'Phase-1 Build' into 'Implementation'.
     (data.projects || []).forEach(p => {
@@ -8897,6 +8915,17 @@ const App = {
       }).join('');
     })() +
     '</div>';
+  },
+
+  // A11y: keep Tab cycling inside an open modal container.
+  _modalTabTrap(e, container) {
+    if (e.key !== 'Tab') return;
+    const focusables = container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const list = Array.prototype.filter.call(focusables, el => !el.disabled && el.offsetParent !== null);
+    if (!list.length) return;
+    const first = list[0], last = list[list.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   },
 
   setupKeyboardShortcuts() {
@@ -15587,6 +15616,7 @@ const CommandPalette = {
       { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template' },
       { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules' },
       { title: 'Billing & Costs report (active customer)', action: () => Billing.exportReport(App.activeCustomer), meta: 'Prepaid drawdown · T&M · margin' },
+      { title: 'Draft status report (active customer)', action: () => Skills.launch('status-report'), meta: 'AI skill — grounded in live data' },
       { title: 'Activity feed', action: () => AuditPanel.open(), meta: 'Audit log' },
       { title: 'Trends', action: () => TrendsModal.open(), meta: 'Portfolio health trends' },
       { title: 'Undo', action: () => App.undo(), meta: 'Ctrl/Cmd+Z' },
@@ -16724,7 +16754,7 @@ const Dashboard = {
       catch (e) { console.error('[PCC] render failed for column ' + col.id, e); inner = '\u2014'; }
       // data-col-id mirrors the header so CSS can pin the leftmost identity
       // columns sticky; purely presentational, no JS reads it.
-      return '<td data-col-id="' + col.id + '"' + cls + editAttr + '>' + inner + '</td>';
+      return '<td data-col-id="' + col.id + '" data-label="' + Dashboard.escAttr(col.label || '') + '"' + cls + editAttr + '>' + inner + '</td>';
     }).join('');
     return '<tr' + tone + ' data-id="' + p.id + '" draggable="true">' + cells + '</tr>';
   },
@@ -21150,7 +21180,7 @@ const DetailPanel = {
     const html = tabsStrip +
       // NAV-2: History (change log) lives inside the Overview tab panel — it was appended at panel-body root,
       // outside all four tab panels, so it leaked onto every tab with a stray History chip.
-      panelDiv('overview', overviewSections.join('') + this.renderAuditLog(p.id)) +
+      panelDiv('overview', overviewSections.join('') + this.renderDocuments(p.id) + this.renderAuditLog(p.id)) +
       panelDiv('delivery', deliverySections.join('')) +
       panelDiv('scope', scopeSections.join('')) +
       panelDiv('raid', raidSections.join(''));
@@ -21776,6 +21806,40 @@ const DetailPanel = {
     App.markDirty();
     App.saveToLocalStorage();
     document.getElementById('depList').innerHTML = this.renderDependencies(p);
+  },
+
+  // Linked AI-skill artefacts (SOWs, wireframes). Index-based open handlers —
+  // entity names are user/model input and never enter inline JS strings.
+  renderDocuments(projectId) {
+    if (typeof Sow === 'undefined' || typeof Wireframe === 'undefined') return '';
+    const esc = Dashboard.esc;
+    const sows = (App.data.sows || []).filter(s => s.project_id === projectId);
+    const wfs = (App.data.wireframes || []).filter(w => w.project_id === projectId);
+    if (!sows.length && !wfs.length) return '';
+    const rows = sows.map((s, i) =>
+      '<div class="sow-list-row" onclick="DetailPanel.openLinkedSow(' + i + ')" data-doc-kind="sow">' +
+        '<span class="sow-status-chip ' + esc(s.status) + '">' + esc(s.status) + '</span>' +
+        '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(s.name) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted)">SOW · ' + new Date(s.updated_at).toLocaleDateString('en-GB') + '</span>' +
+      '</div>'
+    ).concat(wfs.map((w, i) =>
+      '<div class="sow-list-row" onclick="DetailPanel.openLinkedWireframe(' + i + ')" data-doc-kind="wireframe">' +
+        '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(w.name) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted)">Wireframe · ' + w.components.length + ' components</span>' +
+      '</div>'
+    )).join('');
+    return '<div class="panel-section">' +
+      '<div class="panel-section-title">Documents <span class="risk-count">' + (sows.length + wfs.length) + '</span></div>' +
+      rows +
+    '</div>';
+  },
+  openLinkedSow(i) {
+    const s = (App.data.sows || []).filter(x => x.project_id === this.currentId)[i];
+    if (s) { SowSkill.open({}); SowSkill.edit(s.id); }
+  },
+  openLinkedWireframe(i) {
+    const w = (App.data.wireframes || []).filter(x => x.project_id === this.currentId)[i];
+    if (w) { WireframeSkill.open({}); WireframeSkill.edit(w.id); }
   },
 
   renderAuditLog(projectId) {
@@ -38425,6 +38489,72 @@ const AI = {
     throw lastErr;
   },
 
+  // --- Streaming transport (SSE) ---
+  // Pure: split an SSE buffer into complete data payloads + the unfinished rest.
+  _sseSplit(buffer) {
+    const events = [];
+    const parts = buffer.split(/\r?\n\r?\n/);
+    const rest = parts.pop();
+    parts.forEach(block => {
+      block.split(/\r?\n/).forEach(line => {
+        if (line.indexOf('data:') === 0) events.push(line.slice(5).trim());
+      });
+    });
+    return { events, rest };
+  },
+
+  async _streamRequest(url, init, opts, onData) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), (opts && opts.timeoutMs) || this.TIMEOUT_MS);
+    if (opts && opts.signal) {
+      if (opts.signal.aborted) { clearTimeout(timer); throw this._err('cancelled', 'Request cancelled'); }
+      opts.signal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
+    try {
+      const res = await fetch(url, Object.assign({}, init, { signal: ctrl.signal }));
+      if (!res.ok) {
+        let detail = '';
+        try { const j = await res.json(); detail = (j.error && (j.error.message || j.error)) || ''; } catch (e) { /* non-JSON */ }
+        throw this._err('http', 'AI endpoint returned HTTP ' + res.status + (detail ? ': ' + detail : ''));
+      }
+      if (!res.body || !res.body.getReader) throw this._err('stream', 'Streaming not supported by this environment');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const split = this._sseSplit(buffer);
+        buffer = split.rest;
+        for (const payload of split.events) {
+          if (payload === '[DONE]') continue;
+          try { onData(JSON.parse(payload)); } catch (e) { /* tolerate keep-alives */ }
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  // Stream when the adapter + model can; otherwise run the plain request and
+  // deliver the whole text in one delta — callers never branch.
+  async stream(profile, messages, opts, onDelta) {
+    const a = this.ADAPTERS[profile && profile.adapter];
+    if (!a) throw this._err('config', 'Unknown AI adapter: ' + (profile && profile.adapter));
+    const caps = this.capabilities(profile);
+    if (a.streamChat && caps.streaming) {
+      try { return await a.streamChat(profile, messages, opts || {}, onDelta || function () {}); }
+      catch (e) {
+        if (e.aiKind === 'cancelled') throw e;
+        // Streams have no retry path — fall back to the buffered request.
+      }
+    }
+    const res = await a.chat(profile, messages, opts || {});
+    if (onDelta && res.text) onDelta(res.text);
+    return res;
+  },
+
   // --- Adapters (AIProvider implementations) ---
   ADAPTERS: {
     // Universal adapter: any endpoint exposing the OpenAI chat-completions
@@ -38471,6 +38601,37 @@ const AI = {
         if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
         const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts);
         return this.parseResponse(json);
+      },
+      // Pure: fold one chat-completions stream event into the state; returns the text delta.
+      _applyStreamEvent(state, json) {
+        const delta = json.choices && json.choices[0] && json.choices[0].delta;
+        if (!delta) return '';
+        (delta.tool_calls || []).forEach(tc => {
+          const slot = state.toolCalls[tc.index] = state.toolCalls[tc.index] || { id: '', name: '', args: '' };
+          if (tc.id) slot.id = tc.id;
+          if (tc.function && tc.function.name) slot.name += tc.function.name;
+          if (tc.function && tc.function.arguments) slot.args += tc.function.arguments;
+        });
+        if (typeof delta.content === 'string' && delta.content) { state.text += delta.content; return delta.content; }
+        return '';
+      },
+      async streamChat(profile, messages, opts, onDelta) {
+        const req = this.buildRequest(profile, messages, opts);
+        req.body.stream = true;
+        const reqOpts = Object.assign({}, opts);
+        if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
+        const state = { text: '', toolCalls: {} };
+        await AI._streamRequest(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts, (json) => {
+          const chunk = this._applyStreamEvent(state, json);
+          if (chunk) onDelta(chunk);
+        });
+        const toolCalls = Object.keys(state.toolCalls).sort((a, b) => a - b).map(k => {
+          const tc = state.toolCalls[k];
+          let args = {};
+          try { args = JSON.parse(tc.args || '{}'); } catch (e) { args = { _unparseable: tc.args }; }
+          return { id: tc.id, name: tc.name, args };
+        });
+        return { text: state.text, toolCalls, usage: null, raw: null };
       }
     },
 
@@ -38523,6 +38684,38 @@ const AI = {
         if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
         const json = await AI._request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts);
         return this.parseResponse(json);
+      },
+      // Pure: fold one Messages-API stream event into the state; returns the text delta.
+      _applyStreamEvent(state, json) {
+        if (json.type === 'content_block_start' && json.content_block) {
+          state.blocks[json.index] = json.content_block.type === 'tool_use'
+            ? { type: 'tool_use', id: json.content_block.id, name: json.content_block.name, args: '' }
+            : { type: 'text' };
+        } else if (json.type === 'content_block_delta' && json.delta) {
+          const block = state.blocks[json.index] || (state.blocks[json.index] = { type: 'text' });
+          if (json.delta.type === 'text_delta' && json.delta.text) { state.text += json.delta.text; return json.delta.text; }
+          if (json.delta.type === 'input_json_delta' && block.type === 'tool_use') block.args += (json.delta.partial_json || '');
+        }
+        return '';
+      },
+      async streamChat(profile, messages, opts, onDelta) {
+        const req = this.buildRequest(profile, messages, opts);
+        req.body.stream = true;
+        const reqOpts = Object.assign({}, opts);
+        if (!reqOpts.timeoutMs && profile.timeoutMs) reqOpts.timeoutMs = profile.timeoutMs;
+        const state = { text: '', blocks: {} };
+        await AI._streamRequest(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify(req.body) }, reqOpts, (json) => {
+          const chunk = this._applyStreamEvent(state, json);
+          if (chunk) onDelta(chunk);
+        });
+        const toolCalls = Object.keys(state.blocks).sort((a, b) => a - b)
+          .map(k => state.blocks[k]).filter(b => b.type === 'tool_use')
+          .map(b => {
+            let args = {};
+            try { args = JSON.parse(b.args || '{}'); } catch (e) { args = { _unparseable: b.args }; }
+            return { id: b.id, name: b.name, args };
+          });
+        return { text: state.text, toolCalls, usage: null, raw: null };
       }
     },
 
@@ -38584,7 +38777,7 @@ const AI = {
       _calls: [],
       program(responses) { this._queue = (responses || []).slice(); this._calls = []; },
       capabilities(profile) {
-        return { tools: (profile.toolMode || 'native') !== 'json', streaming: false, json: true };
+        return { tools: (profile.toolMode || 'native') !== 'json', streaming: true, json: true };
       },
       async chat(profile, messages, opts) {
         this._calls.push({ messages: JSON.parse(JSON.stringify(messages)), opts: { tools: (opts.tools || []).map(t => t.name), json: !!opts.json } });
@@ -38593,6 +38786,20 @@ const AI = {
         if (typeof next === 'function') next = next(messages, opts);
         if (typeof next === 'string') next = { text: next };
         return { text: next.text || '', toolCalls: next.toolCalls || [], usage: null, raw: next };
+      },
+      // Program a response as { chunks: ['He','llo'] } to exercise streaming.
+      async streamChat(profile, messages, opts, onDelta) {
+        const peek = this._queue[0];
+        if (!peek || !Array.isArray(peek.chunks)) {
+          const res = await this.chat(profile, messages, opts);
+          if (res.text) onDelta(res.text);
+          return res;
+        }
+        this._queue.shift();
+        this._calls.push({ messages: JSON.parse(JSON.stringify(messages)), opts: { tools: (opts.tools || []).map(t => t.name), json: !!opts.json }, streamed: true });
+        let text = '';
+        for (const c of peek.chunks) { text += c; onDelta(c); await Promise.resolve(); }
+        return { text, toolCalls: peek.toolCalls || [], usage: null, raw: peek };
       }
     }
   },
@@ -38612,7 +38819,7 @@ const AI = {
         '<td style="padding:6px 8px;color:var(--text-dark-secondary)">' + esc(adapterLabel(p.adapter)) + '</td>' +
         '<td style="padding:6px 8px;font-family:var(--font-mono);font-size:11px">' + esc(p.model || '') + '</td>' +
         '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.baseUrl || '(provider default)') + '</td>' +
-        '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px">' + (p.apiKey ? 'key set' : 'no key') + '</td>' +
+        '<td style="padding:6px 8px;color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">' + (p.apiKey ? '\u2026' + Dashboard.esc(String(p.apiKey).slice(-4)) : 'no key') + '</td>' +
         '<td style="padding:6px 8px;white-space:nowrap;text-align:right">' +
           '<button class="btn btn-outline btn-sm" onclick="AI.uiTestProfile(\'' + esc(p.id) + '\')">Test</button> ' +
           (isDefault ? '' : '<button class="btn btn-outline btn-sm" onclick="AI.setDefaultProfile(\'' + esc(p.id) + '\');App.renderConfig()">Make default</button> ') +
@@ -38680,7 +38887,7 @@ const AI = {
         '<div style="margin-bottom:8px"><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px">Adapter</label><select class="field-input" id="aiProf_adapter">' + adapterOpts + '</select></div>' +
         fld('baseUrl', 'Base URL (blank = provider default)', p.baseUrl, 'text', 'http://localhost:11434/v1') +
         fld('model', 'Model', p.model, 'text', 'e.g. claude-fable-5, gpt-4o, llama3.1') +
-        fld('apiKey', 'API key (optional for local servers)', p.apiKey, 'password', '') +
+        fld('apiKey', 'API key (optional for local servers)', '', 'password', p.apiKey ? 'unchanged — type to replace (ends \u2026' + String(p.apiKey).slice(-4) + ')' : '') +
         '<div style="margin-bottom:8px"><label style="display:block;font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:3px">Tool mode</label><select class="field-input" id="aiProf_toolMode">' + toolModeOpts + '</select></div>' +
         fld('temperature', 'Temperature', typeof p.temperature === 'number' ? p.temperature : 0.4, 'number', '') +
         fld('maxTokens', 'Max output tokens (blank = provider default)', p.maxTokens || '', 'number', '4096') +
@@ -38711,7 +38918,8 @@ const AI = {
     const maxTok = App.toInteger(get('maxTokens'));
     const profile = Object.assign({}, existing || {}, {
       name, adapter: get('adapter') || 'openai', baseUrl: get('baseUrl'),
-      model, apiKey: get('apiKey'),
+      // Blank key field = keep the stored key (it is never echoed into the form).
+      model, apiKey: get('apiKey') || (existing ? existing.apiKey : ''),
       toolMode: get('toolMode') || 'auto',
       temperature: isFinite(temp) ? temp : 0.4,
       maxTokens: maxTok > 0 ? maxTok : null,
@@ -39385,9 +39593,10 @@ const Agent = {
   async _runNative(profile, messages, ctx, trace, opts) {
     const tools = AgentTools.defs();
     for (let round = 0; round < this.MAX_ROUNDS; round++) {
-      const res = await AI.chat(profile, messages, { tools, signal: opts.signal });
+      if (opts.onRoundStart) opts.onRoundStart(round);
+      const res = await AI.stream(profile, messages, { tools, signal: opts.signal }, opts.onDelta);
       if (!res.toolCalls || !res.toolCalls.length) {
-        return { text: res.text || '', citations: ctx.citations, proposals: ctx.proposals, trace };
+        return { text: res.text || '', citations: ctx.citations, proposals: ctx.proposals, trace, streamed: true };
       }
       messages.push({ role: 'assistant', content: res.text || '', toolCalls: res.toolCalls });
       for (const tc of res.toolCalls) {
@@ -39438,6 +39647,40 @@ const Assistant = {
   _rendered: {},       // customer -> [render items {kind, ...}]
   _pending: false,
   _abort: null,
+  PERSIST_KEY: 'pcc_assistant_threads',
+  _persistLoaded: false,
+
+  // Opt-in: keep conversations across reloads (this browser only). Proposals
+  // are session actions and are never persisted — only the message text.
+  persistEnabled() { return App.uiStateGet('assistant.persist', false) === true; },
+  setPersist(on) {
+    App.uiStateSet('assistant.persist', on ? true : null);
+    if (on) this._saveThreads();
+    else { try { localStorage.removeItem(this.PERSIST_KEY); } catch (e) { /* private mode */ } }
+    this.render();
+  },
+  _saveThreads() {
+    if (!this.persistEnabled()) return;
+    try { localStorage.setItem(this.PERSIST_KEY, JSON.stringify(this._threads)); }
+    catch (e) { /* quota/private mode — chat keeps working in memory */ }
+  },
+  _loadThreads() {
+    if (this._persistLoaded) return;
+    this._persistLoaded = true;
+    if (!this.persistEnabled()) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.PERSIST_KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return;
+      Object.keys(saved).forEach(key => {
+        if (!Array.isArray(saved[key]) || this._threads[key]) return;
+        this._threads[key] = saved[key].filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+        // Rebuild a plain transcript; bracketed confirmation notes stay model-only.
+        this._rendered[key] = this._threads[key]
+          .filter(m => m.content.indexOf('[') !== 0)
+          .map(m => ({ kind: m.role === 'user' ? 'user' : 'assistant', text: m.content }));
+      });
+    } catch (e) { /* corrupt store degrades to fresh threads */ }
+  },
 
   SUGGESTIONS: [
     'Which projects are at risk this sprint, and why?',
@@ -39453,6 +39696,7 @@ const Assistant = {
 
   open() {
     this.isOpen = true;
+    this._loadThreads();
     const p = document.getElementById('assistantPanel');
     if (!p) return;
     p.classList.add('open');
@@ -39479,6 +39723,7 @@ const Assistant = {
     const k = this._customerKey();
     this._threads[k] = [];
     this._rendered[k] = [];
+    this._saveThreads();
     this.render();
   },
 
@@ -39520,18 +39765,30 @@ const Assistant = {
     const items = this._rendered[key];
     items.push({ kind: 'user', text });
     this._pending = true;
+    this._streamText = '';
+    this._streamKey = key;
     this.render();
     this._abort = new AbortController();
+    let lastPaint = 0;
     try {
       const res = await Agent.run(text, {
         task: 'chat',
         customer,
         history: this._threads[key].slice(-12),
-        signal: this._abort.signal
+        signal: this._abort.signal,
+        // Live token rendering: paint at most every 80ms; tool-call rounds
+        // reset the partial (their text is reasoning, not the answer).
+        onRoundStart: () => { this._streamText = ''; },
+        onDelta: (chunk) => {
+          this._streamText += chunk;
+          const now = Date.now();
+          if (now - lastPaint > 80) { lastPaint = now; if (this._customerKey() === key) this.render(); }
+        }
       });
       const thread = this._threads[key];
       thread.push({ role: 'user', content: text });
       thread.push({ role: 'assistant', content: res.text });
+      this._saveThreads();
       items.push({ kind: 'assistant', text: res.text });
       if (res.citations && res.citations.length) items.push({ kind: 'cites', cites: res.citations });
       (res.proposals || []).forEach(p => items.push({ kind: 'proposal', proposal: p, state: 'pending' }));
@@ -39540,6 +39797,8 @@ const Assistant = {
     } finally {
       this._pending = false;
       this._abort = null;
+      this._streamText = '';
+      this._streamKey = null;
       this.render();
       const inp = document.getElementById('assistantInput');
       if (inp) inp.focus();
@@ -39652,11 +39911,17 @@ const Assistant = {
         }
       });
     }
-    if (this._pending) html += '<div class="assistant-thinking"><span class="spin" aria-hidden="true"></span>Working — reading your data…</div>';
+    if (this._pending && this._streamText && this._streamKey === this._customerKey()) {
+      html += '<div class="assistant-msg assistant" aria-live="off">' + esc(this._streamText) + '<span class="assistant-caret" aria-hidden="true">▍</span></div>';
+    } else if (this._pending) {
+      html += '<div class="assistant-thinking"><span class="spin" aria-hidden="true"></span>Working — reading your data…</div>';
+    }
     body.innerHTML = html;
     body.scrollTop = body.scrollHeight;
     const send = document.getElementById('assistantSend');
     if (send) send.disabled = this._pending;
+    const persist = document.getElementById('assistantPersist');
+    if (persist) persist.checked = this.persistEnabled();
   }
 };
 
@@ -39703,8 +39968,11 @@ const Kanban = {
     }
   ],
 
+  // Board prefs are per customer (a 3-column board for one account shouldn't
+  // constrain another). Legacy global keys are read as a fallback.
+  _uiKey(name) { return 'board.' + name + '.' + (App.activeCustomer || 'global'); },
   visibleColumns() {
-    const saved = App.uiStateGet('board.columns', null);
+    const saved = App.uiStateGet(this._uiKey('columns'), null) || App.uiStateGet('board.columns', null);
     if (Array.isArray(saved) && saved.length) return this.STATUSES.filter(s => saved.indexOf(s) >= 0);
     return this.STATUSES.slice();
   },
@@ -39713,19 +39981,19 @@ const Kanban = {
     if (on && cols.indexOf(status) < 0) cols = this.STATUSES.filter(s => cols.indexOf(s) >= 0 || s === status);
     if (!on) cols = cols.filter(s => s !== status);
     if (!cols.length) { App.toast('At least one column must stay visible', 'error'); this.render(); return; }
-    App.uiStateSet('board.columns', cols);
+    App.uiStateSet(this._uiKey('columns'), cols);
     this.render();
   },
-  wipLimits() { return App.uiStateGet('board.wip', null) || {}; },
+  wipLimits() { return App.uiStateGet(this._uiKey('wip'), null) || App.uiStateGet('board.wip', null) || {}; },
   setWipLimit(status, limit) {
     const wip = Object.assign({}, this.wipLimits());
     const n = App.toInteger(limit);
     if (n > 0) wip[status] = n; else delete wip[status];
-    App.uiStateSet('board.wip', Object.keys(wip).length ? wip : null);
+    App.uiStateSet(this._uiKey('wip'), Object.keys(wip).length ? wip : null);
     this.render();
   },
-  swimlane() { return App.uiStateGet('board.swimlane', 'none') || 'none'; },
-  setSwimlane(id) { App.uiStateSet('board.swimlane', id === 'none' ? null : id); this.render(); },
+  swimlane() { return App.uiStateGet(this._uiKey('swimlane'), null) || App.uiStateGet('board.swimlane', 'none') || 'none'; },
+  setSwimlane(id) { App.uiStateSet(this._uiKey('swimlane'), id === 'none' ? null : id); this.render(); },
   setSearch(v) { this._search = (v || '').toLowerCase().trim(); this.renderBoard(); },
   toggleConfig() { this._configOpen = !this._configOpen; this.render(); },
 
@@ -40920,6 +41188,8 @@ const SowSkill = {
     if (!ov) return;
     ov.classList.add('open');
     this.render();
+    const modal = document.getElementById('sowModal');
+    if (modal) modal.focus();
   },
   close() {
     const ov = document.getElementById('sowModalOverlay');
@@ -41053,9 +41323,19 @@ const SowSkill = {
   // --- editor actions (thin wrappers so onclicks stay tiny) ---
   uiUpdateSection(sectionId, el) { Sow.updateSection(this._sowId, sectionId, el.value); this.renderSidePanel(); },
   uiResolveFlag(sectionId) { Sow.resolveFlag(this._sowId, sectionId); this.render(); },
+  _commentingOn: null,
   uiComment(sectionId) {
-    const text = prompt('Comment on this section:');
-    if (text) { Sow.addComment(this._sowId, sectionId, text); this.render(); }
+    this._commentingOn = this._commentingOn === sectionId ? null : sectionId;
+    this.render();
+    const input = document.getElementById('sowCommentInput');
+    if (input) input.focus();
+  },
+  uiCommentSubmit(sectionId) {
+    const input = document.getElementById('sowCommentInput');
+    const text = input ? input.value.trim() : '';
+    if (text) Sow.addComment(this._sowId, sectionId, text);
+    this._commentingOn = null;
+    this.render();
   },
   uiSetStatus(status) {
     const def = this._def();
@@ -41178,9 +41458,16 @@ const SowSkill = {
     const sow = Sow.get(this._sowId);
     if (!sow) return this.renderListHtml();
     const sections = sow.sections.map(sec => {
-      const comments = sec.comments.length
+      let comments = sec.comments.length
         ? '<div class="sow-section-comments">' + sec.comments.map(c => '<div>' + new Date(c.at).toLocaleDateString('en-GB') + ' — ' + esc(c.text) + '</div>').join('') + '</div>'
         : '';
+      if (this._commentingOn === sec.id) {
+        comments += '<div class="sow-section-comments" style="display:flex;gap:6px">' +
+          '<input id="sowCommentInput" class="field-input" style="flex:1" placeholder="Comment on this section…" aria-label="Comment on ' + esc(sec.title) + '"' +
+          ' onkeydown="if(event.key===\'Enter\'){SowSkill.uiCommentSubmit(\'' + esc(sec.id) + '\')}">' +
+          '<button class="btn btn-primary btn-sm" onclick="SowSkill.uiCommentSubmit(\'' + esc(sec.id) + '\')">Add</button>' +
+        '</div>';
+      }
       return '<div class="sow-section' + (sec.flagged ? ' flagged' : '') + '">' +
         '<div class="sow-section-head">' + esc(sec.title) +
           (sec.required ? '' : ' <span style="font-weight:400;color:var(--text-muted)">(optional)</span>') +
@@ -41298,6 +41585,7 @@ const Wireframe = {
       status: 'Concept',
       grid: { cols: def.grid.cols, rows: def.grid.rows },
       components: [],
+      metric_ids: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -41381,6 +41669,16 @@ const Wireframe = {
     this._persist(wf, 'wireframe_component', c.type, '', 'user');
   },
 
+  toggleMetric(wfId, metricId) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    if (!Array.isArray(wf.metric_ids)) wf.metric_ids = [];
+    App.pushUndo('Link wireframe metric');
+    const i = wf.metric_ids.indexOf(metricId);
+    if (i >= 0) wf.metric_ids.splice(i, 1); else wf.metric_ids.push(metricId);
+    this._persist(wf, 'wireframe_metric_link', '', metricId, 'user');
+  },
+
   attachProject(wfId, projectId) {
     const wf = this.get(wfId);
     if (!wf) return;
@@ -41462,7 +41760,15 @@ const WireframeSkill = {
   _drag: null,
   _busy: false,
 
-  open(ctx) { this._mode = 'list'; this._wfId = null; this._selId = null; const ov = document.getElementById('wfModalOverlay'); if (!ov) return; ov.classList.add('open'); this.render(); },
+  open(ctx) {
+    this._mode = 'list'; this._wfId = null; this._selId = null;
+    const ov = document.getElementById('wfModalOverlay');
+    if (!ov) return;
+    ov.classList.add('open');
+    this.render();
+    const modal = document.getElementById('wfModal');
+    if (modal) modal.focus();
+  },
   close() { const ov = document.getElementById('wfModalOverlay'); if (ov) ov.classList.remove('open'); },
   edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this.render(); },
   backToList() { this._mode = 'list'; this._wfId = null; this.render(); },
@@ -41519,6 +41825,9 @@ const WireframeSkill = {
             'Use ONLY these component types with their minimum sizes:\n' +
             def.components.map(c => '- ' + c.type + ' (min ' + c.min_w + '×' + c.min_h + ')').join('\n') +
             '\nDESIGN RULES (mandatory): exactly one title at y=0; KPIs in the top third; filters in the top band or right rail; no overlaps; everything on-grid; every chart needs a takeaway-style title; at most 12 components.\n' +
+            ((App.data.metrics || []).filter(m => m.customer === App.activeCustomer).length
+              ? 'CUSTOMER METRICS (prefer these as KPI/chart subjects): ' + (App.data.metrics || []).filter(m => m.customer === App.activeCustomer).slice(0, 15).map(m => m.name).join('; ') + '\n'
+              : '') +
             'GUIDELINES:\n' + String(guidelines.files.guidelines || '').slice(0, 2500)
         },
         { role: 'user', content: 'Design a wireframe for: ' + brief }
@@ -41579,6 +41888,28 @@ const WireframeSkill = {
     App.pushUndo('Rename wireframe');
     wf.name = el.value.slice(0, 120);
     Wireframe._persist(wf, 'wireframe_renamed', '', wf.name, 'user');
+  },
+
+  // Keyboard editing for the selected component. Skipped while typing in a
+  // field so the title input keeps normal arrow behaviour.
+  onModalKey(e) {
+    if (this._mode !== 'edit' || !this._selId) return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const wf = Wireframe.get(this._wfId);
+    const c = wf && wf.components.find(x => x.id === this._selId);
+    if (!c) return;
+    const def = this._def();
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (step) {
+      e.preventDefault();
+      if (e.shiftKey) Wireframe.updateComponent(this._wfId, c.id, { w: c.w + step[0], h: c.h + step[1] }, def);
+      else Wireframe.updateComponent(this._wfId, c.id, { x: c.x + step[0], y: c.y + step[1] }, def);
+      this.renderCanvasAndConf();
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      this.uiRemoveSelected();
+    }
   },
 
   onCompDown(e, compId, resize) {
@@ -41658,7 +41989,12 @@ const WireframeSkill = {
     w.document.write('<!DOCTYPE html><html><head><title>' + esc(wf.name) + '</title>' +
       '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:900px;margin:28px auto;padding:0 24px;color:#111}h1{font-size:19px;border-bottom:2px solid #2563eb;padding-bottom:8px}svg{max-width:100%;height:auto;border:1px solid #e2e8f0;border-radius:6px}.meta{font-size:12px;color:#475569;margin-bottom:14px}ul{font-size:12px}@media print{body{margin:14mm}}</style>' +
       '</head><body><h1>' + esc(wf.name) + '</h1>' +
-      '<div class="meta">' + esc(wf.customer) + ' · ' + wf.components.length + ' components · conformance: ' + (conf.ok ? 'passes' : conf.errors.length + ' error(s)') + ' · ' + new Date().toLocaleDateString('en-GB') + '</div>' +
+      '<div class="meta">' + esc(wf.customer) + ' · ' + wf.components.length + ' components · conformance: ' + (conf.ok ? 'passes' : conf.errors.length + ' error(s)') + ' · ' + new Date().toLocaleDateString('en-GB') +
+      (function () {
+        const ids = Array.isArray(wf.metric_ids) ? wf.metric_ids : [];
+        const names = (App.data.metrics || []).filter(m => ids.indexOf(m.id) >= 0).map(m => m.name);
+        return names.length ? ' · answers: ' + esc(names.join(', ')) : '';
+      })() + '</div>' +
       new XMLSerializer().serializeToString(svg) +
       (conf.errors.length || conf.warnings.length ? '<ul>' + conf.errors.concat(conf.warnings).map(m => '<li>' + esc(m) + '</li>').join('') + '</ul>' : '') +
       '<script>window.onload=function(){window.print()}<\/script></body></html>');
@@ -41741,6 +42077,27 @@ const WireframeSkill = {
       grid + comps + '</svg>';
   },
 
+  // Customer metrics this concept answers — traceability from dashboard
+  // concept back to strategy. Index-based handlers (names are user input).
+  _metricsHtml(wf) {
+    const esc = Dashboard.esc;
+    const metrics = (App.data.metrics || []).filter(m => m.customer === wf.customer);
+    if (!metrics.length) return '';
+    const ids = Array.isArray(wf.metric_ids) ? wf.metric_ids : [];
+    return '<div style="margin-top:12px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Answers these metrics</div>' +
+      metrics.slice(0, 12).map((m, i) =>
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;cursor:pointer"><input type="checkbox"' + (ids.indexOf(m.id) >= 0 ? ' checked' : '') + ' onchange="WireframeSkill.uiToggleMetric(' + i + ')"> ' + esc(m.name) + '</label>'
+      ).join('') +
+    '</div>';
+  },
+  uiToggleMetric(i) {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    const m = (App.data.metrics || []).filter(x => x.customer === wf.customer)[i];
+    if (m) { Wireframe.toggleMetric(this._wfId, m.id); this.render(); }
+  },
+
   renderConfHtml() {
     const wf = Wireframe.get(this._wfId);
     if (!wf) return '';
@@ -41786,6 +42143,7 @@ const WireframeSkill = {
             '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Linked project</div>' +
             '<select class="field-input" onchange="WireframeSkill.uiAttach(this)" aria-label="Linked project">' + projOpts + '</select>' +
           '</div>' +
+          this._metricsHtml(wf) +
           '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">' +
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportJson()">Export JSON</button>' +
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportPng()">PNG</button>' +
@@ -41808,6 +42166,248 @@ Skills.register({
   approval: 'conformance-checked',
   open(ctx) { WireframeSkill.open(ctx); }
 });
+
+/* ============================================================================
+   StatusReport — AI-drafted periodic customer status narrative.
+   Entity in App.data.status_reports; structure governed by
+   definitions/status-report/. Every figure in the prompt comes from live
+   data (projects, RAID, billing) — the model narrates, it never invents.
+   ============================================================================ */
+const StatusReport = {
+  list(customer) { return (App.data && App.data.status_reports || []).filter(r => !customer || r.customer === customer); },
+  get(id) { return (App.data && App.data.status_reports || []).find(r => r.id === id) || null; },
+
+  create(opts) {
+    const def = opts.definition;
+    const generated = {};
+    (opts.generatedSections || []).forEach(g => { generated[g.id] = g; });
+    const report = {
+      id: 'SR-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      customer: opts.customer,
+      period: String(opts.period || '').slice(0, 60),
+      template_id: def.id,
+      sections: def.sections.slice().sort((a, b) => a.order - b.order).map(ds => ({
+        id: ds.id, title: ds.title, required: !!ds.required,
+        content: generated[ds.id] ? String(generated[ds.id].content || '').trim() : ''
+      })),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    App.pushUndo('Create status report ' + report.period);
+    App.data.status_reports.push(report);
+    App.logChange(null, 'status_report_created', '', report.customer + ' ' + report.period, opts.source || 'ai', { event_type: 'status_report' });
+    App.markDirty();
+    App.saveToLocalStorage();
+    return report;
+  },
+
+  updateSection(id, sectionId, content) {
+    const r = this.get(id);
+    const sec = r && r.sections.find(s => s.id === sectionId);
+    if (!sec || sec.content === content) return;
+    App.pushUndo('Edit status report section');
+    sec.content = content;
+    r.updated_at = new Date().toISOString();
+    App.logChange(null, 'status_report_section:' + sectionId, '', String(content).slice(0, 60), 'user', { event_type: 'status_report' });
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  remove(id) {
+    const r = this.get(id);
+    if (!r) return;
+    App.pushUndo('Delete status report ' + r.period);
+    App.data.status_reports = App.data.status_reports.filter(x => x.id !== id);
+    App.logChange(null, 'status_report_deleted', r.period, '', 'user', { event_type: 'status_report' });
+    App.markDirty();
+    App.saveToLocalStorage();
+  },
+
+  validate(report, def) {
+    const errors = [];
+    def.sections.forEach(ds => {
+      const sec = report.sections.find(s => s.id === ds.id);
+      if (!sec) { if (ds.required) errors.push('Missing required section: ' + ds.title); return; }
+      const words = (sec.content || '').trim().split(/\s+/).filter(Boolean).length;
+      if (ds.required && words === 0) errors.push('Required section is empty: ' + ds.title);
+      else if (ds.required && ds.min_words && words < ds.min_words) errors.push(ds.title + ' is too thin (' + words + ' words; needs ' + ds.min_words + '+)');
+    });
+    return { ok: errors.length === 0, errors };
+  },
+
+  // The grounding facts handed to the model — everything quotable comes from here.
+  groundingFor(customer) {
+    const projects = (App.data.projects || []).filter(p => p.customer === customer).map(p => ({
+      name: p.name, status: p.status,
+      rag: [p.rag_schedule, p.rag_resourcing, p.rag_scope].filter(Boolean).join('/') || 'unset',
+      hard_deadline: p.hard_deadline || null,
+      open_risks: (p.risks_register || []).filter(r => !r.resolution_date).length,
+      open_issues: (p.issues_register || []).filter(i => !i.resolution_date && i.status !== 'closed').length
+    }));
+    const billing = Billing.customerSummary(customer);
+    return {
+      customer,
+      as_at: new Date().toISOString().split('T')[0],
+      projects,
+      billing: {
+        currency: billing.currency,
+        prepaid_remaining_points: billing.arrangements.reduce((s, a) => s + a.remaining_points, 0),
+        tm_billable_to_date: billing.totals.billable_amount,
+        has_billing_data: billing.arrangements.length > 0 || billing.totals.billable_amount > 0
+      }
+    };
+  }
+};
+
+/* StatusReportSkill — list / generate / edit / print UI (SOW modal styling). */
+const StatusReportSkill = {
+  _mode: 'list',
+  _id: null,
+  _busy: false,
+
+  open(ctx) {
+    this._mode = 'list'; this._id = null;
+    const ov = document.getElementById('srModalOverlay');
+    if (!ov) return;
+    ov.classList.add('open');
+    this.render();
+    const modal = document.getElementById('srModal');
+    if (modal) modal.focus();
+  },
+  close() { const ov = document.getElementById('srModalOverlay'); if (ov) ov.classList.remove('open'); },
+  edit(id) { this._mode = 'edit'; this._id = id; this.render(); },
+  backToList() { this._mode = 'list'; this._id = null; this.render(); },
+
+  _def() { const r = Definitions.resolve('status-report', App.activeCustomer); return r && r.files.definition; },
+
+  async generate() {
+    if (this._busy) return;
+    const def = this._def();
+    if (!def) { App.toast('No status-report definition available', 'error'); return; }
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const periodEl = document.getElementById('srPeriod');
+    const period = (periodEl && periodEl.value.trim()) || new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    this._busy = true;
+    this.render();
+    try {
+      const grounding = StatusReport.groundingFor(App.activeCustomer);
+      const messages = [
+        {
+          role: 'system',
+          content: 'You draft periodic customer status reports for a delivery consultancy.\n' +
+            'Produce EVERY section listed, in order, using the exact ids. Use ONLY the facts in the grounding data — never invent figures, dates or project names. ' +
+            'Omit content for commercial_position when has_billing_data is false.\n' +
+            'SECTIONS:\n' + JSON.stringify(def.sections.map(s => ({ id: s.id, title: s.title, required: s.required, guidance: s.guidance })))
+        },
+        { role: 'user', content: 'Reporting period: ' + period + '\nGROUNDING DATA (authoritative):\n' + JSON.stringify(grounding) }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('drafting'), messages, {
+        type: 'object', required: ['sections'],
+        properties: { sections: { type: 'array', items: { type: 'object', required: ['id', 'content'], properties: { id: { type: 'string' }, content: { type: 'string' } } } } }
+      });
+      const report = StatusReport.create({ customer: App.activeCustomer, period, definition: def, generatedSections: out.sections });
+      this.edit(report.id);
+      App.toast('Status report drafted — review before sending', 'success');
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._busy = false;
+      if (this._mode !== 'edit') this.render();
+    }
+  },
+
+  uiUpdateSection(sectionId, el) { StatusReport.updateSection(this._id, sectionId, el.value); },
+  uiDelete() {
+    if (!confirm('Delete this status report? (Undo with Ctrl+Z)')) return;
+    StatusReport.remove(this._id);
+    this.backToList();
+  },
+
+  exportPrint() {
+    const r = StatusReport.get(this._id);
+    if (!r) return;
+    const esc = Dashboard.esc;
+    const body = r.sections.filter(s => (s.content || '').trim()).map(s =>
+      '<h2>' + esc(s.title) + '</h2>' + s.content.split(/\n+/).map(line =>
+        /^[-*] /.test(line) ? '<li>' + esc(line.slice(2)) + '</li>' : '<p>' + esc(line) + '</p>'
+      ).join('')
+    ).join('');
+    const w = window.open('', '_blank');
+    if (!w) { App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return; }
+    w.document.write('<!DOCTYPE html><html><head><title>Status Report — ' + esc(r.customer) + '</title>' +
+      '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 28px;font-size:13px;line-height:1.6;color:#111}h1{font-size:20px;border-bottom:2px solid #2563eb;padding-bottom:8px}h2{font-size:14px;color:#2563eb;text-transform:uppercase;letter-spacing:.4px;margin-top:18px}li{margin:2px 0}.meta{font-size:11px;color:#64748b}@media print{body{margin:18mm 14mm}}</style>' +
+      '</head><body><h1>Status Report — ' + esc(r.customer) + '</h1>' +
+      '<div class="meta">' + esc(r.period) + ' · generated ' + new Date(r.created_at).toLocaleDateString('en-GB') + ' · review before sending</div>' +
+      body + '<script>window.onload=function(){window.print()}<\/script></body></html>');
+    w.document.close();
+    App.logChange(null, 'report_generated', '', 'status_report:' + r.customer, 'user', { event_type: 'report_generated' });
+  },
+
+  _header(title, backBtn) {
+    const esc = Dashboard.esc;
+    return '<div class="sow-modal-header">' +
+      (backBtn ? '<button class="btn btn-ghost btn-sm" onclick="StatusReportSkill.backToList()" aria-label="Back to report list">&larr;</button>' : '') +
+      '<div class="sow-modal-title">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h6"/></svg>' +
+        esc(title) +
+      '</div>' +
+      '<button class="panel-close" onclick="StatusReportSkill.close()" aria-label="Close">&times;</button>' +
+    '</div>';
+  },
+
+  render() {
+    const el = document.getElementById('srModal');
+    if (!el) return;
+    const esc = Dashboard.esc;
+    if (this._mode === 'edit') {
+      const r = StatusReport.get(this._id);
+      if (!r) { this._mode = 'list'; }
+      else {
+        const def = this._def();
+        const v = def ? StatusReport.validate(r, def) : { ok: true, errors: [] };
+        el.innerHTML = this._header('Status Report — ' + r.period, true) +
+          '<div class="sow-modal-body"><div class="sow-main">' +
+            (v.ok ? '<div class="sow-validation"><div class="ok">Definition checks pass.</div></div>'
+                  : '<div class="sow-validation">' + v.errors.map(x => '<div class="err">• ' + esc(x) + '</div>').join('') + '</div>') +
+            r.sections.map(sec =>
+              '<div class="sow-section"><div class="sow-section-head">' + esc(sec.title) + (sec.required ? '' : ' <span style="font-weight:400;color:var(--text-muted)">(optional)</span>') + '</div>' +
+              '<textarea aria-label="' + esc(sec.title) + '" onchange="StatusReportSkill.uiUpdateSection(\'' + esc(sec.id) + '\', this)">' + esc(sec.content) + '</textarea></div>'
+            ).join('') +
+            '<div style="display:flex;gap:8px;margin-top:6px">' +
+              '<button class="btn btn-outline btn-sm" onclick="StatusReportSkill.exportPrint()">Print / PDF</button>' +
+              '<button class="btn btn-outline btn-sm" onclick="StatusReportSkill.uiDelete()">Delete</button>' +
+            '</div>' +
+          '</div></div>';
+        return;
+      }
+    }
+    const reports = StatusReport.list(App.activeCustomer);
+    el.innerHTML = this._header('Status reports — ' + (App.activeCustomer || '')) +
+      '<div class="sow-modal-body"><div class="sow-main" style="border-right:none">' +
+        (reports.length
+          ? reports.map(r => '<div class="sow-list-row" onclick="StatusReportSkill.edit(\'' + esc(r.id) + '\')"><span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(r.period) + '</span><span style="font-size:11px;color:var(--text-muted)">' + new Date(r.created_at).toLocaleDateString('en-GB') + '</span></div>').join('')
+          : '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No status reports yet. Draft one from live project, RAID and billing data.</div>') +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">' +
+          '<input id="srPeriod" class="field-input" style="max-width:220px" placeholder="' + esc(new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })) + '" aria-label="Reporting period">' +
+          '<button class="btn btn-primary btn-sm" onclick="StatusReportSkill.generate()"' + (this._busy ? ' disabled' : '') + '>' + (this._busy ? 'Drafting…' : 'Generate draft') + '</button>' +
+          (AI.isConfigured() ? '' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">No model connected — Settings → AI &amp; Assistant</span>') +
+        '</div>' +
+      '</div></div>';
+  }
+};
+
+Skills.register({
+  id: 'status-report',
+  name: 'Status Report Drafter',
+  icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h6"/></svg>',
+  description: 'Periodic customer status narrative drafted from live project, RAID and billing data',
+  produces: 'status_report',
+  definitionKind: 'status-report',
+  requiredCapabilities: [],   // browsing works without AI; Generate gates itself
+  approval: 'review-before-send',
+  open(ctx) { StatusReportSkill.open(ctx); }
+});
+
 </script>
 <!-- Trends Modal -->
 <div class="trends-modal-overlay" id="trendsModalOverlay" onclick="if(event.target===this)TrendsModal.close()">
@@ -41946,6 +42546,16 @@ Skills.register({
       "files": {
         "definition": "tableau/wireframe-definition.json",
         "guidelines": "tableau/tableau-design-guidelines.md"
+      }
+    }
+  ],
+  "status-report": [
+    {
+      "id": "default",
+      "name": "Default customer status report",
+      "dir": "status-report",
+      "files": {
+        "definition": "status-report/status-report-definition.json"
       }
     }
   ]
@@ -42319,6 +42929,26 @@ expected — these rules are the boundaries, not a script.
     "require_flag_when_unsupported": true,
     "requires_quote": true,
     "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags", "quote_present"]
+  }
+}
+</script>
+<script type="text/plain" data-definition="status-report/status-report-definition.json">
+{
+  "id": "default",
+  "kind": "status-report",
+  "name": "Default customer status report",
+  "version": 1,
+  "comment": "Governs the AI-drafted periodic customer status narrative. Structure is fixed; every figure must come from live data supplied in the prompt — the model never invents numbers.",
+  "sections": [
+    { "id": "executive_summary", "title": "Executive Summary", "order": 1, "required": true, "min_words": 30, "guidance": "Two to four sentences: overall health verdict, the headline movement since last period, and the single most important thing the reader must know." },
+    { "id": "delivery_highlights", "title": "Delivery Highlights", "order": 2, "required": true, "min_words": 15, "guidance": "Bullets of completed/advanced work this period, grounded in project status and completed points. Name projects exactly." },
+    { "id": "risks_and_issues", "title": "Risks & Issues Outlook", "order": 3, "required": true, "min_words": 15, "guidance": "The open RAID picture: what is red/blocked, what changed, what is being done. Never minimise a red signal." },
+    { "id": "commercial_position", "title": "Commercial Position", "order": 4, "required": false, "min_words": 0, "guidance": "Prepaid balance drawdown and billable position from the billing summary. Omit when billing data is absent — never invent figures." },
+    { "id": "next_period", "title": "Next Period Focus", "order": 5, "required": true, "min_words": 10, "guidance": "What lands next: upcoming milestones, planned sprint commitments, decisions needed from the customer." }
+  ],
+  "validation": {
+    "enforce_section_order": true,
+    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty"]
   }
 }
 </script>
