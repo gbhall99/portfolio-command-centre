@@ -37135,7 +37135,12 @@ const Reports = {
     doc.audience = args.audience || doc.audience || 'internal';
     const html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer));
     this.open(html);
-    this.recordExport(reportId, args.customer || args.projectId || args.forumId || args.walkthroughId || '', { outputSizeBytes: html.length });
+    // Audit with the canonical Catalogue id (aliases accepted by _build would
+    // otherwise leak raw ids into the hub's Recent exports list).
+    let auditId = reportId;
+    if (reportId === 'project_report') auditId = 'sponsor_pack';
+    else if (reportId === 'portfolio_report' || reportId === 'portfolio_pack' || reportId === 'customer_pack') auditId = (args.audience === 'customer') ? 'customer_pack' : 'portfolio_pack';
+    this.recordExport(auditId, args.customer || args.projectId || args.forumId || args.walkthroughId || '', { outputSizeBytes: html.length });
   },
   // Sprint-brief picker UI: choose a sprint, then generate via Reports.generate.
   openSprintBriefPicker() {
@@ -37404,7 +37409,9 @@ const ReportsHub = {
   // one of the customer's projects / sprints / forums.
   _recentHtml(customer) {
     const esc = Dashboard.esc;
-    const titles = {};
+    // Friendly labels for export types recorded outside the catalogue
+    // (skill/document surfaces that call recordExport directly).
+    const titles = { walkthrough_minutes: 'Walkthrough minutes', sow: 'SOW', baseline_variance: 'Baseline variance', briefing_pack: 'Briefing pack' };
     ((typeof Reports !== 'undefined' && Reports.Catalogue) || []).forEach(c => { titles[c.id] = c.title; });
     const projects = new Set((((App.data && App.data.projects) || []).filter(p => p.customer === customer)).map(p => p.id));
     const sprints = new Set((((App.data && App.data.sprints) || []).filter(s => s.customer === customer)).map(s => s.sprint_id));

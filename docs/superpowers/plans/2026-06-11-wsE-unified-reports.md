@@ -710,9 +710,9 @@ git commit -m "refactor(reports): remove legacy Report engine; one delivery path
 
 **Files:** none
 
-- [ ] **Step 1: Full suite** — `npm test`. All green, 0 failures.
-- [ ] **Step 2: Serve + visual at 1440px (light + dark)** — every document type from the hub (Project, Portfolio, Sprint, Meeting, Status, Costs, SOW): cover/classification/footer consistent; tables match the on-screen look and the app RAG colours; customer-facing vs internal redaction correct; switching customer rescopes the hub; contextual shortcuts deep-link; no console errors.
-- [ ] **Step 3: Commit any tweak** — `git add -A && git commit -m "chore: WS-E final verification"` (skip if none).
+- [x] **Step 1: Full suite** — `npm test`. All green, 0 failures.
+- [x] **Step 2: Serve + visual at 1440px (light + dark)** — every document type from the hub (Project, Portfolio, Sprint, Meeting, Status, Costs, SOW): cover/classification/footer consistent; tables match the on-screen look and the app RAG colours; customer-facing vs internal redaction correct; switching customer rescopes the hub; contextual shortcuts deep-link; no console errors.
+- [x] **Step 3: Commit any tweak** — `git add -A && git commit -m "chore: WS-E final verification"` (skip if none).
 
 ---
 
