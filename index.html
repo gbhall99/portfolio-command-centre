@@ -2389,6 +2389,28 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
 
 /* --- Governance View --- */
 .governance-container { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; overflow: auto; }
+
+/* E5 — Documents/Reports hub */
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.hub-card { background: var(--surface); border: 1px solid var(--border-dim); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; transition: box-shadow 0.15s, border-color 0.15s; }
+.hub-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.hub-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hub-card-title { font-size: 14px; font-weight: 700; color: var(--text-dark); margin-right: auto; }
+.hub-aud-chip { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--border-dim); color: var(--text-muted); background: var(--bg-content); }
+.hub-aud-chip.hub-aud-customer { color: var(--accent-blue); border-color: var(--accent-blue); background: transparent; }
+.hub-src-chip { font-size: 10px; color: var(--text-muted); padding: 1px 7px; border-radius: 9px; background: var(--bg-content); }
+.hub-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.45; flex: 1; }
+.hub-card-scope { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.hub-card-scope-reason { font-size: 11px; color: var(--text-muted); font-style: italic; }
+.hub-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.hub-select { font-size: 12px; max-width: 180px; }
+.hub-recent { margin-top: 6px; }
+.hub-recent-title { font-size: 14px; font-weight: 700; color: var(--text-dark); margin: 0 0 8px 0; }
+.hub-recent-list { display: flex; flex-direction: column; gap: 4px; }
+.hub-recent-row { display: flex; align-items: baseline; gap: 10px; font-size: 12px; color: var(--text-muted); padding: 5px 8px; background: var(--surface); border: 1px solid var(--border-dim); border-radius: var(--radius-sm, 4px); }
+.hub-recent-row .hub-recent-doc { font-weight: 600; color: var(--text-dark); }
+.hub-recent-row .hub-recent-ts { margin-left: auto; font-size: 11px; white-space: nowrap; }
+
 .forum-card { background: var(--surface); border: 1px solid var(--border-dim); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: hidden; transition: box-shadow 0.15s, border-color 0.15s; }
 .forum-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 .forum-header { padding: 14px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
@@ -3524,6 +3546,10 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Capacity
       </div>
+      <div class="nav-item" data-view="reports" onclick="App.navigate('reports')" title="This customer only — generate any document from one place">
+        <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Documents
+      </div>
       <div class="nav-subsection-label">Customer Profile</div>
       <div class="nav-item" data-view="strategy" onclick="App.navigate('strategy')" title="This customer only — Objectives">
         <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/></svg>
@@ -3906,6 +3932,10 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
         </div>
         <div id="raidContent"></div>
       </div>
+    </div>
+    <!-- E5: Documents/Reports hub — customer-scoped catalogue cards + unified recent exports. -->
+    <div class="view" id="viewReports">
+      <div class="governance-container" id="reportsHubHost"></div>
     </div>
     <div class="view" id="viewActivity">
       <div class="governance-container" id="activityContainer">
@@ -7760,6 +7790,7 @@ const App = {
     if (viewName === 'backlog' && this.data) Dashboard.renderBacklogTab(this.activeCustomer);
     if (viewName === 'governance' && this.data) Governance.render();
     if (viewName === 'raid' && this.data && typeof RaidView !== 'undefined') RaidView.render();
+    if (viewName === 'reports' && this.data && typeof ReportsHub !== 'undefined') ReportsHub.render();
     if (viewName === 'activity' && this.data) AuditPanel.render();
     if (viewName === 'strategy' && this.data && typeof Strategy !== 'undefined') Strategy.mount();
     if (viewName === 'metrics' && this.data && typeof MetricsView !== 'undefined') MetricsView.mount();
@@ -7771,7 +7802,7 @@ const App = {
 
   // IA Goal 1a: single declarative source of truth for each view's data scope.
   // 'all' = aggregates every customer; 'one' = scoped to App.activeCustomer; 'system' = cross-cutting admin.
-  VIEW_SCOPE: { portfolio: 'all', dashboard: 'one', projects: 'one', roadmap: 'one', backlog: 'one', raid: 'one', sprint: 'one', board: 'one', capacity: 'one', myactions: 'one', strategy: 'one', metrics: 'one', personas: 'one', products: 'one', governance: 'one', activity: 'system', config: 'system' },
+  VIEW_SCOPE: { portfolio: 'all', dashboard: 'one', projects: 'one', roadmap: 'one', backlog: 'one', raid: 'one', sprint: 'one', board: 'one', capacity: 'one', myactions: 'one', strategy: 'one', metrics: 'one', personas: 'one', products: 'one', governance: 'one', reports: 'one', activity: 'system', config: 'system' },
   _viewScope(view) {
     return this.VIEW_SCOPE[view] || 'one';
   },
@@ -7780,7 +7811,7 @@ const App = {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
     if (!this.data || this.currentView === 'files') { bar.hidden = true; return; }
-    const names = { portfolio: 'Portfolio Overview', myactions: 'Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Objectives', sprint: 'Sprint Planning', board: 'Board', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', products: 'Products', governance: 'Governance', raid: 'RAID', activity: 'Activity', config: 'System Settings' };
+    const names = { portfolio: 'Portfolio Overview', myactions: 'Actions', dashboard: 'Projects', projects: 'Projects', backlog: 'Backlog', strategy: 'Objectives', sprint: 'Sprint Planning', board: 'Board', roadmap: 'Roadmap', capacity: 'Capacity & Workload', metrics: 'Metrics', personas: 'Personas & People', products: 'Products', governance: 'Governance', raid: 'RAID', reports: 'Documents', activity: 'Activity', config: 'System Settings' };
     const nameEl = document.getElementById('viewTitlebarName');
     const custEl = document.getElementById('viewTitlebarCustomer');
     const asOfEl = document.getElementById('viewTitlebarAsOf');
@@ -7835,6 +7866,7 @@ const App = {
     else if (this.currentView === 'products' && typeof ProductsView !== 'undefined') ProductsView.mount();
     else if (this.currentView === 'myactions' && typeof MyActions !== 'undefined') MyActions.render();
     else if (this.currentView === 'raid' && typeof RaidView !== 'undefined') RaidView.render();
+    else if (this.currentView === 'reports' && typeof ReportsHub !== 'undefined') ReportsHub.render();
     // Summary cards depend on active customer
     if (typeof Dashboard !== 'undefined') Dashboard.renderSummaryCards && Dashboard.renderSummaryCards();
     // Customer-scoped sidebar badges must refresh on customer switch (and initial load).
@@ -36608,16 +36640,21 @@ const Reports = {
       return App.data.settings.branding[key];
     }
   },
-  // R1 / AC-R1.5: catalogue of reports (7 core + costs_report).
+  // R1 / AC-R1.5: catalogue of reports (7 core + costs_report). E3: single registry for all
+  // document types. Each entry carries `audiences` (which audience toggles apply) and
+  // `contentSource` ('data-derived' = built from live App.data; 'skill-fed' = rendered from a
+  // skill-generated entity). The consolidated user-facing set collapses the audience-variant
+  // pairs: entries with `absorbedInto` are served as the named card's audience toggle and are
+  // not shown as standalone cards in the Documents hub.
   Catalogue: [
-    { id: 'sponsor_pack', title: 'Sponsor Pack', description: 'One-page summary for the project sponsor', scope: 'project', requiresFields: ['name', 'customer', 'status'], requiresScopeArg: 'projectId', defaultClassification: 'Confidential', doesNotInclude: 'detailed per-sprint allocations' },
-    { id: 'business_case', title: 'Business Case', description: 'Cashflow, NPV and sensitivity for the project', scope: 'project', requiresFields: ['name', 'customer'], requiresScopeArg: 'projectId', defaultClassification: 'Internal', doesNotInclude: 'commercially sensitive supplier pricing' },
-    { id: 'sprint_brief', title: 'Sprint Brief', description: 'Per-sprint commitment + assignees for the customer', scope: 'customer-sprint', requiresFields: [], requiresScopeArg: 'customer+sprintId', defaultClassification: 'Internal', doesNotInclude: 'risk register details' },
-    { id: 'customer_pack', title: 'Customer Pack', description: 'Customer-facing portfolio update with lifecycle headlines', scope: 'customer', requiresFields: ['narrative'], requiresScopeArg: 'customer', defaultClassification: 'Confidential', doesNotInclude: 'internal-only RAID rows' },
-    { id: 'portfolio_pack', title: 'Portfolio Pack', description: 'Internal portfolio summary for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing wins/asks' },
-    { id: 'meeting_agenda', title: 'Meeting Agenda', description: 'Governance forum agenda + supporting context', scope: 'forum', requiresFields: ['name'], requiresScopeArg: 'forumId', defaultClassification: 'Internal', doesNotInclude: 'verbatim decisions log' },
-    { id: 'status_report', title: 'Status Report', description: 'Cross-customer portfolio status snapshot', scope: 'cross-customer', requiresFields: [], requiresScopeArg: null, defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details' },
-    { id: 'costs_report', title: 'Costs Report', description: 'Prepaid drawdown, T&M billing and margin for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing quote figures' }
+    { id: 'sponsor_pack', title: 'Project report', description: 'Project status for the sponsor; business case appears as an internal-only section', scope: 'project', requiresFields: ['name', 'customer', 'status'], requiresScopeArg: 'projectId', defaultClassification: 'Confidential', doesNotInclude: 'detailed per-sprint allocations', audiences: ['customer', 'internal'], contentSource: 'data-derived' },
+    { id: 'business_case', title: 'Business Case', description: 'Cashflow, NPV and sensitivity for the project', scope: 'project', requiresFields: ['name', 'customer'], requiresScopeArg: 'projectId', defaultClassification: 'Internal', doesNotInclude: 'commercially sensitive supplier pricing', audiences: ['internal'], contentSource: 'data-derived', absorbedInto: 'sponsor_pack' },
+    { id: 'sprint_brief', title: 'Sprint brief', description: 'Per-sprint commitment + assignees for the customer', scope: 'customer-sprint', requiresFields: [], requiresScopeArg: 'customer+sprintId', defaultClassification: 'Internal', doesNotInclude: 'risk register details', audiences: ['internal'], contentSource: 'data-derived' },
+    { id: 'customer_pack', title: 'Customer Pack', description: 'Customer-facing portfolio update with lifecycle headlines', scope: 'customer', requiresFields: ['narrative'], requiresScopeArg: 'customer', defaultClassification: 'Confidential', doesNotInclude: 'internal-only RAID rows', audiences: ['customer', 'internal'], contentSource: 'data-derived', absorbedInto: 'portfolio_pack' },
+    { id: 'portfolio_pack', title: 'Portfolio report', description: 'Portfolio summary for one customer; customer-facing audience shares only curated sections', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing wins/asks', audiences: ['customer', 'internal'], contentSource: 'data-derived' },
+    { id: 'meeting_agenda', title: 'Meeting agenda', description: 'Governance forum agenda + supporting context', scope: 'forum', requiresFields: ['name'], requiresScopeArg: 'forumId', defaultClassification: 'Internal', doesNotInclude: 'verbatim decisions log', audiences: ['internal'], contentSource: 'data-derived' },
+    { id: 'status_report', title: 'Status report', description: 'Periodic status snapshot for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details', audiences: ['customer', 'internal'], contentSource: 'skill-fed' },
+    { id: 'costs_report', title: 'Costs report', description: 'Prepaid drawdown, T&M billing and margin for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing quote figures', audiences: ['internal'], contentSource: 'data-derived' }
   ],
   // R8 / AC-R8.6: read-only Recent list query.
   recentExports(limit) {
@@ -37149,6 +37186,140 @@ const Reports = {
    R4 — audit_log event_type vocabulary.
    ============================================================ */
 const AUDIT_EVENT_TYPES = ['field_change', 'report_generated', 'walkthrough_opened', 'walkthrough_closed', 'branding_updated', 'migration_applied'];
+
+/* ============================================================
+   E5 — Documents/Reports hub. Customer-scoped cards for every
+   consolidated catalogue entry + a unified Recent exports list.
+   Generation always routes through Reports.generate (the single
+   engine path) — the hub never renders document HTML itself.
+   ============================================================ */
+const ReportsHub = {
+  AUDIENCE_LABELS: { customer: 'Customer-facing', internal: 'Internal' },
+  // Consolidated user-facing cards: catalogue entries minus the absorbed
+  // audience variants (those are served by the named card's audience toggle).
+  cards() {
+    return ((typeof Reports !== 'undefined' && Reports.Catalogue) || []).filter(c => !c.absorbedInto);
+  },
+  render() {
+    const host = document.getElementById('reportsHubHost');
+    if (!host || typeof App === 'undefined' || !App.data) return;
+    const esc = Dashboard.esc;
+    const customer = App.activeCustomer || '';
+    const cardsHtml = this.cards().map((c, idx) => this._cardHtml(c, idx, customer)).join('');
+    host.innerHTML =
+      '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+        '<h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">Documents</h2>' +
+        '<span style="font-size:12px;color:var(--text-muted)">Every printable document for ' + esc(customer || '(no customer selected)') + ' — generated by one engine so PDF output matches the app.</span>' +
+      '</div>' +
+      '<div class="hub-grid">' + cardsHtml + '</div>' +
+      '<div class="hub-recent">' +
+        '<h3 class="hub-recent-title">Recent exports</h3>' +
+        '<div class="hub-recent-list" id="hubRecentList">' + this._recentHtml(customer) + '</div>' +
+      '</div>';
+  },
+  // One card: title + audience/source chips + description + scope picker + Generate.
+  _cardHtml(c, idx, customer) {
+    const esc = Dashboard.esc;
+    const chips = (c.audiences || []).map(a =>
+      '<span class="hub-aud-chip hub-aud-' + esc(a) + '">' + esc(this.AUDIENCE_LABELS[a] || a) + '</span>'
+    ).join('');
+    const srcChip = '<span class="hub-src-chip" title="' + (c.contentSource === 'skill-fed' ? 'Content drafted by a skill, rendered by the engine' : 'Built live from portfolio data') + '">' + (c.contentSource === 'skill-fed' ? 'Skill-fed' : 'Data-derived') + '</span>';
+    const scope = this._scopeControl(c, idx, customer);
+    const audSel = (c.audiences && c.audiences.length > 1)
+      ? '<select id="hubAud-' + idx + '" class="filter-select hub-select" title="Audience">' +
+          c.audiences.map(a => '<option value="' + esc(a) + '"' + (a === 'internal' ? ' selected' : '') + '>' + esc(this.AUDIENCE_LABELS[a] || a) + '</option>').join('') +
+        '</select>'
+      : '';
+    return '<div class="hub-card" data-hub-card="' + esc(c.id) + '">' +
+      '<div class="hub-card-head"><span class="hub-card-title">' + esc(c.title) + '</span>' + chips + srcChip + '</div>' +
+      '<div class="hub-card-desc">' + esc(c.description || '') + '</div>' +
+      scope.html +
+      '<div class="hub-card-actions">' + audSel +
+        '<button class="btn btn-primary btn-sm hub-generate-btn" onclick="ReportsHub.generate(' + idx + ')"' + (scope.disabled ? ' disabled title="' + esc(scope.reason) + '"' : '') + '>Generate</button>' +
+      '</div>' +
+    '</div>';
+  },
+  // Scope picker for entries needing more than the active customer. Generate is
+  // disabled with a reason when no candidate exists (spec error handling).
+  _scopeControl(c, idx, customer) {
+    const esc = Dashboard.esc;
+    const need = c.requiresScopeArg || '';
+    let label = '', options = null, reason = '';
+    if (need.indexOf('projectId') >= 0) {
+      label = 'Project';
+      options = ((App.data && App.data.projects) || []).filter(p => p.customer === customer).map(p => [p.id, p.name || p.id]);
+      reason = 'No projects for this customer yet';
+    } else if (need.indexOf('sprintId') >= 0) {
+      label = 'Sprint';
+      options = ((App.data && App.data.sprints) || []).filter(s => !s.customer || s.customer === customer).map(s => [s.sprint_id, s.sprint_id]);
+      reason = 'No sprints for this customer yet';
+    } else if (need.indexOf('forumId') >= 0) {
+      label = 'Forum';
+      options = ((App.data && App.data.governance_forums) || []).filter(f => !f.customer || f.customer === customer).map(f => [f.id || f.name, f.name || f.id]);
+      reason = 'No governance forums for this customer yet';
+    }
+    if (!options) return { html: '', disabled: false, reason: '' };
+    if (!options.length) return { html: '<div class="hub-card-scope"><span class="hub-card-scope-reason">' + esc(reason) + '</span></div>', disabled: true, reason };
+    return {
+      html: '<div class="hub-card-scope"><span>' + esc(label) + '</span>' +
+        '<select id="hubScope-' + idx + '" class="filter-select hub-select">' +
+          options.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>').join('') +
+        '</select></div>',
+      disabled: false, reason: ''
+    };
+  },
+  // Index-based handler (never interpolate untrusted ids into onclick attrs).
+  generate(idx) {
+    const c = this.cards()[idx];
+    if (!c || typeof Reports === 'undefined') return;
+    const customer = App.activeCustomer;
+    const args = { customer };
+    const need = c.requiresScopeArg || '';
+    const scopeSel = document.getElementById('hubScope-' + idx);
+    if (need.indexOf('projectId') >= 0) {
+      args.projectId = scopeSel ? scopeSel.value : '';
+      if (!args.projectId) { if (App.toast) App.toast('Select a project first', 'error'); return; }
+    } else if (need.indexOf('sprintId') >= 0) {
+      args.sprintId = scopeSel ? scopeSel.value : '';
+      if (!args.sprintId) { if (App.toast) App.toast('Select a sprint first', 'error'); return; }
+    } else if (need.indexOf('forumId') >= 0) {
+      args.forumId = scopeSel ? scopeSel.value : '';
+      if (!args.forumId) { if (App.toast) App.toast('Select a forum first', 'error'); return; }
+    }
+    const audSel = document.getElementById('hubAud-' + idx);
+    args.audience = audSel ? audSel.value : ((c.audiences && c.audiences[0]) || 'internal');
+    Reports.generate(c.id, args);
+    const list = document.getElementById('hubRecentList');
+    if (list) list.innerHTML = this._recentHtml(customer);
+  },
+  // Unified recent-exports list (all document types), scoped to the active
+  // customer: an export counts when its scope arg is the customer itself or
+  // one of the customer's projects / sprints / forums.
+  _recentHtml(customer) {
+    const esc = Dashboard.esc;
+    const titles = {};
+    ((typeof Reports !== 'undefined' && Reports.Catalogue) || []).forEach(c => { titles[c.id] = c.title; });
+    const projects = new Set((((App.data && App.data.projects) || []).filter(p => p.customer === customer)).map(p => p.id));
+    const sprints = new Set((((App.data && App.data.sprints) || []).filter(s => s.customer === customer)).map(s => s.sprint_id));
+    const forums = new Set();
+    (((App.data && App.data.governance_forums) || []).filter(f => f.customer === customer)).forEach(f => { if (f.id) forums.add(f.id); if (f.name) forums.add(f.name); });
+    const rows = Reports.recentExports(50).filter(e => {
+      const arg = (e.meta && e.meta.scope_arg) || '';
+      return arg === customer || projects.has(arg) || sprints.has(arg) || forums.has(arg);
+    }).slice(0, 10);
+    if (!rows.length) return '<div class="hub-recent-row"><span>No exports yet for ' + esc(customer || 'this customer') + '.</span></div>';
+    return rows.map(e => {
+      const type = (e.meta && e.meta.report_type) || '';
+      const ts = e.ts ? new Date(e.ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      return '<div class="hub-recent-row">' +
+        '<span class="hub-recent-doc">' + esc(titles[type] || type) + '</span>' +
+        '<span>' + esc((e.meta && e.meta.scope_arg) || '') + '</span>' +
+        '<span>by ' + esc((e.meta && e.meta.generated_by) || '') + '</span>' +
+        '<span class="hub-recent-ts">' + esc(ts) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+};
 
 const Report = {
   // Alias: delegates to Governance.buildAgendaDoc so tests can call via Report

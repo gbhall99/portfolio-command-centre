@@ -651,12 +651,12 @@ git commit -m "feat(reports): billing/costs report renders through the unified e
 
 **Files:** Modify `index.html` (`Reports.Catalogue` 36523 — status_report scope; add a hub view + nav entry); Create `tests/render/reports-hub.test.mjs`
 
-- [ ] **Step 1: Catalogue fix.** Change the `status_report` entry's `scope` from `'cross-customer'` to `'customer'` and `requiresScopeArg` to `'customer'`; add `audiences` arrays to each catalogue entry (`['customer','internal']` for project/portfolio/status; `['internal']` for sprint_brief/meeting_agenda/costs_report). Add `contentSource` (`'data-derived'` | `'skill-fed'`) per the spec table.
-- [ ] **Step 2: Write the failing test** — `tests/render/reports-hub.test.mjs`: boot with a customer, call the hub render fn (e.g. `ReportsHub.render()` or `App.navigate('reports')`), assert the host HTML lists the catalogue titles ("Project report", "Portfolio report", "Sprint brief", "Meeting agenda", "Status report", "Costs report"), shows audience chips where `audiences.length>1`, and a "Recent exports" heading. Assert customer-scoping (the active customer name appears).
-- [ ] **Step 3: Run, verify FAIL.**
-- [ ] **Step 4: Implement a `ReportsHub` object + nav view.** Render catalogue cards (title, description, audience chips, Generate button calling `Reports.generate(id,{customer:App.activeCustomer,audience})`), a Recent-exports list (`Reports.recentExports(10)`), customer-scoped. Add a nav entry (mirror an existing view registration, e.g. how RAID/Delivery views register). Expose `ReportsHub` in `tests/harness/loadApp.mjs` bridge + return.
-- [ ] **Step 5: Run test + regression** — `npx vitest run tests/render/reports-hub.test.mjs && npx vitest run`.
-- [ ] **Step 6: Commit**
+- [x] **Step 1: Catalogue fix.** Change the `status_report` entry's `scope` from `'cross-customer'` to `'customer'` and `requiresScopeArg` to `'customer'`; add `audiences` arrays to each catalogue entry (`['customer','internal']` for project/portfolio/status; `['internal']` for sprint_brief/meeting_agenda/costs_report). Add `contentSource` (`'data-derived'` | `'skill-fed'`) per the spec table.
+- [x] **Step 2: Write the failing test** — `tests/render/reports-hub.test.mjs`: boot with a customer, call the hub render fn (e.g. `ReportsHub.render()` or `App.navigate('reports')`), assert the host HTML lists the catalogue titles ("Project report", "Portfolio report", "Sprint brief", "Meeting agenda", "Status report", "Costs report"), shows audience chips where `audiences.length>1`, and a "Recent exports" heading. Assert customer-scoping (the active customer name appears).
+- [x] **Step 3: Run, verify FAIL.**
+- [x] **Step 4: Implement a `ReportsHub` object + nav view.** Render catalogue cards (title, description, audience chips, Generate button calling `Reports.generate(id,{customer:App.activeCustomer,audience})`), a Recent-exports list (`Reports.recentExports(10)`), customer-scoped. Add a nav entry (mirror an existing view registration, e.g. how RAID/Delivery views register). Expose `ReportsHub` in `tests/harness/loadApp.mjs` bridge + return.
+- [x] **Step 5: Run test + regression** — `npx vitest run tests/render/reports-hub.test.mjs && npx vitest run`.
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html tests/render/reports-hub.test.mjs tests/harness/loadApp.mjs
