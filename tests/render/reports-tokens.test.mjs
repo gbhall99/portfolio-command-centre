@@ -23,4 +23,14 @@ describe('Reports.tokens — parity stylesheet', () => {
     expect(css).toContain('#112233');
     app.teardown();
   });
+  it('rejects a non-hex primary color (CSS injection guard)', async () => {
+    const app = await loadApp(makeDataset({}));
+    const hostile = '</style><script>alert(1)</script>';
+    const css = app.Reports.tokens({ primaryColor: hostile });
+    expect(css).not.toContain('alert(1)');
+    expect(css).not.toContain('</style><script>');
+    expect(css).toContain('--rp-primary:#3b82f6'); // falls back to the default
+    expect(app.Reports.tokens({ primaryColor: 'red;}body{display:none' })).toContain('--rp-primary:#3b82f6');
+    app.teardown();
+  });
 });

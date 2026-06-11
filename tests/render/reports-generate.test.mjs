@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makeProject } from '../harness/fixtures.mjs';
 

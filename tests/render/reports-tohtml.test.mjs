@@ -13,7 +13,7 @@ describe('Reports.Doc.toHtml', () => {
     const doc = app.Reports.Doc.buildDoc({ reportType: 'portfolio_pack', title: 'Portfolio', customer: 'Acme', sections: SECTIONS, audience: 'internal' });
     const html = app.Reports.Doc.toHtml(doc, { primaryColor: '#3b82f6' });
     expect(html).toMatch(/^<!DOCTYPE html>/);
-    expect(html).toContain('rp-table'.slice(0, 2) === 'rp' ? '<style>' : '<style>'); // tokens injected
+    expect(html).toContain('--rp-primary'); // engine tokens stylesheet injected
     expect(html).toContain('Portfolio');
     expect(html).toContain('Narrative');
     expect(html).toContain('EVM &amp; cost'); // internal section shown for internal audience
