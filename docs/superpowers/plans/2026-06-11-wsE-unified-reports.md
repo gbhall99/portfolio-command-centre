@@ -456,7 +456,7 @@ git commit -m "feat(reports): brief builders emit audience-tagged section contra
 
 **Files:** Modify `index.html` (call sites: project detail **19756–19757**, customer panel **3612**, governance sidebar **3883–3884**, quick-nav **15603/15605**, sprints sidebar **3746**); Create `tests/e2e/reports-generate.spec.ts`
 
-- [ ] **Step 1: Write the failing e2e** — `tests/e2e/reports-generate.spec.ts` (mirror existing e2e patterns in `tests/e2e/sow.spec.ts`):
+- [x] **Step 1: Write the failing e2e** — `tests/e2e/reports-generate.spec.ts` (mirror existing e2e patterns in `tests/e2e/sow.spec.ts`):
 
 ```typescript
 import { test, expect } from '@playwright/test';
@@ -482,18 +482,18 @@ test('project detail Report button calls Reports.generate', async ({ page }) => 
 
 (If the existing e2e harness uses a different bootstrap, follow `tests/e2e/sow.spec.ts`'s setup verbatim.)
 
-- [ ] **Step 2: Run, verify FAIL** — `npx playwright test tests/e2e/reports-generate.spec.ts` (only fails if generate wiring/exposure is wrong; the assertion is light — its real purpose is a smoke check).
+- [x] **Step 2: Run, verify FAIL** — `npx playwright test tests/e2e/reports-generate.spec.ts` (only fails if generate wiring/exposure is wrong; the assertion is light — its real purpose is a smoke check).
 
-- [ ] **Step 3: Re-point the call sites.** Replace each legacy `Report.export*` onclick with `Reports.generate(...)`:
+- [x] **Step 3: Re-point the call sites.** Replace each legacy `Report.export*` onclick with `Reports.generate(...)`:
   - Project detail **19756–19757**: the two buttons become one **Report** button `onclick="Reports.generate('project_report',{projectId:<id>,audience:'internal'})"` plus a customer-facing variant, or an audience toggle in the panel. Use `esc(JSON.stringify(id))` for the id.
   - Customer panel **3612** + governance sidebar **3883**: `Reports.generate('portfolio_report',{customer:App.activeCustomer,audience:'customer'})` and `…audience:'internal'`.
   - Quick-nav **15603/15605**: same two, via `Reports.generate`.
   - Sprints sidebar **3746** (`openSprintBriefPicker`): keep the picker UI, but its generate action calls `Reports.generate('sprint_brief',{customer,sprintId})`.
   - Meeting agenda call site (governance): `Reports.generate('meeting_agenda',{forumId})`.
 
-- [ ] **Step 4: Run e2e + full regression** — `npx playwright test tests/e2e/reports-generate.spec.ts && npx vitest run`. Existing report tests stay green.
+- [x] **Step 4: Run e2e + full regression** — `npx playwright test tests/e2e/reports-generate.spec.ts && npx vitest run`. Existing report tests stay green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/e2e/reports-generate.spec.ts

@@ -27,13 +27,14 @@ test('Sprint Brief picker closes on Esc', async ({ page }) => {
   await expect(page.locator('#sprintBriefPickerOverlay')).toHaveCount(0);
 });
 
-test('Generate Brief invokes exportSprintBrief with chosen id', async ({ page }) => {
+test('Generate Brief invokes Reports.generate with chosen id', async ({ page }) => {
   await openAppWithData(page);
   await page.evaluate(() => (window as any).App.navigate('sprint'));
   await page.evaluate(() => {
     (window as any).__lastBrief = null;
-    (window as any).Report.exportSprintBrief = function (customer: string, sprintId: string) {
-      (window as any).__lastBrief = { customer, sprintId };
+    // WS-E: the picker's generate action routes through the unified engine.
+    (window as any).Reports.generate = function (reportId: string, args: any) {
+      (window as any).__lastBrief = { reportId, customer: args.customer, sprintId: args.sprintId };
     };
   });
   await page.locator('button[onclick*="Report.openSprintBriefPicker"]').click();
@@ -44,6 +45,7 @@ test('Generate Brief invokes exportSprintBrief with chosen id', async ({ page })
   expect(chosenId).not.toBeNull();
   await page.locator('#sprintBriefPickerOverlay button:has-text("Generate Brief")').click();
   const captured = await page.evaluate(() => (window as any).__lastBrief);
+  expect(captured.reportId).toBe('sprint_brief');
   expect(captured.sprintId).toBe(chosenId);
   await expect(page.locator('#sprintBriefPickerOverlay')).toHaveCount(0);
 });
