@@ -225,14 +225,20 @@ describe('settings UI + report', () => {
     expect(App.data.audit_log.some(e => e.field === 'billing_rate:United Kingdom/Principal')).toBe(true);
   });
 
-  it('exportReport writes a print document and logs report_generated', () => {
-    const { Billing, App, window } = app;
-    let written = '';
-    window.open = () => ({ document: { write(h) { written += h; }, close() {} } });
+  it('exportReport renders through the Reports engine and logs report_generated', () => {
+    const { Billing, App, Reports } = app;
+    Billing.addArrangement({ customer: 'Acme Industries', label: 'FY27 retainer', skill: 'any', prepaid_points: 40, amount_invoiced: 20000 });
+    let openedHtml = '';
+    Reports.open = (html) => { openedHtml = html; return {}; };
     Billing.exportReport('Acme Industries');
-    expect(written).toContain('Billing &amp; Costs — Acme Industries');
-    expect(written).toContain('Projects (completed work to date)');
-    expect(written).toContain('Margin');
-    expect(App.data.audit_log.some(e => e.field === 'report_generated' && e.newValue === 'billing_costs:Acme Industries')).toBe(true);
+    expect(openedHtml).toMatch(/^<!DOCTYPE html>/);
+    expect(openedHtml).toContain('<style>');                 // engine token stylesheet
+    expect(openedHtml).toContain('Costs &amp; Billing — Acme Industries');
+    expect(openedHtml).toContain('class="rp-table"');        // shared table renderer…
+    expect(openedHtml).not.toContain('<table>');             // …not ad-hoc tables
+    expect(openedHtml).toContain('FY27 retainer');           // arrangements table data
+    expect(openedHtml).toContain('Acme Alpha');              // per-project table data
+    expect(openedHtml).toContain('Margin');
+    expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'costs_report' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
   });
 });

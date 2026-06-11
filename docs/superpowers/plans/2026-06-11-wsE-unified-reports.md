@@ -634,11 +634,11 @@ git commit -m "feat(reports): SOW renders through the unified engine"
 
 **Files:** Modify `index.html` (`Billing.exportReport` 40706 → builder + engine; call site 40862); Modify `tests/unit/billing.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — add to `tests/unit/billing.test.mjs`: after seeding a customer with billing data, stub `Reports.open`, call `Billing.exportReport('Acme Industries')`, assert the captured HTML starts `<!DOCTYPE html>`, contains the engine `<style>`, the arrangements/projects table data, and uses `class="rp-table"` (shared renderer) rather than ad-hoc `<table>`.
-- [ ] **Step 2: Run, verify FAIL.**
-- [ ] **Step 3: Add `Reports.Builders.costsReport(customer)`** returning `buildDoc({reportType:'portfolio_pack', title:'Costs & Billing — '+customer, customer, sections:[{id:'arrangements',title:'Prepaid arrangements',html:Reports.table({...}),audiences:['internal']},{id:'projects',title:'Per-project costs',html:Reports.table({...}),audiences:['internal']}], audience:'internal', classification:'Internal'})`. Source data from `Billing.customerSummary(customer)`. Then rewrite `Billing.exportReport` to `Reports.open(Reports.Doc.toHtml(Reports.Builders.costsReport(customer)))` + `recordExport('costs_report', customer)`. Add a `costs_report` entry to `Reports.Catalogue` and a case in `Reports._build`.
-- [ ] **Step 4: Run test + regression** — `npx vitest run tests/unit/billing.test.mjs && npx vitest run`.
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Write the failing test** — add to `tests/unit/billing.test.mjs`: after seeding a customer with billing data, stub `Reports.open`, call `Billing.exportReport('Acme Industries')`, assert the captured HTML starts `<!DOCTYPE html>`, contains the engine `<style>`, the arrangements/projects table data, and uses `class="rp-table"` (shared renderer) rather than ad-hoc `<table>`.
+- [x] **Step 2: Run, verify FAIL.**
+- [x] **Step 3: Add `Reports.Builders.costsReport(customer)`** returning `buildDoc({reportType:'portfolio_pack', title:'Costs & Billing — '+customer, customer, sections:[{id:'arrangements',title:'Prepaid arrangements',html:Reports.table({...}),audiences:['internal']},{id:'projects',title:'Per-project costs',html:Reports.table({...}),audiences:['internal']}], audience:'internal', classification:'Internal'})`. Source data from `Billing.customerSummary(customer)`. Then rewrite `Billing.exportReport` to `Reports.open(Reports.Doc.toHtml(Reports.Builders.costsReport(customer)))` + `recordExport('costs_report', customer)`. Add a `costs_report` entry to `Reports.Catalogue` and a case in `Reports._build`.
+- [x] **Step 4: Run test + regression** — `npx vitest run tests/unit/billing.test.mjs && npx vitest run`.
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/unit/billing.test.mjs

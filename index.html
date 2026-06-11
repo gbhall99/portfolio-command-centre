@@ -36608,7 +36608,7 @@ const Reports = {
       return App.data.settings.branding[key];
     }
   },
-  // R1 / AC-R1.5: catalogue of 7 reports.
+  // R1 / AC-R1.5: catalogue of reports (7 core + costs_report).
   Catalogue: [
     { id: 'sponsor_pack', title: 'Sponsor Pack', description: 'One-page summary for the project sponsor', scope: 'project', requiresFields: ['name', 'customer', 'status'], requiresScopeArg: 'projectId', defaultClassification: 'Confidential', doesNotInclude: 'detailed per-sprint allocations' },
     { id: 'business_case', title: 'Business Case', description: 'Cashflow, NPV and sensitivity for the project', scope: 'project', requiresFields: ['name', 'customer'], requiresScopeArg: 'projectId', defaultClassification: 'Internal', doesNotInclude: 'commercially sensitive supplier pricing' },
@@ -36616,7 +36616,8 @@ const Reports = {
     { id: 'customer_pack', title: 'Customer Pack', description: 'Customer-facing portfolio update with lifecycle headlines', scope: 'customer', requiresFields: ['narrative'], requiresScopeArg: 'customer', defaultClassification: 'Confidential', doesNotInclude: 'internal-only RAID rows' },
     { id: 'portfolio_pack', title: 'Portfolio Pack', description: 'Internal portfolio summary for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing wins/asks' },
     { id: 'meeting_agenda', title: 'Meeting Agenda', description: 'Governance forum agenda + supporting context', scope: 'forum', requiresFields: ['name'], requiresScopeArg: 'forumId', defaultClassification: 'Internal', doesNotInclude: 'verbatim decisions log' },
-    { id: 'status_report', title: 'Status Report', description: 'Cross-customer portfolio status snapshot', scope: 'cross-customer', requiresFields: [], requiresScopeArg: null, defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details' }
+    { id: 'status_report', title: 'Status Report', description: 'Cross-customer portfolio status snapshot', scope: 'cross-customer', requiresFields: [], requiresScopeArg: null, defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details' },
+    { id: 'costs_report', title: 'Costs Report', description: 'Prepaid drawdown, T&M billing and margin for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing quote figures' }
   ],
   // R8 / AC-R8.6: read-only Recent list query.
   recentExports(limit) {
@@ -37018,6 +37019,71 @@ const Reports = {
           { id: 'fa-risks', title: 'Escalated risks', html: Reports.Builders._risksTable(escalated.slice(0, 10), 'No escalated risks'), audiences: internal.slice() }
         ]
       });
+    },
+    // Costs & Billing report for one customer: prepaid drawdown, T&M billing
+    // and margin from Billing.customerSummary. Internal only.
+    costsReport(customer) {
+      const esc = Dashboard.esc;
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const s = (typeof Billing !== 'undefined')
+        ? Billing.customerSummary(customer)
+        : { currency: '', arrangements: [], projects: [], totals: {} };
+      const money = (n) => (typeof Billing !== 'undefined') ? Billing.fmtMoney(n) : String(n);
+      const skillLabel = (sk) => sk === 'any' ? 'Any skill' : ((((typeof Billing !== 'undefined' && Billing.SKILLS) || []).find(x => x[0] === sk)) || ['', sk])[1];
+      const arrangementsHtml = Reports.table({
+        columns: [
+          { key: 'label', label: 'Arrangement' },
+          { key: 'skill', label: 'Skill', width: '16%', cell: r => esc(skillLabel(r.skill)) },
+          { key: 'prepaid_points', label: 'Prepaid SP', align: 'right', width: '11%' },
+          { key: 'drawn_points', label: 'Drawn SP', align: 'right', width: '11%' },
+          { key: 'remaining_points', label: 'Remaining SP', align: 'right', width: '12%' },
+          { key: 'amount_invoiced', label: 'Invoiced upfront', align: 'right', width: '15%', cell: r => esc(money(r.amount_invoiced)) }
+        ],
+        rows: s.arrangements,
+        empty: 'None — all work bills as T&M'
+      });
+      const projectsHtml = Reports.table({
+        columns: [
+          { key: 'name', label: 'Project' },
+          { key: 'status', label: 'Status', width: '12%' },
+          { key: 'consumed_points', label: 'Done SP', align: 'right', width: '9%' },
+          { key: 'prepaid_covered_points', label: 'Prepaid SP', align: 'right', width: '10%' },
+          { key: 'billable_points', label: 'T&M SP', align: 'right', width: '9%' },
+          { key: 'billable_amount', label: 'T&M billable', align: 'right', width: '12%', cell: r => esc(money(r.billable_amount)) },
+          { key: 'cost', label: 'Internal cost', align: 'right', width: '12%', cell: r => esc(money(r.cost)) },
+          { key: 'margin', label: 'Margin', align: 'right', width: '11%', cell: r => esc(money(r.margin)) }
+        ],
+        rows: s.projects,
+        empty: 'No completed work yet'
+      });
+      const t = s.totals || {};
+      const summaryHtml = Reports.table({
+        columns: [
+          { key: 'label', label: 'Measure' },
+          { key: 'value', label: 'Amount', align: 'right', width: '24%' }
+        ],
+        rows: [
+          { label: 'Fixed/prepaid invoiced upfront', value: money(t.fixed_invoiced || 0) },
+          { label: 'T&M billable to date', value: money(t.billable_amount || 0) },
+          { label: 'Revenue recognised (prepaid drawdown + T&M)', value: money(t.revenue || 0) },
+          { label: 'Internal cost of completed work', value: money(t.cost || 0) },
+          { label: 'Margin', value: money(t.margin || 0) }
+        ],
+        empty: 'No billing activity'
+      });
+      return Reports.Doc.buildDoc({
+        reportType: 'portfolio_pack',
+        title: 'Costs & Billing — ' + (customer || ''),
+        subtitle: 'Billing basis: completed work (EV); prepaid blocks draw down before T&M · currency ' + (s.currency || ''),
+        customer,
+        sections: [
+          { id: 'arrangements', title: 'Prepaid arrangements', html: arrangementsHtml, audiences: internal },
+          { id: 'projects', title: 'Per-project costs', html: projectsHtml, audiences: internal.slice() },
+          { id: 'summary', title: 'Summary', html: summaryHtml, audiences: internal.slice() }
+        ],
+        audience: 'internal',
+        classification: 'Internal'
+      });
     }
   },
   // Delivery wrapper: writes the serialized HTML into a print window. No audit side-effects.
@@ -37042,6 +37108,7 @@ const Reports = {
       case 'portfolio_report': return (args.audience === 'customer') ? B.customerPack(args.customer) : B.portfolioPack(args.customer);
       case 'meeting_agenda': return B.forumAgenda(args.forumId);
       case 'status_report': return B.statusReport(args.customer);
+      case 'costs_report': return B.costsReport(args.customer);
       default: return null;
     }
   },
@@ -40800,47 +40867,12 @@ const Billing = {
     return lines.join('\n');
   },
 
-  // --- Billing & Costs report (print window; by customer with per-project lines) ---
+  // --- Billing & Costs report (rendered + delivered through the unified Reports engine) ---
   exportReport(customer) {
     customer = customer || App.activeCustomer;
-    const s = this.customerSummary(customer);
-    const esc = Dashboard.esc;
-    const money = (n) => this.fmtMoney(n);
-    const skillLabel = (sk) => sk === 'any' ? 'Any skill' : (this.SKILLS.find(x => x[0] === sk) || ['', sk])[1];
-    const arrRows = s.arrangements.map(a =>
-      '<tr><td>' + esc(a.label) + '</td><td>' + esc(skillLabel(a.skill)) + '</td>' +
-      '<td class="num">' + a.prepaid_points + '</td><td class="num">' + a.drawn_points + '</td><td class="num">' + a.remaining_points + '</td>' +
-      '<td class="num">' + money(a.amount_invoiced) + '</td></tr>').join('');
-    const projRows = s.projects.map(r =>
-      '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.status) + '</td>' +
-      '<td class="num">' + r.consumed_points + '</td><td class="num">' + r.prepaid_covered_points + '</td><td class="num">' + r.billable_points + '</td>' +
-      '<td class="num">' + money(r.billable_amount) + '</td><td class="num">' + money(r.cost) + '</td><td class="num">' + money(r.margin) + '</td></tr>').join('');
-    const w = window.open('', '_blank');
-    if (!w) { App.toast('Pop-up blocked — allow pop-ups to export', 'error'); return; }
-    w.document.write('<!DOCTYPE html><html><head><title>Billing &amp; Costs — ' + esc(customer) + '</title>' +
-      '<style>body{font-family:"Segoe UI",system-ui,sans-serif;max-width:880px;margin:28px auto;padding:0 24px;color:#111;font-size:12.5px}h1{font-size:19px;border-bottom:2px solid #2563eb;padding-bottom:8px}h2{font-size:13px;color:#2563eb;text-transform:uppercase;letter-spacing:.4px;margin-top:20px}table{width:100%;border-collapse:collapse;margin-top:6px}th,td{padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:left;font-size:12px}th{font-size:10.5px;text-transform:uppercase;color:#64748b}.num{text-align:right;font-variant-numeric:tabular-nums}.meta{font-size:11px;color:#64748b}.totals td{font-weight:700;border-top:2px solid #94a3b8}@media print{body{margin:14mm}}</style>' +
-      '</head><body><h1>Billing &amp; Costs — ' + esc(customer) + '</h1>' +
-      '<div class="meta">Internal · ' + new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + ' · currency ' + esc(s.currency) + ' · billing basis: completed work (EV); prepaid blocks draw down before T&amp;M</div>' +
-      '<h2>Prepaid / fixed arrangements</h2>' +
-      (s.arrangements.length
-        ? '<table><thead><tr><th>Arrangement</th><th>Skill</th><th class="num">Prepaid SP</th><th class="num">Drawn SP</th><th class="num">Remaining SP</th><th class="num">Invoiced upfront</th></tr></thead><tbody>' + arrRows + '</tbody></table>'
-        : '<div class="meta">None — all work bills as T&amp;M.</div>') +
-      '<h2>Projects (completed work to date)</h2>' +
-      (s.projects.length
-        ? '<table><thead><tr><th>Project</th><th>Status</th><th class="num">Done SP</th><th class="num">Prepaid SP</th><th class="num">T&amp;M SP</th><th class="num">T&amp;M billable</th><th class="num">Internal cost</th><th class="num">Margin</th></tr></thead><tbody>' + projRows +
-          '<tr class="totals"><td colspan="2">Totals</td><td class="num">' + s.totals.consumed_points + '</td><td class="num">' + s.totals.prepaid_covered_points + '</td><td class="num">' + s.totals.billable_points + '</td><td class="num">' + money(s.totals.billable_amount) + '</td><td class="num">' + money(s.totals.cost) + '</td><td class="num">' + money(s.totals.margin) + '</td></tr></tbody></table>'
-        : '<div class="meta">No completed work yet.</div>') +
-      '<h2>Summary</h2>' +
-      '<table><tbody>' +
-      '<tr><td>Fixed/prepaid invoiced upfront</td><td class="num">' + money(s.totals.fixed_invoiced) + '</td></tr>' +
-      '<tr><td>T&amp;M billable to date</td><td class="num">' + money(s.totals.billable_amount) + '</td></tr>' +
-      '<tr><td>Revenue recognised (prepaid drawdown + T&amp;M)</td><td class="num">' + money(s.totals.revenue) + '</td></tr>' +
-      '<tr><td>Internal cost of completed work</td><td class="num">' + money(s.totals.cost) + '</td></tr>' +
-      '<tr class="totals"><td>Margin</td><td class="num">' + money(s.totals.margin) + '</td></tr>' +
-      '</tbody></table>' +
-      '<script>window.onload=function(){window.print()}<\/script></body></html>');
-    w.document.close();
-    App.logChange(null, 'report_generated', '', 'billing_costs:' + customer, 'user', { event_type: 'report_generated' });
+    const doc = Reports.Builders.costsReport(customer);
+    Reports.open(Reports.Doc.toHtml(doc, Reports.Brand.for(customer)));
+    Reports.recordExport('costs_report', customer, {});
   },
 
   // --- Settings → Billing & Rates ---

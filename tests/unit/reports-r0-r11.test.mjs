@@ -205,10 +205,10 @@ describe('R1 / AC-R1.4 — Reports.Brand.set emits audit_log entry', () => {
   });
 });
 
-describe('R1 / AC-R1.5 — Reports.Catalogue lists all 7 reports', () => {
-  it('catalogue has 7 entries with required metadata keys', async () => {
+describe('R1 / AC-R1.5 — Reports.Catalogue lists all reports (7 core + costs_report)', () => {
+  it('catalogue has 8 entries with required metadata keys', async () => {
     const app = await bootEmpty();
-    expect(app.Reports.Catalogue.length).toBe(7);
+    expect(app.Reports.Catalogue.length).toBe(8);
     app.Reports.Catalogue.forEach(c => {
       expect(c.id).toBeTruthy();
       expect(c.title).toBeTruthy();
@@ -219,7 +219,7 @@ describe('R1 / AC-R1.5 — Reports.Catalogue lists all 7 reports', () => {
       expect('doesNotInclude' in c).toBe(true);
     });
     const ids = app.Reports.Catalogue.map(c => c.id).sort();
-    expect(ids).toEqual(['business_case', 'customer_pack', 'forum_agenda'.replace('forum_agenda', 'meeting_agenda'), 'portfolio_pack', 'sponsor_pack', 'sprint_brief', 'status_report'].sort());
+    expect(ids).toEqual(['business_case', 'costs_report', 'customer_pack', 'forum_agenda'.replace('forum_agenda', 'meeting_agenda'), 'portfolio_pack', 'sponsor_pack', 'sprint_brief', 'status_report'].sort());
     app.teardown();
   });
 });
