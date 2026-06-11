@@ -31,7 +31,7 @@ expected — these rules are the boundaries, not a script.
   numbered lists; narrative sections (summary, background) are prose.
 - Bullets start with a verb, are one to two lines, and never nest more
   than one level.
-- Dates in the form `12 June 2026`. Currency with ISO code (GBP 12,000).
+- Dates in the form `12 June 2026`. Currency in USD with the $ symbol (e.g. $12,000); state "USD, excl. taxes" once in Commercials.
 - Story-point or effort references use whole numbers.
 - Keep the whole document under ~1,800 words unless the source demands
   more; an SOW is a contract aid, not a proposal deck.
