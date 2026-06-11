@@ -6,6 +6,9 @@ import { openAppWithData } from './helpers';
 
 test('assistant opens from the header, shows connect-a-model state, routes to Settings → AI', async ({ page }) => {
   await openAppWithData(page);
+  // Fresh installs seed a local Ollama profile; the connect state is the
+  // explicitly-emptied-profiles state.
+  await page.evaluate(() => localStorage.setItem('pcc_ai_settings', JSON.stringify({ profiles: [], defaultProfileId: null, taskDefaults: {} })));
   await page.click('#btnAssistant');
   await expect(page.locator('#assistantPanel')).toHaveClass(/open/);
   await expect(page.locator('#assistantBody')).toContainText('Connect a model');
