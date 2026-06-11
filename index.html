@@ -36649,74 +36649,375 @@ const Reports = {
     return h;
   },
   Builders: {
-    // R2: Customer Pack. Routed through Reports.Doc.
+    // Every builder emits sections as { id, title, html, audiences } — the
+    // canonical contract Reports.Doc.toHtml renders. `audiences` gates
+    // customer-facing vs internal-only content at serialization time.
+    _AUD_BOTH: ['customer', 'internal'],
+    _AUD_INTERNAL: ['internal'],
+    // Shared risk-register table (token-styled via Reports.table).
+    _risksTable(risks, empty) {
+      return Reports.table({
+        columns: [
+          { key: 'description', label: 'Risk' },
+          { key: 'owner', label: 'Owner', width: '16%' },
+          { key: 'impact', label: 'I', align: 'right', width: '6%' },
+          { key: 'probability', label: 'P', align: 'right', width: '6%' },
+          { key: 'score', label: 'Score', align: 'right', width: '10%', cell: r => '<strong>' + ((r.impact || 0) * (r.probability || 0)) + '</strong>' }
+        ],
+        rows: risks || [],
+        empty: empty || 'No open risks'
+      });
+    },
+    // Risks the customer is allowed to see: narrative.customer_visible_risk_ids
+    // matched by risk id or register index (same rule as computeCustomerPackData).
+    _visibleRisks(p) {
+      const n = (p && p.narrative) || {};
+      const visibleIds = new Set(n.customer_visible_risk_ids || []);
+      return ((p && p.risks_register) || [])
+        .map((r, idx) => Object.assign({ _idx: idx }, r))
+        .filter(r => (r.status || 'open') !== 'closed' && (visibleIds.has(r.id) || visibleIds.has(String(r._idx))));
+    },
+    // R2: Customer Pack — customer-facing; every section is shareable and the
+    // risk section is pre-filtered to customer_visible_risk_ids.
     customerPack(customer) {
+      const esc = Dashboard.esc;
+      const both = Reports.Builders._AUD_BOTH.slice();
+      const data = (typeof App !== 'undefined' && App.computeCustomerPackData)
+        ? App.computeCustomerPackData(customer)
+        : { projects: [], key_asks: [] };
+      const headlines = data.projects.map(p =>
+        '<div style="margin-bottom:8px"><strong>' + esc(p.name) + '</strong> (' + esc(p.lifecycle_stage || 'Implementation') + ') — ' + esc(p.headline || '(no headline yet)') + '</div>'
+      ).join('') || '<p>No headlines captured yet.</p>';
+      const wins = data.projects.filter(p => (p.wins || []).length)
+        .map(p => '<li><strong>' + esc(p.name) + ':</strong> ' + p.wins.map(esc).join('; ') + '</li>').join('');
+      const asks = (data.key_asks || []).map(a => '<li><strong>' + esc(a.project) + ':</strong> ' + esc(a.ask) + '</li>').join('');
+      const riskRows = [];
+      data.projects.forEach(p => (p.visible_risks || []).forEach(r =>
+        riskRows.push({ project: p.name, desc: r.desc, score: r.score, mitigation: r.mitigation || '' })
+      ));
+      const risksHtml = Reports.table({
+        columns: [
+          { key: 'project', label: 'Project', width: '22%' },
+          { key: 'desc', label: 'Risk' },
+          { key: 'score', label: 'Score', align: 'right', width: '10%' },
+          { key: 'mitigation', label: 'Mitigation', width: '26%' }
+        ],
+        rows: riskRows,
+        empty: 'None visible to share'
+      });
+      const next = data.projects.map(p =>
+        '<div><strong>' + esc(p.name) + '</strong> — next sprint: ' + esc(p.next_sprint_id || 'TBD') + '</div>'
+      ).join('') || '<p>Nothing scheduled.</p>';
       const sections = [
-        { id: 'lifecycle', title: 'Lifecycle headlines', body: '' },
-        { id: 'wins', title: 'Wins', body: '' },
-        { id: 'asks', title: 'We need from you', body: '' },
-        { id: 'risks', title: 'Customer-visible risks', body: '' },
-        { id: 'next', title: 'What\'s next', body: '' }
+        { id: 'lifecycle', title: 'Lifecycle headlines', html: headlines, audiences: both },
+        { id: 'wins', title: 'Wins', html: wins ? '<ul>' + wins + '</ul>' : '<p>None recorded.</p>', audiences: both },
+        { id: 'asks', title: 'We need from you', html: asks ? '<ul>' + asks + '</ul>' : '<p>No asks this period.</p>', audiences: both },
+        { id: 'risks', title: 'Customer-visible risks', html: risksHtml, audiences: both },
+        { id: 'next', title: 'What\'s next', html: next, audiences: both }
       ];
       return Reports.Doc.buildDoc({
         reportType: 'customer_pack',
         title: 'Customer Pack — ' + (customer || ''),
-        customer, sections, classification: 'Confidential'
+        customer, sections, classification: 'Confidential', audience: 'customer'
       });
     },
-    // R3: Status Report — routes through Reports.Doc.
+    // R3: Status Report — internal cross-customer snapshot through Reports.Doc.
     statusReport() {
+      const esc = Dashboard.esc;
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
       const customers = (typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : [];
+      const projects = (typeof App !== 'undefined' && App.data && App.data.projects) || [];
+      const active = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+      const execHtml = '<p>' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + ' &middot; ' +
+        active.length + ' active project' + (active.length === 1 ? '' : 's') + ' &middot; ' +
+        '<span class="rp-rag-amber">' + active.filter(p => p.status === 'At Risk').length + ' at risk</span> &middot; ' +
+        '<span class="rp-rag-red">' + active.filter(p => p.status === 'Blocked').length + ' blocked</span></p>';
+      const exceptionsHtml = Reports.Builders._statusTable(
+        active.filter(p => p.status === 'At Risk' || p.status === 'Blocked'),
+        'No exceptions — nothing blocked or at risk'
+      );
+      const now = new Date();
+      const upcoming = active.filter(p => {
+        const d = p.hard_deadline || p.target_date;
+        if (!d) return false;
+        const diff = (new Date(d) - now) / 86400000;
+        return diff >= -3 && diff <= 60;
+      }).sort((a, b) => new Date(a.hard_deadline || a.target_date) - new Date(b.hard_deadline || b.target_date));
+      const upcomingHtml = Reports.table({
+        columns: [
+          { key: 'name', label: 'Project' },
+          { key: 'customer', label: 'Customer', width: '20%' },
+          { key: 'date', label: 'Date', width: '14%', cell: r => esc(r.hard_deadline || r.target_date || '') },
+          { key: 'type', label: 'Type', width: '14%', cell: r => r.hard_deadline ? 'Hard deadline' : 'Target' },
+          { key: 'status', label: 'Status', width: '14%' }
+        ],
+        rows: upcoming,
+        empty: 'No milestones in the next 60 days'
+      });
       const sections = [
-        { id: 'exec', title: 'Executive narrative', body: '' },
-        { id: 'exceptions', title: 'Exceptions', body: '' },
-        { id: 'upcoming', title: 'Upcoming milestones', body: '' }
-      ].concat(customers.map(c => ({ id: 'cust-' + c.toLowerCase().replace(/\s+/g, '-'), title: c, body: '' })));
+        { id: 'exec', title: 'Executive narrative', html: execHtml, audiences: internal },
+        { id: 'exceptions', title: 'Exceptions', html: exceptionsHtml, audiences: internal },
+        { id: 'upcoming', title: 'Upcoming milestones', html: upcomingHtml, audiences: internal }
+      ].concat(customers.map(c => ({
+        id: 'cust-' + c.toLowerCase().replace(/\s+/g, '-'),
+        title: c,
+        html: Reports.Builders._statusTable(active.filter(p => p.customer === c), 'No active projects'),
+        audiences: internal.slice()
+      })));
       return Reports.Doc.buildDoc({
         reportType: 'status_report',
         title: 'Portfolio Status Report',
         sections, classification: 'Internal'
       });
     },
-    // R2-R6: stubs delegated to existing Report.* builders where present.
+    // Shared per-project status table.
+    _statusTable(projects, empty) {
+      const esc = Dashboard.esc;
+      return Reports.table({
+        columns: [
+          { key: 'name', label: 'Project' },
+          { key: 'status', label: 'Status', width: '14%' },
+          { key: 'rag', label: 'RAG', width: '16%', cell: r => ['rag_schedule', 'rag_resourcing', 'rag_scope'].map(f => {
+              const v = r[f] || '';
+              const cls = v === 'Red' ? 'rp-rag-red' : v === 'Amber' ? 'rp-rag-amber' : 'rp-rag-green';
+              return '<span class="' + cls + '">' + esc(v.charAt(0) || '—') + '</span>';
+            }).join(' ') },
+          { key: 'manager', label: 'Manager', width: '16%' },
+          { key: 'size_total', label: 'Size', align: 'right', width: '8%' }
+        ],
+        rows: projects || [],
+        empty: empty || 'No projects'
+      });
+    },
+    // Project report (sponsor pack): customer-shareable narrative/milestones/
+    // visible risks + internal-only full register and business case.
     sponsorPack(projectId) {
-      if (typeof Report !== 'undefined' && Report.buildProjectPackDoc) return Report.buildProjectPackDoc(projectId);
-      return Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'Sponsor Pack', sections: [] });
+      const esc = Dashboard.esc;
+      const both = Reports.Builders._AUD_BOTH.slice();
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const p = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).find(x => x.id === projectId);
+      if (!p) return Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'Sponsor Pack', sections: [] });
+      const n = p.narrative || {};
+      const narrativeHtml = (n.headline ? '<p style="font-style:italic;font-size:var(--rp-fs-md)">' + esc(n.headline) + '</p>' : '') +
+        '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; <strong>Stage:</strong> ' + esc(p.lifecycle_stage || 'Implementation') + '</p>' +
+        '<p><strong>Status:</strong> ' + esc(p.status || '') + ' &middot; <strong>RAG:</strong> S=' + esc(p.rag_schedule || '—') + ' R=' + esc(p.rag_resourcing || '—') + ' P=' + esc(p.rag_scope || '—') + '</p>' +
+        '<p><strong>Dates:</strong> ' + esc(p.start_date || '—') + ' → ' + esc(p.target_date || '—') + (p.hard_deadline ? ' (hard ' + esc(p.hard_deadline) + ')' : '') + '</p>' +
+        (p.notes ? '<p>' + esc(p.notes) + '</p>' : '');
+      const milestonesHtml = '<ul>' +
+        (p.target_date ? '<li>Target: ' + esc(p.target_date) + '</li>' : '') +
+        (p.hard_deadline ? '<li>Hard deadline: ' + esc(p.hard_deadline) + '</li>' : '') +
+        ((p.data_sourcing && p.data_sourcing.uat_release_date) ? '<li>UAT release: ' + esc(p.data_sourcing.uat_release_date) + '</li>' : '') +
+        '</ul>';
+      const allRisks = (p.risks_register || []).slice().sort((a, b) =>
+        ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0))
+      ).slice(0, 5);
+      const bcHtml = Reports.Builders._businessCaseSummaryHtml(p);
+      return Reports.Doc.buildDoc({
+        reportType: 'sponsor_pack',
+        title: 'Sponsor Pack — ' + (p.name || ''),
+        subtitle: 'One-page brief for the project sponsor',
+        customer: p.customer,
+        sections: [
+          { id: 'pp-narrative', title: 'Narrative', html: narrativeHtml, audiences: both },
+          { id: 'pp-milestones', title: 'Milestones', html: milestonesHtml, audiences: both },
+          { id: 'pp-visible-risks', title: 'Customer-visible risks', html: Reports.Builders._risksTable(Reports.Builders._visibleRisks(p), 'None visible to share'), audiences: both },
+          { id: 'pp-risks', title: 'Risk register', html: Reports.Builders._risksTable(allRisks), audiences: internal },
+          { id: 'pp-business-case', title: 'Business case', html: bcHtml, audiences: internal }
+        ]
+      });
+    },
+    // Internal-only commercial summary: cost (BAC/EV/AC), NPV, WSJF.
+    _businessCaseSummaryHtml(p) {
+      const cost = (typeof App !== 'undefined' && App.computeProjectCost) ? App.computeProjectCost(p) : { BAC: 0, EV: 0, AC: 0 };
+      const wsjf = (typeof App !== 'undefined' && App.calculateWsjf) ? App.calculateWsjf(p) : { wsjf: 0, cod: 0, size: 1, populated: 0 };
+      const benefitAnnual = Number(p.benefit_annual_gbp || 0);
+      const horizonYears = Number(p.benefit_horizon_years || 3);
+      const rate = Number((typeof App !== 'undefined' && App.data && App.data.settings && App.data.settings.business_case_discount_rate) || 0.07);
+      let npv = -cost.BAC;
+      for (let y = 1; y <= horizonYears; y++) npv += benefitAnnual / Math.pow(1 + rate, y);
+      return '<p>Cost (BAC): <strong>£' + Number(cost.BAC || 0).toLocaleString('en-GB') + '</strong> &middot; EV £' + Number(cost.EV || 0).toLocaleString('en-GB') + ' &middot; AC £' + Number(cost.AC || 0).toLocaleString('en-GB') + '</p>' +
+        '<p>Annual benefit: <strong>£' + benefitAnnual.toLocaleString('en-GB') + '</strong> over ' + horizonYears + ' year' + (horizonYears === 1 ? '' : 's') + ' &middot; NPV (' + (rate * 100).toFixed(1) + '%): <strong>£' + Math.round(npv).toLocaleString('en-GB') + '</strong></p>' +
+        '<p>WSJF: <strong>' + (wsjf.wsjf || 0) + '</strong> (CoD ' + (wsjf.cod || 0) + ' / size ' + (wsjf.size || 1) + ', ' + (wsjf.populated || 0) + ' inputs populated)</p>';
     },
     businessCase(projectId) {
-      const p = (typeof App !== 'undefined' && App.data && App.data.projects || []).find(x => x.id === projectId);
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const p = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).find(x => x.id === projectId);
       if (!p) return Reports.Doc.buildDoc({ reportType: 'business_case', title: 'Business Case', sections: [] });
       return Reports.Doc.buildDoc({
         reportType: 'business_case',
         title: 'Business Case — ' + (p.name || ''),
+        subtitle: 'Outline: cost / benefit / NPV / WSJF',
+        customer: p.customer,
         sections: [
-          { id: 'status', title: 'Status', body: '' },
-          { id: 'cashflow', title: 'Year-by-year cashflow', body: '' },
-          { id: 'npv', title: 'NPV', body: '' },
-          { id: 'sensitivity', title: 'Sensitivity envelope', body: '' }
+          { id: 'bc-summary', title: 'Cost, NPV & WSJF', html: Reports.Builders._businessCaseSummaryHtml(p), audiences: internal }
         ]
       });
     },
+    // Per-member work plan for one sprint. Internal only.
     sprintBrief(customer, sprintId) {
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const projects = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).filter(p => p.customer === customer);
+      const members = ((typeof App !== 'undefined' && App.data && App.data.team_members) || []).filter(tm => {
+        const c = (tm.customer || '').toLowerCase();
+        return !customer || c === customer.toLowerCase() || c === 'both';
+      });
+      const sections = members.map(tm => {
+        const items = [];
+        projects.forEach(p => {
+          Object.entries(p.skill_splits || {}).forEach(([sk, arr]) => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach(sp => {
+              if (sp.sprint !== sprintId) return;
+              (sp.assigned_to || []).forEach(a => {
+                if (a.member === tm.name) items.push({ project: p.name, skill: sk.replace(/^size_/, ''), points: a.points || 0, lifecycle: p.lifecycle_stage || 'Implementation' });
+              });
+            });
+          });
+        });
+        const html = Reports.table({
+          columns: [
+            { key: 'project', label: 'Project' },
+            { key: 'skill', label: 'Skill', width: '20%' },
+            { key: 'points', label: 'Points', align: 'right', width: '12%' },
+            { key: 'lifecycle', label: 'Stage', width: '20%' }
+          ],
+          rows: items,
+          empty: 'No assignments this sprint'
+        });
+        return { id: 'sb-' + (tm.name || '').replace(/\s+/g, '-'), title: tm.name, html, audiences: internal.slice() };
+      });
       return Reports.Doc.buildDoc({
         reportType: 'sprint_brief',
         title: 'Sprint Brief — ' + (sprintId || ''),
-        customer, sections: [{ id: 'commitment', title: 'Sprint commitment', body: '' }]
+        subtitle: 'Per-member work plan for ' + (sprintId || ''),
+        customer, sections
       });
     },
+    // Internal portfolio summary for one customer. Customer-shareable health
+    // headline + visible risks; status detail, EVM and the full register stay internal.
     portfolioPack(customer) {
+      const esc = Dashboard.esc;
+      const both = Reports.Builders._AUD_BOTH.slice();
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const all = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).filter(p => p.customer === customer);
+      const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+      const health = (typeof App !== 'undefined' && App.portfolioHealth) ? App.portfolioHealth(customer) : null;
+      const execHtml = health
+        ? '<p>Active: <strong>' + health.active + '</strong> &middot; ' +
+          '<span class="rp-rag-green">On track: ' + health.onTrackCount + '</span> &middot; ' +
+          '<span class="rp-rag-amber">At risk: ' + health.atRisk + '</span> &middot; ' +
+          '<span class="rp-rag-red">Blocked: ' + health.blocked + '</span> &middot; ' +
+          'Complete (FY): ' + (all.length - active.length) + '</p>'
+        : '<p>' + active.length + ' active projects.</p>';
+      const statusHtml = Reports.Builders._statusTable(
+        all.slice().sort((a, b) => (a.priority || 999) - (b.priority || 999)),
+        'No projects for this customer'
+      );
+      const now = new Date();
+      const milestones = active.filter(p => {
+        const d = p.hard_deadline || p.target_date;
+        if (!d) return false;
+        const diff = (new Date(d) - now) / 86400000;
+        return diff >= -3 && diff <= 60;
+      }).sort((a, b) => new Date(a.hard_deadline || a.target_date) - new Date(b.hard_deadline || b.target_date));
+      const milestonesHtml = Reports.table({
+        columns: [
+          { key: 'name', label: 'Project' },
+          { key: 'date', label: 'Date', width: '16%', cell: r => esc(r.hard_deadline || r.target_date || '') },
+          { key: 'type', label: 'Type', width: '16%', cell: r => r.hard_deadline ? 'Hard deadline' : 'Target' },
+          { key: 'status', label: 'Status', width: '16%' }
+        ],
+        rows: milestones,
+        empty: 'No milestones in the next 60 days'
+      });
+      let evmHtml = '<p>EVM unavailable (no baseline).</p>';
+      if (typeof Forecast !== 'undefined' && Forecast.earnedValue) {
+        let BAC = 0, EV = 0, PV = 0, AC = 0, spiSum = 0, spiCount = 0, cpiSum = 0, cpiCount = 0;
+        active.forEach(p => {
+          const ev = Forecast.earnedValue(p);
+          if (!ev || ev.BAC === 0) return;
+          BAC += ev.BAC; EV += ev.EV; AC += ev.AC;
+          if (ev.PV != null) PV += ev.PV;
+          if (ev.SPI != null) { spiCount++; spiSum += ev.SPI; }
+          if (ev.CPI != null) { cpiCount++; cpiSum += ev.CPI; }
+        });
+        if (BAC > 0) {
+          evmHtml = '<p>BAC ' + BAC + ' &middot; EV ' + EV + ' &middot; PV ' + Math.round(PV) + ' &middot; AC ' + AC +
+            ' &middot; Avg SPI ' + (spiCount ? (spiSum / spiCount).toFixed(2) : '—') +
+            ' &middot; Avg CPI ' + (cpiCount ? (cpiSum / cpiCount).toFixed(2) : '—') + '</p>';
+        }
+      }
+      const visibleRows = [];
+      const fullRows = [];
+      active.forEach(p => {
+        Reports.Builders._visibleRisks(p).forEach(r => visibleRows.push(Object.assign({}, r, { description: (p.name ? p.name + ': ' : '') + (r.description || '') })));
+        (p.risks_register || []).forEach(r => {
+          if ((r.status || 'open') === 'closed') return;
+          fullRows.push(Object.assign({}, r, { description: (p.name ? p.name + ': ' : '') + (r.description || '') }));
+        });
+      });
+      fullRows.sort((a, b) => ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0)));
       return Reports.Doc.buildDoc({
         reportType: 'portfolio_pack',
         title: 'Portfolio Pack — ' + (customer || ''),
-        customer, sections: [{ id: 'portfolio', title: 'Portfolio', body: '' }]
+        customer,
+        sections: [
+          { id: 'exec', title: 'Executive summary', html: execHtml, audiences: both },
+          { id: 'status', title: 'Portfolio status', html: statusHtml, audiences: internal },
+          { id: 'milestones', title: 'Upcoming milestones (next 60 days)', html: milestonesHtml, audiences: both },
+          { id: 'evm', title: 'Earned value roll-up', html: evmHtml, audiences: internal },
+          { id: 'visible-risks', title: 'Customer-visible risks', html: Reports.Builders._risksTable(visibleRows, 'None visible to share'), audiences: both },
+          { id: 'risks', title: 'Risk register', html: Reports.Builders._risksTable(fullRows.slice(0, 10)), audiences: internal }
+        ]
       });
     },
+    // Governance forum agenda pre-read. Internal only.
     forumAgenda(forumId) {
-      const forum = (typeof App !== 'undefined' && App.data && App.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
+      const esc = Dashboard.esc;
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const forum = ((typeof App !== 'undefined' && App.data && App.data.governance_forums) || []).find(f => f.id === forumId || f.name === forumId);
+      if (!forum) return Reports.Doc.buildDoc({ reportType: 'meeting_agenda', title: 'Agenda — ' + (forumId || ''), sections: [] });
+      const linked = ((App.data && App.data.projects) || []).filter(p =>
+        p.governance_forum === forum.id || p.governance_forum === forum.name
+      );
+      const projectsHtml = linked.length
+        ? '<ul>' + linked.map(p => {
+            const np = p.narrative || {};
+            let block = '';
+            if (np.headline) block += '<p style="font-style:italic;margin:4px 0 6px 0">' + esc(np.headline) + '</p>';
+            if ((np.wins || []).length) block += '<div style="font-size:var(--rp-fs-2xs);color:var(--rp-muted)"><strong>Wins:</strong> ' + np.wins.map(esc).join('; ') + '</div>';
+            if ((np.asks || []).length) block += '<div style="font-size:var(--rp-fs-2xs);color:var(--rp-muted)"><strong>Asks:</strong> ' + np.asks.map(esc).join('; ') + '</div>';
+            return '<li><strong>' + esc(p.name) + '</strong> &mdash; ' + esc(p.status) + ' &middot; RAG ' + esc(p.rag_schedule || '') + '/' + esc(p.rag_resourcing || '') + '/' + esc(p.rag_scope || '') +
+              (block ? '<div style="margin-top:4px">' + block + '</div>' : '') + '</li>';
+          }).join('') + '</ul>'
+        : '<p>No projects linked to this meeting.</p>';
+      const openActions = (forum.actions || []).filter(a => a.status !== 'Done');
+      const actionsHtml = Reports.table({
+        columns: [
+          { key: 'description', label: 'Action' },
+          { key: 'owner', label: 'Owner', width: '20%' },
+          { key: 'due_date', label: 'Due', width: '16%' }
+        ],
+        rows: openActions,
+        empty: 'No open actions'
+      });
+      const escalated = [];
+      linked.forEach(p => (p.risks_register || []).forEach(r => {
+        if ((r.escalation_severity || '').toLowerCase() === 'high' || ((r.impact || 0) * (r.probability || 0)) >= 16) {
+          escalated.push(Object.assign({}, r, { description: (p.name ? p.name + ': ' : '') + (r.description || '') }));
+        }
+      }));
+      escalated.sort((a, b) => ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0)));
       return Reports.Doc.buildDoc({
         reportType: 'meeting_agenda',
-        title: 'Agenda — ' + (forum ? forum.name : (forumId || '')),
-        sections: [{ id: 'agenda', title: 'Agenda', body: '' }]
+        title: 'Agenda — ' + forum.name,
+        subtitle: forum.next_date ? ('Next meeting ' + forum.next_date) : 'Pre-read',
+        customer: linked[0] ? linked[0].customer : '',
+        sections: [
+          { id: 'fa-projects', title: 'Linked projects', html: projectsHtml, audiences: internal },
+          { id: 'fa-actions', title: 'Open actions', html: actionsHtml, audiences: internal.slice() },
+          { id: 'fa-risks', title: 'Escalated risks', html: Reports.Builders._risksTable(escalated.slice(0, 10), 'No escalated risks'), audiences: internal.slice() }
+        ]
       });
     }
   },

@@ -393,9 +393,9 @@ git commit -m "feat(reports): Reports.open delivery + Reports.generate single en
 
 **Files:** Modify `index.html` (`Reports.Builders.customerPack` 36563, `portfolioPack` 36617, `sponsorPack` 36592, `businessCase` 36596, `sprintBrief` 36610, `forumAgenda` 36624); extend `tests/unit/reports-r0-r11.test.mjs` or create `tests/render/reports-briefs.test.mjs`
 
-- [ ] **Step 1: Read all six builders** (lines 36561–36631) and note their current section shapes. Each must emit sections as `{ id, title, html, audiences }`. `sponsorPack` currently delegates to legacy `Report.buildProjectPackDoc` — re-point it to build via `Reports.Doc.buildDoc` directly (do NOT call legacy).
+- [x] **Step 1: Read all six builders** (lines 36561–36631) and note their current section shapes. Each must emit sections as `{ id, title, html, audiences }`. `sponsorPack` currently delegates to legacy `Report.buildProjectPackDoc` — re-point it to build via `Reports.Doc.buildDoc` directly (do NOT call legacy).
 
-- [ ] **Step 2: Write the failing test** — `tests/render/reports-briefs.test.mjs`:
+- [x] **Step 2: Write the failing test** — `tests/render/reports-briefs.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -439,11 +439,11 @@ describe('Brief builders emit the section contract', () => {
 });
 ```
 
-- [ ] **Step 3: Update the builders.** For each builder: build sections as `{id,title,html,audiences}`. `sponsorPack` → Project report: narrative/milestones/status sections `audiences:['customer','internal']`; a Business Case section (cost/NPV/WSJF via `App.computeProjectCost`/`App.calculateWsjf`) tagged `audiences:['internal']`; risk section filtered to `customer_visible_risk_ids` when audience customer (do the filtering in the section's html using `App` data — or include both a customer-risk section `['customer','internal']` listing only visible risks and a full-risk section `['internal']`). `customerPack`/`portfolioPack` already exist — ensure their sections carry `audiences` and the risk section respects `customer_visible_risk_ids`. Render all tables via `Reports.table`. Use `Dashboard.esc` on all user content.
+- [x] **Step 3: Update the builders.** For each builder: build sections as `{id,title,html,audiences}`. `sponsorPack` → Project report: narrative/milestones/status sections `audiences:['customer','internal']`; a Business Case section (cost/NPV/WSJF via `App.computeProjectCost`/`App.calculateWsjf`) tagged `audiences:['internal']`; risk section filtered to `customer_visible_risk_ids` when audience customer (do the filtering in the section's html using `App` data — or include both a customer-risk section `['customer','internal']` listing only visible risks and a full-risk section `['internal']`). `customerPack`/`portfolioPack` already exist — ensure their sections carry `audiences` and the risk section respects `customer_visible_risk_ids`. Render all tables via `Reports.table`. Use `Dashboard.esc` on all user content.
 
-- [ ] **Step 4: Run the test + regression** — `npx vitest run tests/render/reports-briefs.test.mjs && npx vitest run tests/unit/reports-r0-r11.test.mjs`. Fix any reports-r0-r11 assertions that referenced the old section shape (update them to the contract; do NOT weaken intent).
+- [x] **Step 4: Run the test + regression** — `npx vitest run tests/render/reports-briefs.test.mjs && npx vitest run tests/unit/reports-r0-r11.test.mjs`. Fix any reports-r0-r11 assertions that referenced the old section shape (update them to the contract; do NOT weaken intent).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/render/reports-briefs.test.mjs tests/unit/reports-r0-r11.test.mjs
