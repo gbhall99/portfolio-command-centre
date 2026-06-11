@@ -204,7 +204,7 @@ git commit -m "feat(reports): shared token-styled table renderer (Reports.table)
 
 **Files:** Modify `index.html` (`Reports.Doc`, add `toHtml` + `_filterSections`; extend `buildDoc` to carry `audience`); Create `tests/render/reports-tohtml.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — `tests/render/reports-tohtml.test.mjs`:
+- [x] **Step 1: Write the failing test** — `tests/render/reports-tohtml.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -247,11 +247,11 @@ describe('Reports.Doc.toHtml', () => {
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-tohtml.test.mjs`.
+- [x] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-tohtml.test.mjs`.
 
-- [ ] **Step 3a: Thread `audience` through `buildDoc`.** In `Reports.Doc.buildDoc` (line 36455–36481), add to the returned object: `audience: opts.audience || 'internal',`.
+- [x] **Step 3a: Thread `audience` through `buildDoc`.** In `Reports.Doc.buildDoc` (line 36455–36481), add to the returned object: `audience: opts.audience || 'internal',`.
 
-- [ ] **Step 3b: Add `_filterSections` + `toHtml` to `Reports.Doc`** (inside the `Doc` object, after `buildDoc`). Port the legacy cover/toc/appendix/classification rendering, but render sections from the `{id,title,html,audiences}` contract and gate by audience:
+- [x] **Step 3b: Add `_filterSections` + `toHtml` to `Reports.Doc`** (inside the `Doc` object, after `buildDoc`). Port the legacy cover/toc/appendix/classification rendering, but render sections from the `{id,title,html,audiences}` contract and gate by audience:
 
 ```javascript
     _filterSections(sections, audience) {
@@ -290,9 +290,9 @@ describe('Reports.Doc.toHtml', () => {
     },
 ```
 
-- [ ] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-tohtml.test.mjs`.
+- [x] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-tohtml.test.mjs`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/render/reports-tohtml.test.mjs

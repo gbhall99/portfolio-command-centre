@@ -36530,8 +36530,44 @@ const Reports = {
         classification,
         classificationBand: Reports._classificationBand(classification),
         sections,
-        appendix: includeAppendix ? (opts.appendix || []) : []
+        appendix: includeAppendix ? (opts.appendix || []) : [],
+        audience: opts.audience || 'internal'
       };
+    },
+    // Audience gating: missing/empty audiences ⇒ shown to all (back-compat).
+    _filterSections(sections, audience) {
+      return (sections || []).filter(s => !s.audiences || !s.audiences.length || s.audiences.indexOf(audience) >= 0);
+    },
+    toHtml(doc, brand) {
+      doc = doc || {};
+      brand = brand || (typeof Reports !== 'undefined' ? Reports.Brand.for(doc.customer) : {});
+      const esc = Dashboard.esc;
+      const audience = doc.audience || 'internal';
+      const sections = this._filterSections(doc.sections, audience);
+      const bandColor = (doc.classificationBand && doc.classificationBand.color) || Reports._CLASSIFICATION_BAND_COLOR[doc.classification] || 'transparent';
+      const classLine = doc.classification
+        ? '<div class="rp-classification" style="color:' + bandColor + '">' + esc(doc.classification) + (audience === 'customer' ? ' — shared' : '') + '</div>'
+        : '';
+      const cover = doc.coverPage
+        ? '<div class="rp-cover">' + classLine +
+            '<div class="rp-cover-title">' + esc(doc.title || '') + '</div>' +
+            (doc.subtitle ? '<div style="color:var(--rp-muted)">' + esc(doc.subtitle) + '</div>' : '') +
+            (doc.customer ? '<div style="color:var(--rp-faint);font-size:var(--rp-fs-xs);margin-top:6px">' + esc(doc.customer) + '</div>' : '') +
+          '</div>'
+        : '';
+      const toc = doc.tocPage && sections.length >= 3
+        ? '<div class="rp-section rp-toc"><div class="rp-section-title">Contents</div><ol>' +
+            sections.map(s => '<li>' + esc(s.title || '') + '</li>').join('') + '</ol></div>'
+        : '';
+      const body = sections.map(s =>
+        '<div class="rp-section" id="rp-' + esc(s.id || '') + '"><div class="rp-section-title">' + esc(s.title || '') + '</div>' + (s.html || '') + '</div>'
+      ).join('');
+      const appendix = (doc.appendix && doc.appendix.length)
+        ? '<div class="rp-section"><div class="rp-section-title">Appendix</div>' + doc.appendix.map(a => a.html || '').join('') + '</div>'
+        : '';
+      return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Report') + '</title>' +
+        Reports.tokens(brand) + '</head><body><div class="rp-page">' +
+        cover + toc + body + appendix + '</div></body></html>';
     }
   },
   _classificationBand(classification) {
