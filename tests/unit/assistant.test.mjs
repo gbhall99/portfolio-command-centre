@@ -29,7 +29,9 @@ function configureMock() {
 
 describe('no-AI mode', () => {
   it('shows the connect-a-model empty state and leaves the app functional', () => {
-    const { Assistant, document } = app;
+    const { Assistant, AI, window, document } = app;
+    // "No AI" = explicitly emptied profiles (a fresh install seeds Ollama).
+    window.localStorage.setItem(AI.STORAGE_KEY, JSON.stringify({ profiles: [], defaultProfileId: null, taskDefaults: {} }));
     Assistant.open();
     const body = document.getElementById('assistantBody');
     expect(body.textContent).toContain('Connect a model');

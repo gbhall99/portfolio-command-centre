@@ -9,7 +9,7 @@ describe('Assistant panel render', () => {
     resetIdSeq();
     const app = await loadApp(makeDataset({ projects: [makeProject()] }));
     app.App.activeCustomer = 'Acme Industries';
-    app.window.localStorage.removeItem(app.AI.STORAGE_KEY);
+    app.window.localStorage.setItem(app.AI.STORAGE_KEY, JSON.stringify({ profiles: [], defaultProfileId: null, taskDefaults: {} }));
     app.Assistant.open();
     const html = app.document.getElementById('assistantBody').innerHTML;
     await expect(html).toMatchFileSnapshot('./__snapshots__/assistant-no-ai.html');
