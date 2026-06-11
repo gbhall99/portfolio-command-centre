@@ -546,9 +546,9 @@ git commit -m "refactor(reports): delete legacy brief builders now served by Rep
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full suite** — `npm test`. Expect all green.
-- [ ] **Step 2: Serve + visual** — `python3 -m http.server 8765 --bind 127.0.0.1`; drive `http://127.0.0.1:8765/index.html`, load demo, pick a customer. Generate Project report (Internal + Customer-facing) and Portfolio report (both audiences). Verify at 1440px: cover/classification/footer present; tables use the app RAG colours (#0d9488/#d97706/#dc2626) and match the on-screen table look; customer-facing hides EVM/internal risks; no console errors; the print dialog opens.
-- [ ] **Step 3: Commit any tweak** — `git add -A && git commit -m "chore: WS-E phase 1 verification"` (skip if none).
+- [x] **Step 1: Full suite** — `npm test`. Expect all green.
+- [x] **Step 2: Serve + visual** — `python3 -m http.server 8765 --bind 127.0.0.1`; drive `http://127.0.0.1:8765/index.html`, load demo, pick a customer. Generate Project report (Internal + Customer-facing) and Portfolio report (both audiences). Verify at 1440px: cover/classification/footer present; tables use the app RAG colours (#0d9488/#d97706/#dc2626) and match the on-screen table look; customer-facing hides EVM/internal risks; no console errors; the print dialog opens.
+- [x] **Step 3: Commit any tweak** — `git add -A && git commit -m "chore: WS-E phase 1 verification"` (skip if none). *(Tweak made: the engine emitted no document footer — added `.rp-footer` to `Reports.tokens` and a classification + generated-date + customer footer line to `Reports.Doc.toHtml`.)*
 
 ---
 
