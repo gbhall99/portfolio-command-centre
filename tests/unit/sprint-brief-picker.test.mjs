@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makeProject, makeSprintSequence, makeMember } from '../harness/fixtures.mjs';
 
-describe('Report.openSprintBriefPicker', () => {
+describe('Reports.openSprintBriefPicker', () => {
   it('exists as a function', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject()], sprints: makeSprintSequence(3) }));
-    expect(typeof app.Report.openSprintBriefPicker).toBe('function');
+    expect(typeof app.Reports.openSprintBriefPicker).toBe('function');
     app.teardown();
   });
 });
@@ -44,7 +44,7 @@ describe('Sprint picker default selection', () => {
     const restore = patchWindowDate(app.window, '2026-05-05');
     try {
       app.App.activeCustomer = 'Acme Industries';
-      app.Report.openSprintBriefPicker();
+      app.Reports.openSprintBriefPicker();
       const checked = app.window.document.querySelector('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked');
       expect(checked).not.toBeNull();
       expect(checked.value).toBe('CY26-S2');
@@ -61,7 +61,7 @@ describe('Sprint picker default selection', () => {
     const restore = patchWindowDate(app.window, '2026-05-05');
     try {
       app.App.activeCustomer = 'Acme Industries';
-      app.Report.openSprintBriefPicker();
+      app.Reports.openSprintBriefPicker();
       const checked = app.window.document.querySelector('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked');
       expect(checked.value).toBe('CY26-S2');
     } finally { restore(); app.teardown(); }
@@ -77,7 +77,7 @@ describe('Sprint picker default selection', () => {
     const restore = patchWindowDate(app.window, '2026-05-05');
     try {
       app.App.activeCustomer = 'Acme Industries';
-      app.Report.openSprintBriefPicker();
+      app.Reports.openSprintBriefPicker();
       const checked = app.window.document.querySelector('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked');
       expect(checked.value).toBe('CY26-S2');
     } finally { restore(); app.teardown(); }
@@ -86,7 +86,7 @@ describe('Sprint picker default selection', () => {
   it('shows empty state when no sprints exist', async () => {
     const app = await loadApp(makeDataset({ projects: [makeProject({ customer: 'Acme Industries' })], sprints: [], team_members: [makeMember()] }));
     app.App.activeCustomer = 'Acme Industries';
-    app.Report.openSprintBriefPicker();
+    app.Reports.openSprintBriefPicker();
     const overlay = app.window.document.getElementById('sprintBriefPickerOverlay');
     expect(overlay).not.toBeNull();
     expect(overlay.textContent).toContain('No sprints configured');

@@ -356,12 +356,16 @@ describe('R6 / AC-R6.1 — dedupeForumActions matches on {description, owner, du
 });
 
 // ============================================================
-// R7 — Walkthrough Minutes removal (verification — already removed)
+// R7 — Walkthrough Minutes (WS-E Task 13: the legacy Report engine is deleted,
+// so minutes now render through the unified engine's builder — the single
+// document path replaces the old "no duplicate builder" guarantee).
 // ============================================================
-describe('R7 / AC-R7.4 — Walkthrough Minutes builders deleted', () => {
-  it('Reports.Builders has no walkthroughMinutes entry', async () => {
+describe('R7 / AC-R7.4 — Walkthrough Minutes renders through the unified engine', () => {
+  it('Reports.Builders.walkthroughMinutes is the engine builder (no legacy duplicate)', async () => {
     const app = await bootEmpty();
-    expect(app.Reports.Builders.walkthroughMinutes).toBeUndefined();
+    expect(typeof app.Reports.Builders.walkthroughMinutes).toBe('function');
+    // Unknown walkthroughs build nothing (generate() will toast, not throw).
+    expect(app.Reports._build('walkthrough_minutes', { walkthroughId: 'nope' })).toBeNull();
     app.teardown();
   });
 });

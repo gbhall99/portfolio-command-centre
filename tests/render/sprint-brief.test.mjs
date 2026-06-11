@@ -14,10 +14,10 @@ describe('Sprint Brief PDF', () => {
     });
     proj.size_total = 10;
     const app = await loadApp(makeDataset({ projects: [proj], sprints, team_members: [makeMember({ name: 'Alice' })] }));
-    const Report = app.window.__pcc__.Report;
-    const doc = Report.buildSprintBriefDoc('Acme Industries', sprints[0].sprint_id);
+    const Reports = app.window.__pcc__.Reports;
+    const doc = Reports.Builders.sprintBrief('Acme Industries', sprints[0].sprint_id);
     expect(doc).toBeDefined();
-    const html = String(doc);
+    const html = Reports.Doc.toHtml(doc, {});
     expect(html).toMatch(/Sprint Brief/);
     expect(html).toMatch(/Alice/);
     expect(html).toMatch(/Demo/);

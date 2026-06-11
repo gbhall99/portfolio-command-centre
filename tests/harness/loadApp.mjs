@@ -24,7 +24,7 @@ const INDEX_HTML_PATH = path.join(REPO_ROOT, 'index.html');
  *                            without any data hydration (file-loader state).
  * @param {object} [opts]
  * @param {boolean} [opts.silent=true]  Suppress console.* from the app.
- * @returns {Promise<{ window, document, App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report, Walkthrough, RaidIntel, RaidView, teardown }>}
+ * @returns {Promise<{ window, document, App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Walkthrough, RaidIntel, RaidView, teardown }>}
  */
 export async function loadApp(fixture, opts = {}) {
   const silent = opts.silent !== false;
@@ -35,7 +35,7 @@ export async function loadApp(fixture, opts = {}) {
   // </body> only — the source contains other </body> substrings inside JS template strings (report
   // generation code), and replacing those would corrupt the inline scripts.
   const bridge =
-    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Report, Walkthrough, Personas, Person, Objectives, Products, MetricGroups, Metrics, Strategy, MetricsView, PersonasView, ProductsView, Overview, RAID, Delivery, Format, Reports, ReportsHub, RaidIntel, RaidView, MyActions, AI, AgentTools, Agent, Assistant, Kanban, Definitions, Skills, Sow, SowSkill, Wireframe, WireframeSkill, Billing, StatusReport, StatusReportSkill };</script>';
+    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Walkthrough, Personas, Person, Objectives, Products, MetricGroups, Metrics, Strategy, MetricsView, PersonasView, ProductsView, Overview, RAID, Delivery, Format, Reports, ReportsHub, RaidIntel, RaidView, MyActions, AI, AgentTools, Agent, Assistant, Kanban, Definitions, Skills, Sow, SowSkill, Wireframe, WireframeSkill, Billing, StatusReport, StatusReportSkill };</script>';
   const lastBody = indexHtml.lastIndexOf('</body>');
   if (lastBody === -1) throw new Error('Could not find </body> in index.html');
   indexHtml = indexHtml.slice(0, lastBody) + bridge + indexHtml.slice(lastBody);
@@ -119,7 +119,6 @@ export async function loadApp(fixture, opts = {}) {
     DetailPanel: handles.DetailPanel,
     AuditPanel: handles.AuditPanel,
     Forecast: handles.Forecast,
-    Report: handles.Report,
     Walkthrough: handles.Walkthrough,
     Overview: handles.Overview,
     RAID: handles.RAID,

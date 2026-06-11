@@ -84,8 +84,8 @@ describe('Pack enrichment from project.narrative', () => {
     a.governance_forum = 'Reporting & Delivery Strategy';
     const forums = [{ id: 'F1', name: 'Reporting & Delivery Strategy', customer: 'Acme Industries', actions: [], decisions: [] }];
     const app = await loadApp(makeDataset({ projects: [a], governance_forums: forums, sprints: makeSprintSequence(2) }));
-    const builder = app.Report.buildForumPackDoc || app.Report.buildAgendaDoc;
-    const html = builder.call(app.Report, 'F1');
+    // WS-E: the forum pack renders through the unified engine builder.
+    const html = app.Reports.Doc.toHtml(app.Reports.Builders.forumAgenda('F1'), {});
     expect(html).toMatch(/Steady delivery/);
     expect(html).toMatch(/UAT prep done/);
     expect(html).toMatch(/Approval for phase 2/);

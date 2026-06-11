@@ -669,8 +669,8 @@ git commit -m "feat(reports): Documents/Reports hub view + catalogue audience me
 
 **Files:** Modify `index.html` (remove remaining legacy `Report.*` renderer + any bespoke print left); Create `tests/unit/reports-single-engine.test.mjs`
 
-- [ ] **Step 1: Migrate the last callers.** Re-point `Report.exportSprintBrief`/`openSprintBriefPicker`, `Report.exportWalkthroughMinutes`, and the meeting-agenda path to `Reports.generate` (or, for walkthrough minutes, a `Reports` builder). Confirm via grep that nothing calls `Report.open`, `Report.buildDoc`, `Report._baseStyles`, `Billing.exportReport`'s old body, or `StatusReportSkill`'s old print.
-- [ ] **Step 2: Write the guard test** — `tests/unit/reports-single-engine.test.mjs`:
+- [x] **Step 1: Migrate the last callers.** Re-point `Report.exportSprintBrief`/`openSprintBriefPicker`, `Report.exportWalkthroughMinutes`, and the meeting-agenda path to `Reports.generate` (or, for walkthrough minutes, a `Reports` builder). Confirm via grep that nothing calls `Report.open`, `Report.buildDoc`, `Report._baseStyles`, `Billing.exportReport`'s old body, or `StatusReportSkill`'s old print.
+- [x] **Step 2: Write the guard test** — `tests/unit/reports-single-engine.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -694,10 +694,10 @@ describe('single document engine', () => {
 });
 ```
 
-- [ ] **Step 3: Run, verify FAIL** — `npx vitest run tests/unit/reports-single-engine.test.mjs`.
-- [ ] **Step 4: Delete the remaining legacy `Report.*`** serializer/helpers (`buildDoc`, `_baseStyles`, `_coverPage`, `_tocPage`, `_appendix`, `open`, `execSummaryHtml`, `_ragDot`, the remaining `build*Doc`/`export*`). Keep `branding`/`setBranding`/`configureBranding` ONLY if not already mirrored by `Reports.Brand` — otherwise migrate the branding settings UI to `Reports.Brand` and delete them too. Ensure no other surface calls bare `window.open('','_blank')` for a document (route through `Reports.open`).
-- [ ] **Step 5: Run guard + full suite** — `npx vitest run tests/unit/reports-single-engine.test.mjs && npm test`. All green.
-- [ ] **Step 6: Commit**
+- [x] **Step 3: Run, verify FAIL** — `npx vitest run tests/unit/reports-single-engine.test.mjs`.
+- [x] **Step 4: Delete the remaining legacy `Report.*`** serializer/helpers (`buildDoc`, `_baseStyles`, `_coverPage`, `_tocPage`, `_appendix`, `open`, `execSummaryHtml`, `_ragDot`, the remaining `build*Doc`/`export*`). Keep `branding`/`setBranding`/`configureBranding` ONLY if not already mirrored by `Reports.Brand` — otherwise migrate the branding settings UI to `Reports.Brand` and delete them too. Ensure no other surface calls bare `window.open('','_blank')` for a document (route through `Reports.open`).
+- [x] **Step 5: Run guard + full suite** — `npx vitest run tests/unit/reports-single-engine.test.mjs && npm test`. All green.
+- [x] **Step 6: Commit**
 
 ```bash
 git add index.html tests/unit/reports-single-engine.test.mjs
