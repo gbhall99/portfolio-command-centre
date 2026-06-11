@@ -127,7 +127,7 @@ git commit -m "feat(reports): token-derived print stylesheet (Reports.tokens) fo
 
 **Files:** Modify `index.html` (add to `Reports`, after `tokens`); Create `tests/render/reports-table.test.mjs`
 
-- [ ] **Step 1: Write the failing test** — `tests/render/reports-table.test.mjs`:
+- [x] **Step 1: Write the failing test** — `tests/render/reports-table.test.mjs`:
 
 ```javascript
 import { describe, it, expect } from 'vitest';
@@ -160,9 +160,9 @@ describe('Reports.table — shared renderer', () => {
 });
 ```
 
-- [ ] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-table.test.mjs`.
+- [x] **Step 2: Run, verify FAIL** — `npx vitest run tests/render/reports-table.test.mjs`.
 
-- [ ] **Step 3: Implement `Reports.table`.** Add after `tokens`. Default cell = escaped raw value; `cell(row)` callback returns trusted HTML (caller escapes). `colgroup` for fixed widths when `width` given:
+- [x] **Step 3: Implement `Reports.table`.** Add after `tokens`. Default cell = escaped raw value; `cell(row)` callback returns trusted HTML (caller escapes). `colgroup` for fixed widths when `width` given:
 
 ```javascript
   table(opts) {
@@ -189,9 +189,9 @@ describe('Reports.table — shared renderer', () => {
   },
 ```
 
-- [ ] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-table.test.mjs`.
+- [x] **Step 4: Run, verify PASS** — `npx vitest run tests/render/reports-table.test.mjs`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html tests/render/reports-table.test.mjs

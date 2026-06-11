@@ -36484,6 +36484,28 @@ const Reports = {
       '@media print{.rp-page{max-width:none}body{font-size:var(--rp-fs-xs)}}' +
     '</style>';
   },
+  table(opts) {
+    opts = opts || {};
+    const esc = Dashboard.esc;
+    const cols = opts.columns || [];
+    const rows = opts.rows || [];
+    const colgroup = cols.some(c => c.width)
+      ? '<colgroup>' + cols.map(c => '<col' + (c.width ? ' style="width:' + c.width + '"' : '') + '>').join('') + '</colgroup>'
+      : '';
+    const head = '<thead><tr>' + cols.map(c =>
+      '<th' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + esc(c.label || '') + '</th>'
+    ).join('') + '</tr></thead>';
+    let bodyRows;
+    if (!rows.length) {
+      bodyRows = '<tr><td colspan="' + cols.length + '" style="color:var(--rp-faint);padding:10px 8px">' + esc(opts.empty || 'No data') + '</td></tr>';
+    } else {
+      bodyRows = rows.map(r => '<tr>' + cols.map(c => {
+        const content = typeof c.cell === 'function' ? c.cell(r) : esc(r[c.key] == null ? '' : String(r[c.key]));
+        return '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + content + '</td>';
+      }).join('') + '</tr>').join('');
+    }
+    return '<table class="rp-table">' + colgroup + head + '<tbody>' + bodyRows + '</tbody></table>';
+  },
   Doc: {
     // R1 / AC-R1.1: honours density, coverPage, tocPage, includeAppendix, classification.
     buildDoc(opts) {
