@@ -316,6 +316,35 @@ describe('R1 hardening — Doc.toHtml escapes section ids in attribute context',
   });
 });
 
+describe('R1 hardening — Doc.toHtml tolerates null/undefined section entries', () => {
+  // buildDoc accepts any caller-supplied array unvalidated, and Doc.toHtml is
+  // the single serialization path for all 8 document types including
+  // skill-fed content. _filterSections dereferenced s.audiences on every
+  // entry, so a holey/garbage sections array (one null or undefined element)
+  // threw TypeError and the whole document failed to serialize.
+  it('null and undefined section entries are skipped, valid ones still render', async () => {
+    const app = await bootEmpty();
+    const doc = app.Reports.Doc.buildDoc({
+      reportType: 'sponsor_pack',
+      title: 'Resilient',
+      sections: [null, { id: 'a', title: 'Alpha', html: '<p>x</p>' }, undefined]
+    });
+    let html;
+    expect(() => { html = app.Reports.Doc.toHtml(doc, {}); }).not.toThrow();
+    expect(html).toContain('Alpha');
+    expect(html).toContain('<p>x</p>');
+    app.teardown();
+  });
+
+  it('_filterSections drops nullish entries for every audience', async () => {
+    const app = await bootEmpty();
+    const sections = [null, undefined, { id: 'a', title: 'A' }, { id: 'b', title: 'B', audiences: ['customer'] }];
+    expect(app.Reports.Doc._filterSections(sections, 'internal').map(s => s.id)).toEqual(['a']);
+    expect(app.Reports.Doc._filterSections(sections, 'customer').map(s => s.id)).toEqual(['a', 'b']);
+    app.teardown();
+  });
+});
+
 describe('R1 / AC-R1.3 — Reports.Brand.for() 3-tier deep-merge', () => {
   it('customer override + portfolio default + hardcoded compose correctly', async () => {
     const app = await bootEmpty();
