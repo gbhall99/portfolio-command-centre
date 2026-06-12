@@ -23,7 +23,10 @@ describe('Wave 2 R1 — customer-safe export is prominent; cross-customer report
     // Customer Pack is the primary (forwardable) action.
     const customerPackBtn = Array.from(gov.querySelectorAll('button')).find(b => /Customer Pack/.test(b.textContent));
     expect(customerPackBtn.className).toMatch(/btn-primary/);
-    expect(customerPackBtn.getAttribute('onclick')).toMatch(/exportCustomerPack/);
+    // WS-E: the customer-safe export routes through the unified engine with the
+    // customer audience (was Report.exportCustomerPack).
+    expect(customerPackBtn.getAttribute('onclick')).toMatch(/Reports\.generate\('portfolio_report'/);
+    expect(customerPackBtn.getAttribute('onclick')).toMatch(/audience:'customer'/);
     // exportStatusReport is async (so it can await the cross-customer confirm guard).
     expect(app.App.exportStatusReport.constructor.name).toBe('AsyncFunction');
     app.teardown();

@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { openAppWithData } from './helpers';
+import { openAppWithData, GLOBALS_BRIDGE } from './helpers';
 
 // After page.reload() the bridge script tag is gone and the restore banner
 // surfaces again (data is still in localStorage but the app waits for confirm).
@@ -10,11 +10,22 @@ async function reloadAndRebridge(page: Page) {
   await page.waitForSelector('#restoreBanner button.btn-primary', { state: 'visible', timeout: 5000 });
   await page.click('#restoreBanner button.btn-primary');
   await page.waitForSelector('#projectTableBody tr, .empty-state', { state: 'visible', timeout: 5000 });
-  await page.addScriptTag({
-    content: 'window.App = App; window.Solver = Solver; window.Sprint = Sprint; window.Dashboard = Dashboard; window.Gantt = Gantt; window.Capacity = Capacity; window.Governance = Governance; window.DetailPanel = DetailPanel; window.AuditPanel = AuditPanel; window.Forecast = Forecast; window.Report = Report; window.Walkthrough = Walkthrough;'
-  });
+  await page.addScriptTag({ content: GLOBALS_BRIDGE });
   await page.waitForFunction(() => !!(window as any).Dashboard);
 }
+
+test('rebridge exposes every bridged global after reload', async ({ page }) => {
+  await openAppWithData(page);
+  await reloadAndRebridge(page);
+  // A single stale name in the injected bridge throws a ReferenceError that silently
+  // skips every assignment after it — so verify ALL bridged globals actually landed.
+  const names = Array.from(GLOBALS_BRIDGE.matchAll(/window\.(\w+)/g), (m) => m[1]);
+  const missing = await page.evaluate(
+    (ns) => ns.filter((n) => (window as any)[n] === undefined),
+    names
+  );
+  expect(missing).toEqual([]);
+});
 
 test('column picker hides Manager and persists across reload', async ({ page }) => {
   await openAppWithData(page);

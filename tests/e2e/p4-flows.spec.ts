@@ -36,14 +36,14 @@ test.describe('P4 — Member impact + Sprint Brief + View as + ceremony helpers'
     expect(ok).toBe(true);
   });
 
-  test('Report.buildSprintBriefDoc returns content', async ({ page }) => {
+  test('Reports.Builders.sprintBrief returns content', async ({ page }) => {
     await openAppWithData(page);
     const ok = await page.evaluate(() => {
-      const R: any = (window as any).Report;
+      const R: any = (window as any).Reports;
       const sp = ((window as any).App.data.sprints || [])[0];
       if (!sp) return true;
-      const doc = R.buildSprintBriefDoc((window as any).App.activeCustomer, sp.sprint_id);
-      return !!(doc && String(doc).length);
+      const doc = R.Builders.sprintBrief((window as any).App.activeCustomer, sp.sprint_id);
+      return !!(doc && R.Doc.toHtml(doc, {}).length);
     });
     expect(ok).toBe(true);
   });

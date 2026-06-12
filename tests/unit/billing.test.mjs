@@ -225,14 +225,30 @@ describe('settings UI + report', () => {
     expect(App.data.audit_log.some(e => e.field === 'billing_rate:United Kingdom/Principal')).toBe(true);
   });
 
-  it('exportReport writes a print document and logs report_generated', () => {
-    const { Billing, App, window } = app;
-    let written = '';
-    window.open = () => ({ document: { write(h) { written += h; }, close() {} } });
+  it('exportReport renders through the Reports engine and logs report_generated', () => {
+    const { Billing, App, Reports } = app;
+    Billing.addArrangement({ customer: 'Acme Industries', label: 'FY27 retainer', skill: 'any', prepaid_points: 40, amount_invoiced: 20000 });
+    let openedHtml = '';
+    Reports.open = (html) => { openedHtml = html; return {}; };
     Billing.exportReport('Acme Industries');
-    expect(written).toContain('Billing &amp; Costs — Acme Industries');
-    expect(written).toContain('Projects (completed work to date)');
-    expect(written).toContain('Margin');
-    expect(App.data.audit_log.some(e => e.field === 'report_generated' && e.newValue === 'billing_costs:Acme Industries')).toBe(true);
+    expect(openedHtml).toMatch(/^<!DOCTYPE html>/);
+    expect(openedHtml).toContain('<style>');                 // engine token stylesheet
+    expect(openedHtml).toContain('Costs &amp; Billing — Acme Industries');
+    expect(openedHtml).toContain('class="rp-table"');        // shared table renderer…
+    expect(openedHtml).not.toContain('<table>');             // …not ad-hoc tables
+    expect(openedHtml).toContain('FY27 retainer');           // arrangements table data
+    expect(openedHtml).toContain('Acme Alpha');              // per-project table data
+    expect(openedHtml).toContain('Margin');
+    // Legacy parity: the per-project table carries a Totals row with the
+    // story-point totals (Done SP, Prepaid SP, T&M SP) plus the money columns.
+    // Fixture: 10 DE + 5 Tableau (Alpha) + 6 DE (Beta) = 21 SP done, all 21
+    // covered by the 40 SP 'any' prepaid block, leaving 0 T&M SP.
+    const totalsMatch = openedHtml.match(/<tr class="rp-totals">(.*?)<\/tr>/);
+    expect(totalsMatch).toBeTruthy();
+    expect(totalsMatch[1]).toContain('<td colspan="2">Totals</td>');
+    expect(totalsMatch[1]).toMatch(/Totals<\/td><td[^>]*>21<\/td><td[^>]*>21<\/td><td[^>]*>0<\/td>/);
+    // Money totals stay aligned under their columns (T&M billable, cost, margin).
+    expect((totalsMatch[1].match(/<td/g) || []).length).toBe(7); // label + 6 numeric cells
+    expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'costs_report' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
   });
 });
