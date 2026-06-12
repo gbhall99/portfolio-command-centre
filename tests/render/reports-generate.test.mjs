@@ -26,4 +26,17 @@ describe('Reports.open + Reports.generate', () => {
     expect((app.App.data.audit_log || []).length).toBe(before + 1);
     app.teardown();
   });
+  it('generate does NOT audit when the pop-up is blocked (open returns null)', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }],
+      projects: [makeProject({ id: 'P1', name: 'Proj', customer: 'Acme Industries', status: 'In Progress' })]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.window.open = () => null; // simulate browser pop-up blocker
+    const before = (app.App.data.audit_log || []).length;
+    app.Reports.generate('portfolio_pack', { customer: 'Acme Industries', audience: 'internal' });
+    // the export never happened, so no report_generated entry may be persisted
+    expect((app.App.data.audit_log || []).length).toBe(before);
+    app.teardown();
+  });
 });
