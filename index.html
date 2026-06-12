@@ -36803,7 +36803,13 @@ const Reports = {
       const cost = (typeof App !== 'undefined' && App.computeProjectCost) ? App.computeProjectCost(p) : { BAC: 0, EV: 0, AC: 0 };
       const wsjf = (typeof App !== 'undefined' && App.calculateWsjf) ? App.calculateWsjf(p) : { wsjf: 0, cod: 0, size: 1, populated: 0 };
       const benefitAnnual = Number(p.benefit_annual_gbp || 0);
-      const horizonYears = Number(p.benefit_horizon_years || 3);
+      // Clamp the NPV horizon: integer-vet (non-numeric → 0 → default 3) and cap at 50 years so
+      // imported JSON with a huge/garbage benefit_horizon_years can't freeze the tab (the loop
+      // below iterates horizonYears times) or render 'NaN years' in the delivered document.
+      const horizonRaw = (typeof App !== 'undefined' && App.toInteger)
+        ? App.toInteger(p.benefit_horizon_years)
+        : (isFinite(Number(p.benefit_horizon_years)) ? Math.max(0, Math.round(Number(p.benefit_horizon_years))) : 0);
+      const horizonYears = Math.min(Math.max(horizonRaw || 3, 0), 50);
       const rate = Number((typeof App !== 'undefined' && App.data && App.data.settings && App.data.settings.business_case_discount_rate) || 0.07);
       let npv = -cost.BAC;
       for (let y = 1; y <= horizonYears; y++) npv += benefitAnnual / Math.pow(1 + rate, y);
