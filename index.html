@@ -36768,8 +36768,12 @@ const Reports = {
       const narrativeHtml = (n.headline ? '<p style="font-style:italic;font-size:var(--rp-fs-md)">' + esc(n.headline) + '</p>' : '') +
         '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; <strong>Stage:</strong> ' + esc(p.lifecycle_stage || 'Implementation') + '</p>' +
         '<p><strong>Status:</strong> ' + esc(p.status || '') + ' &middot; <strong>RAG:</strong> S=' + esc(p.rag_schedule || '—') + ' R=' + esc(p.rag_resourcing || '—') + ' P=' + esc(p.rag_scope || '—') + '</p>' +
-        '<p><strong>Dates:</strong> ' + esc(p.start_date || '—') + ' → ' + esc(p.target_date || '—') + (p.hard_deadline ? ' (hard ' + esc(p.hard_deadline) + ')' : '') + '</p>' +
-        (p.notes ? '<p>' + esc(p.notes) + '</p>' : '');
+        '<p><strong>Dates:</strong> ' + esc(p.start_date || '—') + ' → ' + esc(p.target_date || '—') + (p.hard_deadline ? ' (hard ' + esc(p.hard_deadline) + ')' : '') + '</p>';
+      // p.notes is internal planning commentary with no customer-curation
+      // channel (unlike risks, gated by narrative.customer_visible_risk_ids),
+      // so it must never ride the both-audience narrative section. The curated
+      // n.headline carries the customer narrative; notes stay internal-only.
+      const notesHtml = p.notes ? '<p>' + esc(p.notes) + '</p>' : '';
       const milestonesHtml = '<ul>' +
         (p.target_date ? '<li>Target: ' + esc(p.target_date) + '</li>' : '') +
         (p.hard_deadline ? '<li>Hard deadline: ' + esc(p.hard_deadline) + '</li>' : '') +
@@ -36786,11 +36790,12 @@ const Reports = {
         customer: p.customer,
         sections: [
           { id: 'pp-narrative', title: 'Narrative', html: narrativeHtml, audiences: both },
+          notesHtml ? { id: 'pp-notes', title: 'Internal notes', html: notesHtml, audiences: internal.slice() } : null,
           { id: 'pp-milestones', title: 'Milestones', html: milestonesHtml, audiences: both },
           { id: 'pp-visible-risks', title: 'Customer-visible risks', html: Reports.Builders._risksTable(Reports.Builders._visibleRisks(p), 'None visible to share'), audiences: both },
           { id: 'pp-risks', title: 'Risk register', html: Reports.Builders._risksTable(allRisks), audiences: internal },
           { id: 'pp-business-case', title: 'Business case', html: bcHtml, audiences: internal }
-        ]
+        ].filter(Boolean)
       });
     },
     // Internal-only commercial summary: cost (BAC/EV/AC), NPV, WSJF.
