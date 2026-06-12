@@ -36688,12 +36688,18 @@ const Reports = {
       ).join('');
       const sections = (r.sections || []).filter(s => (s.content || '').trim())
         .map(s => ({ id: s.id, title: s.title, html: toHtml(s.content), audiences: Reports.Builders._AUD_BOTH.slice() }));
+      // The skill-fed report is drafted FOR the customer ("review before
+      // sending"), so the document defaults to the customer audience — the
+      // cover/footer stamp "Internal — shared" and rendering is customer-gated,
+      // mirroring SowSkill.exportPrint. The hub's audience toggle still wins:
+      // Reports.generate overrides doc.audience with an explicit args.audience.
       return Reports.Doc.buildDoc({
         reportType: 'status_report',
         title: 'Status Report — ' + r.customer,
         subtitle: r.period,
         customer: r.customer,
-        sections
+        sections,
+        audience: 'customer'
       });
     },
     // Shared per-project status table.
@@ -42319,12 +42325,13 @@ const StatusReportSkill = {
   },
 
   // Renders the saved entity through the unified Reports engine — no bespoke
-  // HTML. Shares the entity→document conversion with the catalogue builder.
+  // HTML. Shares the entity→document conversion with the catalogue builder,
+  // which stamps audience 'customer': this report is drafted for the customer,
+  // so the printed cover/footer carry the "— shared" classification suffix.
   exportPrint() {
     const r = StatusReport.get(this._id);
     if (!r) return;
     const doc = Reports.Builders.statusReportFromEntity(r);
-    doc.audience = 'internal';
     if (!Reports.open(Reports.Doc.toHtml(doc, Reports.Brand.for(r.customer)))) return;
     Reports.recordExport('status_report', r.customer, {});
   },

@@ -111,6 +111,37 @@ describe('editor + export safety', () => {
     expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'status_report' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
   });
 
+  it('exportPrint stamps the customer audience — printed classification reads "Internal — shared" (it is the one report sent to customers)', () => {
+    const { StatusReport, StatusReportSkill, Reports } = app;
+    const r = StatusReport.create({ customer: 'Acme Industries', period: 'Sep 2026', definition: def(), generatedSections: goodSections(), source: 'user' });
+    // The shared entity→document builder carries the customer audience,
+    // mirroring SowSkill.exportPrint (sections are tagged customer+internal).
+    const doc = Reports.Builders.statusReportFromEntity(r);
+    expect(doc.audience).toBe('customer');
+    expect(doc.classification).toBe('Internal');
+    let openedHtml = '';
+    const origOpen = Reports.open;
+    Reports.open = (html) => { openedHtml = html; return {}; };
+    try {
+      StatusReportSkill._id = r.id;
+      StatusReportSkill.exportPrint();
+    } finally {
+      Reports.open = origOpen;
+    }
+    // Cover stamps the shared suffix instead of a bare "Internal".
+    expect(openedHtml).toContain('Internal — shared');
+    // The hub's explicit internal toggle still wins over the builder default.
+    let hubHtml = '';
+    Reports.open = (html) => { hubHtml = html; return {}; };
+    try {
+      Reports.generate('status_report', { customer: 'Acme Industries', audience: 'internal' });
+    } finally {
+      Reports.open = origOpen;
+    }
+    expect(hubHtml).toContain('Status Report — Acme Industries');
+    expect(hubHtml).not.toContain('— shared');
+  });
+
   it('exportPrint renders the saved report through Reports engine (no bespoke HTML)', async () => {
     const app = await loadApp(makeDataset({
       projects: [makeProject({ id: 'A-1', name: 'Acme Alpha', customer: 'Acme Industries', status: 'At Risk' })],
