@@ -36898,6 +36898,13 @@ const Reports = {
     },
     // Per-member work plan for one sprint. Internal only.
     sprintBrief(customer, sprintId) {
+      // Scope args arrive unvalidated via copy links (#/report/sprint_brief?…).
+      // Without these checks a falsy customer passes EVERY member through the
+      // filter below (one empty section per member across all customers) and a
+      // stale sprintId builds an all-empty brief — silently exported + audited.
+      const customers = (typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : [];
+      if (customers.indexOf(customer) < 0) return null; // generate() toasts 'Customer or sprint not found'
+      if (!(((typeof App !== 'undefined' && App.data && App.data.sprints) || []).some(s => s.sprint_id === sprintId))) return null;
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const projects = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).filter(p => p.customer === customer);
       const members = ((typeof App !== 'undefined' && App.data && App.data.team_members) || []).filter(tm => {
@@ -37217,6 +37224,11 @@ const Reports = {
     // Costs & Billing report for one customer: prepaid drawdown, T&M billing
     // and margin from Billing.customerSummary. Internal only.
     costsReport(customer) {
+      // Same scope-arg hardening as sprintBrief: an unknown/missing customer
+      // (stale copy link) must not build an all-empty-tables doc from
+      // Billing.customerSummary and silently export + audit it.
+      const customers = (typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : [];
+      if (customers.indexOf(customer) < 0) return null; // generate() toasts 'Customer not found'
       const esc = Dashboard.esc;
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const s = (typeof Billing !== 'undefined')
@@ -37329,7 +37341,9 @@ const Reports = {
     project_report: 'Project not found',
     business_case: 'Project not found',
     meeting_agenda: 'Meeting not found',
-    walkthrough_minutes: 'Walkthrough not found'
+    walkthrough_minutes: 'Walkthrough not found',
+    sprint_brief: 'Customer or sprint not found',
+    costs_report: 'Customer not found'
   },
   // Canonical Catalogue id for the aliases _build accepts (the audience arg
   // picks which side of the portfolio pair an export is recorded/validated as).
@@ -40865,6 +40879,9 @@ const Billing = {
   exportReport(customer) {
     customer = customer || App.activeCustomer;
     const doc = Reports.Builders.costsReport(customer);
+    // Builder returns null for an unknown customer (scope-arg hardening) —
+    // toast like Reports.generate would, and neither open nor audit.
+    if (!doc) { if (App.toast) App.toast('Customer not found', 'error'); return; }
     if (!Reports.open(Reports.Doc.toHtml(doc, Reports.Brand.for(customer)))) return;
     Reports.recordExport('costs_report', customer, {});
   },

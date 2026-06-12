@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
-import { makeDataset, makeProject } from '../harness/fixtures.mjs';
+import { makeDataset, makeProject, makeSprintSequence, makeMember } from '../harness/fixtures.mjs';
 
 async function bootEmpty() {
   return await loadApp(makeDataset({
@@ -1099,6 +1099,89 @@ describe('R11 hardening — generate() with a stale entity id: legacy toast, no 
     expect(calls.toasts).toEqual([]);
     expect(calls.opened).toBe(1);
     expect(reportEntries(app).map(e => e.meta.report_type)).toEqual(['sponsor_pack']);
+    app.teardown();
+  });
+});
+
+// ============================================================
+// R11 hardening — stale scope args (customer / sprintId) in Reports.generate.
+// The customer/sprint-scoped builders must validate their scope args against
+// the existing sets (App.getCustomers / App.data.sprints) like the entity-id
+// builders above. Without the check, generate('sprint_brief', {}) built a
+// 'Sprint Brief — ' doc with one empty section per team member ACROSS ALL
+// CUSTOMERS (the member filter passes everyone when customer is falsy),
+// opened it and audited it; costs_report for an unknown customer opened an
+// all-empty-tables doc. These args arrive unvalidated via parseCopyLink
+// (#/report/sprint_brief?sprintId=garbage).
+// ============================================================
+describe('R11 hardening — generate() with a stale customer/sprintId: toast, no export, no audit', () => {
+  async function bootWithSprints() {
+    return await loadApp(makeDataset({
+      projects: [],
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }],
+      sprints: makeSprintSequence(2),
+      team_members: [makeMember({ name: 'Alice' }), makeMember({ name: 'Bob', customer: 'Globex' })]
+    }));
+  }
+  function instrument(app) {
+    const calls = { opened: 0, toasts: [] };
+    app.Reports.open = () => { calls.opened++; return {}; };
+    app.App.toast = (msg, kind) => { calls.toasts.push({ msg, kind }); };
+    app.App.data.audit_log = [];
+    return calls;
+  }
+  const reportEntries = (app) =>
+    (app.App.data.audit_log || []).filter(e => e.event_type === 'report_generated');
+
+  const cases = [
+    ['sprint_brief', {}, 'Customer or sprint not found'],
+    ['sprint_brief', { customer: 'Acme Industries', sprintId: 'CY99-S9' }, 'Customer or sprint not found'],
+    ['sprint_brief', { customer: 'Nobody', sprintId: 'CY26-S1' }, 'Customer or sprint not found'],
+    ['costs_report', {}, 'Customer not found'],
+    ['costs_report', { customer: 'Nobody' }, 'Customer not found']
+  ];
+
+  for (const [reportId, args, expected] of cases) {
+    it(reportId + ' ' + JSON.stringify(args) + ': toasts "' + expected + '", opens nothing, audits nothing', async () => {
+      const app = await bootWithSprints();
+      const calls = instrument(app);
+      app.Reports.generate(reportId, args);
+      expect(calls.toasts.map(t => t.msg)).toEqual([expected]);
+      expect(calls.toasts[0].kind).toBe('error');
+      expect(calls.opened).toBe(0);
+      expect(reportEntries(app)).toEqual([]);
+      app.teardown();
+    });
+  }
+
+  it('builders return null (not an empty doc) for stale scope args', async () => {
+    const app = await bootWithSprints();
+    expect(app.Reports.Builders.sprintBrief(undefined, undefined)).toBeNull();
+    expect(app.Reports.Builders.sprintBrief('Acme Industries', 'CY99-S9')).toBeNull();
+    expect(app.Reports.Builders.sprintBrief('Nobody', 'CY26-S1')).toBeNull();
+    expect(app.Reports.Builders.costsReport(undefined)).toBeNull();
+    expect(app.Reports.Builders.costsReport('Nobody')).toBeNull();
+    app.teardown();
+  });
+
+  it('Billing.exportReport with an unknown customer toasts and neither opens nor audits', async () => {
+    const app = await bootWithSprints();
+    const calls = instrument(app);
+    app.Billing.exportReport('Nobody');
+    expect(calls.toasts.map(t => t.msg)).toEqual(['Customer not found']);
+    expect(calls.opened).toBe(0);
+    expect(reportEntries(app)).toEqual([]);
+    app.teardown();
+  });
+
+  it('valid customer + sprint still exports and audits (control)', async () => {
+    const app = await bootWithSprints();
+    const calls = instrument(app);
+    app.Reports.generate('sprint_brief', { customer: 'Acme Industries', sprintId: 'CY26-S1' });
+    app.Reports.generate('costs_report', { customer: 'Acme Industries' });
+    expect(calls.toasts).toEqual([]);
+    expect(calls.opened).toBe(2);
+    expect(reportEntries(app).map(e => e.meta.report_type)).toEqual(['sprint_brief', 'costs_report']);
     app.teardown();
   });
 });
