@@ -149,7 +149,10 @@ describe('R1 / AC-R1.1 — Reports.Doc.buildDoc honours density / coverPage / to
 
   it('every reportType has defaults', async () => {
     const app = await bootEmpty();
-    ['sponsor_pack', 'business_case', 'sprint_brief', 'customer_pack', 'portfolio_pack', 'meeting_agenda', 'status_report'].forEach(t => {
+    ['sponsor_pack', 'business_case', 'sprint_brief', 'customer_pack', 'portfolio_pack', 'meeting_agenda', 'status_report', 'costs_report'].forEach(t => {
+      // Own entry required — the sponsor_pack fallback in buildDoc must never
+      // be what supplies a catalogued type's defaults.
+      expect(Object.prototype.hasOwnProperty.call(app.Reports._DEFAULTS_BY_TYPE, t)).toBe(true);
       const doc = app.Reports.Doc.buildDoc({ reportType: t, sections: [] });
       expect(doc.density).toBeTruthy();
       expect(doc.classification).toBeTruthy();
@@ -499,6 +502,38 @@ describe('R1 / AC-R1.5 — Reports.Catalogue lists all reports (7 core + costs_r
     });
     const ids = app.Reports.Catalogue.map(c => c.id).sort();
     expect(ids).toEqual(['business_case', 'costs_report', 'customer_pack', 'forum_agenda'.replace('forum_agenda', 'meeting_agenda'), 'portfolio_pack', 'sponsor_pack', 'sprint_brief', 'status_report'].sort());
+    app.teardown();
+  });
+});
+
+// Regression: costsReport built with reportType:'portfolio_pack' and no
+// costs_report entry existed in _DEFAULTS_BY_TYPE — the internal-only
+// margin/cost doc self-identified as a shareable pack, diverged from its
+// 'costs_report' audit id, and silently inherited portfolio_pack defaults
+// (tocPage:true, includeAppendix:true — the appendix channel is not
+// audience-filtered).
+describe('R1 hardening — costs report is typed costs_report with its own defaults', () => {
+  it('costsReport stamps reportType costs_report, matching its Catalogue + audit id', async () => {
+    const app = await bootEmpty();
+    const doc = app.Reports.Builders.costsReport('Acme Industries');
+    expect(doc.reportType).toBe('costs_report');
+    expect(app.Reports.Catalogue.some(c => c.id === doc.reportType)).toBe(true);
+    expect(doc.classification).toBe('Internal');
+    expect(doc.audience).toBe('internal');
+    app.teardown();
+  });
+
+  it('costs_report defaults never open the unfiltered appendix channel', async () => {
+    const app = await bootEmpty();
+    const defaults = app.Reports._DEFAULTS_BY_TYPE.costs_report;
+    expect(defaults).toBeTruthy();
+    expect(defaults.includeAppendix).toBe(false);
+    expect(defaults.tocPage).toBe(false);
+    expect(defaults.classification).toBe('Internal');
+    // And the built doc actually carries them (not portfolio_pack's true/true).
+    const doc = app.Reports.Builders.costsReport('Acme Industries');
+    expect(doc.includeAppendix).toBe(false);
+    expect(doc.tocPage).toBe(false);
     app.teardown();
   });
 });
