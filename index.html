@@ -5115,6 +5115,20 @@ const App = {
       });
     }
 
+    // Always-run: Reports engine rename (2026-06). The legacy serializer persisted
+    // the PDF footer / classification text as settings.branding[*].footerText; the
+    // unified engine (Reports.Doc.toHtml) reads ONLY footerNote. Lift the legacy key
+    // onto the canonical one so existing sessions keep their configured footer, then
+    // drop the duplicate — branding holds exactly one copy of the truth. Idempotent;
+    // an existing footerNote always wins. Must run before the version gate: the
+    // rename shipped without a schema version bump.
+    Object.keys((data.settings && data.settings.branding) || {}).forEach(key => {
+      const b = data.settings.branding[key];
+      if (!b || typeof b !== 'object' || b.footerText === undefined) return;
+      if (!b.footerNote && typeof b.footerText === 'string' && b.footerText) b.footerNote = b.footerText;
+      delete b.footerText;
+    });
+
     const version = (data.meta && data.meta.schema_version) || '0.0';
     if (version === this.SCHEMA_VERSION) return data;
     console.log('[PCC] Migrating schema from', version, 'to', this.SCHEMA_VERSION);
@@ -8804,7 +8818,7 @@ const App = {
         const b = brandings[cName] || {};
         const colour = b.primaryColor || App.getCustomerColor(cName) || '#94a3b8';
         const companyName = b.companyName || cName;
-        const footer = b.footerText ? Dashboard.esc(b.footerText.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
+        const footer = b.footerNote ? Dashboard.esc(b.footerNote.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">' +
           '<div style="flex:1">' +
             '<div style="font-weight:600;font-size:12px;color:var(--text-dark)">' + Dashboard.esc(companyName) + ' <span style="font-size:var(--fs-2xs);font-weight:400;color:var(--text-muted)">· ' + Dashboard.esc(cName) + '</span></div>' +
@@ -37375,14 +37389,15 @@ const Reports = {
     if (color === null) return;
     const name = prompt('Display name on reports:', current.companyName || customer);
     if (name === null) return;
-    const footer = prompt('Footer / classification text:', current.footerNote || current.footerText || 'Confidential — Internal Use Only');
+    const footer = prompt('Footer / classification text:', current.footerNote || 'Confidential — Internal Use Only');
     if (footer === null) return;
+    // footerNote is the single persisted footer field — legacy footerText is
+    // lifted onto it (and removed) by App.migrateSchema.
     Reports.Brand.set(customer, {
       logo: logo.trim(),
       primaryColor: color.trim() || current.primaryColor,
       companyName: name.trim() || customer,
-      footerNote: footer.trim(),
-      footerText: footer.trim()
+      footerNote: footer.trim()
     });
     App.toast('Branding saved for ' + customer, 'success');
   },

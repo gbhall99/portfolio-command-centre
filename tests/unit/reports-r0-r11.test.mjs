@@ -380,6 +380,62 @@ describe('R1 / AC-R1.4 — Reports.Brand.set emits audit_log entry', () => {
   });
 });
 
+describe('R1 hardening — legacy footerText migrates to footerNote (one persisted truth)', () => {
+  // Regression: the legacy serializer rendered settings.branding[*].footerText on the
+  // cover and every page footer; the unified engine reads ONLY brand.footerNote. Without
+  // a migration, every existing session's configured footer/classification text silently
+  // disappeared from all generated PDFs.
+  it('migrateSchema lifts footerText onto footerNote, drops the legacy key, and the value reaches the rendered footer', async () => {
+    const app = await bootEmpty();
+    app.App.data.settings.branding = {
+      portfolio_default: { footerText: 'Portfolio footer' },
+      'Acme Industries': { companyName: 'Acme Consulting Ltd', footerText: 'Confidential — Internal Use Only' }
+    };
+    app.App.migrateSchema(app.App.data);
+    const acme = app.App.data.settings.branding['Acme Industries'];
+    expect(acme.footerNote).toBe('Confidential — Internal Use Only');
+    expect('footerText' in acme).toBe(false);
+    expect(app.App.data.settings.branding.portfolio_default.footerNote).toBe('Portfolio footer');
+    // Brand.for resolves it and Doc.toHtml renders it on the footer.
+    const brand = app.Reports.Brand.for('Acme Industries');
+    expect(brand.footerNote).toBe('Confidential — Internal Use Only');
+    const html = app.Reports.Doc.toHtml(app.Reports.Doc.buildDoc({
+      reportType: 'sponsor_pack', title: 'Pack', customer: 'Acme Industries',
+      sections: [{ id: 's1', title: 'Summary', html: '<p>ok</p>' }]
+    }), brand);
+    const dom = app.window.document.createElement('div');
+    dom.innerHTML = html;
+    expect(dom.querySelector('.rp-footer').textContent).toContain('Confidential — Internal Use Only');
+    // The Settings white-labelling card shows the migrated footer, not '—'.
+    expect(app.App._renderBrandingCard()).toContain('Confidential — Internal Use Only');
+    app.teardown();
+  });
+
+  it('is idempotent and never clobbers an existing footerNote', async () => {
+    const app = await bootEmpty();
+    app.App.data.settings.branding = {
+      'Acme Industries': { footerNote: 'New note', footerText: 'Old text' }
+    };
+    app.App.migrateSchema(app.App.data);
+    app.App.migrateSchema(app.App.data);
+    const b = app.App.data.settings.branding['Acme Industries'];
+    expect(b.footerNote).toBe('New note');
+    expect('footerText' in b).toBe(false);
+    app.teardown();
+  });
+
+  it('configureBranding persists footerNote only — no dual-written footerText copy', async () => {
+    const app = await bootEmpty();
+    const answers = ['', '#123456', 'Acme Consulting Ltd', 'Strictly Confidential'];
+    app.window.prompt = () => answers.shift();
+    app.Reports.configureBranding('Acme Industries');
+    const b = app.App.data.settings.branding['Acme Industries'];
+    expect(b.footerNote).toBe('Strictly Confidential');
+    expect('footerText' in b).toBe(false);
+    app.teardown();
+  });
+});
+
 describe('R1 / AC-R1.5 — Reports.Catalogue lists all reports (7 core + costs_report)', () => {
   it('catalogue has 8 entries with required metadata keys', async () => {
     const app = await bootEmpty();
