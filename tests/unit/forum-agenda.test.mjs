@@ -29,6 +29,80 @@ describe('Forum agenda generator', () => {
   });
 });
 
+describe('Forum agenda missing-id guard', () => {
+  // Demo forums carry no `id` field, so a loose `f.id === forumId` match lets
+  // an undefined forumId resolve to the FIRST id-less forum (undefined ===
+  // undefined) and silently exports the wrong forum's agenda. A missing
+  // forumId must behave like an unknown one: builder returns null,
+  // Reports.generate toasts 'Meeting not found', nothing opens or audits.
+  function idlessForums() {
+    return [
+      { name: 'Acme Delivery Forum', cadence: 'Monthly', actions: [], decisions: [] },
+      { name: 'Acme Steering Board', cadence: 'Quarterly', actions: [], decisions: [] }
+    ];
+  }
+
+  it('forumAgenda(undefined) returns null instead of matching the first id-less forum', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ name: 'Linked' })], sprints: makeSprintSequence(2),
+      team_members: [makeMember()], governance_forums: idlessForums()
+    }));
+    const { Reports } = app.window.__pcc__;
+    expect(Reports.Builders.forumAgenda(undefined)).toBeNull();
+    expect(Reports.Builders.forumAgenda(null)).toBeNull();
+    expect(Reports.Builders.forumAgenda('no-such-forum')).toBeNull();
+    app.teardown();
+  });
+
+  it('buildAgendaDoc(undefined) returns null instead of the first forum agenda HTML', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ name: 'Linked' })], sprints: makeSprintSequence(2),
+      team_members: [makeMember()], governance_forums: idlessForums()
+    }));
+    const { Governance } = app.window.__pcc__;
+    expect(Governance.buildAgendaDoc(undefined)).toBeNull();
+    expect(Governance.buildAgendaDoc('no-such-forum')).toBeNull();
+    app.teardown();
+  });
+
+  it("generate('meeting_agenda', {}) toasts 'Meeting not found' and neither opens nor audits", async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ name: 'Linked' })], sprints: makeSprintSequence(2),
+      team_members: [makeMember()], governance_forums: idlessForums()
+    }));
+    const { App, Reports } = app.window.__pcc__;
+    const toasts = [];
+    App.toast = (msg, kind) => { toasts.push({ msg, kind }); };
+    let opened = 0;
+    Reports.open = () => { opened++; return null; };
+    const auditBefore = (App.data.audit_log || []).length;
+    Reports.generate('meeting_agenda', {});
+    expect(toasts).toEqual([{ msg: 'Meeting not found', kind: 'error' }]);
+    expect(opened).toBe(0);
+    expect((App.data.audit_log || []).length).toBe(auditBefore);
+    app.teardown();
+  });
+
+  it('still resolves an id-less forum by name', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ name: 'Linked', governance_forum: 'Acme Steering Board' })],
+      sprints: makeSprintSequence(2), team_members: [makeMember()],
+      governance_forums: idlessForums()
+    }));
+    const { Reports, Governance } = app.window.__pcc__;
+    const doc = Reports.Builders.forumAgenda('Acme Steering Board');
+    expect(doc).toBeTruthy();
+    expect(doc.title).toMatch(/Acme Steering Board/);
+    const html = Governance.buildAgendaDoc('Acme Steering Board');
+    expect(String(html)).toMatch(/Acme Steering Board/);
+    app.teardown();
+  });
+});
+
 describe('Briefing pack audience tagging', () => {
   // Every builder emits sections as { id, title, html, audiences }. Sections
   // without an audiences array pass Reports.Doc._filterSections for ANY

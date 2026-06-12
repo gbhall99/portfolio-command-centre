@@ -34845,9 +34845,10 @@ const Governance = {
   // WS-E: thin wrapper over the unified engine builder. Returns the serialized
   // agenda HTML (kept for tests/back-compat callers).
   buildAgendaDoc(forumId) {
-    const forum = (App.data && App.data.governance_forums || []).find(f => f.id === forumId || f.name === forumId);
-    if (!forum) return null;
+    // The builder owns entity lookup (incl. the missing-forumId guard so an
+    // undefined id never loose-matches the first id-less forum).
     const doc = Reports.Builders.forumAgenda(forumId);
+    if (!doc) return null;
     return Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer));
   },
 
@@ -37013,6 +37014,9 @@ const Reports = {
     forumAgenda(forumId) {
       const esc = Dashboard.esc;
       const internal = Reports.Builders._AUD_INTERNAL.slice();
+      // A missing forumId must not loose-match the first id-less forum
+      // (undefined === undefined) and export the wrong agenda.
+      if (forumId == null || forumId === '') return null;
       const forum = ((typeof App !== 'undefined' && App.data && App.data.governance_forums) || []).find(f => f.id === forumId || f.name === forumId);
       if (!forum) return null; // generate() toasts 'Meeting not found' (legacy exportForumAgenda parity)
       const linked = ((App.data && App.data.projects) || []).filter(p =>
