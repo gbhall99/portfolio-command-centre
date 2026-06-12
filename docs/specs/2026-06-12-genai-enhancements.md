@@ -66,7 +66,7 @@ This spec lets any session continue the work without prior context.*
 | Spec (this file) | committed |
 | #2 SOW redraft | DONE |
 | #5 Briefing tool | DONE |
-| #1 Transcript extraction | pending |
+| #1 Transcript extraction | DONE |
 | #3 Sizing suggestions | pending |
 | #4 Wireframe refinement | pending |
 
