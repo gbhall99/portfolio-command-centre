@@ -669,6 +669,45 @@ describe('R3 hardening — Builders.statusReport(customer) is customer-scoped', 
   });
 });
 
+// WS-E hardening — the portfolio (no-customer) path maps App.getCustomers()
+// straight into 'cust-' + c.toLowerCase(...) section ids. App.getCustomers()
+// maps data.customers to c.name with no filtering, so a nameless customer
+// record (possible via JSON import; App.addCustomer guards only the prompt
+// path) crashed the builder — and Reports.generate('status_report', {}) —
+// with an uncaught TypeError: no toast, no document.
+describe('R3 hardening — Builders.statusReport() tolerates nameless customer records', () => {
+  async function bootWithNamelessCustomer() {
+    return await loadApp(makeDataset({
+      customers: [
+        { name: 'Acme Industries', color: '#6366f1' },
+        { color: '#ffffff' } // imported record with no name
+      ],
+      projects: [
+        makeProject({ id: 'A1', name: 'Acme Alpha', customer: 'Acme Industries', status: 'At Risk', manager: 'Alice' })
+      ]
+    }));
+  }
+
+  it('builds the portfolio snapshot instead of throwing, keeping named customers', async () => {
+    const app = await bootWithNamelessCustomer();
+    let doc;
+    expect(() => { doc = app.Reports.Builders.statusReport(); }).not.toThrow();
+    const ids = doc.sections.map(s => s.id);
+    expect(ids).toContain('cust-acme-industries');
+    // The nameless record contributes no per-customer section.
+    expect(doc.sections.length).toBe(4); // exec + exceptions + upcoming + Acme
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).toContain('Acme Alpha');
+    app.teardown();
+  });
+
+  it('Reports.generate("status_report", {}) — the legacy toolbar path — completes', async () => {
+    const app = await bootWithNamelessCustomer();
+    expect(() => app.Reports.generate('status_report', {})).not.toThrow();
+    app.teardown();
+  });
+});
+
 // ============================================================
 // R4 — event_type field + closed vocabulary
 // ============================================================

@@ -36726,7 +36726,11 @@ const Reports = {
         if (saved) return Reports.Builders.statusReportFromEntity(saved);
       }
       const aud = customer ? Reports.Builders._AUD_BOTH.slice() : Reports.Builders._AUD_INTERNAL.slice();
-      const customers = customer ? [customer] : ((typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : []);
+      // getCustomers() maps data.customers to c.name with no filtering, so a
+      // nameless record (possible via JSON import) would crash the section-id
+      // toLowerCase below — drop non-string/empty names instead of throwing.
+      const customers = (customer ? [customer] : ((typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : []))
+        .filter(c => typeof c === 'string' && c.trim());
       const projects = ((typeof App !== 'undefined' && App.data && App.data.projects) || [])
         .filter(p => !customer || p.customer === customer);
       const active = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
