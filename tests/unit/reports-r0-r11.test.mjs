@@ -380,6 +380,54 @@ describe('R1 / AC-R1.4 — Reports.Brand.set emits audit_log entry', () => {
   });
 });
 
+describe('R1 hardening — branding writes honour the entity-mutators contract (pushUndo before mutation)', () => {
+  // Regression: Brand.set mutated App.data.settings.branding (and setCustomerLogo
+  // mutated the customer entity) without App.pushUndo, making branding/logo changes
+  // the only audited mutations that could not be undone.
+  it('Brand.set pushes one undo snapshot capturing pre-change branding', async () => {
+    const app = await bootEmpty();
+    app.App.data.settings.branding = { 'Acme Industries': { primaryColor: '#111111' } };
+    const depth = app.App.undoStack.length;
+    app.Reports.Brand.set('Acme Industries', { primaryColor: '#facc15' });
+    expect(app.App.undoStack.length).toBe(depth + 1);
+    expect(app.App.data.settings.branding['Acme Industries'].primaryColor).toBe('#facc15');
+    app.App.undo();
+    expect(app.App.data.settings.branding['Acme Industries'].primaryColor).toBe('#111111');
+    app.teardown();
+  });
+
+  it('setCustomerLogo is one undo step restoring BOTH the customer entity and settings.branding', async () => {
+    const app = await bootEmpty();
+    const depth = app.App.undoStack.length;
+    app.App.setCustomerLogo('Acme Industries', 'data:image/png;base64,NEW');
+    const c = app.App.data.customers.find(x => x.name === 'Acme Industries');
+    expect(c.logo).toBe('data:image/png;base64,NEW');
+    expect(app.App.data.settings.branding['Acme Industries'].logo).toBe('data:image/png;base64,NEW');
+    // Exactly one snapshot — undoing must not leave a half-reverted state.
+    expect(app.App.undoStack.length).toBe(depth + 1);
+    app.App.undo();
+    const reverted = app.App.data.customers.find(x => x.name === 'Acme Industries');
+    expect(reverted.logo || '').toBe('');
+    const branding = (app.App.data.settings.branding || {})['Acme Industries'] || {};
+    expect(branding.logo || '').toBe('');
+    app.teardown();
+  });
+
+  it('configureBranding via prompts is undoable in one step', async () => {
+    const app = await bootEmpty();
+    const answers = ['logo.png', '#123456', 'Acme Consulting Ltd', 'Strictly Confidential'];
+    app.window.prompt = () => answers.shift();
+    const depth = app.App.undoStack.length;
+    app.Reports.configureBranding('Acme Industries');
+    expect(app.App.data.settings.branding['Acme Industries'].primaryColor).toBe('#123456');
+    expect(app.App.undoStack.length).toBe(depth + 1);
+    app.App.undo();
+    const branding = (app.App.data.settings.branding || {})['Acme Industries'] || {};
+    expect(branding.primaryColor).toBeUndefined();
+    app.teardown();
+  });
+});
+
 describe('R1 hardening — legacy footerText migrates to footerNote (one persisted truth)', () => {
   // Regression: the legacy serializer rendered settings.branding[*].footerText on the
   // cover and every page footer; the unified engine reads ONLY brand.footerNote. Without

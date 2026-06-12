@@ -10125,8 +10125,12 @@ const App = {
     if (!this.data || !this.data.customers) return;
     const c = this.data.customers.find(c => c.name === customerName);
     if (!c) return;
-    c.logo = logoUrl == null ? '' : String(logoUrl);
-    Reports.Brand.set(customerName, { logo: c.logo });
+    const logo = logoUrl == null ? '' : String(logoUrl);
+    // Brand.set pushes the undo snapshot BEFORE any mutation (entity-mutators
+    // contract), so it must run before c.logo is reassigned — a single undo
+    // then restores both the customer entity and settings.branding.
+    Reports.Brand.set(customerName, { logo: logo });
+    c.logo = logo;
     this.markDirty();
     this.saveToLocalStorage();
   },
@@ -36508,6 +36512,8 @@ const Reports = {
     },
     set(customer, patch) {
       if (typeof App === 'undefined' || !App.data) return null;
+      // Entity-mutators contract: snapshot BEFORE mutating so the change is undoable.
+      if (typeof App.pushUndo === 'function') App.pushUndo('Update report branding for ' + (customer || 'portfolio default'));
       if (!App.data.settings) App.data.settings = {};
       if (!App.data.settings.branding) App.data.settings.branding = {};
       const key = customer || 'portfolio_default';
