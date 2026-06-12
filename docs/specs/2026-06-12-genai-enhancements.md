@@ -67,8 +67,8 @@ This spec lets any session continue the work without prior context.*
 | #2 SOW redraft | DONE |
 | #5 Briefing tool | DONE |
 | #1 Transcript extraction | DONE |
-| #3 Sizing suggestions | pending |
-| #4 Wireframe refinement | pending |
+| #3 Sizing suggestions | DONE |
+| #4 Wireframe refinement | DONE |
 
 Update this table as items land. Conventions: every fix/feature ships with
 mock-adapter tests (no network), all writes confirmation-gated + audited,
