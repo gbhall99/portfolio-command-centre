@@ -732,6 +732,80 @@ describe('R11 hardening — blocked pop-up writes no report_generated audit entr
 });
 
 // ============================================================
+// R11 hardening — missing-entity handling in Reports.generate.
+// Legacy exportProjectPack/exportBusinessCase toasted 'Project not found',
+// exportForumAgenda 'Meeting not found', exportWalkthroughMinutes
+// 'Walkthrough not found' — and never opened a window or audited. After the
+// move to Reports.generate, sponsorPack/businessCase/forumAgenda returned an
+// empty-section doc for a stale id (silent blank PDF + bogus report_generated
+// audit entry) and walkthroughMinutes hit the misleading
+// 'Unknown report: walkthrough_minutes' toast.
+// ============================================================
+describe('R11 hardening — generate() with a stale entity id: legacy toast, no export, no audit', () => {
+  function instrument(app) {
+    const calls = { opened: 0, toasts: [] };
+    app.Reports.open = () => { calls.opened++; return {}; };
+    app.App.toast = (msg, kind) => { calls.toasts.push({ msg, kind }); };
+    app.App.data.audit_log = [];
+    return calls;
+  }
+  const reportEntries = (app) =>
+    (app.App.data.audit_log || []).filter(e => e.event_type === 'report_generated');
+
+  const cases = [
+    ['sponsor_pack', { projectId: 'nope' }, 'Project not found'],
+    ['project_report', { projectId: 'nope' }, 'Project not found'],
+    ['business_case', { projectId: 'nope' }, 'Project not found'],
+    ['meeting_agenda', { forumId: 'nope' }, 'Meeting not found'],
+    ['walkthrough_minutes', { walkthroughId: 'nope' }, 'Walkthrough not found']
+  ];
+
+  for (const [reportId, args, expected] of cases) {
+    it(reportId + ': toasts "' + expected + '", opens nothing, audits nothing', async () => {
+      const app = await bootEmpty();
+      const calls = instrument(app);
+      app.Reports.generate(reportId, args);
+      expect(calls.toasts.map(t => t.msg)).toEqual([expected]);
+      expect(calls.toasts[0].kind).toBe('error');
+      expect(calls.opened).toBe(0);
+      expect(reportEntries(app)).toEqual([]);
+      app.teardown();
+    });
+  }
+
+  it('builders return null (not an empty-section doc) for missing entities', async () => {
+    const app = await bootEmpty();
+    expect(app.Reports.Builders.sponsorPack('nope')).toBeNull();
+    expect(app.Reports.Builders.businessCase('nope')).toBeNull();
+    expect(app.Reports.Builders.forumAgenda('nope')).toBeNull();
+    expect(app.Reports.Builders.walkthroughMinutes('nope')).toBeNull();
+    app.teardown();
+  });
+
+  it('a genuinely unknown report id still toasts "Unknown report"', async () => {
+    const app = await bootEmpty();
+    const calls = instrument(app);
+    app.Reports.generate('bogus_report', {});
+    expect(calls.toasts.map(t => t.msg)).toEqual(['Unknown report: bogus_report']);
+    expect(calls.opened).toBe(0);
+    expect(reportEntries(app)).toEqual([]);
+    app.teardown();
+  });
+
+  it('a valid entity still exports and audits (control)', async () => {
+    const app = await bootEmpty();
+    const p = makeProject({ id: 'OKP', name: 'OK Project', customer: 'Acme Industries' });
+    app.App.data.projects.push(p);
+    const calls = instrument(app);
+    app.Reports.generate('sponsor_pack', { projectId: 'OKP', audience: 'internal' });
+    expect(calls.toasts).toEqual([]);
+    expect(calls.opened).toBe(1);
+    expect(reportEntries(app).map(e => e.meta.report_type)).toEqual(['sponsor_pack']);
+    app.teardown();
+  });
+});
+
+// ============================================================
 // Migration replay (§9.13) — load + apply migrations + no data loss
 // ============================================================
 describe('§9.13 — Migration replay through validateAndLoad', () => {

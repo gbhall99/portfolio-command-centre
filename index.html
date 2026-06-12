@@ -36728,7 +36728,7 @@ const Reports = {
       const both = Reports.Builders._AUD_BOTH.slice();
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const p = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).find(x => x.id === projectId);
-      if (!p) return Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'Sponsor Pack', sections: [] });
+      if (!p) return null; // generate() toasts 'Project not found' (legacy exportProjectPack parity)
       const n = p.narrative || {};
       const narrativeHtml = (n.headline ? '<p style="font-style:italic;font-size:var(--rp-fs-md)">' + esc(n.headline) + '</p>' : '') +
         '<p><strong>Sponsor:</strong> ' + esc(p.sponsor || '—') + ' &middot; <strong>Manager:</strong> ' + esc(p.manager || '—') + ' &middot; <strong>Stage:</strong> ' + esc(p.lifecycle_stage || 'Implementation') + '</p>' +
@@ -36774,7 +36774,7 @@ const Reports = {
     businessCase(projectId) {
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const p = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).find(x => x.id === projectId);
-      if (!p) return Reports.Doc.buildDoc({ reportType: 'business_case', title: 'Business Case', sections: [] });
+      if (!p) return null; // generate() toasts 'Project not found' (legacy exportBusinessCase parity)
       return Reports.Doc.buildDoc({
         reportType: 'business_case',
         title: 'Business Case — ' + (p.name || ''),
@@ -36908,7 +36908,7 @@ const Reports = {
       const esc = Dashboard.esc;
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const forum = ((typeof App !== 'undefined' && App.data && App.data.governance_forums) || []).find(f => f.id === forumId || f.name === forumId);
-      if (!forum) return Reports.Doc.buildDoc({ reportType: 'meeting_agenda', title: 'Agenda — ' + (forumId || ''), sections: [] });
+      if (!forum) return null; // generate() toasts 'Meeting not found' (legacy exportForumAgenda parity)
       const linked = ((App.data && App.data.projects) || []).filter(p =>
         p.governance_forum === forum.id || p.governance_forum === forum.name
       );
@@ -37193,11 +37193,25 @@ const Reports = {
       default: return null;
     }
   },
+  // Missing-entity toast per report id (legacy export* wrapper parity): a
+  // known report whose builder finds no entity for a stale id must not open
+  // a blank cover-only PDF, must not audit, and must not claim the report id
+  // itself is unknown.
+  _MISSING_ENTITY_TOAST: {
+    sponsor_pack: 'Project not found',
+    project_report: 'Project not found',
+    business_case: 'Project not found',
+    meeting_agenda: 'Meeting not found',
+    walkthrough_minutes: 'Walkthrough not found'
+  },
   // Single entry point: build → thread audience → serialize → open → audit.
   generate(reportId, args) {
     args = args || {};
     const doc = this._build(reportId, args);
-    if (!doc) { if (App.toast) App.toast('Unknown report: ' + reportId, 'error'); return; }
+    if (!doc) {
+      if (App.toast) App.toast(this._MISSING_ENTITY_TOAST[reportId] || ('Unknown report: ' + reportId), 'error');
+      return;
+    }
     doc.audience = args.audience || doc.audience || 'internal';
     const html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer));
     // Pop-up blocked → no export happened, so nothing to audit (matches the
