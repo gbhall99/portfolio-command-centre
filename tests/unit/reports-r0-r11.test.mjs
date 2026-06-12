@@ -674,6 +674,64 @@ describe('R11 / AC-R11.1 — Reports.recordExport writes a report_generated entr
 });
 
 // ============================================================
+// R11 hardening — pop-up blocked means no export happened, so the
+// skill/document surfaces must not write a report_generated entry.
+// (Reports.open returns null when window.open is blocked; the gated
+// pattern in Reports.generate must hold on every rewired surface.)
+// ============================================================
+describe('R11 hardening — blocked pop-up writes no report_generated audit entry', () => {
+  const noReportEntries = (app) =>
+    (app.App.data.audit_log || []).filter(e => e.event_type === 'report_generated');
+
+  it('Billing.exportReport: blocked open is not audited; successful open is', async () => {
+    const app = await bootEmpty();
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.data.audit_log = [];
+    app.Reports.open = () => null; // pop-up blocked
+    app.Billing.exportReport('Acme Industries');
+    expect(noReportEntries(app)).toEqual([]);
+    app.Reports.open = () => ({}); // pop-up allowed
+    app.Billing.exportReport('Acme Industries');
+    expect(noReportEntries(app).map(e => e.meta.report_type)).toEqual(['costs_report']);
+    app.teardown();
+  });
+
+  it('SowSkill.exportPrint: blocked open is not audited', async () => {
+    const app = await bootEmpty();
+    app.App.activeCustomer = 'Acme Industries';
+    const sow = app.Sow.create({
+      customer: 'Acme Industries',
+      definition: { id: 'mini-sow', name: 'Mini SOW', sections: [{ id: 'exec', title: 'Executive summary', order: 1, required: true }] },
+      generatedSections: [{ id: 'exec', content: 'Deliver the churn dashboard.' }],
+      name: 'Statement of Work — Blocked Popup'
+    });
+    app.SowSkill._sowId = sow.id;
+    app.App.data.audit_log = [];
+    app.Reports.open = () => null;
+    app.SowSkill.exportPrint();
+    expect(noReportEntries(app)).toEqual([]);
+    app.teardown();
+  });
+
+  it('StatusReportSkill.exportPrint: blocked open is not audited', async () => {
+    const app = await bootEmpty();
+    app.App.activeCustomer = 'Acme Industries';
+    const r = app.StatusReport.create({
+      customer: 'Acme Industries',
+      period: 'June 2026',
+      definition: { sections: [{ id: 'exec', title: 'Executive summary', order: 1, required: true }] },
+      generatedSections: [{ id: 'exec', content: 'On track.' }]
+    });
+    app.StatusReportSkill._id = r.id;
+    app.App.data.audit_log = [];
+    app.Reports.open = () => null;
+    app.StatusReportSkill.exportPrint();
+    expect(noReportEntries(app)).toEqual([]);
+    app.teardown();
+  });
+});
+
+// ============================================================
 // Migration replay (§9.13) — load + apply migrations + no data loss
 // ============================================================
 describe('§9.13 — Migration replay through validateAndLoad', () => {
