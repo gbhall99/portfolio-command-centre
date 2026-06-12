@@ -57,6 +57,26 @@ describe('Reports.open + Reports.generate', () => {
     expect(html).toContain('— shared'); // customer is a declared audience — shared suffix stays
     app.teardown();
   });
+  it('generate("customer_pack") without an audience arg builds the Customer Pack and audits as customer_pack (never the internal portfolio pack)', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }],
+      projects: [makeProject({ id: 'P1', name: 'Proj', customer: 'Acme Industries', status: 'In Progress' })]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const writes = [];
+    app.window.open = () => ({ document: { write: (s) => writes.push(s), close() {} } });
+    // Copy links (parseCopyLink) and programmatic/agent callers pass the
+    // catalogue id directly without an audience arg — that must still yield
+    // the curated customer pack, not the internal portfolio pack.
+    app.Reports.generate('customer_pack', { customer: 'Acme Industries' });
+    const html = writes.join('');
+    expect(html).toContain('Customer Pack —');
+    expect(html).not.toContain('Portfolio Pack —');
+    const entries = (app.App.data.audit_log || []).filter(e => e.event_type === 'report_generated');
+    expect(entries.length).toBe(1);
+    expect(entries[0].meta.report_type).toBe('customer_pack');
+    app.teardown();
+  });
   it('generate does NOT audit when the pop-up is blocked (open returns null)', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1' }],
