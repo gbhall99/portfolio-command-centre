@@ -110,4 +110,57 @@ describe('Gantt print exports — RAG colour parity (WS-E E1)', () => {
     expect(html).toContain('var(--rp-red)');
     app.teardown();
   });
+
+  it('exportBriefingPack emits the unified RAG family, never the legacy hexes', async () => {
+    // The forum Briefing Pack is delivered via Reports.open + Reports.Doc.toHtml,
+    // so the E1 parity invariant applies: NEVER legacy #22c55e/#ef4444/#f59e0b.
+    // An overdue risk resolution date exercises the OVERDUE label in Top Risks.
+    const proj = makeProject({
+      id: 'ACME-BP-1', name: 'Risky Venture', customer: 'Acme Industries',
+      governance_forum: 'Governance Board', status: 'In Progress',
+      rag_schedule: 'Red', rag_resourcing: 'Amber', rag_scope: 'Green'
+    });
+    proj.risks_register = [
+      { description: 'Slipped risk', action: 'Mitigate', owner: 'Alice', impact: 5, probability: 5, resolution_date: '2026-01-01' },
+      { description: 'Escalated risk', action: 'Contain', owner: 'Bob', impact: 4, probability: 4, escalation_severity: 'Red', escalation_log: [{ at: new Date().toISOString(), reason: 'Vendor slipped' }] }
+    ];
+    const forum = {
+      id: 'GovBoard', name: 'Governance Board', cadence: 'Monthly', customer: 'Acme Industries',
+      actions: [{ description: 'Overdue action', owner: 'Alice', due_date: '2026-01-01', status: 'Open' }],
+      decisions: []
+    };
+    const app = await loadApp(makeDataset({
+      projects: [proj], sprints: [makeSprint()], governance_forums: [forum]
+    }));
+    let captured = '';
+    app.Reports.open = (html) => { captured = html; return {}; };
+    app.Governance.exportBriefingPack(0);
+    expect(captured).toMatch(/^<!DOCTYPE html>/);
+    for (const hex of LEGACY) expect(captured).not.toContain(hex);
+    // The overdue resolution-date label colours via the --rp-red token.
+    expect(captured).toMatch(/color:var\(--rp-red\)[^>]*>OVERDUE/);
+    app.teardown();
+  });
+
+  it('exportBriefingPack RAG dots follow Reports.RAG_HEX (no local copy to drift)', async () => {
+    // Reports.RAG_HEX is documented as the ONE source of truth for print RAG hexes;
+    // mutate it and prove the briefing-pack dots track it rather than a private copy.
+    const proj = makeProject({
+      id: 'ACME-BP-2', name: 'Dotted', customer: 'Acme Industries',
+      governance_forum: 'Governance Board', status: 'In Progress',
+      rag_schedule: 'Red', rag_resourcing: 'Amber', rag_scope: 'Green'
+    });
+    const forum = { id: 'GovBoard', name: 'Governance Board', cadence: 'Monthly', customer: 'Acme Industries', actions: [], decisions: [] };
+    const app = await loadApp(makeDataset({
+      projects: [proj], sprints: [makeSprint()], governance_forums: [forum]
+    }));
+    let captured = '';
+    app.Reports.open = (html) => { captured = html; return {}; };
+    app.Reports.RAG_HEX = { Green: '#010101', Amber: '#020202', Red: '#030303' };
+    app.Governance.exportBriefingPack(0);
+    expect(captured).toContain('background:#030303'); // Red dot
+    expect(captured).toContain('background:#020202'); // Amber dot
+    expect(captured).toContain('background:#010101'); // Green dot
+    app.teardown();
+  });
 });
