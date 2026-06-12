@@ -36349,6 +36349,7 @@ const Reports = {
       '.rp-table{width:100%;border-collapse:collapse;font-size:var(--rp-fs-xs)}' +
       '.rp-table th{text-align:left;background:var(--rp-surface-3);color:var(--rp-muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--rp-border-strong)}' +
       '.rp-table td{padding:6px 8px;border-bottom:1px solid var(--rp-border);color:var(--rp-text)}' +
+      '.rp-table tr.rp-totals td{font-weight:700;border-top:2px solid var(--rp-border-strong)}' +
       '.rp-chip{display:inline-block;border-radius:10px;padding:1px 8px;font-weight:700;color:#fff;font-size:var(--rp-fs-2xs)}' +
       '.rp-rag-green{color:var(--rp-green)}.rp-rag-amber{color:var(--rp-amber)}.rp-rag-red{color:var(--rp-red)}' +
       '.rp-cover{padding:48px 0;border-bottom:3px solid var(--rp-primary);margin-bottom:24px}' +
@@ -36405,7 +36406,20 @@ const Reports = {
         return '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + content + '</td>';
       }).join('') + '</tr>').join('');
     }
-    return '<table class="rp-table">' + colgroup + head + '<tbody>' + bodyRows + '</tbody></table>';
+    // Optional totals footer (legacy parity: '<tr class="totals">…'). Rendered
+    // only when there is data — an empty table has nothing to total. Cells are
+    // keyed by column key; the label spans the first `labelSpan` columns.
+    let totalsRow = '';
+    if (opts.totals && rows.length) {
+      const span = Math.max(1, opts.totals.labelSpan || 1);
+      const cells = opts.totals.cells || {};
+      totalsRow = '<tr class="rp-totals"><td colspan="' + span + '">' + esc(opts.totals.label || 'Totals') + '</td>' +
+        cols.slice(span).map(c => {
+          const v = cells[c.key];
+          return '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (v == null ? '' : esc(String(v))) + '</td>';
+        }).join('') + '</tr>';
+    }
+    return '<table class="rp-table">' + colgroup + head + '<tbody>' + bodyRows + totalsRow + '</tbody></table>';
   },
   Doc: {
     // R1 / AC-R1.1: honours density, coverPage, tocPage, includeAppendix, classification.
@@ -37201,6 +37215,7 @@ const Reports = {
         rows: s.arrangements,
         empty: 'None — all work bills as T&M'
       });
+      const t = s.totals || {};
       const projectsHtml = Reports.table({
         columns: [
           { key: 'name', label: 'Project' },
@@ -37213,9 +37228,21 @@ const Reports = {
           { key: 'margin', label: 'Margin', align: 'right', width: '11%', cell: r => esc(money(r.margin)) }
         ],
         rows: s.projects,
-        empty: 'No completed work yet'
+        empty: 'No completed work yet',
+        // Legacy parity: per-project Totals row carrying the story-point
+        // totals (Done/Prepaid/T&M SP) alongside the money columns.
+        totals: {
+          label: 'Totals', labelSpan: 2,
+          cells: {
+            consumed_points: App.fmtPoints(t.consumed_points || 0),
+            prepaid_covered_points: App.fmtPoints(t.prepaid_covered_points || 0),
+            billable_points: App.fmtPoints(t.billable_points || 0),
+            billable_amount: money(t.billable_amount || 0),
+            cost: money(t.cost || 0),
+            margin: money(t.margin || 0)
+          }
+        }
       });
-      const t = s.totals || {};
       const summaryHtml = Reports.table({
         columns: [
           { key: 'label', label: 'Measure' },
