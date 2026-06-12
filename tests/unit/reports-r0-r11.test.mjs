@@ -541,12 +541,12 @@ describe('R1 hardening — costs report is typed costs_report with its own defau
 // ============================================================
 // R2 + R3 — Customer Pack + Status Report through Reports.Doc
 // ============================================================
-describe('R2 / AC-R2.1 — Customer Pack contains all 5 blocks in order', () => {
-  it('builders.customerPack returns lifecycle + Wins + Asks + Risks + Next', async () => {
+describe('R2 / AC-R2.1 — Customer Pack contains all 6 blocks in order', () => {
+  it('builders.customerPack returns health + lifecycle + Wins + Asks + Risks + Next', async () => {
     const app = await bootEmpty();
     const doc = app.Reports.Builders.customerPack('Acme Industries');
     const titles = doc.sections.map(s => s.title);
-    expect(titles).toEqual(['Lifecycle headlines', 'Wins', 'We need from you', 'Customer-visible risks', "What's next"]);
+    expect(titles).toEqual(['Portfolio health', 'Lifecycle headlines', 'Wins', 'We need from you', 'Customer-visible risks', "What's next"]);
     expect(doc.classification).toBe('Confidential');
     expect(doc.coverPage).toBe('full');
     expect(doc.includeAppendix).toBe(true);

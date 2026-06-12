@@ -36619,8 +36619,31 @@ const Reports = {
       const data = (typeof App !== 'undefined' && App.computeCustomerPackData)
         ? App.computeCustomerPackData(customer)
         : { projects: [], key_asks: [] };
-      const headlines = data.projects.map(p =>
-        '<div style="margin-bottom:8px"><strong>' + esc(p.name) + '</strong> (' + esc(p.lifecycle_stage || 'Implementation') + ') — ' + esc(p.headline || '(no headline yet)') + '</div>'
+      // Legacy parity (buildCustomerPackDoc): Portfolio health RAG-mix summary
+      // from computeCustomerPackData's portfolio_health rollup.
+      const health = data.portfolio_health || {};
+      const ragMix = health.ragMix || { Green: 0, Amber: 0, Red: 0 };
+      const healthHtml = '<p>Green: ' + (ragMix.Green || 0) +
+        ' &middot; Amber: ' + (ragMix.Amber || 0) +
+        ' &middot; Red: ' + (ragMix.Red || 0) +
+        ' &middot; Blocked: ' + (health.blockedCount || 0) +
+        ' &middot; At risk: ' + (health.atRiskCount || 0) + '</p>';
+      // Legacy parity: headlines grouped under per-lifecycle-stage <h3>
+      // headings, Idea -> Run/BAU; unknown stages render after the known ones
+      // (the legacy builder silently dropped them).
+      const stageOrder = ['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU'];
+      const byStage = {};
+      data.projects.forEach(p => {
+        const stage = p.lifecycle_stage || 'Implementation';
+        (byStage[stage] = byStage[stage] || []).push(p);
+      });
+      const stages = stageOrder.filter(s => byStage[s])
+        .concat(Object.keys(byStage).filter(s => stageOrder.indexOf(s) < 0));
+      const headlines = stages.map(stage =>
+        '<h3 style="margin:14px 0 6px 0;color:var(--rp-title)">' + esc(stage) + '</h3>' +
+        byStage[stage].map(p =>
+          '<div style="margin-bottom:8px"><strong>' + esc(p.name) + '</strong> — ' + esc(p.headline || '(no headline yet)') + '</div>'
+        ).join('')
       ).join('') || '<p>No headlines captured yet.</p>';
       const wins = data.projects.filter(p => (p.wins || []).length)
         .map(p => '<li><strong>' + esc(p.name) + ':</strong> ' + p.wins.map(esc).join('; ') + '</li>').join('');
@@ -36643,6 +36666,7 @@ const Reports = {
         '<div><strong>' + esc(p.name) + '</strong> — next sprint: ' + esc(p.next_sprint_id || 'TBD') + '</div>'
       ).join('') || '<p>Nothing scheduled.</p>';
       const sections = [
+        { id: 'health', title: 'Portfolio health', html: healthHtml, audiences: both },
         { id: 'lifecycle', title: 'Lifecycle headlines', html: headlines, audiences: both },
         { id: 'wins', title: 'Wins', html: wins ? '<ul>' + wins + '</ul>' : '<p>None recorded.</p>', audiences: both },
         { id: 'asks', title: 'We need from you', html: asks ? '<ul>' + asks + '</ul>' : '<p>No asks this period.</p>', audiences: both },
