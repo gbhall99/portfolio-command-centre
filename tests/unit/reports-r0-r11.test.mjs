@@ -170,6 +170,66 @@ describe('R1 / AC-R1.2 — Classification band renders top + bottom with colour'
   });
 });
 
+describe('R1 hardening — Doc.toHtml branding parity (logo + companyName)', () => {
+  // Regression: the legacy serializer (Report.buildDoc/_coverPage/_logoHtml)
+  // rendered brand.logo and brand.companyName on every export's cover and
+  // footer. Reports.configureBranding still prompts for and persists both,
+  // so the unified engine must render them or the settings are dead config.
+  function buildCoverDoc(app) {
+    return app.Reports.Doc.buildDoc({
+      reportType: 'sponsor_pack',
+      title: 'Quarterly Pack',
+      customer: 'Acme Industries',
+      coverPage: 'full',
+      sections: [{ id: 's1', title: 'Summary', html: '<p>ok</p>' }]
+    });
+  }
+
+  it('renders the configured logo on the cover and companyName on cover + footer', async () => {
+    const app = await bootEmpty();
+    const brand = {
+      logo: 'data:image/png;base64,iVBORw0KGgo=',
+      companyName: 'Acme Consulting Ltd',
+      primaryColor: '#0000ff',
+      footerNote: 'Confidential'
+    };
+    const html = app.Reports.Doc.toHtml(buildCoverDoc(app), brand);
+    const dom = app.window.document.createElement('div');
+    dom.innerHTML = html;
+    const coverImg = dom.querySelector('.rp-cover img');
+    expect(coverImg).toBeTruthy();
+    expect(coverImg.getAttribute('src')).toBe(brand.logo);
+    const cover = dom.querySelector('.rp-cover');
+    expect(cover.textContent).toContain('Acme Consulting Ltd');
+    const footer = dom.querySelector('.rp-footer');
+    expect(footer.textContent).toContain('Acme Consulting Ltd');
+    app.teardown();
+  });
+
+  it('a double quote in the logo URL cannot break out of the src attribute', async () => {
+    const app = await bootEmpty();
+    const brand = { logo: 'x.png" onerror="alert(document.domain)', companyName: 'Acme' };
+    const html = app.Reports.Doc.toHtml(buildCoverDoc(app), brand);
+    const dom = app.window.document.createElement('div');
+    dom.innerHTML = html;
+    expect(dom.querySelector('[onerror]')).toBeNull();
+    const coverImg = dom.querySelector('.rp-cover img');
+    expect(coverImg).toBeTruthy();
+    expect(coverImg.getAttribute('src')).toBe(brand.logo);
+    app.teardown();
+  });
+
+  it('omits the logo img and brand line when branding is unconfigured', async () => {
+    const app = await bootEmpty();
+    const html = app.Reports.Doc.toHtml(buildCoverDoc(app), {});
+    const dom = app.window.document.createElement('div');
+    dom.innerHTML = html;
+    expect(dom.querySelector('.rp-cover img')).toBeNull();
+    expect(dom.querySelector('.rp-cover-brand')).toBeNull();
+    app.teardown();
+  });
+});
+
 describe('R1 hardening — Doc.toHtml escapes section ids in attribute context', () => {
   // Section ids derive from untrusted free-text names (customer / team member)
   // with only whitespace stripped. A name containing a double quote (no spaces)

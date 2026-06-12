@@ -36321,6 +36321,8 @@ const Reports = {
       '.rp-chip{display:inline-block;border-radius:10px;padding:1px 8px;font-weight:700;color:#fff;font-size:var(--rp-fs-2xs)}' +
       '.rp-rag-green{color:var(--rp-green)}.rp-rag-amber{color:var(--rp-amber)}.rp-rag-red{color:var(--rp-red)}' +
       '.rp-cover{padding:48px 0;border-bottom:3px solid var(--rp-primary);margin-bottom:24px}' +
+      '.rp-cover-logo{display:block;max-height:48px;max-width:180px;object-fit:contain;margin-bottom:10px}' +
+      '.rp-cover-brand{font-size:var(--rp-fs-md);font-weight:700;color:var(--rp-title);margin-bottom:6px}' +
       '.rp-cover-title{font-size:var(--rp-fs-2xl);color:var(--rp-title);font-weight:800;margin:8px 0}' +
       '.rp-classification{font-size:var(--rp-fs-2xs);text-transform:uppercase;letter-spacing:.6px;font-weight:700}' +
       '.rp-toc{font-size:var(--rp-fs-sm);color:var(--rp-muted)}' +
@@ -36406,8 +36408,18 @@ const Reports = {
       const classLine = doc.classification
         ? '<div class="rp-classification" style="color:' + bandColor + '">' + esc(doc.classification) + (audience === 'customer' ? ' — shared' : '') + '</div>'
         : '';
+      // Branding parity with the legacy serializer: brand.logo and
+      // brand.companyName (set via Reports.configureBranding) render on the
+      // cover; companyName also appears in the footer. brand.logo is
+      // untrusted free text — escAttr (not esc) for the double-quoted src.
+      const logoHtml = brand.logo
+        ? '<img class="rp-cover-logo" src="' + Dashboard.escAttr(brand.logo) + '" alt="' + Dashboard.escAttr(brand.companyName || doc.customer || '') + ' logo">'
+        : '';
+      const brandLine = brand.companyName
+        ? '<div class="rp-cover-brand">' + esc(brand.companyName) + '</div>'
+        : '';
       const cover = doc.coverPage
-        ? '<div class="rp-cover">' + classLine +
+        ? '<div class="rp-cover">' + logoHtml + brandLine + classLine +
             '<div class="rp-cover-title">' + esc(doc.title || '') + '</div>' +
             (doc.subtitle ? '<div style="color:var(--rp-muted)">' + esc(doc.subtitle) + '</div>' : '') +
             (doc.customer ? '<div style="color:var(--rp-faint);font-size:var(--rp-fs-xs);margin-top:6px">' + esc(doc.customer) + '</div>' : '') +
@@ -36423,7 +36435,8 @@ const Reports = {
       const appendix = (doc.appendix && doc.appendix.length)
         ? '<div class="rp-section"><div class="rp-section-title">Appendix</div>' + doc.appendix.map(a => a.html || '').join('') + '</div>'
         : '';
-      const footerLeft = esc(doc.classification || '') + (brand.footerNote ? (doc.classification ? ' · ' : '') + esc(brand.footerNote) : '');
+      const footerLeft = [doc.classification, brand.companyName, brand.footerNote]
+        .filter(Boolean).map(v => esc(v)).join(' · ');
       const footer = '<div class="rp-footer"><span>' + footerLeft + '</span>' +
         '<span>Generated ' + esc(new Date().toISOString().slice(0, 10)) + (doc.customer ? ' · ' + esc(doc.customer) : '') + '</span></div>';
       return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Report') + '</title>' +
