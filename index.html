@@ -36331,6 +36331,16 @@ const Reports = {
       '.rp-chip{display:inline-block;border-radius:10px;padding:1px 8px;font-weight:700;color:#fff;font-size:var(--rp-fs-2xs)}' +
       '.rp-rag-green{color:var(--rp-green)}.rp-rag-amber{color:var(--rp-amber)}.rp-rag-red{color:var(--rp-red)}' +
       '.rp-cover{padding:48px 0;border-bottom:3px solid var(--rp-primary);margin-bottom:24px}' +
+      // coverPage:'header-band' — compact band instead of the full-page cover.
+      '.rp-cover--band{padding:14px 0 12px;border-bottom-width:2px;margin-bottom:16px}' +
+      '.rp-cover--band .rp-cover-title{font-size:var(--rp-fs-xl);margin:4px 0}' +
+      '.rp-cover--band .rp-cover-logo{max-height:32px;margin-bottom:6px}' +
+      // Density variants (buildDoc whitelist: compact / standard / full).
+      '.rp-density-compact{font-size:var(--rp-fs-xs);line-height:1.45}' +
+      '.rp-density-compact .rp-section{margin:12px 0}' +
+      '.rp-density-compact .rp-table th,.rp-density-compact .rp-table td{padding:4px 6px}' +
+      '.rp-density-full{line-height:1.65}' +
+      '.rp-density-full .rp-section{margin:24px 0}' +
       '.rp-cover-logo{display:block;max-height:48px;max-width:180px;object-fit:contain;margin-bottom:10px}' +
       '.rp-cover-brand{font-size:var(--rp-fs-md);font-weight:700;color:var(--rp-title);margin-bottom:6px}' +
       '.rp-cover-title{font-size:var(--rp-fs-2xl);color:var(--rp-title);font-weight:800;margin:8px 0}' +
@@ -36382,8 +36392,13 @@ const Reports = {
       opts = opts || {};
       const reportType = opts.reportType || 'sponsor_pack';
       const defaults = Reports._DEFAULTS_BY_TYPE[reportType] || Reports._DEFAULTS_BY_TYPE.sponsor_pack;
-      const density = opts.density || defaults.density;
-      const coverPage = opts.coverPage || defaults.coverPage;
+      // Density and coverPage are whitelisted here because toHtml emits them
+      // as CSS class tokens — unknown values fall back rather than pass through.
+      const density = ['compact', 'standard', 'full'].indexOf(opts.density) >= 0 ? opts.density : defaults.density;
+      // `!== undefined` (not ||) so an explicit `coverPage: false` disables the
+      // cover; 'header-band' is the compact variant, any other truthy ⇒ 'full'.
+      const coverOpt = (opts.coverPage !== undefined) ? opts.coverPage : defaults.coverPage;
+      const coverPage = coverOpt ? (coverOpt === 'header-band' ? 'header-band' : 'full') : false;
       const tocPage = (opts.tocPage !== undefined) ? opts.tocPage : (defaults.tocPage && (opts.sections || []).length >= 3);
       const includeAppendix = (opts.includeAppendix !== undefined) ? opts.includeAppendix : defaults.includeAppendix;
       const classification = opts.classification || defaults.classification;
@@ -36428,8 +36443,11 @@ const Reports = {
       const brandLine = brand.companyName
         ? '<div class="rp-cover-brand">' + esc(brand.companyName) + '</div>'
         : '';
+      // Docs may predate the buildDoc whitelist (localStorage), so re-vet the
+      // density before it enters a class attribute.
+      const density = ['compact', 'standard', 'full'].indexOf(doc.density) >= 0 ? doc.density : 'standard';
       const cover = doc.coverPage
-        ? '<div class="rp-cover">' + logoHtml + brandLine + classLine +
+        ? '<div class="rp-cover' + (doc.coverPage === 'header-band' ? ' rp-cover--band' : '') + '">' + logoHtml + brandLine + classLine +
             '<div class="rp-cover-title">' + esc(doc.title || '') + '</div>' +
             (doc.subtitle ? '<div style="color:var(--rp-muted)">' + esc(doc.subtitle) + '</div>' : '') +
             (doc.customer ? '<div style="color:var(--rp-faint);font-size:var(--rp-fs-xs);margin-top:6px">' + esc(doc.customer) + '</div>' : '') +
@@ -36450,7 +36468,7 @@ const Reports = {
       const footer = '<div class="rp-footer"><span>' + footerLeft + '</span>' +
         '<span>Generated ' + esc(new Date().toISOString().slice(0, 10)) + (doc.customer ? ' · ' + esc(doc.customer) : '') + '</span></div>';
       return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + esc(doc.title || 'Report') + '</title>' +
-        Reports.tokens(brand) + '</head><body><div class="rp-page">' +
+        Reports.tokens(brand) + '</head><body><div class="rp-page rp-density-' + density + '">' +
         cover + toc + body + appendix + footer + '</div></body></html>';
     }
   },

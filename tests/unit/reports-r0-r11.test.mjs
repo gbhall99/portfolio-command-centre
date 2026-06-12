@@ -156,6 +156,61 @@ describe('R1 / AC-R1.1 — Reports.Doc.buildDoc honours density / coverPage / to
     });
     app.teardown();
   });
+
+  // Regression: buildDoc used `opts.coverPage || defaults.coverPage`, so an
+  // explicit `coverPage: false` silently became the type default and the cover
+  // could never be disabled.
+  it('coverPage: false disables the cover (no || fallback to the type default)', async () => {
+    const app = await bootEmpty();
+    const doc = app.Reports.Doc.buildDoc({ reportType: 'customer_pack', title: 'X', coverPage: false, sections: [] });
+    expect(doc.coverPage).toBe(false);
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).not.toContain('<div class="rp-cover'); // stylesheet rules remain; the cover element must not
+    app.teardown();
+  });
+
+  // Regression: toHtml only truthiness-checked doc.coverPage, so the
+  // 'header-band' and 'full' variants encoded in _DEFAULTS_BY_TYPE rendered
+  // identical cover markup.
+  it("coverPage 'header-band' renders a compact band distinct from 'full'", async () => {
+    const app = await bootEmpty();
+    const band = app.Reports.Doc.toHtml(
+      app.Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'X', coverPage: 'header-band', sections: [] }), {});
+    const full = app.Reports.Doc.toHtml(
+      app.Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'X', coverPage: 'full', sections: [] }), {});
+    expect(band).toContain('<div class="rp-cover rp-cover--band">');
+    expect(full).not.toContain('<div class="rp-cover rp-cover--band">');
+    expect(full).toContain('<div class="rp-cover">');
+    app.teardown();
+  });
+
+  // Regression: density was stored on the doc but never read, so compact /
+  // standard / full all produced byte-identical HTML.
+  it('density varies the rendered document (compact vs standard vs full)', async () => {
+    const app = await bootEmpty();
+    const sections = [{ id: 's1', title: 'One', html: '<p>x</p>' }];
+    const render = density => app.Reports.Doc.toHtml(
+      app.Reports.Doc.buildDoc({ reportType: 'portfolio_pack', title: 'X', density, sections }), {});
+    const compact = render('compact');
+    const standard = render('standard');
+    const full = render('full');
+    expect(compact).toContain('<div class="rp-page rp-density-compact">');
+    expect(standard).toContain('<div class="rp-page rp-density-standard">');
+    expect(full).toContain('<div class="rp-page rp-density-full">');
+    expect(compact).not.toBe(full);
+    // The density classes are backed by real stylesheet rules, not dead classes.
+    expect(compact).toContain('.rp-density-compact');
+    expect(full).toContain('.rp-density-full');
+    app.teardown();
+  });
+
+  it('unknown density falls back to the type default; unknown coverPage strings normalise to full', async () => {
+    const app = await bootEmpty();
+    const doc = app.Reports.Doc.buildDoc({ reportType: 'sponsor_pack', title: 'X', density: 'bogus"<x>', coverPage: 'bogus', sections: [] });
+    expect(doc.density).toBe('compact'); // sponsor_pack default — never an unvetted class token
+    expect(doc.coverPage).toBe('full');
+    app.teardown();
+  });
 });
 
 describe('R1 / AC-R1.2 — Classification band renders top + bottom with colour', () => {
