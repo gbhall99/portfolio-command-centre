@@ -37327,6 +37327,15 @@ const Reports = {
     meeting_agenda: 'Meeting not found',
     walkthrough_minutes: 'Walkthrough not found'
   },
+  // Canonical Catalogue id for the aliases _build accepts (the audience arg
+  // picks which side of the portfolio pair an export is recorded/validated as).
+  _canonicalId(reportId, args) {
+    if (reportId === 'project_report') return 'sponsor_pack';
+    if (reportId === 'portfolio_report' || reportId === 'portfolio_pack' || reportId === 'customer_pack') {
+      return ((args || {}).audience === 'customer') ? 'customer_pack' : 'portfolio_pack';
+    }
+    return reportId;
+  },
   // Single entry point: build → thread audience → serialize → open → audit.
   generate(reportId, args) {
     args = args || {};
@@ -37335,16 +37344,27 @@ const Reports = {
       if (App.toast) App.toast(this._MISSING_ENTITY_TOAST[reportId] || ('Unknown report: ' + reportId), 'error');
       return;
     }
-    doc.audience = args.audience || doc.audience || 'internal';
+    // Clamp the audience to the Catalogue entry's declared `audiences`: an
+    // internal-only report serialized with audience:'customer' would have every
+    // section stripped by Doc._filterSections (cover-only PDF) under a
+    // contradictory 'Internal — shared' classification line — and still audit.
+    // Reachable only via this API today (the hub hides the audience select when
+    // audiences.length === 1), but copy links round-trip an `audience` arg.
+    // Entries not in the Catalogue (walkthrough_minutes) keep back-compat
+    // behaviour: any audience passes through.
+    let audience = args.audience || doc.audience || 'internal';
+    const catEntry = (Reports.Catalogue || []).find(c => c.id === this._canonicalId(reportId, args));
+    if (catEntry && Array.isArray(catEntry.audiences) && catEntry.audiences.length && catEntry.audiences.indexOf(audience) < 0) {
+      audience = catEntry.audiences.indexOf('internal') >= 0 ? 'internal' : catEntry.audiences[0];
+    }
+    doc.audience = audience;
     const html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer));
     // Pop-up blocked → no export happened, so nothing to audit (matches the
     // gated call sites: baseline variance + walkthrough briefing pack).
     if (!this.open(html)) return;
     // Audit with the canonical Catalogue id (aliases accepted by _build would
     // otherwise leak raw ids into the hub's Recent exports list).
-    let auditId = reportId;
-    if (reportId === 'project_report') auditId = 'sponsor_pack';
-    else if (reportId === 'portfolio_report' || reportId === 'portfolio_pack' || reportId === 'customer_pack') auditId = (args.audience === 'customer') ? 'customer_pack' : 'portfolio_pack';
+    const auditId = this._canonicalId(reportId, args);
     // Audit scope (meta.scope_arg) — most specific matchable id first, so
     // entries of the same report_type carry consistent semantics and the hub's
     // Recent filter (customer | project | sprint | forum sets) can match them:
