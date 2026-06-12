@@ -170,6 +170,37 @@ describe('R1 / AC-R1.2 — Classification band renders top + bottom with colour'
   });
 });
 
+describe('R1 hardening — Doc.toHtml escapes section ids in attribute context', () => {
+  // Section ids derive from untrusted free-text names (customer / team member)
+  // with only whitespace stripped. A name containing a double quote (no spaces)
+  // survives the \s+ replace; Dashboard.esc does NOT escape quotes, so a
+  // double-quoted id attribute could be closed and a live event handler
+  // injected into the report HTML written to the new window (stored XSS).
+  it('a double quote in a section id cannot break out of the id attribute', async () => {
+    const app = await bootEmpty();
+    const doc = app.Reports.Doc.buildDoc({
+      reportType: 'sprint_brief',
+      title: 'Brief',
+      sections: [{
+        id: 'sb-Bob"onmouseover="alert(document.domain)',
+        title: 'Bob',
+        html: '<p>load</p>'
+      }]
+    });
+    const html = app.Reports.Doc.toHtml(doc, {});
+    const dom = app.window.document.createElement('div');
+    dom.innerHTML = html;
+    const section = dom.querySelector('.rp-section:not(.rp-toc)');
+    expect(section).toBeTruthy();
+    // The quote must not terminate the attribute early: the whole payload
+    // stays inside the id as inert data...
+    expect(section.id).toBe('rp-sb-Bob"onmouseover="alert(document.domain)');
+    // ...and no injected event-handler attribute may exist anywhere.
+    expect(dom.querySelector('[onmouseover]')).toBeNull();
+    app.teardown();
+  });
+});
+
 describe('R1 / AC-R1.3 — Reports.Brand.for() 3-tier deep-merge', () => {
   it('customer override + portfolio default + hardcoded compose correctly', async () => {
     const app = await bootEmpty();
