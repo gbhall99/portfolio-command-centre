@@ -37200,7 +37200,19 @@ const Reports = {
     let auditId = reportId;
     if (reportId === 'project_report') auditId = 'sponsor_pack';
     else if (reportId === 'portfolio_report' || reportId === 'portfolio_pack' || reportId === 'customer_pack') auditId = (args.audience === 'customer') ? 'customer_pack' : 'portfolio_pack';
-    this.recordExport(auditId, args.customer || args.projectId || args.forumId || args.walkthroughId || '', { outputSizeBytes: html.length });
+    // Audit scope (meta.scope_arg) — most specific matchable id first, so
+    // entries of the same report_type carry consistent semantics and the hub's
+    // Recent filter (customer | project | sprint | forum sets) can match them:
+    // - projectId beats customer (the hub passes both for project-scoped reports);
+    // - walkthrough ids are in no matchable set, so walkthrough minutes scope to
+    //   the document's customer (builders stamp doc.customer from the entity) and
+    //   the walkthrough id is preserved separately in meta.walkthrough_id;
+    // - portfolio-wide exports with no customer arg (the toolbar's internal
+    //   Status Report) scope to the active customer so they still surface in
+    //   that customer's Recent exports list.
+    const scopeArg = args.projectId || args.forumId || args.customer || doc.customer ||
+      (typeof App !== 'undefined' && App.activeCustomer) || '';
+    this.recordExport(auditId, scopeArg, { outputSizeBytes: html.length, walkthroughId: args.walkthroughId });
   },
   // Sprint-brief picker UI: choose a sprint, then generate via Reports.generate.
   openSprintBriefPicker() {

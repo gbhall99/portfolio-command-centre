@@ -28,6 +28,62 @@ describe('Recent exports — canonical ids + friendly titles', () => {
     app.teardown();
   });
 
+  it('Reports.generate records the most specific matchable scope_arg (project beats customer)', async () => {
+    const p = makeProject({ customer: 'Acme Industries' });
+    const app = await loadApp(makeDataset({
+      projects: [p],
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }]
+    }));
+    app.App.data.audit_log = [];
+    // The hub passes BOTH customer and projectId for project-scoped reports —
+    // the project id is the scope, not the customer.
+    app.Reports.generate('sponsor_pack', { customer: 'Acme Industries', projectId: p.id, audience: 'internal' });
+    const entry = app.App.data.audit_log.find(e => e.event_type === 'report_generated');
+    expect(entry.meta.scope_arg).toBe(p.id);
+    // …and it must therefore match the Recent filter via the project set.
+    const html = app.ReportsHub._recentHtml('Acme Industries');
+    expect(html).toContain('Project report');
+    app.teardown();
+  });
+
+  it('walkthrough_minutes scopes to the walkthrough customer and surfaces in Recent', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }]
+    }));
+    app.App.data.walkthroughs = [{
+      id: 'wt_test_1', customer: 'Acme Industries',
+      started_at: '2026-06-10T09:00:00Z', completed_at: '2026-06-10T10:00:00Z',
+      attendees: [], section_notes: {}, section_status: {}, decisions: [], actions: [], minutes_html: null
+    }];
+    app.App.data.audit_log = [];
+    app.Reports.generate('walkthrough_minutes', { walkthroughId: 'wt_test_1' });
+    const entry = app.App.data.audit_log.find(e => e.event_type === 'report_generated');
+    // A walkthrough id is in no matchable set — the customer is the scope; the
+    // walkthrough id is preserved in its own meta field.
+    expect(entry.meta.scope_arg).toBe('Acme Industries');
+    expect(entry.meta.walkthrough_id).toBe('wt_test_1');
+    const html = app.ReportsHub._recentHtml('Acme Industries');
+    expect(html).toContain('Walkthrough minutes');
+    app.teardown();
+  });
+
+  it('portfolio-wide status report (no customer arg) scopes to the active customer', async () => {
+    const p = makeProject({ customer: 'Acme Industries' });
+    const app = await loadApp(makeDataset({
+      projects: [p],
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.data.audit_log = [];
+    // The internal Status Report toolbar button passes no customer at all.
+    app.Reports.generate('status_report', { audience: 'internal' });
+    const entry = app.App.data.audit_log.find(e => e.event_type === 'report_generated');
+    expect(entry.meta.scope_arg).toBe('Acme Industries');
+    const html = app.ReportsHub._recentHtml('Acme Industries');
+    expect(html).toContain('Status report');
+    app.teardown();
+  });
+
   it('ReportsHub._recentHtml renders friendly titles for non-catalogue export types', async () => {
     const app = await loadApp(makeDataset({
       customers: [{ name: 'Acme Industries', color: '#6366f1' }]
