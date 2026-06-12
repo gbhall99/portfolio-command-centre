@@ -36588,12 +36588,28 @@ const Reports = {
         customer, sections, classification: 'Confidential', audience: 'customer'
       });
     },
-    // R3: Status Report — internal cross-customer snapshot through Reports.Doc.
-    statusReport() {
+    // R3 + WS-E: Status Report. The catalogue entry is scope:'customer'
+    // (requiresScopeArg:'customer'), so when a customer is passed (the Documents
+    // hub and any catalogue caller) the document is scoped to that customer
+    // ONLY: the latest drafted status_report entity when one exists (the entry's
+    // contentSource is 'skill-fed'), otherwise a live snapshot of that
+    // customer's own projects. Those scoped sections may be shared with the
+    // customer (same precedent as the sponsor pack's status/RAG narrative).
+    // Without a customer — the legacy toolbar path, which sits behind an
+    // explicit "covers all customers — internal use only" confirm dialog —
+    // it remains the internal cross-customer portfolio snapshot.
+    statusReport(customer) {
       const esc = Dashboard.esc;
-      const internal = Reports.Builders._AUD_INTERNAL.slice();
-      const customers = (typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : [];
-      const projects = (typeof App !== 'undefined' && App.data && App.data.projects) || [];
+      if (customer) {
+        const saved = ((typeof App !== 'undefined' && App.data && App.data.status_reports) || [])
+          .filter(r => r && r.customer === customer)
+          .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0];
+        if (saved) return Reports.Builders.statusReportFromEntity(saved);
+      }
+      const aud = customer ? Reports.Builders._AUD_BOTH.slice() : Reports.Builders._AUD_INTERNAL.slice();
+      const customers = customer ? [customer] : ((typeof App !== 'undefined' && App.getCustomers) ? App.getCustomers() : []);
+      const projects = ((typeof App !== 'undefined' && App.data && App.data.projects) || [])
+        .filter(p => !customer || p.customer === customer);
       const active = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
       const execHtml = '<p>' + customers.length + ' customer' + (customers.length === 1 ? '' : 's') + ' &middot; ' +
         active.length + ' active project' + (active.length === 1 ? '' : 's') + ' &middot; ' +
@@ -36622,19 +36638,39 @@ const Reports = {
         empty: 'No milestones in the next 60 days'
       });
       const sections = [
-        { id: 'exec', title: 'Executive narrative', html: execHtml, audiences: internal },
-        { id: 'exceptions', title: 'Exceptions', html: exceptionsHtml, audiences: internal },
-        { id: 'upcoming', title: 'Upcoming milestones', html: upcomingHtml, audiences: internal }
+        { id: 'exec', title: 'Executive narrative', html: execHtml, audiences: aud },
+        { id: 'exceptions', title: 'Exceptions', html: exceptionsHtml, audiences: aud.slice() },
+        { id: 'upcoming', title: 'Upcoming milestones', html: upcomingHtml, audiences: aud.slice() }
       ].concat(customers.map(c => ({
         id: 'cust-' + c.toLowerCase().replace(/\s+/g, '-'),
         title: c,
         html: Reports.Builders._statusTable(active.filter(p => p.customer === c), 'No active projects'),
-        audiences: internal.slice()
+        audiences: aud.slice()
       })));
       return Reports.Doc.buildDoc({
         reportType: 'status_report',
-        title: 'Portfolio Status Report',
+        title: customer ? 'Status Report — ' + customer : 'Portfolio Status Report',
+        customer: customer || '',
         sections, classification: 'Internal'
+      });
+    },
+    // WS-E skill-fed path: render a saved data.status_reports entity (drafted
+    // by the Status Report skill, definition-governed, customer-scoped) through
+    // the engine. Shared by the catalogue/hub builder and the skill's own
+    // Print/PDF action so there is exactly one entity→document conversion.
+    statusReportFromEntity(r) {
+      const esc = Dashboard.esc;
+      const toHtml = (content) => (content || '').split(/\n+/).map(line =>
+        /^[-*] /.test(line) ? '<li>' + esc(line.slice(2)) + '</li>' : '<p>' + esc(line) + '</p>'
+      ).join('');
+      const sections = (r.sections || []).filter(s => (s.content || '').trim())
+        .map(s => ({ id: s.id, title: s.title, html: toHtml(s.content), audiences: Reports.Builders._AUD_BOTH.slice() }));
+      return Reports.Doc.buildDoc({
+        reportType: 'status_report',
+        title: 'Status Report — ' + r.customer,
+        subtitle: r.period,
+        customer: r.customer,
+        sections
       });
     },
     // Shared per-project status table.
@@ -42246,17 +42282,13 @@ const StatusReportSkill = {
     this.backToList();
   },
 
-  // Renders the saved entity through the unified Reports engine — no bespoke HTML.
+  // Renders the saved entity through the unified Reports engine — no bespoke
+  // HTML. Shares the entity→document conversion with the catalogue builder.
   exportPrint() {
     const r = StatusReport.get(this._id);
     if (!r) return;
-    const esc = Dashboard.esc;
-    const toHtml = (content) => (content || '').split(/\n+/).map(line =>
-      /^[-*] /.test(line) ? '<li>' + esc(line.slice(2)) + '</li>' : '<p>' + esc(line) + '</p>'
-    ).join('');
-    const sections = r.sections.filter(s => (s.content || '').trim())
-      .map(s => ({ id: s.id, title: s.title, html: toHtml(s.content), audiences: ['customer', 'internal'] }));
-    const doc = Reports.Doc.buildDoc({ reportType: 'status_report', title: 'Status Report — ' + r.customer, subtitle: r.period, customer: r.customer, sections, audience: 'internal' });
+    const doc = Reports.Builders.statusReportFromEntity(r);
+    doc.audience = 'internal';
     Reports.open(Reports.Doc.toHtml(doc, Reports.Brand.for(r.customer)));
     Reports.recordExport('status_report', r.customer, {});
   },

@@ -283,6 +283,73 @@ describe('R3 / AC-R3.1 + AC-R3.3 — Status Report routed through Doc with Inter
   });
 });
 
+// WS-E hardening — the catalogue declares status_report scope:'customer'
+// (requiresScopeArg:'customer', audiences customer+internal), so the builder
+// MUST honour the customer arg the hub passes. Before the fix the arg was
+// silently dropped and the hub generated a cross-customer document containing
+// every other customer's project names/statuses/managers/RAG, bypassing the
+// legacy toolbar's explicit "covers all customers" confirm guard.
+describe('R3 hardening — Builders.statusReport(customer) is customer-scoped', () => {
+  async function bootTwoCustomers() {
+    return await loadApp(makeDataset({
+      customers: [
+        { name: 'Acme Industries', color: '#6366f1' },
+        { name: 'Globex', color: '#0ea5e9' }
+      ],
+      projects: [
+        makeProject({ id: 'A1', name: 'Acme Alpha', customer: 'Acme Industries', status: 'At Risk', manager: 'Alice' }),
+        makeProject({ id: 'G1', name: 'Globex Secret', customer: 'Globex', status: 'Blocked', manager: 'Bob' })
+      ]
+    }));
+  }
+
+  it('never embeds another customer\'s projects (the Documents-hub leak)', async () => {
+    const app = await bootTwoCustomers();
+    const doc = app.Reports.Builders.statusReport('Acme Industries');
+    expect(doc.customer).toBe('Acme Industries');
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).toContain('Acme Alpha');
+    expect(html).not.toContain('Globex Secret');
+    expect(html).not.toContain('Bob');
+    app.teardown();
+  });
+
+  it('customer audience renders a non-empty body for the scoped report', async () => {
+    const app = await bootTwoCustomers();
+    const doc = app.Reports.Builders.statusReport('Acme Industries');
+    const visible = app.Reports.Doc._filterSections(doc.sections, 'customer');
+    expect(visible.length).toBeGreaterThan(0);
+    app.teardown();
+  });
+
+  it('prefers the latest drafted status_report entity for the customer (skill-fed)', async () => {
+    const app = await bootTwoCustomers();
+    app.App.data.status_reports.push(
+      { id: 'sr-old', customer: 'Acme Industries', period: 'May 2026', created_at: '2026-05-01T00:00:00Z', sections: [{ id: 'exec', title: 'Executive summary', content: 'Old draft.' }] },
+      { id: 'sr-new', customer: 'Acme Industries', period: 'June 2026', created_at: '2026-06-01T00:00:00Z', sections: [{ id: 'exec', title: 'Executive summary', content: 'All on track.' }] },
+      { id: 'sr-other', customer: 'Globex', period: 'June 2026', created_at: '2026-06-05T00:00:00Z', sections: [{ id: 'exec', title: 'Executive summary', content: 'Globex Secret narrative.' }] }
+    );
+    const doc = app.Reports.Builders.statusReport('Acme Industries');
+    expect(doc.subtitle).toBe('June 2026');
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).toContain('All on track.');
+    expect(html).not.toContain('Old draft.');
+    expect(html).not.toContain('Globex Secret');
+    app.teardown();
+  });
+
+  it('without a customer the legacy guarded toolbar path stays cross-customer and internal-only', async () => {
+    const app = await bootTwoCustomers();
+    const doc = app.Reports.Builders.statusReport();
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).toContain('Acme Alpha');
+    expect(html).toContain('Globex Secret');
+    // Strictly internal: nothing may render for the customer audience.
+    expect(app.Reports.Doc._filterSections(doc.sections, 'customer').length).toBe(0);
+    app.teardown();
+  });
+});
+
 // ============================================================
 // R4 — event_type field + closed vocabulary
 // ============================================================
