@@ -8816,7 +8816,9 @@ const App = {
       const brandings = (App.data && App.data.settings && App.data.settings.branding) || {};
       return customers.map(function(cName) {
         const b = brandings[cName] || {};
-        const colour = b.primaryColor || App.getCustomerColor(cName) || '#94a3b8';
+        // Single source of truth: the swatch must show the exact colour the
+        // PDF engine resolves (Brand.for), incl. the customer-accent fallback.
+        const colour = Reports.Brand.for(cName).primaryColor || '#94a3b8';
         const companyName = b.companyName || cName;
         const footer = b.footerNote ? Dashboard.esc(b.footerNote.substring(0, 60)) : '<span style="color:var(--text-muted)">—</span>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">' +
@@ -36522,7 +36524,19 @@ const Reports = {
       const branding = settings.branding || {};
       const portfolio = branding.portfolio_default || {};
       const cust = (customer && branding[customer]) || {};
-      return Object.assign({}, Reports.Brand.HARDCODED, portfolio, cust);
+      const merged = Object.assign({}, Reports.Brand.HARDCODED, portfolio, cust);
+      // Legacy parity (Report.branding): a configured customer with no explicit
+      // primaryColor (own or portfolio default) tints with their app accent
+      // colour before falling back to the hardcoded blue — keeps PDF covers /
+      // section rules in step with the Settings branding swatch. Read the
+      // customer record directly (not App.getCustomerColor) so unknown
+      // customers still resolve to the hardcoded default.
+      if (!cust.primaryColor && !portfolio.primaryColor && customer &&
+          typeof App !== 'undefined' && App.data && Array.isArray(App.data.customers)) {
+        const rec = App.data.customers.find(c => c.name === customer);
+        if (rec && rec.color) merged.primaryColor = rec.color;
+      }
+      return merged;
     },
     defaultsForPortfolio() {
       return Object.assign({}, Reports.Brand.HARDCODED);

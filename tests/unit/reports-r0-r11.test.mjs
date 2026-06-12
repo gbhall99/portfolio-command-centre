@@ -368,6 +368,42 @@ describe('R1 / AC-R1.3 — Reports.Brand.for() 3-tier deep-merge', () => {
     expect(def.primaryColor).toBe('#3b82f6');
     app.teardown();
   });
+
+  // Regression: the unified engine dropped legacy Report.branding's
+  // customer-accent tier (primaryColor || App.getCustomerColor(customer) ||
+  // '#3b82f6'), so every unbranded customer rendered generic blue while the
+  // Settings swatch still showed the customer's app colour.
+  it('unbranded customer tints with their app accent colour, not hardcoded blue', async () => {
+    const app = await loadApp(makeDataset({
+      projects: [],
+      customers: [{ name: 'Acme Industries', color: '#a855f7' }]
+    }));
+    const acme = app.Reports.Brand.for('Acme Industries');
+    expect(acme.primaryColor).toBe('#a855f7');
+    app.teardown();
+  });
+
+  it('explicit primaryColor (customer or portfolio default) beats the accent tier', async () => {
+    const app = await loadApp(makeDataset({
+      projects: [],
+      customers: [{ name: 'Acme Industries', color: '#a855f7' }]
+    }));
+    app.App.data.settings.branding = { portfolio_default: { primaryColor: '#000000' } };
+    expect(app.Reports.Brand.for('Acme Industries').primaryColor).toBe('#000000');
+    app.App.data.settings.branding = { 'Acme Industries': { primaryColor: '#0000ff' } };
+    expect(app.Reports.Brand.for('Acme Industries').primaryColor).toBe('#0000ff');
+    app.teardown();
+  });
+
+  it('Settings branding swatch shows the same colour Brand.for resolves', async () => {
+    const app = await loadApp(makeDataset({
+      projects: [],
+      customers: [{ name: 'Acme Industries', color: '#a855f7' }]
+    }));
+    const card = app.App._renderBrandingCard();
+    expect(card).toContain('background:' + app.Reports.Brand.for('Acme Industries').primaryColor);
+    app.teardown();
+  });
 });
 
 describe('R1 / AC-R1.4 — Reports.Brand.set emits audit_log entry', () => {
