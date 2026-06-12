@@ -38,4 +38,33 @@ describe('Walkthrough minutes — data updates', () => {
     expect(html).toMatch(/Red/);
     app.teardown();
   });
+
+  it('escapes risk_score and progress update values from imported data (no raw markup)', async () => {
+    resetIdSeq();
+    const proj = makeProject({ name: 'P' });
+    proj.size_total = 5;
+    const app = await loadApp(makeDataset({ projects: [proj] }));
+    const wid = app.App.startWalkthrough('Acme Industries', []);
+    const wt = app.App.data.walkthroughs.find(w => w.id === wid);
+    // Crafted data_updates as they could arrive via a malicious portfolio JSON import.
+    wt.data_updates = [
+      {
+        kind: 'risk_score', project_id: proj.id, description: 'r1',
+        from: { impact: '<img src=x onerror=alert(1)>', probability: '<b>p</b>' },
+        to: { impact: '<script>x()</script>', probability: 3 }
+      },
+      { kind: 'progress', project_id: proj.id, skill: 'DE', sprint: 'S1', from: '<img src=x onerror=alert(2)>', to: '<i>9</i>' }
+    ];
+    const Reports = app.window.__pcc__.Reports;
+    const html = Reports.Doc.toHtml(Reports.Builders.walkthroughMinutes(wid), {});
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).not.toContain('<script>x()</script>');
+    expect(html).not.toContain('<b>p</b>');
+    expect(html).not.toContain('<img src=x onerror=alert(2)>');
+    expect(html).not.toContain('<i>9</i>');
+    // Escaped values still appear in the rendered minutes.
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('&lt;i&gt;9&lt;/i&gt;');
+    app.teardown();
+  });
 });
