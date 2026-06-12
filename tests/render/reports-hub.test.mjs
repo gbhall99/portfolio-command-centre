@@ -92,6 +92,37 @@ describe('ReportsHub — Documents hub view', () => {
     app.teardown();
   });
 
+  it('Status report card generates a customer-scoped document with a truthful audit scope', async () => {
+    const app = await loadApp(makeDataset({
+      customers: [
+        { name: 'Acme Industries', color: '#6366f1' },
+        { name: 'Globex', color: '#0ea5e9' }
+      ],
+      projects: [
+        makeProject({ id: 'A1', name: 'Acme Alpha', customer: 'Acme Industries', status: 'At Risk' }),
+        makeProject({ id: 'G1', name: 'Globex Secret', customer: 'Globex', status: 'Blocked' })
+      ]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.ReportsHub.render();
+    const writes = [];
+    app.window.open = () => ({ document: { write: (s) => writes.push(s), close() {} } });
+    const host = app.document.getElementById('reportsHubHost');
+    const cards = Array.from(host.querySelectorAll('[data-hub-card]'));
+    const status = cards.find(c => c.querySelector('.hub-card-title').textContent === 'Status report');
+    status.querySelector('.hub-generate-btn').click();
+    const html = writes.join('');
+    // Customer-scoped: the active customer's data only — never the rest of the portfolio.
+    expect(html).toContain('Acme Alpha');
+    expect(html).not.toContain('Globex Secret');
+    // The audit scope_arg now truthfully describes a customer-scoped export.
+    const entries = (app.App.data.audit_log || []).filter(e => e.event_type === 'report_generated');
+    expect(entries.length).toBe(1);
+    expect(entries[0].meta.report_type).toBe('status_report');
+    expect(entries[0].meta.scope_arg).toBe('Acme Industries');
+    app.teardown();
+  });
+
   it('navigating to the reports view renders the hub', async () => {
     const app = await boot();
     app.App.navigate('reports');

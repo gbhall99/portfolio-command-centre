@@ -239,6 +239,16 @@ describe('settings UI + report', () => {
     expect(openedHtml).toContain('FY27 retainer');           // arrangements table data
     expect(openedHtml).toContain('Acme Alpha');              // per-project table data
     expect(openedHtml).toContain('Margin');
+    // Legacy parity: the per-project table carries a Totals row with the
+    // story-point totals (Done SP, Prepaid SP, T&M SP) plus the money columns.
+    // Fixture: 10 DE + 5 Tableau (Alpha) + 6 DE (Beta) = 21 SP done, all 21
+    // covered by the 40 SP 'any' prepaid block, leaving 0 T&M SP.
+    const totalsMatch = openedHtml.match(/<tr class="rp-totals">(.*?)<\/tr>/);
+    expect(totalsMatch).toBeTruthy();
+    expect(totalsMatch[1]).toContain('<td colspan="2">Totals</td>');
+    expect(totalsMatch[1]).toMatch(/Totals<\/td><td[^>]*>21<\/td><td[^>]*>21<\/td><td[^>]*>0<\/td>/);
+    // Money totals stay aligned under their columns (T&M billable, cost, margin).
+    expect((totalsMatch[1].match(/<td/g) || []).length).toBe(7); // label + 6 numeric cells
     expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'costs_report' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
   });
 });
