@@ -191,6 +191,28 @@ describe('entity linkage', () => {
   });
 });
 
+describe('export through the unified engine', () => {
+  it('exportPrint renders the SOW through Reports engine (no bespoke HTML)', () => {
+    const { Sow, SowSkill, Reports, App } = app;
+    const sow = Sow.create({
+      customer: 'Acme Industries',
+      definition: { id: 'mini-sow', name: 'Mini SOW', sections: [{ id: 'exec', title: 'Executive summary', order: 1, required: true }] },
+      generatedSections: [{ id: 'exec', content: 'Deliver the churn dashboard.' }],
+      name: 'Statement of Work — Engine Test'
+    });
+    let openedHtml = '';
+    Reports.open = (html) => { openedHtml = html; return {}; };
+    SowSkill._sowId = sow.id;
+    SowSkill.exportPrint();
+    expect(openedHtml).toMatch(/^<!DOCTYPE html>/);
+    expect(openedHtml).toContain('Deliver the churn dashboard.');
+    expect(openedHtml).toContain('Statement of Work — Engine Test');
+    expect(openedHtml).toContain('<style>'); // engine tokens, not the old inline 2563eb style
+    expect(openedHtml).not.toContain('#2563eb');
+    expect(App.data.audit_log.some(e => e.event_type === 'report_generated' && e.meta && e.meta.report_type === 'sow' && e.meta.scope_arg === 'Acme Industries')).toBe(true);
+  });
+});
+
 describe('editor rendering safety', () => {
   it('malicious model output is escaped in the editor and the source panel', () => {
     const { Sow, SowSkill, document } = app;

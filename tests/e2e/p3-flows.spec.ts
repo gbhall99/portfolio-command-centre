@@ -26,14 +26,15 @@ test.describe('P3 — Bus factor + business case', () => {
     expect(typeof bf).toBe('object');
   });
 
-  test('Report.buildBusinessCaseDoc returns content', async ({ page }) => {
+  test('Reports.Builders.businessCase returns content', async ({ page }) => {
     await openAppWithData(page);
     const ok = await page.evaluate(() => {
-      const Report: any = (window as any).Report;
+      const Reports: any = (window as any).Reports;
       const App: any = (window as any).App;
       const p = App.data.projects[0];
-      const doc = Report.buildBusinessCaseDoc(p.id);
-      return !!(doc && String(doc).length);
+      const doc = Reports.Builders.businessCase(p.id);
+      const html = Reports.Doc.toHtml(doc, {});
+      return !!(doc && doc.sections.length && html.length);
     });
     expect(ok).toBe(true);
   });

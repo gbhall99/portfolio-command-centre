@@ -4,7 +4,7 @@ import { openAppWithData } from './helpers';
 test('Sprint Brief picker opens with a default selection', async ({ page }) => {
   await openAppWithData(page);
   await page.evaluate(() => (window as any).App.navigate('sprint'));
-  await page.locator('button[onclick*="Report.openSprintBriefPicker"]').click();
+  await page.locator('button[onclick*="Reports.openSprintBriefPicker"]').click();
   await expect(page.locator('#sprintBriefPickerOverlay')).toBeVisible();
   const checked = page.locator('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked');
   await expect(checked).toHaveCount(1);
@@ -13,7 +13,7 @@ test('Sprint Brief picker opens with a default selection', async ({ page }) => {
 test('Sprint Brief picker closes on Cancel', async ({ page }) => {
   await openAppWithData(page);
   await page.evaluate(() => (window as any).App.navigate('sprint'));
-  await page.locator('button[onclick*="Report.openSprintBriefPicker"]').click();
+  await page.locator('button[onclick*="Reports.openSprintBriefPicker"]').click();
   await expect(page.locator('#sprintBriefPickerOverlay')).toBeVisible();
   await page.locator('#sprintBriefPickerOverlay button:has-text("Cancel")').click();
   await expect(page.locator('#sprintBriefPickerOverlay')).toHaveCount(0);
@@ -22,21 +22,22 @@ test('Sprint Brief picker closes on Cancel', async ({ page }) => {
 test('Sprint Brief picker closes on Esc', async ({ page }) => {
   await openAppWithData(page);
   await page.evaluate(() => (window as any).App.navigate('sprint'));
-  await page.locator('button[onclick*="Report.openSprintBriefPicker"]').click();
+  await page.locator('button[onclick*="Reports.openSprintBriefPicker"]').click();
   await page.keyboard.press('Escape');
   await expect(page.locator('#sprintBriefPickerOverlay')).toHaveCount(0);
 });
 
-test('Generate Brief invokes exportSprintBrief with chosen id', async ({ page }) => {
+test('Generate Brief invokes Reports.generate with chosen id', async ({ page }) => {
   await openAppWithData(page);
   await page.evaluate(() => (window as any).App.navigate('sprint'));
   await page.evaluate(() => {
     (window as any).__lastBrief = null;
-    (window as any).Report.exportSprintBrief = function (customer: string, sprintId: string) {
-      (window as any).__lastBrief = { customer, sprintId };
+    // WS-E: the picker's generate action routes through the unified engine.
+    (window as any).Reports.generate = function (reportId: string, args: any) {
+      (window as any).__lastBrief = { reportId, customer: args.customer, sprintId: args.sprintId };
     };
   });
-  await page.locator('button[onclick*="Report.openSprintBriefPicker"]').click();
+  await page.locator('button[onclick*="Reports.openSprintBriefPicker"]').click();
   const chosenId = await page.evaluate(() => {
     const r = document.querySelector('#sprintBriefPickerOverlay input[name="sb-picker-sprint"]:checked') as HTMLInputElement;
     return r ? r.value : null;
@@ -44,6 +45,7 @@ test('Generate Brief invokes exportSprintBrief with chosen id', async ({ page })
   expect(chosenId).not.toBeNull();
   await page.locator('#sprintBriefPickerOverlay button:has-text("Generate Brief")').click();
   const captured = await page.evaluate(() => (window as any).__lastBrief);
+  expect(captured.reportId).toBe('sprint_brief');
   expect(captured.sprintId).toBe(chosenId);
   await expect(page.locator('#sprintBriefPickerOverlay')).toHaveCount(0);
 });

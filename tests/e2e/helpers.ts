@@ -26,7 +26,15 @@ export async function openAppWithData(page: Page) {
 
   // Bridge for tests that need to poke internals — const-declared globals are visible to
   // script-context eval, so this script tag can read them and stash on window.
-  await page.addScriptTag({
-    content: 'window.App = App; window.Solver = Solver; window.Sprint = Sprint; window.Dashboard = Dashboard; window.Gantt = Gantt; window.Capacity = Capacity; window.Governance = Governance; window.DetailPanel = DetailPanel; window.AuditPanel = AuditPanel; window.Forecast = Forecast; window.Report = Report; window.Walkthrough = Walkthrough; window.Personas = Personas; window.Person = Person; window.Objectives = Objectives; window.Metrics = Metrics; window.MetricGroups = MetricGroups; window.Strategy = Strategy;'
-  });
+  await page.addScriptTag({ content: GLOBALS_BRIDGE });
 }
+
+/**
+ * Single source of truth for the window-globals bridge. Specs that reload the page
+ * (losing the injected bridge) must re-inject THIS string — never a local copy.
+ * Every name here must exist as a top-level const in index.html: one stale name throws
+ * a ReferenceError that silently skips every assignment after it (columns.spec.ts
+ * 'rebridge exposes every bridged global' guards against that).
+ */
+export const GLOBALS_BRIDGE =
+  'window.App = App; window.Solver = Solver; window.Sprint = Sprint; window.Dashboard = Dashboard; window.Gantt = Gantt; window.Capacity = Capacity; window.Governance = Governance; window.DetailPanel = DetailPanel; window.AuditPanel = AuditPanel; window.Forecast = Forecast; window.Reports = Reports; window.Walkthrough = Walkthrough; window.Personas = Personas; window.Person = Person; window.Objectives = Objectives; window.Metrics = Metrics; window.MetricGroups = MetricGroups; window.Strategy = Strategy;';
