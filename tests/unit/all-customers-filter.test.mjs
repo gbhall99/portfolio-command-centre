@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadApp } from '../harness/loadApp.mjs';
-import { makeDataset, makeProject } from '../harness/fixtures.mjs';
+import { makeDataset, makeProject, makeMetric } from '../harness/fixtures.mjs';
 
 let app;
 
@@ -137,6 +137,40 @@ describe('non-applicable views stay single-customer under All', () => {
     // matchesCustomer is the predicate shared helpers use; it must NOT aggregate here.
     expect(App.matchesCustomer('Globex')).toBe(false);
     expect(App.matchesCustomer('Acme Industries')).toBe(true);
+  });
+});
+
+describe('consistency under All scope', () => {
+  it('the Projects table auto-shows the Customer column so rows are distinguishable', () => {
+    const { App, Dashboard } = app;
+    App.currentView = 'dashboard';
+    // Not in All mode: Customer column follows the saved prefs (hidden by default).
+    App.setActiveCustomer('Acme Industries');
+    expect(Dashboard.visibleColumns().some(c => c.id === 'customer')).toBe(false);
+    // In All mode: it is force-shown.
+    App.setActiveCustomer('');
+    expect(Dashboard.visibleColumns().some(c => c.id === 'customer')).toBe(true);
+  });
+
+  it('the detail-panel strategy pickers list the PROJECT customer\'s library, not the working customer\'s', async () => {
+    const local = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries', color: '#6366f1' }, { name: 'Globex', color: '#ec4899' }],
+      projects: [makeProject({ id: 'G-9', name: 'Globex Proj', customer: 'Globex', metric_ids: [] })],
+      metrics: [
+        makeMetric({ id: 'M-ACME', name: 'Acme Metric', customer: 'Acme Industries' }),
+        makeMetric({ id: 'M-GLOBEX', name: 'Globex Metric', customer: 'Globex' })
+      ]
+    }));
+    try {
+      const { App, DetailPanel } = local;
+      App.setActiveCustomer('Acme Industries'); // working customer is Acme
+      App.setActiveCustomer('');                // All filter on
+      App.currentView = 'dashboard';
+      DetailPanel.currentId = 'G-9';
+      const html = DetailPanel.renderStrategySection(App.data.projects.find(p => p.id === 'G-9'));
+      expect(html).toContain('Globex Metric');     // the project's own customer
+      expect(html).not.toContain('Acme Metric');   // not the working customer's
+    } finally { local.teardown(); }
   });
 });
 

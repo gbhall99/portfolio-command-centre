@@ -7811,9 +7811,10 @@ const App = {
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     const _scopeChip = document.getElementById('customerModeScopeChip');
     if (_scopeChip) _scopeChip.textContent = (this.customerMode && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
-    // IA Goal 1a: the "This customer" sidebar header names the active customer (derived, never persisted).
+    // IA Goal 1a: the sidebar scope chip names the active customer (derived, never
+    // persisted); under the "All customers" filter it reads "All" to match the header.
     const _navScopeChip = document.getElementById('navScopeCustomerChip');
-    if (_navScopeChip) _navScopeChip.textContent = this.activeCustomer || '';
+    if (_navScopeChip) _navScopeChip.textContent = (this.allCustomers && !this.customerMode) ? 'All' : (this.activeCustomer || '');
     // Assistant threads are per-customer — swap to the new customer's thread.
     if (typeof Assistant !== 'undefined') Assistant.onCustomerChange();
     this.updateViewTitlebar();
@@ -15978,6 +15979,14 @@ const Dashboard = {
     for (const id of prefs.order) {
       if (visibleSet.has(id) && byId.has(id) && !seen.has(id)) { out.push(byId.get(id)); seen.add(id); }
     }
+    // In "All customers" scope, always surface the Customer column so rows from
+    // different customers are distinguishable (it isn't in DEFAULT_VISIBLE).
+    if (typeof App !== 'undefined' && App.isAllScope && App.isAllScope() && byId.has('customer') && !seen.has('customer')) {
+      const nameIdx = out.findIndex(c => c.id === 'name');
+      if (nameIdx >= 0) out.splice(nameIdx + 1, 0, byId.get('customer'));
+      else out.push(byId.get('customer'));
+      seen.add('customer');
+    }
     return out;
   },
 
@@ -16193,6 +16202,9 @@ const Dashboard = {
     }
     const dot = document.getElementById('headerCustomerDot');
     if (dot) dot.style.background = ((App.allCustomers && !App.customerMode) ? '' : (App.activeCustomer && App.getCustomerColor(App.activeCustomer))) || 'var(--accent-blue)';
+    // Keep the sidebar scope chip in sync on first paint (setActiveCustomer also does this).
+    const navChip = document.getElementById('navScopeCustomerChip');
+    if (navChip) navChip.textContent = (App.allCustomers && !App.customerMode) ? 'All' : (App.activeCustomer || '');
     this.initMultiSelect('filterManager', App.getUniqueValues('manager'));
     this.initMultiSelect('filterStatus', App.getUniqueValues('status'));
     this.initMultiSelect('filterCategory', App.getUniqueValues('category'));
@@ -16409,10 +16421,15 @@ const Dashboard = {
   applyFilters() {
     if (!App.data) return;
     try {
-      // Auto-pick the first customer on first render so the dashboard isn't empty
+      // Auto-pick the first customer on first render so the dashboard isn't empty.
+      // Under the "All customers" filter, set the working customer WITHOUT clearing
+      // the All flag (setActiveCustomer would turn it off).
       if (!App.activeCustomer) {
         const firstCustomer = (App.getCustomers() || [])[0];
-        if (firstCustomer) App.setActiveCustomer(firstCustomer);
+        if (firstCustomer) {
+          if (App.allCustomers && !App.customerMode) { App.activeCustomer = firstCustomer; try { localStorage.setItem(App.LS_CUSTOMER_KEY, firstCustomer); } catch (e) { /* private mode */ } }
+          else App.setActiveCustomer(firstCustomer);
+        }
       }
       const search = document.getElementById('searchInput').value.toLowerCase().trim();
       const customer = App.scopeCustomer();
@@ -19413,18 +19430,21 @@ const DetailPanel = {
            + '</details>';
     };
 
-    // Option lists.
-    const metricOpts = Metrics.list().map(m => {
+    // Option lists — scoped to the PROJECT's customer (not the working customer),
+    // so editing another customer's project under the "All customers" filter offers
+    // that project's own strategy library rather than the active customer's.
+    const _byCust = (arr) => (App.data[arr] || []).filter(x => x.customer === project.customer);
+    const metricOpts = _byCust('metrics').map(m => {
       const grp = MetricGroups.list().find(g => g.id === m.group_id);
       return { id: m.id, name: m.name, subtitle: grp ? grp.name : '' };
     });
-    const personaOpts = Personas.list().map(p => ({
+    const personaOpts = _byCust('personas').map(p => ({
       id: p.id, name: p.name, subtitle: p.role_title || '',
     }));
-    const objectiveOpts = Objectives.list().map(o => ({
+    const objectiveOpts = _byCust('objectives').map(o => ({
       id: o.id, name: o.name, subtitle: '',
     }));
-    const productOpts = (typeof Products !== 'undefined' ? Products.list() : []).map(p => ({
+    const productOpts = _byCust('products').map(p => ({
       id: p.id, name: p.name, subtitle: p.product_type || '',
     }));
 
