@@ -4188,12 +4188,18 @@ const App = {
   data: null,
   currentView: 'dashboard',
   activeCustomer: null,
+  // "All customers" global filter. activeCustomer always stays a real working
+  // customer (authoring + single-customer views depend on it); allCustomers is a
+  // separate flag that only takes effect on aggregate-capable views (see
+  // ALL_CAPABLE_VIEWS / isAllScope). This keeps every creation flow null-safe.
+  allCustomers: false,
   isDirty: false,
   autoSaveTimer: null,
   fileName: '',
   LS_KEY: 'portfolio-command-centre-data',
   LS_META_KEY: 'portfolio-command-centre-meta',
   LS_CUSTOMER_KEY: 'portfolio-command-centre-activeCustomer',
+  LS_ALL_KEY: 'portfolio-command-centre-allCustomers',
   AUTO_SAVE_MS: 60000,
   REQUIRED_FIELDS: ['id', 'name', 'customer', 'status'],
   // F-034: fields required for "active" status transitions. Caller-facing helper
@@ -4866,8 +4872,10 @@ const App = {
   updateProjectsNavBadge() {
     const el = document.getElementById('navBadgeTotal');
     if (!el || !this.data || !Array.isArray(this.data.projects)) return;
-    const cust = this.activeCustomer;
-    if (!cust) {
+    // Under the "All customers" filter the badge counts every customer's active
+    // projects (portfolioHealth aggregates when given no customer).
+    const cust = (this.allCustomers && !this.customerMode) ? null : this.activeCustomer;
+    if (!cust && !(this.allCustomers && !this.customerMode)) {
       // No active customer (transient): fall back to the raw count, no annotation.
       el.textContent = this.data.projects.length;
       el.removeAttribute('title');
@@ -6059,6 +6067,10 @@ const App = {
       const stored = localStorage.getItem(this.LS_CUSTOMER_KEY);
       if (stored && !validCustomers.has(stored)) localStorage.removeItem(this.LS_CUSTOMER_KEY);
     } catch (e) { /* private mode */ }
+    // Restore the "All customers" filter (never in customer-facing read-only mode).
+    try {
+      this.allCustomers = !this.customerMode && localStorage.getItem(this.LS_ALL_KEY) === '1';
+    } catch (e) { this.allCustomers = false; }
     // Populate the View-as picker with team members.
     try {
       const sel = document.getElementById('viewAsPicker');
@@ -7136,7 +7148,8 @@ const App = {
   // Backlog bucketing — groups customer-scoped not-started/on-hold projects into
   // Unrefined (no size or no rank), Refined (sized AND ranked), Parked (Won't or On Hold).
   computeBacklogBuckets(customer) {
-    const projects = (this.data && this.data.projects || []).filter(p => p.customer === customer);
+    // customer null/empty = all customers (used by the "All customers" filter).
+    const projects = (this.data && this.data.projects || []).filter(p => !customer || p.customer === customer);
     const unrefined = [], refined = [], parked = [];
     projects.forEach(p => {
       if (p.status === 'Complete' || p.status === 'Closed') return;
@@ -7680,7 +7693,7 @@ const App = {
     if (viewName === 'sprint' && this.data) Sprint.init();
     if (viewName === 'capacity' && this.data) Capacity.render();
     if (viewName === 'board' && this.data && typeof Kanban !== 'undefined') Kanban.render();
-    if (viewName === 'backlog' && this.data) Dashboard.renderBacklogTab(this.activeCustomer);
+    if (viewName === 'backlog' && this.data) Dashboard.renderBacklogTab(this.scopeCustomer());
     if (viewName === 'governance' && this.data) Governance.render();
     if (viewName === 'raid' && this.data && typeof RaidView !== 'undefined') { if (_raidTabOverride) RaidView.switchTab(_raidTabOverride); RaidView.render(); }
     if (viewName === 'reports' && this.data && typeof ReportsHub !== 'undefined') ReportsHub.render();
@@ -7700,6 +7713,25 @@ const App = {
     return this.VIEW_SCOPE[view] || 'one';
   },
 
+  // Views on which the "All customers" global filter is honored (read/overview +
+  // the planning lists the user opted in to). Everywhere else (Sprint Planning,
+  // the Strategy library pages, Settings) stays scoped to a single customer, so
+  // selecting "All" there simply shows the working customer. Customer-facing
+  // read-only mode never aggregates.
+  ALL_CAPABLE_VIEWS: ['portfolio', 'dashboard', 'projects', 'board', 'roadmap', 'raid', 'myactions', 'governance', 'backlog', 'capacity', 'reports', 'activity'],
+  isAllScope() {
+    return !!this.allCustomers && !this.customerMode && this.ALL_CAPABLE_VIEWS.indexOf(this.currentView) >= 0;
+  },
+  // The customer the CURRENT view should scope to — null means "all customers".
+  // Use this to drive a view's filter; authoring code keeps using activeCustomer.
+  scopeCustomer() {
+    return this.isAllScope() ? null : this.activeCustomer;
+  },
+  // Predicate: does an entity's customer fall within the current view's scope?
+  matchesCustomer(c) {
+    return this.isAllScope() ? true : (c === this.activeCustomer);
+  },
+
   updateViewTitlebar() {
     const bar = document.getElementById('viewTitlebar');
     if (!bar) return;
@@ -7714,7 +7746,7 @@ const App = {
       // as a customer named "All customers"; 'one' keeps the customer-coloured pill.
       const scope = this._viewScope(this.currentView);
       custEl.classList.remove('tb-no-dot');
-      if (scope === 'all') {
+      if (scope === 'all' || this.isAllScope()) {
         custEl.textContent = 'All customers';
         custEl.classList.add('tb-no-dot');
         custEl.style.setProperty('--tb-customer-color', 'var(--accent-blue)');
@@ -7725,7 +7757,8 @@ const App = {
       } else {
         const c = this.activeCustomer || '—';
         const color = this.activeCustomer ? (this.getCustomerColor && this.getCustomerColor(this.activeCustomer)) : 'var(--text-muted)';
-        custEl.textContent = 'This customer: ' + c;
+        // When "All" is selected but this page can't aggregate, say so plainly.
+        custEl.textContent = 'This customer: ' + c + (this.allCustomers && !this.customerMode ? ' · this page shows one customer' : '');
         custEl.style.setProperty('--tb-customer-color', color || 'var(--accent-blue)');
       }
     }
@@ -7739,13 +7772,22 @@ const App = {
   },
 
   setActiveCustomer(customer) {
-    if (!customer) return;
-    this.activeCustomer = customer;
-    try { localStorage.setItem(this.LS_CUSTOMER_KEY, customer); } catch (e) { /* private mode */ }
+    // Empty value = the "All customers" option. Customer-facing read-only mode is
+    // never allowed to aggregate — fall back to keeping the single customer.
+    if (!customer) {
+      if (this.customerMode) return;
+      this.allCustomers = true;
+      try { localStorage.setItem(this.LS_ALL_KEY, '1'); } catch (e) { /* private mode */ }
+    } else {
+      this.allCustomers = false;
+      this.activeCustomer = customer;
+      try { localStorage.setItem(this.LS_CUSTOMER_KEY, customer); localStorage.removeItem(this.LS_ALL_KEY); } catch (e) { /* private mode */ }
+    }
     const gc = document.getElementById('globalCustomer');
-    if (gc && gc.value !== customer) gc.value = customer;
+    const _selVal = this.allCustomers ? '' : this.activeCustomer;
+    if (gc && gc.value !== _selVal) gc.value = _selVal;
     const dot = document.getElementById('headerCustomerDot');
-    if (dot) dot.style.background = this.getCustomerColor(customer) || 'var(--accent-blue)';
+    if (dot) dot.style.background = (this.allCustomers ? '' : this.getCustomerColor(this.activeCustomer)) || 'var(--accent-blue)';
     // Re-render current view
     if (this.currentView === 'dashboard' || this.currentView === 'projects') Dashboard.applyFilters();
     else if (this.currentView === 'sprint') Sprint.render();
@@ -9475,8 +9517,9 @@ const App = {
       total: 0, active: 0, inProgress: 0, atRisk: 0, atRiskStatusOnly: 0,
       blocked: 0, ragMix: { Green: 0, Amber: 0, Red: 0 }, onTrackCount: 0, onTrackPct: 0
     };
-    if (!this.data || !customer) return empty;
-    const all = this.data.projects.filter(p => p.customer === customer);
+    if (!this.data) return empty;
+    // customer falsy = aggregate across every customer (the "All customers" filter).
+    const all = this.data.projects.filter(p => !customer || p.customer === customer);
     const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
     const isRed = p => p.rag_schedule === 'Red' || p.rag_resourcing === 'Red' || p.rag_scope === 'Red';
     const atRisk = active.filter(p => p.status === 'At Risk' || isRed(p)).length;
@@ -16142,11 +16185,14 @@ const Dashboard = {
     // Populate the single global customer selector in the header
     const gc = document.getElementById('globalCustomer');
     if (gc) {
-      gc.innerHTML = customers.map(c => '<option value="' + this.esc(c) + '">' + this.esc(c) + '</option>').join('');
-      if (App.activeCustomer) gc.value = App.activeCustomer;
+      // "All customers" aggregates the read/overview + planning-list views; it is
+      // hidden in customer-facing read-only mode (a customer sees only their data).
+      const allOpt = App.customerMode ? '' : '<option value="">All customers</option>';
+      gc.innerHTML = allOpt + customers.map(c => '<option value="' + this.esc(c) + '">' + this.esc(c) + '</option>').join('');
+      gc.value = (App.allCustomers && !App.customerMode) ? '' : (App.activeCustomer || '');
     }
     const dot = document.getElementById('headerCustomerDot');
-    if (dot && App.activeCustomer) dot.style.background = App.getCustomerColor(App.activeCustomer) || 'var(--accent-blue)';
+    if (dot) dot.style.background = ((App.allCustomers && !App.customerMode) ? '' : (App.activeCustomer && App.getCustomerColor(App.activeCustomer))) || 'var(--accent-blue)';
     this.initMultiSelect('filterManager', App.getUniqueValues('manager'));
     this.initMultiSelect('filterStatus', App.getUniqueValues('status'));
     this.initMultiSelect('filterCategory', App.getUniqueValues('category'));
@@ -16369,7 +16415,7 @@ const Dashboard = {
         if (firstCustomer) App.setActiveCustomer(firstCustomer);
       }
       const search = document.getElementById('searchInput').value.toLowerCase().trim();
-      const customer = App.activeCustomer;
+      const customer = App.scopeCustomer();
       const managers = this.getFilterValues('filterManager');
       const statuses = this.getFilterValues('filterStatus');
       const categories = this.getFilterValues('filterCategory');
@@ -16391,9 +16437,10 @@ const Dashboard = {
           (p.notes || '').toLowerCase().includes(search)
         );
       }
-      // Customer is always required
+      // Scope to the active customer — unless "All customers" is selected on this
+      // (aggregate-capable) view, in which case customer is null and we keep all.
       if (customer) projects = projects.filter(p => p.customer === customer);
-      else projects = [];
+      else if (!App.isAllScope()) projects = [];
       if (managers.length) projects = projects.filter(p => managers.includes(p.manager));
       if (statuses.length) projects = projects.filter(p => statuses.includes(p.status));
       if (categories.length) projects = projects.filter(p => categories.includes(p.category));
@@ -17114,8 +17161,10 @@ const Dashboard = {
   renderBacklogTab(customer) {
     const host = document.getElementById('backlogTabBody');
     if (!host) return;
-    const cust = customer || App.activeCustomer;
-    if (!cust) { host.innerHTML = '<div style="padding:14px;color:var(--text-muted)">Select a customer.</div>'; return; }
+    // customer is resolved by the caller via App.scopeCustomer(): a real customer,
+    // or null meaning "All customers" (only when the All filter is active here).
+    const cust = customer || null;
+    if (!cust && !App.isAllScope()) { host.innerHTML = '<div style="padding:14px;color:var(--text-muted)">Select a customer.</div>'; return; }
     const buckets = App.computeBacklogBuckets(cust);
     const esc = Dashboard.esc;
     // R2: direct manipulation — cards are draggable between buckets and carry park/refine actions.
@@ -17167,14 +17216,14 @@ const Dashboard = {
     if (p.status === 'On Hold') return;
     App.updateProject(pid, 'status', 'On Hold');
     App.toast('Parked “' + p.name + '”', 'info');
-    this.renderBacklogTab(App.activeCustomer);
+    this.renderBacklogTab(App.scopeCustomer());
   },
   backlogUnpark(pid) {
     const p = this._backlogProject(pid); if (!p) return;
     if (p.status === 'On Hold') App.updateProject(pid, 'status', 'Not Started');
     if (p.moscow === "Won't" || p.moscow === 'Won’t') App.updateProject(pid, 'moscow', 'Could');
     App.toast('Un-parked “' + p.name + '”', 'info');
-    this.renderBacklogTab(App.activeCustomer);
+    this.renderBacklogTab(App.scopeCustomer());
   },
   _backlogToActive(pid, bucket) {
     const p = this._backlogProject(pid); if (!p) return;
@@ -17191,10 +17240,10 @@ const Dashboard = {
     const el = document.getElementById('execSummary');
     if (!el) return;
     if (!App.data) { el.innerHTML = ''; return; }
-    const customer = App.activeCustomer;
-    if (!customer) { el.innerHTML = ''; return; }
+    const customer = App.scopeCustomer();
+    if (!customer && !App.isAllScope()) { el.innerHTML = ''; return; }
 
-    const all = App.data.projects.filter(p => p.customer === customer);
+    const all = App.data.projects.filter(p => !customer || p.customer === customer);
     const active = all.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
     // Reconciled portfolio-health figures from the single source of truth (App.portfolioHealth),
     // so the Exec Summary, ACTIVE WORK card and PORTFOLIO HEALTH card always agree.
@@ -17279,7 +17328,7 @@ const Dashboard = {
     // directly below — so the prose no longer restates them. It keeps only the *reconciled*
     // attention figure (at-risk = status OR Red-RAG, de-duped by id), which no single card
     // surfaces verbatim, framed as a synthesised read rather than a raw repeat.
-    let s1 = '<strong>' + esc(customer) + ' portfolio</strong> spans <strong>' + active.length + '</strong> active ' +
+    let s1 = '<strong>' + esc(customer || 'All-customer') + ' portfolio</strong> spans <strong>' + active.length + '</strong> active ' +
       (active.length === 1 ? 'project' : 'projects');
     if (active.length > 0) {
       if (atRisk > 0 || blocked > 0) {
@@ -17360,9 +17409,9 @@ const Dashboard = {
   renderKpiCards() {
     const el = document.getElementById('kpiCards');
     if (!el || !App.data) { if (el) el.innerHTML = ''; return; }
-    const customer = App.activeCustomer;
-    if (!customer) { el.innerHTML = ''; return; }
-    const projects = App.data.projects.filter(p => p.customer === customer);
+    const customer = App.scopeCustomer();
+    if (!customer && !App.isAllScope()) { el.innerHTML = ''; return; }
+    const projects = App.data.projects.filter(p => !customer || p.customer === customer);
     const activeProjects = projects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
     const snapshots = App.data.daily_snapshots || [];
     // Reconciled portfolio-health figures — shared with the Exec Summary and Portfolio Health card.
@@ -17731,7 +17780,7 @@ const Dashboard = {
   computeAlerts(customer) {
     if (!App.data) return [];
     const alerts = [];
-    const projects = App.data.projects.filter(p => p.customer === customer);
+    const projects = App.data.projects.filter(p => !customer || p.customer === customer);
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
 
@@ -17950,8 +17999,8 @@ const Dashboard = {
   renderAttentionPanel() {
     const panel = document.getElementById('attentionPanel');
     if (!panel) return;
-    const customer = App.activeCustomer;
-    if (!customer) { panel.innerHTML = ''; return; }
+    const customer = App.scopeCustomer();
+    if (!customer && !App.isAllScope()) { panel.innerHTML = ''; return; }
     const alerts = this.computeAlerts(customer);
     if (!alerts.length) { panel.innerHTML = ''; return; }
 
@@ -18787,8 +18836,10 @@ const MyActions = {
     if (!App.data) return { decisions: [], actions: [] };
     const esc = Dashboard.esc;
     const today = new Date().toISOString().split('T')[0];
-    // R7: scope to the active customer, consistent with every other view (the app is customer-scoped).
-    const forums = (App.data.governance_forums || []).filter(f => !App.activeCustomer || f.customer === App.activeCustomer);
+    // R7: scope to the active customer (or every customer under the "All" filter
+    // on the RAID Actions tab), consistent with the rest of the app.
+    const _cust = App.scopeCustomer();
+    const forums = (App.data.governance_forums || []).filter(f => !_cust || f.customer === _cust);
     const decisions = [];
     const actions = [];
     forums.forEach((forum, forumIdx) => {
@@ -18810,7 +18861,7 @@ const MyActions = {
     const blockers = [];
     const isOpen = (s) => { s = (s || '').toLowerCase(); return s !== 'closed' && s !== 'resolved' && s !== 'done' && s !== 'mitigated'; };
     (App.data.projects || []).forEach(p => {
-      if (App.activeCustomer && p.customer !== App.activeCustomer) return;
+      if (_cust && p.customer !== _cust) return;
       (p.issues_register || []).forEach((row, idx) => { if (isOpen(row.status)) blockers.push({ kind: 'issue', project: p, row, idx, score: 0, label: row.description || row.text || '(issue)' }); });
       (p.risks_register || []).forEach((row, idx) => { const score = (parseInt(row.impact, 10) || 0) * (parseInt(row.probability, 10) || 0); if (App.isSevereRisk(row)) blockers.push({ kind: 'risk', project: p, row, idx, score, label: row.description || '(risk)' }); });
     });
@@ -25143,13 +25194,14 @@ const Gantt = {
 
   getFilteredProjects() {
     let projects = App.data.projects.filter(p => p.start_date && p.target_date);
-    const customer = App.activeCustomer;
+    const customer = App.scopeCustomer();
     const managers = this.multiSelections['ganttFilterManager'] || [];
     const ragFilters = this.multiSelections['ganttFilterRAG'] || [];
     const categoryFilters = this.multiSelections['ganttFilterCategory'] || [];
-    // Customer is always required
+    // Scope to the active customer unless "All customers" is selected (Roadmap is
+    // aggregate-capable), in which case show every customer's projects.
     if (customer) projects = projects.filter(p => p.customer === customer);
-    else return []; // No customer selected — show nothing
+    else if (!App.isAllScope()) return []; // No customer selected — show nothing
     if (managers.length) projects = projects.filter(p => managers.includes(p.manager));
     // RAG filter: show projects where ANY RAG dimension matches any selected value
     if (ragFilters.length) {
@@ -31782,13 +31834,13 @@ const Capacity = {
     this.renderSprintCapacity();
     this.renderTeamGrid();
     if (document.getElementById('capacityGapPanel')) {
-      this.renderResourcingGap(App.activeCustomer);
+      this.renderResourcingGap(App.scopeCustomer());
     }
     if (document.getElementById('sustainedPacePanel')) {
-      this.renderSustainedHighLoad(App.activeCustomer);
+      this.renderSustainedHighLoad(App.scopeCustomer());
     }
     if (document.getElementById('leaveCalendarPanel')) {
-      this.renderLeaveCalendar(App.activeCustomer);
+      this.renderLeaveCalendar(App.scopeCustomer());
     }
     // renderTeamSchedule() removed — Scrum Master timeline was retired from the Capacity page.
     // The helper is kept for back-compat; callers should now use the Team view in Sprint Planning.
@@ -31801,13 +31853,13 @@ const Capacity = {
   renderTeamSchedule() {
     const el = document.getElementById('teamScheduleGantt');
     if (!el || !App.data) return;
-    const customer = App.activeCustomer;
-    if (!customer) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">Select a customer to see the team schedule.</div>'; return; }
+    const customer = App.scopeCustomer();
+    if (!customer && !App.isAllScope()) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">Select a customer to see the team schedule.</div>'; return; }
     const members = (App.data.team_members || []).filter(tm => {
       const c = (tm.customer || '').toLowerCase();
-      return c === customer.toLowerCase() || c === 'both';
+      return !customer || c === customer.toLowerCase() || c === 'both';
     });
-    if (!members.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No team members assigned to ' + Dashboard.esc(customer) + '.</div>'; return; }
+    if (!members.length) { el.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-style:italic">No team members assigned to ' + Dashboard.esc(customer || 'any customer') + '.</div>'; return; }
     const sprints = App.data.sprints || [];
     const todayISO = new Date().toISOString().split('T')[0];
     const futureSprints = sprints.filter(s => s.end_date >= todayISO).slice(0, 4);
@@ -31821,7 +31873,7 @@ const Capacity = {
     // Collect assignments per member across the horizon.
     const perMember = {};
     members.forEach(m => { perMember[m.name] = []; });
-    (App.data.projects || []).filter(p => p.customer === customer && !['Complete', 'Closed'].includes(p.status)).forEach(p => {
+    (App.data.projects || []).filter(p => (!customer || p.customer === customer) && !['Complete', 'Closed'].includes(p.status)).forEach(p => {
       const phaseOrder = (p.delivery_config && p.delivery_config.phase_order) || [];
       Object.entries(p.skill_splits || {}).forEach(([skKey, arr]) => {
         (arr || []).forEach(sp => {
@@ -32219,7 +32271,7 @@ const Capacity = {
   renderLeaveCalendar(customer) {
     const host = document.getElementById('leaveCalendarPanel');
     if (!host) return;
-    const cust = customer || App.activeCustomer;
+    const cust = (customer === undefined) ? App.scopeCustomer() : customer;
     const members = (App.data && App.data.team_members || []).filter(tm => {
       if (!cust) return true;
       const c = (tm.customer || '').toLowerCase();
@@ -32249,7 +32301,7 @@ const Capacity = {
   renderSustainedHighLoad(customer) {
     const host = document.getElementById('sustainedPacePanel');
     if (!host) return;
-    const cust = customer || App.activeCustomer;
+    const cust = (customer === undefined) ? App.scopeCustomer() : customer;
     const flagged = this.computeSustainedHighLoad(cust);
     if (!flagged.length) {
       host.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:6px 0">No sustained high-load members detected.</div>';
@@ -32265,8 +32317,8 @@ const Capacity = {
   renderResourcingGap(customer) {
     const host = document.getElementById('capacityGapPanel');
     if (!host) return;
-    const cust = customer || App.activeCustomer;
-    if (!cust) {
+    const cust = (customer === undefined) ? App.scopeCustomer() : customer;
+    if (!cust && !App.isAllScope()) {
       host.innerHTML = '<div style="padding:14px;color:var(--text-muted);font-size:12px">Select a customer to see gap analysis.</div>';
       return;
     }
@@ -32274,7 +32326,7 @@ const Capacity = {
     const sprints = result.horizonSprints;
     const esc = Dashboard.esc;
 
-    let html = '<div style="padding:6px 0 12px"><div style="font-size:13px;font-weight:700">Resourcing Gap \u2014 ' + esc(cust) + '</div>' +
+    let html = '<div style="padding:6px 0 12px"><div style="font-size:13px;font-weight:700">Resourcing Gap \u2014 ' + esc(cust || 'All customers') + '</div>' +
       '<div style="font-size:11px;color:var(--text-muted)">Demand minus supply per skill per sprint. Negative numbers are red and indicate where you need more capacity. <strong>FTE</strong> = average extra full-time engineer needed across the deficit window.</div></div>';
 
     html += '<div style="overflow-x:auto"><table class="alloc-plan-table" style="width:100%;border-collapse:collapse;font-size:12px">' +
@@ -32313,7 +32365,9 @@ const Capacity = {
 
   renderSprintCapacity() {
     const { sprints, focusId } = Sprint._windowedSprints(App.data.sprints);
-    const customerFilter = App.activeCustomer || '';
+    // "" = all customers under the All filter; calcSkillCapacityForSprint gets
+    // undefined (every member) and projects are not customer-filtered.
+    const customerFilter = App.scopeCustomer() || '';
     let projects = App.data.projects;
     if (customerFilter) projects = projects.filter(p => p.customer === customerFilter);
 
@@ -32401,7 +32455,7 @@ const Capacity = {
   },
 
   renderTeamGrid() {
-    const customerFilter = App.activeCustomer || '';
+    const customerFilter = App.scopeCustomer() || '';
     let teamMembers = App.data.team_members || [];
     if (customerFilter) {
       teamMembers = teamMembers.filter(tm => {
@@ -37610,17 +37664,22 @@ const ReportsHub = {
     const host = document.getElementById('reportsHubHost');
     if (!host || typeof App === 'undefined' || !App.data) return;
     const esc = Dashboard.esc;
+    // Cards generate for a single customer (the working customer); the recent
+    // list + header aggregate across customers under the "All customers" filter.
     const customer = App.activeCustomer || '';
+    const allScope = App.isAllScope();
+    const recentScope = App.scopeCustomer();
     const cardsHtml = this.cards().map((c, idx) => this._cardHtml(c, idx, customer)).join('');
+    const subjectLabel = allScope ? 'all customers' : (customer || '(no customer selected)');
     host.innerHTML =
       '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">' +
         '<h2 style="font-size:18px;font-weight:700;color:var(--text-dark);margin:0">Documents</h2>' +
-        '<span style="font-size:12px;color:var(--text-muted)">Every printable document for ' + esc(customer || '(no customer selected)') + ' — generated by one engine so PDF output matches the app.</span>' +
+        '<span style="font-size:12px;color:var(--text-muted)">Recent exports across ' + esc(subjectLabel) + '. New documents generate for ' + esc(customer || 'the selected customer') + (allScope ? ' (pick a customer to target a different one).' : '.') + '</span>' +
       '</div>' +
       '<div class="hub-grid">' + cardsHtml + '</div>' +
       '<div class="hub-recent">' +
         '<h3 class="hub-recent-title">Recent exports</h3>' +
-        '<div class="hub-recent-list" id="hubRecentList">' + this._recentHtml(customer) + '</div>' +
+        '<div class="hub-recent-list" id="hubRecentList">' + this._recentHtml(recentScope) + '</div>' +
       '</div>';
   },
   // One card: title + audience/source chips + description + scope picker + Generate.
@@ -37707,15 +37766,17 @@ const ReportsHub = {
     // (skill/document surfaces that call recordExport directly).
     const titles = { walkthrough_minutes: 'Walkthrough minutes', sow: 'SOW', baseline_variance: 'Baseline variance', briefing_pack: 'Briefing pack', customer_roadmap: 'Customer roadmap', gantt_pdf: 'Gantt timeline (PDF)', wireframe: 'Wireframe' };
     ((typeof Reports !== 'undefined' && Reports.Catalogue) || []).forEach(c => { titles[c.id] = c.title; });
-    const projects = new Set((((App.data && App.data.projects) || []).filter(p => p.customer === customer)).map(p => p.id));
-    const sprints = new Set((((App.data && App.data.sprints) || []).filter(s => s.customer === customer)).map(s => s.sprint_id));
+    // customer null/empty = all customers (the "All customers" filter on Documents).
+    const projects = new Set((((App.data && App.data.projects) || []).filter(p => !customer || p.customer === customer)).map(p => p.id));
+    const sprints = new Set((((App.data && App.data.sprints) || []).filter(s => !customer || s.customer === customer)).map(s => s.sprint_id));
     const forums = new Set();
-    (((App.data && App.data.governance_forums) || []).filter(f => f.customer === customer)).forEach(f => { if (f.id) forums.add(f.id); if (f.name) forums.add(f.name); });
+    (((App.data && App.data.governance_forums) || []).filter(f => !customer || f.customer === customer)).forEach(f => { if (f.id) forums.add(f.id); if (f.name) forums.add(f.name); });
     const rows = Reports.recentExports(50).filter(e => {
+      if (!customer) return true; // All customers
       const arg = (e.meta && e.meta.scope_arg) || '';
       return arg === customer || projects.has(arg) || sprints.has(arg) || forums.has(arg);
     }).slice(0, 10);
-    if (!rows.length) return '<div class="hub-recent-row"><span>No exports yet for ' + esc(customer || 'this customer') + '.</span></div>';
+    if (!rows.length) return '<div class="hub-recent-row"><span>No exports yet for ' + esc(customer || 'any customer') + '.</span></div>';
     return rows.map(e => {
       const type = (e.meta && e.meta.report_type) || '';
       const ts = e.ts ? new Date(e.ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
@@ -37777,7 +37838,7 @@ const RaidView = {
   updateNavBadge() {
     const badge = document.getElementById('navBadgeRaid');
     if (!badge || !App.data || !Array.isArray(App.data.projects)) return;
-    const cust = App.activeCustomer;
+    const cust = (App.allCustomers && !App.customerMode) ? null : App.activeCustomer;
     let open = 0;
     App.data.projects.forEach(p => {
       if (!p || (cust && p.customer !== cust)) return;
@@ -37861,7 +37922,7 @@ const RaidView = {
   _collect(kind) {
     const out = [];
     if (!App.data || !Array.isArray(App.data.projects)) return out;
-    const cust = App.activeCustomer;
+    const cust = App.scopeCustomer();
     App.data.projects.forEach(p => {
       if (!p || (cust && p.customer !== cust)) return;
       const field = kind === 'risks' ? 'risks_register'
@@ -37923,7 +37984,7 @@ const RaidView = {
   // the decision and its index within the forum.
   _pendingDecisions() {
     const out = [];
-    const cust = App.activeCustomer;
+    const cust = App.scopeCustomer();
     ((App.data && App.data.governance_forums) || []).forEach((forum, forumIdx) => {
       if (cust && forum.customer !== cust) return;
       (forum.decisions || []).forEach((d, dIdx) => {
@@ -40313,7 +40374,7 @@ const Kanban = {
   toggleConfig() { this._configOpen = !this._configOpen; this.render(); },
 
   projects() {
-    const customer = App.activeCustomer;
+    const customer = App.scopeCustomer();
     let rows = (App.data && App.data.projects || []).filter(p => !customer || p.customer === customer);
     if (this._search) {
       const q = this._search;
@@ -40328,7 +40389,7 @@ const Kanban = {
     if (this.STATUSES.indexOf(newStatus) < 0) return false;
     const p = (App.data && App.data.projects || []).find(x => x.id === projectId);
     if (!p) return false;
-    if (p.customer !== App.activeCustomer) return false;
+    if (!App.matchesCustomer(p.customer)) return false;
     if (p.status === newStatus) return false;
     App.updateProject(projectId, 'status', newStatus, 'board-drag');
     this.render();
