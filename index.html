@@ -3250,12 +3250,20 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 
 /* Projects table — phone card-list (each row becomes a labelled card) */
 @media (max-width: 540px) {
+  /* Override the min-width:600/700 from the wider breakpoints so the card list
+     fills the viewport instead of forcing a horizontal page scroll. */
+  .project-table { min-width: 0 !important; width: 100% !important; }
   .project-table thead { display: none; }
   .project-table, .project-table tbody, .project-table tr, .project-table td { display: block; width: 100% !important; }
-  .project-table tr { border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 8px; background: var(--bg-card); padding: 4px 0; }
-  .project-table td { border: none !important; padding: 4px 12px; white-space: normal; overflow: visible; }
+  .project-table tr { border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 8px; background: var(--bg-card); padding: 8px 4px; }
+  .project-table td { border: none !important; padding: 4px 12px; white-space: normal; overflow: visible; max-width: none !important; min-width: 0 !important; }
   .project-table td::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); font-weight: 700; margin-bottom: 1px; }
   .project-table td:empty { display: none; }
+  /* Drag/pin chrome is mouse-only; drop it on phones and make the name the card title. */
+  .project-table td[data-col-id="__drag"], .project-table td[data-col-id="__pin"] { display: none !important; }
+  .project-table td[data-col-id="name"] { font-size: 14px; font-weight: 700; padding-top: 8px; }
+  .project-table td[data-col-id="name"]::before { display: none; }
+  .project-name-cell { max-width: none !important; min-width: 0 !important; }
 }
 
 /* Kanban board (WS3) */
@@ -3287,6 +3295,10 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
 .kb-chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: var(--surface-2, #f1f5f9); color: var(--text-dark-secondary); border: 1px solid var(--border-light); }
 .kb-chip.deadline-soon { background: rgba(220,38,38,0.1); color: var(--status-red, #dc2626); border-color: rgba(220,38,38,0.3); }
 .kb-lane-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); padding: 6px 2px 2px; }
+/* Assignee avatars on a board card — the developer dimension (who is on this?). */
+.kb-card-assignees { display: flex; align-items: center; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
+.kb-assignee { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-blue, #3b82f6); color: #fff; font-size: 9px; font-weight: 700; letter-spacing: 0.2px; }
+.kb-assignee-more { background: var(--surface-2, #f1f5f9); color: var(--text-dark-secondary); border: 1px solid var(--border-light); }
 .kb-empty-col { font-size: 11px; color: var(--text-muted); text-align: center; padding: 14px 4px; }
 html[data-theme="dark"] .kb-col { background: var(--bg-tertiary); }
 html[data-theme="dark"] .kb-card { background: var(--bg-card); }
@@ -3371,6 +3383,12 @@ html[data-theme="dark"] .wf-comp text.title { fill: #e2e8f0; }
 /* Settings tables (rate grid, team bands) scroll instead of overflowing phones */
 @media (max-width: 600px) {
   #configBody table { display: block; overflow-x: auto; max-width: 100%; }
+  /* RAID tab strip scrolls horizontally so every tab (incl. Actions) is reachable. */
+  .raid-tabs { overflow-x: auto; flex-wrap: nowrap !important; -webkit-overflow-scrolling: touch; }
+  .raid-tabs .raid-tab { flex: 0 0 auto; white-space: nowrap; }
+  /* Board toolbar: search takes its own row so the swimlane + Columns/WIP controls aren't squashed. */
+  .kb-toolbar .kb-search { flex: 1 1 100%; }
+  .kb-toolbar > select, .kb-toolbar > button { flex: 1 1 auto; }
 }
 
 /* Assistant — dockable conversational panel (WS2) */
@@ -7811,9 +7829,10 @@ const App = {
     if (typeof MyActions !== 'undefined' && MyActions.updateNavBadge) MyActions.updateNavBadge();
     const _scopeChip = document.getElementById('customerModeScopeChip');
     if (_scopeChip) _scopeChip.textContent = (this.customerMode && this.activeCustomer) ? 'Viewing: ' + this.activeCustomer : '';
-    // IA Goal 1a: the "This customer" sidebar header names the active customer (derived, never persisted).
+    // IA Goal 1a: the sidebar scope chip names the active customer (derived, never
+    // persisted); under the "All customers" filter it reads "All" to match the header.
     const _navScopeChip = document.getElementById('navScopeCustomerChip');
-    if (_navScopeChip) _navScopeChip.textContent = this.activeCustomer || '';
+    if (_navScopeChip) _navScopeChip.textContent = (this.allCustomers && !this.customerMode) ? 'All' : (this.activeCustomer || '');
     // Assistant threads are per-customer — swap to the new customer's thread.
     if (typeof Assistant !== 'undefined') Assistant.onCustomerChange();
     this.updateViewTitlebar();
@@ -15978,6 +15997,14 @@ const Dashboard = {
     for (const id of prefs.order) {
       if (visibleSet.has(id) && byId.has(id) && !seen.has(id)) { out.push(byId.get(id)); seen.add(id); }
     }
+    // In "All customers" scope, always surface the Customer column so rows from
+    // different customers are distinguishable (it isn't in DEFAULT_VISIBLE).
+    if (typeof App !== 'undefined' && App.isAllScope && App.isAllScope() && byId.has('customer') && !seen.has('customer')) {
+      const nameIdx = out.findIndex(c => c.id === 'name');
+      if (nameIdx >= 0) out.splice(nameIdx + 1, 0, byId.get('customer'));
+      else out.push(byId.get('customer'));
+      seen.add('customer');
+    }
     return out;
   },
 
@@ -16193,6 +16220,9 @@ const Dashboard = {
     }
     const dot = document.getElementById('headerCustomerDot');
     if (dot) dot.style.background = ((App.allCustomers && !App.customerMode) ? '' : (App.activeCustomer && App.getCustomerColor(App.activeCustomer))) || 'var(--accent-blue)';
+    // Keep the sidebar scope chip in sync on first paint (setActiveCustomer also does this).
+    const navChip = document.getElementById('navScopeCustomerChip');
+    if (navChip) navChip.textContent = (App.allCustomers && !App.customerMode) ? 'All' : (App.activeCustomer || '');
     this.initMultiSelect('filterManager', App.getUniqueValues('manager'));
     this.initMultiSelect('filterStatus', App.getUniqueValues('status'));
     this.initMultiSelect('filterCategory', App.getUniqueValues('category'));
@@ -16409,10 +16439,15 @@ const Dashboard = {
   applyFilters() {
     if (!App.data) return;
     try {
-      // Auto-pick the first customer on first render so the dashboard isn't empty
+      // Auto-pick the first customer on first render so the dashboard isn't empty.
+      // Under the "All customers" filter, set the working customer WITHOUT clearing
+      // the All flag (setActiveCustomer would turn it off).
       if (!App.activeCustomer) {
         const firstCustomer = (App.getCustomers() || [])[0];
-        if (firstCustomer) App.setActiveCustomer(firstCustomer);
+        if (firstCustomer) {
+          if (App.allCustomers && !App.customerMode) { App.activeCustomer = firstCustomer; try { localStorage.setItem(App.LS_CUSTOMER_KEY, firstCustomer); } catch (e) { /* private mode */ } }
+          else App.setActiveCustomer(firstCustomer);
+        }
       }
       const search = document.getElementById('searchInput').value.toLowerCase().trim();
       const customer = App.scopeCustomer();
@@ -19413,18 +19448,21 @@ const DetailPanel = {
            + '</details>';
     };
 
-    // Option lists.
-    const metricOpts = Metrics.list().map(m => {
+    // Option lists — scoped to the PROJECT's customer (not the working customer),
+    // so editing another customer's project under the "All customers" filter offers
+    // that project's own strategy library rather than the active customer's.
+    const _byCust = (arr) => (App.data[arr] || []).filter(x => x.customer === project.customer);
+    const metricOpts = _byCust('metrics').map(m => {
       const grp = MetricGroups.list().find(g => g.id === m.group_id);
       return { id: m.id, name: m.name, subtitle: grp ? grp.name : '' };
     });
-    const personaOpts = Personas.list().map(p => ({
+    const personaOpts = _byCust('personas').map(p => ({
       id: p.id, name: p.name, subtitle: p.role_title || '',
     }));
-    const objectiveOpts = Objectives.list().map(o => ({
+    const objectiveOpts = _byCust('objectives').map(o => ({
       id: o.id, name: o.name, subtitle: '',
     }));
-    const productOpts = (typeof Products !== 'undefined' ? Products.list() : []).map(p => ({
+    const productOpts = _byCust('products').map(p => ({
       id: p.id, name: p.name, subtitle: p.product_type || '',
     }));
 
@@ -21163,9 +21201,10 @@ const DetailPanel = {
     const html = tabsStrip +
       // NAV-2: History (change log) lives inside the Overview tab panel — it was appended at panel-body root,
       // outside all four tab panels, so it leaked onto every tab with a stray History chip.
-      panelDiv('overview', overviewSections.join('') + this.renderDocuments(p.id) + this.renderAuditLog(p.id)) +
+      panelDiv('overview', overviewSections.join('') + this.renderAuditLog(p.id)) +
       panelDiv('delivery', deliverySections.join('')) +
-      panelDiv('scope', scopeSections.join('')) +
+      // SOWs + wireframes are scope/value artifacts — surfaced under "Scope & Value".
+      panelDiv('scope', scopeSections.join('') + this.renderDocuments(p.id)) +
       panelDiv('raid', raidSections.join(''));
 
     document.getElementById('panelBody').innerHTML = html;
@@ -36406,7 +36445,9 @@ const Reports = {
     status_report: { density: 'full', coverPage: 'full', tocPage: true, includeAppendix: true, classification: 'Internal' },
     // Internal-only margin/cost data: no appendix channel (appendix sections are
     // not audience-filtered) and never a shareable-pack classification default.
-    costs_report: { density: 'standard', coverPage: 'full', tocPage: false, includeAppendix: false, classification: 'Internal' }
+    costs_report: { density: 'standard', coverPage: 'full', tocPage: false, includeAppendix: false, classification: 'Internal' },
+    portfolio_overview: { density: 'standard', coverPage: 'full', tocPage: true, includeAppendix: false, classification: 'Internal' },
+    success_story: { density: 'full', coverPage: 'full', tocPage: true, includeAppendix: false, classification: 'Confidential' }
   },
   _CLASSIFICATION_BAND_COLOR: {
     Public: 'transparent', Internal: '#94a3b8', Confidential: '#dc2626', Restricted: '#7c3aed'
@@ -36666,7 +36707,9 @@ const Reports = {
     { id: 'portfolio_pack', title: 'Portfolio report', description: 'Portfolio summary for one customer; customer-facing audience shares only curated sections', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing wins/asks', audiences: ['customer', 'internal'], contentSource: 'data-derived' },
     { id: 'meeting_agenda', title: 'Meeting agenda', description: 'Governance forum agenda + supporting context', scope: 'forum', requiresFields: ['name'], requiresScopeArg: 'forumId', defaultClassification: 'Internal', doesNotInclude: 'verbatim decisions log', audiences: ['internal'], contentSource: 'data-derived' },
     { id: 'status_report', title: 'Status report', description: 'Periodic status snapshot for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'per-project risk register details', audiences: ['customer', 'internal'], contentSource: 'skill-fed' },
-    { id: 'costs_report', title: 'Costs report', description: 'Prepaid drawdown, T&M billing and margin for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing quote figures', audiences: ['internal'], contentSource: 'data-derived' }
+    { id: 'costs_report', title: 'Costs report', description: 'Prepaid drawdown, T&M billing and margin for one customer', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'customer-facing quote figures', audiences: ['internal'], contentSource: 'data-derived' },
+    { id: 'portfolio_overview', title: 'Portfolio Overview', description: 'Executive at-a-glance — counts, status, upcoming milestones and top risks. Respects the "All customers" filter for a cross-customer view.', scope: 'customer', requiresFields: [], requiresScopeArg: 'customer', defaultClassification: 'Internal', doesNotInclude: 'per-project commercials', audiences: ['customer', 'internal'], contentSource: 'data-derived' },
+    { id: 'success_story', title: 'Success Story', description: 'Customer-facing win narrative for a delivered project — challenge, delivery, measurable outcomes and impact', scope: 'project', requiresFields: ['name', 'customer'], requiresScopeArg: 'projectId', defaultClassification: 'Confidential', doesNotInclude: 'internal risk register or cost figures', audiences: ['customer', 'internal'], contentSource: 'data-derived' }
   ],
   // R8 / AC-R8.6: read-only Recent list query.
   recentExports(limit) {
@@ -37108,6 +37151,126 @@ const Reports = {
         ]
       });
     },
+    // Executive portfolio overview. customer falsy = every customer (the "All
+    // customers" filter), otherwise scoped to that customer. Data-derived.
+    portfolioOverview(customer) {
+      const esc = Dashboard.esc;
+      const both = Reports.Builders._AUD_BOTH.slice();
+      const internal = Reports.Builders._AUD_INTERNAL.slice();
+      const cust = customer || '';
+      const allProjects = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).filter(p => !cust || p.customer === cust);
+      const active = allProjects.filter(p => p.status !== 'Complete' && p.status !== 'Closed');
+      const health = (typeof App !== 'undefined' && App.portfolioHealth) ? App.portfolioHealth(cust || null) : null;
+      const scopeLabel = cust || 'All customers';
+      const execHtml = health
+        ? '<p><strong>' + health.active + '</strong> active of <strong>' + allProjects.length + '</strong> total &middot; ' +
+          '<span class="rp-rag-green">On track: ' + health.onTrackCount + '</span> &middot; ' +
+          '<span class="rp-rag-amber">At risk: ' + health.atRisk + '</span> &middot; ' +
+          '<span class="rp-rag-red">Blocked: ' + health.blocked + '</span> &middot; ' +
+          'Complete (FY): ' + (allProjects.length - active.length) + '</p>'
+        : '<p>' + active.length + ' active projects.</p>';
+      // Per-customer breakdown only adds value when aggregating across customers.
+      let byCustomerHtml = '';
+      if (!cust) {
+        const byC = {};
+        allProjects.forEach(p => { const c = p.customer || '—'; (byC[c] = byC[c] || { total: 0, active: 0 }); byC[c].total++; if (p.status !== 'Complete' && p.status !== 'Closed') byC[c].active++; });
+        byCustomerHtml = Reports.table({
+          columns: [{ key: 'customer', label: 'Customer' }, { key: 'active', label: 'Active', align: 'right', width: '16%' }, { key: 'total', label: 'Total', align: 'right', width: '16%' }],
+          rows: Object.keys(byC).sort().map(c => ({ customer: c, active: byC[c].active, total: byC[c].total })),
+          empty: 'No customers'
+        });
+      }
+      const statusCounts = {};
+      allProjects.forEach(p => { const s = p.status || 'Unknown'; statusCounts[s] = (statusCounts[s] || 0) + 1; });
+      const statusHtml = Reports.table({
+        columns: [{ key: 'status', label: 'Status' }, { key: 'count', label: 'Projects', align: 'right', width: '20%' }],
+        rows: Object.keys(statusCounts).map(s => ({ status: s, count: statusCounts[s] })),
+        empty: 'No projects'
+      });
+      const now = new Date();
+      const milestones = active.filter(p => {
+        const d = p.hard_deadline || p.target_date;
+        if (!d) return false;
+        const diff = (new Date(d) - now) / 86400000;
+        return diff >= -3 && diff <= 60;
+      }).sort((a, b) => new Date(a.hard_deadline || a.target_date) - new Date(b.hard_deadline || b.target_date));
+      const milestonesHtml = Reports.table({
+        columns: [{ key: 'name', label: 'Project' }, { key: 'customer', label: 'Customer', width: '20%' }, { key: 'date', label: 'Date', width: '16%', cell: r => esc(r.hard_deadline || r.target_date || '') }, { key: 'status', label: 'Status', width: '16%' }],
+        rows: milestones, empty: 'No milestones in the next 60 days'
+      });
+      const riskRows = [];
+      active.forEach(p => (p.risks_register || []).forEach(r => { if ((r.status || 'open') === 'closed') return; riskRows.push(Object.assign({}, r, { description: (p.name ? p.name + ': ' : '') + (r.description || '') })); }));
+      riskRows.sort((a, b) => ((b.impact || 0) * (b.probability || 0)) - ((a.impact || 0) * (a.probability || 0)));
+      const sections = [
+        { id: 'po-exec', title: 'Portfolio at a glance — ' + scopeLabel, html: execHtml, audiences: both },
+        (!cust ? { id: 'po-bycust', title: 'By customer', html: byCustomerHtml, audiences: both } : null),
+        { id: 'po-status', title: 'Status distribution', html: statusHtml, audiences: both },
+        { id: 'po-milestones', title: 'Upcoming milestones (next 60 days)', html: milestonesHtml, audiences: both },
+        { id: 'po-risks', title: 'Top open risks', html: Reports.Builders._risksTable(riskRows.slice(0, 8)), audiences: internal }
+      ].filter(Boolean);
+      return Reports.Doc.buildDoc({
+        reportType: 'portfolio_overview',
+        title: 'Portfolio Overview — ' + scopeLabel,
+        subtitle: 'Executive at-a-glance across the portfolio',
+        customer: cust, sections
+      });
+    },
+    // Customer-facing success story for a delivered project — challenge, what was
+    // delivered, measurable outcomes and impact. Data-derived.
+    successStory(projectId) {
+      const esc = Dashboard.esc;
+      const both = Reports.Builders._AUD_BOTH.slice();
+      const p = ((typeof App !== 'undefined' && App.data && App.data.projects) || []).find(x => x.id === projectId);
+      if (!p) return null; // generate() toasts 'Project not found'
+      const n = p.narrative || {};
+      const challengeHtml = (p.description ? '<p>' + esc(p.description) + '</p>' : '') +
+        (n.headline ? '<p style="font-style:italic">' + esc(n.headline) + '</p>' : '') +
+        (!p.description && !n.headline ? '<p>—</p>' : '');
+      const phases = (p.delivery_config && p.delivery_config.phase_order) || [];
+      const phaseHtml = phases.length
+        ? '<ul>' + phases.map(ph => {
+            const st = (p.phases && p.phases[ph] && p.phases[ph].status) || '';
+            return '<li>' + esc(ph) + (st ? ' — ' + esc(st) : '') + '</li>';
+          }).join('') + '</ul>'
+        : '<p>Delivery phases not configured.</p>';
+      const sp = (typeof App !== 'undefined' && App.toInteger) ? App.toInteger(p.size_total || 0) : (p.size_total || 0);
+      const spLabel = (typeof App !== 'undefined' && App.fmtPoints) ? App.fmtPoints(sp) : sp;
+      const deliveredHtml = '<p><strong>' + spLabel + ' story points</strong> delivered' +
+        (p.start_date && p.target_date ? ' between ' + esc(p.start_date) + ' and ' + esc(p.target_date) : '') + '.</p>' + phaseHtml;
+      const outcomes = (p.outcomes || []);
+      const outcomesHtml = outcomes.length
+        ? Reports.table({
+            columns: [
+              { key: 'description', label: 'Outcome' },
+              { key: 'type', label: 'Type', width: '18%', cell: r => r.type === 'benefit' ? 'Benefit' : 'Success criterion' },
+              { key: 'target', label: 'Target', width: '16%', cell: r => esc([r.target, r.unit].filter(Boolean).join(' ') || '—') },
+              { key: 'actual', label: 'Actual', width: '14%', cell: r => esc(r.actual || '—') }
+            ],
+            rows: outcomes, empty: 'No outcomes recorded'
+          })
+        : '<p>No measurable outcomes recorded yet.</p>';
+      const metrics = (p.metric_ids || []).map(id => (typeof Metrics !== 'undefined' ? Metrics.byId(id) : null)).filter(Boolean);
+      const metricsHtml = metrics.length
+        ? '<p style="margin-top:8px"><strong>Metrics this delivery moves:</strong></p><ul>' +
+          metrics.map(m => '<li>' + esc(m.name) + (m.target != null && m.target !== '' ? ' — target ' + esc(String(m.target)) : '') + '</li>').join('') + '</ul>'
+        : '';
+      const benefitAnnual = Number(p.benefit_annual_gbp || 0);
+      const valueHtml = benefitAnnual > 0 ? '<p>Estimated annual benefit: <strong>£' + benefitAnnual.toLocaleString('en-GB') + '</strong>.</p>' : '';
+      const wins = (n.wins || []);
+      const winsHtml = wins.length ? '<ul>' + wins.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '';
+      const sections = [
+        { id: 'ss-challenge', title: 'The challenge', html: challengeHtml, audiences: both },
+        { id: 'ss-delivered', title: 'What we delivered', html: deliveredHtml, audiences: both },
+        { id: 'ss-outcomes', title: 'Outcomes', html: outcomesHtml + metricsHtml, audiences: both },
+        ((valueHtml || winsHtml) ? { id: 'ss-impact', title: 'Impact', html: valueHtml + winsHtml, audiences: both } : null)
+      ].filter(Boolean);
+      return Reports.Doc.buildDoc({
+        reportType: 'success_story',
+        title: 'Success Story — ' + (p.name || ''),
+        subtitle: 'How we delivered for ' + (p.customer || 'the customer'),
+        customer: p.customer, sections
+      });
+    },
     // Governance forum agenda pre-read. Internal only.
     forumAgenda(forumId) {
       const esc = Dashboard.esc;
@@ -37420,6 +37583,8 @@ const Reports = {
       case 'walkthrough_minutes': return B.walkthroughMinutes(args.walkthroughId);
       case 'status_report': return B.statusReport(args.customer);
       case 'costs_report': return B.costsReport(args.customer);
+      case 'portfolio_overview': return B.portfolioOverview(args.customer);
+      case 'success_story': return B.successStory(args.projectId);
       default: return null;
     }
   },
@@ -37434,7 +37599,8 @@ const Reports = {
     meeting_agenda: 'Meeting not found',
     walkthrough_minutes: 'Walkthrough not found',
     sprint_brief: 'Customer or sprint not found',
-    costs_report: 'Customer not found'
+    costs_report: 'Customer not found',
+    success_story: 'Project not found'
   },
   // Canonical Catalogue id for the aliases _build accepts (the audience arg
   // picks which side of the portfolio pair an export is recorded/validated as).
@@ -37737,7 +37903,9 @@ const ReportsHub = {
   generate(idx) {
     const c = this.cards()[idx];
     if (!c || typeof Reports === 'undefined') return;
-    const customer = App.activeCustomer;
+    // Portfolio Overview honours the "All customers" filter (empty = every
+    // customer); every other report targets the single working customer.
+    const customer = (c.id === 'portfolio_overview') ? (App.scopeCustomer() || '') : App.activeCustomer;
     const args = { customer };
     const need = c.requiresScopeArg || '';
     const scopeSel = document.getElementById('hubScope-' + idx);
@@ -40314,8 +40482,23 @@ const Kanban = {
   SWIMLANES: [
     { id: 'none', label: 'No swimlanes' },
     { id: 'manager', label: 'By manager' },
-    { id: 'category', label: 'By category' }
+    { id: 'category', label: 'By category' },
+    { id: 'assignee', label: 'By assignee' }
   ],
+
+  // Distinct team members assigned to a project's work (from skill_splits
+  // assigned_to) — the developer dimension the board is otherwise missing.
+  _assignees(p) {
+    const set = new Set();
+    Object.values((p && p.skill_splits) || {}).forEach(arr => {
+      if (!Array.isArray(arr)) return;
+      arr.forEach(sp => (sp && sp.assigned_to || []).forEach(a => { if (a && a.member) set.add(a.member); }));
+    });
+    return Array.from(set);
+  },
+  _initials(name) {
+    return String(name || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?';
+  },
   _search: '',
   _configOpen: false,
   _dragId: null,
@@ -40340,6 +40523,16 @@ const Kanban = {
         }
         if (p.manager) bits.push('<span title="Delivery manager">' + esc(p.manager) + '</span>');
         return '<div class="kb-card-meta">' + bits.join('') + '</div>';
+      }
+    },
+    {
+      id: 'assignees',
+      render(p, esc) {
+        const people = Kanban._assignees(p);
+        if (!people.length) return '';
+        const shown = people.slice(0, 5).map(n => '<span class="kb-assignee" title="' + esc(n) + '">' + esc(Kanban._initials(n)) + '</span>').join('');
+        const more = people.length > 5 ? '<span class="kb-assignee kb-assignee-more">+' + (people.length - 5) + '</span>' : '';
+        return '<div class="kb-card-assignees" title="Assigned: ' + esc(people.join(', ')) + '">' + shown + more + '</div>';
       }
     }
   ],
@@ -40471,11 +40664,23 @@ const Kanban = {
       el.innerHTML = cols.map(s => this._columnHtml(s, sortCards(rows.filter(p => p.status === s)))).join('');
       return;
     }
-    const keyOf = (p) => lane === 'manager' ? (p.manager || 'Unassigned') : (p.category || 'General');
     const groups = {};
-    rows.forEach(p => { const k = keyOf(p); (groups[k] = groups[k] || []).push(p); });
+    if (lane === 'assignee') {
+      // A project belongs to a lane per assigned member (so a developer sees all
+      // their work); projects with no assignment fall into "Unassigned".
+      rows.forEach(p => {
+        const people = this._assignees(p);
+        if (!people.length) { (groups['Unassigned'] = groups['Unassigned'] || []).push(p); return; }
+        people.forEach(n => { (groups[n] = groups[n] || []).push(p); });
+      });
+    } else {
+      const keyOf = (p) => lane === 'manager' ? (p.manager || 'Unassigned') : (p.category || 'General');
+      rows.forEach(p => { const k = keyOf(p); (groups[k] = groups[k] || []).push(p); });
+    }
+    // Keep "Unassigned" last; everything else alphabetical.
+    const keys = Object.keys(groups).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
     el.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;width:100%">' +
-      Object.keys(groups).sort().map(k =>
+      keys.map(k =>
         '<div><div class="kb-lane-label">' + esc(k) + ' (' + groups[k].length + ')</div>' + boardFor(groups[k]) + '</div>'
       ).join('') + '</div>';
   },

@@ -524,9 +524,9 @@ describe('R1 hardening — legacy footerText migrates to footerNote (one persist
 });
 
 describe('R1 / AC-R1.5 — Reports.Catalogue lists all reports (7 core + costs_report)', () => {
-  it('catalogue has 8 entries with required metadata keys', async () => {
+  it('catalogue has 10 entries with required metadata keys', async () => {
     const app = await bootEmpty();
-    expect(app.Reports.Catalogue.length).toBe(8);
+    expect(app.Reports.Catalogue.length).toBe(10);
     app.Reports.Catalogue.forEach(c => {
       expect(c.id).toBeTruthy();
       expect(c.title).toBeTruthy();
@@ -537,7 +537,7 @@ describe('R1 / AC-R1.5 — Reports.Catalogue lists all reports (7 core + costs_r
       expect('doesNotInclude' in c).toBe(true);
     });
     const ids = app.Reports.Catalogue.map(c => c.id).sort();
-    expect(ids).toEqual(['business_case', 'costs_report', 'customer_pack', 'forum_agenda'.replace('forum_agenda', 'meeting_agenda'), 'portfolio_pack', 'sponsor_pack', 'sprint_brief', 'status_report'].sort());
+    expect(ids).toEqual(['business_case', 'costs_report', 'customer_pack', 'meeting_agenda', 'portfolio_overview', 'portfolio_pack', 'sponsor_pack', 'sprint_brief', 'status_report', 'success_story'].sort());
     app.teardown();
   });
 });
