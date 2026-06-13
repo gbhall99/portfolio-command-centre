@@ -7,7 +7,7 @@ import { loadApp } from '../harness/loadApp.mjs';
 import { makeDataset, makeProject } from '../harness/fixtures.mjs';
 
 describe('Wave 5 R1/R8/R10 — customer mode is read-only, plain-language, and scope-locked', () => {
-  it('relabels My Actions + RAID, keeps My Actions visible, and forces RAID customer scope', async () => {
+  it('relabels RAID (which now folds in Actions) in customer mode and forces customer scope', async () => {
     const app = await loadApp(makeDataset({
       projects: [makeProject({ id: 'P1', customer: 'Acme Industries' })],
       customers: [{ name: 'Acme Industries', color: '#6366f1' }]
@@ -15,17 +15,15 @@ describe('Wave 5 R1/R8/R10 — customer mode is read-only, plain-language, and s
     app.App.setActiveCustomer('Acme Industries');
     app.App.customerMode = true;
     app.App._applyCustomerMode();
-    const ma = app.document.querySelector('.nav-item[data-view="myactions"]');
-    expect(ma.textContent).toMatch(/For your attention/);
-    expect(app.document.querySelector('#navRaidSingle').textContent).toMatch(/Risks & Decisions/);
+    const raidNav = app.document.querySelector('#navRaidSingle');
+    expect(raidNav.textContent).toMatch(/Risks, Decisions & Actions/);
     // R2 (wave 8): the cross-customer toggle is not even rendered in customer mode.
     app.App.navigate('raid');
     expect(app.document.getElementById('raidContent').innerHTML).not.toMatch(/Show all customers/);
-    // restoring full mode brings the labels back
+    // restoring full mode brings the label back to RAID
     app.App.customerMode = false;
     app.App._applyCustomerMode();
-    expect(ma.textContent).toMatch(/Actions/);
-    expect(ma.textContent).not.toMatch(/My Actions/);
+    expect(raidNav.textContent.replace(/\s+/g, ' ').trim()).toMatch(/^RAID/);
     app.teardown();
   });
 

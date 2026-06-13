@@ -67,13 +67,13 @@ describe('Actions owner filter', () => {
     app.teardown();
   });
 
-  it('nav badge stays unfiltered after filtering', async () => {
+  it('the RAID Actions tab count stays unfiltered after filtering', async () => {
     const app = await boot();
     app.App.activeCustomer = 'Acme Industries';
-    app.App.navigate('myactions');
-    const before = app.document.getElementById('navBadgeMyActions').textContent;
+    app.App.navigate('myactions'); // aliases to the RAID view's Actions tab
+    const before = app.document.getElementById('raidCountActions').textContent;
     app.MyActions.setOwnerFilter('Priya');
-    const after = app.document.getElementById('navBadgeMyActions').textContent;
+    const after = app.document.getElementById('raidCountActions').textContent;
     expect(after).toBe(before);
     app.teardown();
   });

@@ -12,13 +12,24 @@ async function bootEmpty() {
   }));
 }
 
-describe('Governance nav item — labels swapped: section = Business Management, inner item = Governance', () => {
-  it('sidebar inner nav item shows "Governance" (renamed from Business Management)', async () => {
+describe('Navigation IA — Governance removed, Actions folded into RAID, Personas renamed', () => {
+  it('the Governance sidebar nav item has been removed', async () => {
     const app = await bootEmpty();
-    const navItem = app.document.querySelector('[data-view="governance"]');
-    expect(navItem).toBeTruthy();
-    expect(navItem.textContent).toMatch(/Governance/);
-    expect(navItem.textContent).not.toMatch(/Meetings/);
+    expect(app.document.querySelector('.nav-item[data-view="governance"]')).toBeFalsy();
+    app.teardown();
+  });
+
+  it('the standalone Actions sidebar nav item has been removed', async () => {
+    const app = await bootEmpty();
+    expect(app.document.querySelector('.nav-item[data-view="myactions"]')).toBeFalsy();
+    app.teardown();
+  });
+
+  it('the Personas nav item reads "Personas" (not "Personas & People")', async () => {
+    const app = await bootEmpty();
+    const item = app.document.querySelector('.nav-item[data-view="personas"]');
+    expect(item).toBeTruthy();
+    expect(item.textContent.replace(/\s+/g, ' ').trim()).toBe('Personas');
     app.teardown();
   });
 
@@ -66,7 +77,7 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
     app.teardown();
   });
 
-  it('Strategy + Metrics + Personas + Governance live in the customer "Delivery" section', async () => {
+  it('Strategy + Metrics + Personas live in the customer "Delivery" section', async () => {
     const app = await bootEmpty();
     const sections = Array.from(app.document.querySelectorAll('.nav-section'));
     const custSection = sections.find(s => {
@@ -77,7 +88,6 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
     expect(custSection.querySelector('[data-view="strategy"]')).toBeTruthy();
     expect(custSection.querySelector('[data-view="metrics"]')).toBeTruthy();
     expect(custSection.querySelector('[data-view="personas"]')).toBeTruthy();
-    expect(custSection.querySelector('[data-view="governance"]')).toBeTruthy();
     app.teardown();
   });
 
@@ -94,7 +104,7 @@ describe('Governance section — flat menu (no Business Context sub-header)', ()
   });
 });
 
-describe('Slot H — Item 20: top-level RAID view with 4 inner tabs', () => {
+describe('Slot H — Item 20: top-level RAID view with inner tabs (Actions folded in)', () => {
   it('a single RAID nav item lives in the customer "Delivery" section (not Portfolio)', async () => {
     const app = await bootEmpty();
     const sections = Array.from(app.document.querySelectorAll('.nav-section'));
@@ -110,13 +120,24 @@ describe('Slot H — Item 20: top-level RAID view with 4 inner tabs', () => {
     app.teardown();
   });
 
-  it('App.navigate("raid") activates the RAID view + renders 4 inner tabs', async () => {
+  it('App.navigate("raid") activates the RAID view + renders Risks/Assumptions/Issues/Decisions/Actions tabs', async () => {
     const app = await bootEmpty();
     app.App.activeCustomer = 'Acme Industries';
     app.App.navigate('raid');
     expect(app.App.currentView).toBe('raid');
     const tabs = Array.from(app.document.querySelectorAll('.raid-tab')).map(t => t.dataset.raidTab);
-    expect(tabs).toEqual(['risks', 'assumptions', 'issues', 'decisions']);
+    expect(tabs).toEqual(['risks', 'assumptions', 'issues', 'decisions', 'actions']);
+    app.teardown();
+  });
+
+  it('navigate("myactions") aliases to the RAID view on the Actions tab', async () => {
+    const app = await bootEmpty();
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.navigate('myactions');
+    expect(app.App.currentView).toBe('raid');
+    expect(app.RaidView.activeTab).toBe('actions');
+    // MyActions content renders inside the RAID content host.
+    expect(app.document.querySelector('#raidContent #myActionsBody')).toBeTruthy();
     app.teardown();
   });
 

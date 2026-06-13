@@ -160,10 +160,13 @@ describe('project Documents section', () => {
     expect(docs.length).toBe(2);
     expect(document.getElementById('detailPanel').textContent).toContain('SOW — Alpha');
     expect(document.getElementById('detailPanel').textContent).toContain('Alpha concept');
-    // Unlinked projects show no Documents section.
+    // Unlinked projects still get the section, now with create affordances.
     Sow.attachProject(sow.id, null);
     Wireframe.attachProject(wf.id, null);
-    expect(DetailPanel.renderDocuments('A-1')).toBe('');
+    const emptyHtml = DetailPanel.renderDocuments('A-1');
+    expect(emptyHtml).toContain('New SOW');
+    expect(emptyHtml).toContain('New wireframe');
+    expect(emptyHtml).toContain('No documents linked yet');
   });
 });
 

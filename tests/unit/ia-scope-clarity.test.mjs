@@ -102,7 +102,7 @@ describe('IA 1a — "This customer" nav chip + customer-mode RAID hiding', () =>
     app.App.setActiveCustomer('Acme Industries');
     app.App.customerMode = true;
     app.App._applyCustomerMode();
-    expect(app.document.getElementById('navRaidSingle').textContent).toMatch(/Risks & Decisions/);
+    expect(app.document.getElementById('navRaidSingle').textContent).toMatch(/Risks, Decisions & Actions/);
     app.App.customerMode = false; app.App._applyCustomerMode();
     app.teardown();
   });
