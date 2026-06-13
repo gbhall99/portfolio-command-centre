@@ -21,7 +21,7 @@ const deliverySection = (app) => {
 };
 
 describe('Delivery nav — chronological order', () => {
-  it('RAID, Governance and Actions sit at the top with Projects, before any subsection label', async () => {
+  it('Projects, Board and RAID sit at the top, before any subsection label', async () => {
     const app = await boot();
     const sec = deliverySection(app);
     const children = Array.from(sec.children);
@@ -29,7 +29,9 @@ describe('Delivery nav — chronological order', () => {
     const topViews = children.slice(0, firstSubLabelIdx)
       .filter(c => c.classList.contains('nav-item'))
       .map(c => c.getAttribute('data-view'));
-    expect(topViews).toEqual(['dashboard', 'board', 'raid', 'governance', 'myactions']);
+    // Governance + the standalone Actions item were removed; Actions now lives
+    // as a tab inside RAID.
+    expect(topViews).toEqual(['dashboard', 'board', 'raid']);
     app.teardown();
   });
 
@@ -63,10 +65,14 @@ describe('Delivery nav — chronological order', () => {
   it('all Delivery routes still resolve', async () => {
     const app = await boot();
     app.App.activeCustomer = 'Acme Industries';
-    for (const v of ['dashboard', 'raid', 'governance', 'myactions', 'backlog', 'roadmap', 'sprint', 'capacity', 'strategy', 'personas', 'metrics']) {
+    for (const v of ['dashboard', 'raid', 'backlog', 'roadmap', 'sprint', 'capacity', 'strategy', 'personas', 'metrics']) {
       app.App.navigate(v);
       expect(app.App.currentView).toBe(v);
     }
+    // The legacy 'myactions' key aliases to the RAID view's Actions tab.
+    app.App.navigate('myactions');
+    expect(app.App.currentView).toBe('raid');
+    expect(app.RaidView.activeTab).toBe('actions');
     app.teardown();
   });
 });

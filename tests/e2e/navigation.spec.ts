@@ -19,9 +19,10 @@ test('navigation through all six views', async ({ page }) => {
   await page.click('.nav-item[data-view="capacity"]');
   await expect(page.locator('#viewCapacity')).toHaveClass(/active/);
 
-  // Governance Meetings
-  await page.click('.nav-item[data-view="governance"]');
-  await expect(page.locator('#viewGovernance')).toHaveClass(/active/);
+  // RAID (now folds in the former standalone Actions view as a tab)
+  await page.click('.nav-item[data-view="raid"]');
+  await expect(page.locator('#viewRaid')).toHaveClass(/active/);
+  await expect(page.locator('.raid-tab[data-raid-tab="actions"]')).toBeVisible();
 
   // Settings — tile dashboard is the default landing (post-IA-redesign).
   await page.click('.nav-item[data-view="config"]');
