@@ -38918,8 +38918,47 @@ const AI = {
 
   capabilities(profile) {
     const a = this.ADAPTERS[profile && profile.adapter];
-    if (!a) return { tools: false, streaming: false, json: false };
+    if (!a) return { tools: false, streaming: false, json: false, vision: false };
     return a.capabilities(profile);
+  },
+
+  // --- Multimodal helpers (W1a) ---
+  // A normalized image part is { mime, data } where data is bare base64 (no
+  // data: prefix). Adapters translate it to their own image block; images
+  // travel only in the request and are never persisted into App.data.
+  _normImage(input) {
+    if (!input) return null;
+    if (typeof input === 'string') {
+      const m = input.match(/^data:([^;,]+);base64,(.*)$/);
+      if (m) return { mime: m[1], data: m[2] };
+      return null;
+    }
+    if (input.data) return { mime: input.mime || 'image/png', data: String(input.data) };
+    if (input.dataUrl) return this._normImage(input.dataUrl);
+    return null;
+  },
+  _dataUrl(img) {
+    if (!img) return '';
+    if (typeof img === 'string') return img;
+    if (img.dataUrl) return img.dataUrl;
+    return 'data:' + (img.mime || 'image/png') + ';base64,' + (img.data || '');
+  },
+  // Whether a profile's model can take images. An explicit profile.vision wins;
+  // otherwise a model-name heuristic across cloud + local multimodal families
+  // (so Ollama/LM Studio vision models like llava / llama3.2-vision / qwen-vl /
+  // gemma3 / minicpm-v are recognised, not just the hosted APIs).
+  _VISION_MODELS: [
+    /gpt-4o/, /gpt-4\.1/, /gpt-5/, /chatgpt-4o/, /o3/, /o4/, /gpt-4-vision/, /gpt-4-turbo/,
+    /claude-3/, /claude-4/, /claude-opus/, /claude-sonnet/, /claude-haiku/,
+    /gemini/, /llava/, /bakllava/, /llama-?3\.2-vision/, /llama-?4/, /qwen2?\.?5?-?vl/,
+    /minicpm-?v/, /moondream/, /gemma-?3/, /pixtral/, /mistral-small-3/, /internvl/,
+    /phi-?3.*vision/, /phi-?4.*(vision|multimodal)/, /cogvlm/, /idefics/, /granite.*vision/
+  ],
+  _visionForProfile(profile) {
+    if (profile && typeof profile.vision === 'boolean') return profile.vision;
+    const model = String((profile && profile.model) || '').toLowerCase();
+    if (!model) return false;
+    return this._VISION_MODELS.some(re => re.test(model));
   },
 
   async chat(profile, messages, opts) {
@@ -39153,7 +39192,7 @@ const AI = {
       label: 'OpenAI-compatible (incl. local: Ollama, LM Studio, vLLM…)',
       capabilities(profile) {
         const mode = profile.toolMode || 'auto';
-        return { tools: mode !== 'json', streaming: true, json: true };
+        return { tools: mode !== 'json', streaming: true, json: true, vision: AI._visionForProfile(profile) };
       },
       buildRequest(profile, messages, opts) {
         const base = (profile.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
@@ -39165,6 +39204,14 @@ const AI = {
             if (m.role === 'tool') return { role: 'tool', tool_call_id: m.toolCallId, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) };
             if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length) {
               return { role: 'assistant', content: m.content || null, tool_calls: m.toolCalls.map(tc => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: JSON.stringify(tc.args || {}) } })) };
+            }
+            // W1a: attach images as content parts (OpenAI-compatible vision —
+            // also what Ollama/LM Studio/vLLM accept on /chat/completions).
+            if (m.images && m.images.length) {
+              const parts = [];
+              if (m.content) parts.push({ type: 'text', text: m.content });
+              m.images.forEach(img => parts.push({ type: 'image_url', image_url: { url: AI._dataUrl(img) } }));
+              return { role: m.role, content: parts };
             }
             return { role: m.role, content: m.content };
           }),
@@ -39226,7 +39273,7 @@ const AI = {
 
     anthropic: {
       label: 'Anthropic (Claude)',
-      capabilities() { return { tools: true, streaming: true, json: true }; },
+      capabilities(profile) { return { tools: true, streaming: true, json: true, vision: AI._visionForProfile(profile) }; },
       buildRequest(profile, messages, opts) {
         const base = (profile.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
         const headers = Object.assign({
@@ -39247,6 +39294,12 @@ const AI = {
             if (m.content) blocks.push({ type: 'text', text: m.content });
             m.toolCalls.forEach(tc => blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input: tc.args || {} }));
             mapped.push({ role: 'assistant', content: blocks });
+          } else if (m.images && m.images.length) {
+            // W1a: Claude vision — base64 image source blocks.
+            const blocks = [];
+            if (m.content) blocks.push({ type: 'text', text: m.content });
+            m.images.forEach(img => blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mime || 'image/png', data: img.data || '' } }));
+            mapped.push({ role: m.role, content: blocks });
           } else {
             mapped.push({ role: m.role, content: m.content });
           }
@@ -39310,7 +39363,7 @@ const AI = {
 
     gemini: {
       label: 'Google Gemini',
-      capabilities() { return { tools: true, streaming: false, json: true }; },
+      capabilities(profile) { return { tools: true, streaming: false, json: true, vision: AI._visionForProfile(profile) }; },
       buildRequest(profile, messages, opts) {
         const base = (profile.baseUrl || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
         // Key travels in a header, not the URL, so it can never land in logs.
@@ -39327,6 +39380,12 @@ const AI = {
             if (m.content) parts.push({ text: m.content });
             m.toolCalls.forEach(tc => parts.push({ functionCall: { name: tc.name, args: tc.args || {} } }));
             contents.push({ role: 'model', parts });
+          } else if (m.images && m.images.length) {
+            // W1a: Gemini vision — inline_data parts.
+            const parts = [];
+            if (m.content) parts.push({ text: m.content });
+            m.images.forEach(img => parts.push({ inline_data: { mime_type: img.mime || 'image/png', data: img.data || '' } }));
+            contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts });
           } else {
             contents.push({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] });
           }
@@ -39366,7 +39425,7 @@ const AI = {
       _calls: [],
       program(responses) { this._queue = (responses || []).slice(); this._calls = []; },
       capabilities(profile) {
-        return { tools: (profile.toolMode || 'native') !== 'json', streaming: true, json: true };
+        return { tools: (profile.toolMode || 'native') !== 'json', streaming: true, json: true, vision: !!(profile && profile.vision) };
       },
       async chat(profile, messages, opts) {
         this._calls.push({ messages: JSON.parse(JSON.stringify(messages)), opts: { tools: (opts.tools || []).map(t => t.name), json: !!opts.json } });
@@ -43505,6 +43564,14 @@ const WireframeSkill = {
         },
         { role: 'user', content: 'Design a wireframe for: ' + brief }
       ];
+      // W1a: visual grounding when the model can take images.
+      if (AI.capabilities(profile).vision) {
+        const imgs = await this._groundingImages(this._wfId ? Wireframe.get(this._wfId) : null);
+        if (imgs.length) {
+          messages[1].images = imgs;
+          messages[0].content += '\nA reference dashboard image is attached — match its visual structure and density.';
+        }
+      }
       const out = await AI.structuredOutput(profile, messages, this._layoutSchema(def));
       const wf = Wireframe.create({ customer: App.activeCustomer, definition: def, name: out.name || brief, source: 'ai-wireframe' });
       const rejected = this._applyLayoutComponents(wf.id, out.components, def);
@@ -43575,6 +43642,13 @@ const WireframeSkill = {
         },
         { role: 'user', content: 'Design a linked dashboard set for: ' + brief }
       ];
+      if (AI.capabilities(profile).vision) {
+        const imgs = await this._groundingImages(this._wfId ? Wireframe.get(this._wfId) : null);
+        if (imgs.length) {
+          messages[1].images = imgs;
+          messages[0].content += '\nReference dashboard image(s) are attached — keep the set visually consistent with them.';
+        }
+      }
       const out = await AI.structuredOutput(profile, messages, this._setSchema(def));
       const dashboards = (out.dashboards || []).filter(d => d && Array.isArray(d.components)).slice(0, 6);
       if (!dashboards.length) { App.toast('The model returned no dashboards', 'error'); return; }
@@ -43692,6 +43766,47 @@ const WireframeSkill = {
     if (this._drag) { this._drag = null; this.render(); }
   },
 
+  // W1a: visual grounding. A transient reference image (pasted/uploaded, never
+  // persisted) plus any referenced Tableau dashboards' thumbnails are sent to a
+  // vision-capable model so drafts/refines match the real dashboard's look.
+  _refImage: null,   // { mime, data } — transient, per editor session
+  visionReady() {
+    try { return !!AI.capabilities(AI.profileForTask('design')).vision; } catch (e) { return false; }
+  },
+  async _groundingImages(wf) {
+    const imgs = [];
+    if (this._refImage) { const n = AI._normImage(this._refImage); if (n) imgs.push(n); }
+    const refs = (wf && Array.isArray(wf.tableau_refs)) ? wf.tableau_refs : [];
+    for (const r of refs.slice(0, 3)) {
+      try {
+        let url = Tableau._imgCache && Tableau._imgCache[r.view_id];
+        if (!url && Tableau.isConfigured && Tableau.isConfigured() && Tableau.viewImageDataUrl) url = await Tableau.viewImageDataUrl(r.view_id);
+        const n = AI._normImage(url);
+        if (n) imgs.push(n);
+      } catch (e) { /* best-effort grounding — never block the draft */ }
+    }
+    return imgs.slice(0, 4);
+  },
+  uiClearRefImage() { this._refImage = null; this.render(); },
+  uiRefImageFile(input) {
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { App.toast('Choose an image file', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { this._refImage = AI._normImage(String(reader.result)); this.render(); App.toast('Reference image attached — used to ground the next AI draft/refine', 'success'); };
+    reader.onerror = () => App.toast('Could not read that image', 'error');
+    reader.readAsDataURL(file);
+  },
+  onRefImagePaste(e) {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) {
+      if (it.type && /^image\//.test(it.type)) {
+        const file = it.getAsFile();
+        if (file) { e.preventDefault(); this.uiRefImageFile({ files: [file] }); return; }
+      }
+    }
+  },
+
   // #4 GenAI: conversational refinement — the model returns constrained patch
   // ops that apply through the existing clamped mutators; invalid ops drop.
   _refineBusy: false,
@@ -43722,7 +43837,16 @@ const WireframeSkill = {
             '\n\nINSTRUCTION: ' + instruction
         }
       ];
-      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, {
+      // W1a: ground the refine in reference imagery when the model is vision-capable.
+      const profile = AI.profileForTask('design');
+      if (AI.capabilities(profile).vision) {
+        const imgs = await this._groundingImages(wf);
+        if (imgs.length) {
+          messages[messages.length - 1].images = imgs;
+          messages[0].content += '\nReference dashboard image(s) are attached — match their visual structure, density and emphasis where it does not conflict with the rules.';
+        }
+      }
+      const out = await AI.structuredOutput(profile, messages, {
         type: 'object', required: ['ops'],
         properties: {
           ops: {
@@ -44126,6 +44250,31 @@ const WireframeSkill = {
     '</div>';
   },
 
+  // W1a: visual-grounding affordance — attach/paste a reference image used to
+  // ground the next AI draft/refine. Only meaningful when the design model is
+  // vision-capable; otherwise it explains the degrade.
+  _visionHtml(wf) {
+    const esc = Dashboard.esc;
+    const ready = this.visionReady();
+    const refCount = (wf && Array.isArray(wf.tableau_refs)) ? wf.tableau_refs.length : 0;
+    const head = '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Visual grounding</div>';
+    if (!ready) {
+      return '<div style="margin-top:12px">' + head +
+        '<div style="font-size:11px;color:var(--text-muted)">The current design model is text-only — AI drafts use names/metadata. Switch to a vision-capable model (e.g. GPT-4o, Claude, Gemini, or a local llava / llama3.2-vision) in Settings to ground designs in dashboard images.</div>' +
+      '</div>';
+    }
+    const attached = this._refImage
+      ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px"><img src="' + Dashboard.escAttr(AI._dataUrl(this._refImage)) + '" alt="Reference image" style="width:64px;height:auto;border:1px solid var(--border-light);border-radius:4px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="WireframeSkill.uiClearRefImage()">Remove</button></div>'
+      : '';
+    return '<div style="margin-top:12px">' + head +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Attach or paste a reference screenshot; ' + (refCount ? 'the ' + refCount + ' linked Tableau dashboard' + (refCount === 1 ? '' : 's') + ' and ' : '') + 'the image ground the next AI draft/refine. Images are sent only with the request — never saved.</div>' +
+      '<input type="file" accept="image/*" onchange="WireframeSkill.uiRefImageFile(this)" aria-label="Reference image for visual grounding" style="font-size:11px">' +
+      '<input class="field-input" style="width:100%;margin-top:6px" placeholder="…or click here and paste an image" aria-label="Paste a reference image" onpaste="WireframeSkill.onRefImagePaste(event)" readonly>' +
+      attached +
+    '</div>';
+  },
+
   renderEditHtml() {
     const esc = Dashboard.esc;
     const wf = Wireframe.get(this._wfId);
@@ -44168,6 +44317,7 @@ const WireframeSkill = {
           '</div>' +
           this._metricsHtml(wf) +
           this._tableauHtml(wf) +
+          this._visionHtml(wf) +
           '<div style="margin-top:12px">' +
             '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Refine with AI</div>' +
             '<div style="display:flex;gap:6px"><input id="wfRefineInput" class="field-input" style="flex:1" placeholder="e.g. move filters to the right rail, add a trend line" aria-label="Refinement instruction"' +
