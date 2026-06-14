@@ -49,7 +49,7 @@ describe('Reports wireframe_spec', () => {
     const doc = app.Reports._build('wireframe_spec', { wireframeId: 'WF-1' });
     expect(doc.reportType).toBe('wireframe_spec');
     const ids = doc.sections.map(s => s.id);
-    expect(ids).toEqual(['ws-overview', 'ws-components', 'ws-refs']);
+    expect(ids).toEqual(['ws-overview', 'ws-components', 'ws-fieldmap', 'ws-checklist', 'ws-refs']);
     const body = doc.sections.map(s => s.html).join(' ');
     expect(body).toContain('Revenue KPI');
     expect(body).toContain('Live Exec');

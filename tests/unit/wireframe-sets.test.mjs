@@ -91,11 +91,11 @@ describe('Wireframe.toSetBuildSpec', () => {
 });
 
 describe('Reports wireframe_spec for sets', () => {
-  it('a standalone wireframe keeps the original three sections', () => {
+  it('a standalone wireframe keeps the single-page section layout (+ Phase 3.2 field-map & checklist)', () => {
     const wf = makeWf();
     app.Wireframe.addComponent(wf.id, 'title', def());
     const doc = app.Reports._build('wireframe_spec', { wireframeId: wf.id });
-    expect(doc.sections.map(s => s.id)).toEqual(['ws-overview', 'ws-components', 'ws-refs']);
+    expect(doc.sections.map(s => s.id)).toEqual(['ws-overview', 'ws-components', 'ws-fieldmap', 'ws-checklist', 'ws-refs']);
   });
 
   it('a set emits per-page section groups', () => {
