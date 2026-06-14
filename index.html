@@ -15712,6 +15712,28 @@ const CommandPalette = {
     ];
     actions.forEach(a => items.push({ group: 'Actions', title: a.title, meta: a.meta, action: a.action, keywords: a.title.toLowerCase() }));
 
+    // Phase 1.3: ⌘K → agent bridge. Route typed intents straight into the
+    // Assistant — same Agent pipeline as the chat box, scoped to the current
+    // customer/all-customers filter, with one view- and context-aware entry.
+    if (App.data && typeof Assistant !== 'undefined') {
+      const scopeLabel = (App.allCustomers && !App.customerMode) ? 'all customers' : (App.activeCustomer || 'this customer');
+      const aiIntents = [
+        { title: 'Ask AI: tidy up the portfolio', text: 'Tidy up the portfolio — find duplicate RAID items and out-of-order priorities and propose fixes I can confirm.' },
+        { title: 'Ask AI: what is at risk, and why?', text: 'Which projects are at risk right now, and why? End with the single most useful next step.' },
+        { title: 'Ask AI: where are we over capacity?', text: 'Where are we over capacity in the next few sprints, and what would you move?' }
+      ];
+      const vp = Assistant.VIEW_PROMPTS && Assistant.VIEW_PROMPTS[App.currentView];
+      if (vp) aiIntents.unshift({ title: 'Ask AI about this view', text: vp });
+      if (typeof DetailPanel !== 'undefined' && DetailPanel.currentId) {
+        aiIntents.push({ title: 'Ask AI: draft a SOW for the open project', text: 'Draft a SOW for the project I have open.' });
+      }
+      aiIntents.forEach(a => items.push({
+        group: 'Ask AI', title: a.title, meta: 'Runs the Assistant · ' + scopeLabel,
+        action: () => Assistant.ask(a.text),
+        keywords: ('ai assistant ask ' + a.title + ' ' + a.text).toLowerCase()
+      }));
+    }
+
     // Projects (filtered to active customer if set, else all)
     if (App.data) {
       const customer = App.activeCustomer;
@@ -40845,6 +40867,90 @@ const AgentTools = {
         ctx.proposals.push(proposal);
         AgentTools._cite(ctx, 'project', p.id, p.name);
         return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    // --- Triage / hygiene agent (Phase 1.2): scan for portfolio hygiene issues
+    // and emit one confirmable proposal per fix. Detection is read-only and
+    // deterministic; the proposals ride the Assistant's batch card (toggle each,
+    // confirm/undo as a unit). ---
+    {
+      name: 'tidy_portfolio', scope: 'write',
+      description: 'Scan the active customer for hygiene issues and PROPOSE fixes the user can confirm individually: duplicate RAID items to close, and out-of-order project priorities to renumber to a clean 1…N. Detection changes nothing — every fix is a proposal.',
+      params: {},
+      handler(args, ctx) {
+        const projects = AgentTools._projects(ctx);
+        if (!projects.length) return { error: 'No projects for this customer' };
+        const mkId = () => 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+        const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const categories = { duplicate_raid: 0, priority: 0 };
+        let created = 0;
+
+        // A) Duplicate RAID — close the later open copy of an identical risk/issue.
+        projects.forEach(p => {
+          [['risk', 'risks_register', 'description'], ['issue', 'issues_register', 'description']].forEach(spec => {
+            const kind = spec[0], arr = p[spec[1]] || [], field = spec[2];
+            const seen = Object.create(null);
+            arr.forEach((e, i) => {
+              const open = !(e.resolution_date || e.status === 'closed');
+              const text = norm(e[field] || e.text);
+              if (!text) return;
+              if (open && seen[text] !== undefined) {
+                const idx = i, original = seen[text], entry = e;
+                ctx.proposals.push({
+                  id: mkId(), kind: 'tidy', summary: 'Close duplicate ' + kind + ' on “' + p.name + '”',
+                  reason: 'Identical to ' + kind + ' #' + original,
+                  entity: { type: 'project', id: p.id, name: p.name },
+                  changes: [{ field: kind + ' #' + idx, before: String(entry[field] || entry.text || '').slice(0, 80), after: 'closed (duplicate of #' + original + ')' }],
+                  apply() {
+                    App.pushUndo('Close duplicate ' + kind + ' on ' + p.name);
+                    entry.resolution_date = new Date().toISOString().split('T')[0];
+                    if (kind === 'issue') entry.status = 'closed';
+                    p.last_updated = new Date().toISOString();
+                    App.logChange(p.id, 'raid_' + kind + '_closed', '', 'tidy: duplicate', 'ai');
+                    App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+                    return { applied: true };
+                  }
+                });
+                created++; categories.duplicate_raid++;
+              } else if (open) {
+                seen[text] = i;
+              }
+            });
+          });
+        });
+
+        // B) Priority normalisation — renumber to a clean 1…N (stable by current
+        // priority then name) when there are duplicates or gaps. One proposal,
+        // applied atomically.
+        const ranked = projects.slice().sort((a, b) =>
+          (App.toInteger(a.priority || 999) - App.toInteger(b.priority || 999)) || String(a.name || '').localeCompare(String(b.name || '')));
+        const prChanges = [];
+        ranked.forEach((p, i) => { const desired = i + 1; if (App.toInteger(p.priority) !== desired) prChanges.push({ id: p.id, name: p.name, from: App.toInteger(p.priority || 0), to: desired }); });
+        if (prChanges.length) {
+          ctx.proposals.push({
+            id: mkId(), kind: 'tidy', summary: 'Normalise priorities (' + prChanges.length + ' change' + (prChanges.length === 1 ? '' : 's') + ')',
+            reason: 'Make priorities a clean 1…' + ranked.length + ' order for ' + ctx.customer,
+            entity: { type: 'project', id: null, name: ctx.customer },
+            changes: prChanges.slice(0, 20).map(c => ({ field: c.name, before: String(c.from), after: String(c.to) })),
+            apply() {
+              App.pushUndo('Normalise priorities (' + ctx.customer + ')');
+              prChanges.forEach(c => {
+                const p = AgentTools._projects(ctx).find(x => x.id === c.id);
+                if (!p) return;
+                const old = p.priority;
+                p.priority = c.to; p.last_updated = new Date().toISOString();
+                App.logChange(p.id, 'priority', String(old == null ? '' : old), String(c.to), 'ai');
+              });
+              App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+              return { applied: true };
+            }
+          });
+          created++; categories.priority++;
+        }
+
+        if (!created) return { proposed: false, note: 'The portfolio looks tidy — no duplicate RAID items or priority gaps for ' + ctx.customer + '.' };
+        projects.forEach(p => AgentTools._cite(ctx, 'project', p.id, p.name));
+        return { proposed: true, count: created, categories, note: 'Proposed ' + created + ' tidy-up change' + (created === 1 ? '' : 's') + ' — review and confirm each. Nothing has changed yet.' };
       }
     },
     // --- Skills as tools: the assistant can run the governed generators. Each
