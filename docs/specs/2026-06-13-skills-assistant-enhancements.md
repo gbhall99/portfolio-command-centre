@@ -229,7 +229,7 @@ Build order = value first, and the three "if I could only do three" picks lead:
 | 7 | S3 stale-quote | DONE |
 | 8 | W4 conformance one-click fix | DONE |
 | 9 | AS3 visible tool steps | DONE |
-| 10 | S4 redline + gate | spec'd |
+| 10 | S4 redline + gate | DONE |
 | 11 | W3 multi-dashboard sets | spec'd |
 | 12 | AS4 view-aware prompt chips | DONE |
 

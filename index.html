@@ -3336,6 +3336,11 @@ html[data-theme="dark"] .sow-side { background: var(--bg-tertiary); }
 .sow-section.flagged { border-color: var(--status-amber, #d97706); }
 .sow-section-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-light); font-size: 12px; font-weight: 700; color: var(--text-dark); }
 .sow-flag-chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(217,119,6,0.12); color: var(--status-amber, #d97706); }
+.sow-edited-chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(59,130,246,0.12); color: var(--accent-blue, #2563eb); }
+.sow-comment { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.sow-comment-text { flex: 1; }
+.sow-comment.resolved .sow-comment-text { color: var(--text-muted); text-decoration: line-through; }
+.sow-comment-state { font-weight: 700; text-decoration: none; color: var(--status-green, #16a34a); }
 .sow-section textarea { width: 100%; border: none; background: transparent; padding: 10px 12px; font-size: 12.5px; line-height: 1.55; font-family: inherit; color: var(--text-dark); resize: vertical; min-height: 72px; }
 .sow-section textarea:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 .sow-section-comments { border-top: 1px dashed var(--border-light); padding: 6px 12px; font-size: 11px; color: var(--text-dark-secondary); }
@@ -4949,6 +4954,14 @@ const App = {
     // WS4/WS5/WS6 (2026-06): additive entity collections for AI-generated
     // artifacts. Always-run, idempotent — existing sessions gain empty arrays.
     if (!Array.isArray(data.sows)) data.sows = [];
+    // S4 (2026-06): review redline + comment-resolution gate. Back-compat —
+    // comments authored before the gate existed are treated as already
+    // resolved so they never retroactively block an approval.
+    data.sows.forEach(s => {
+      (s.sections || []).forEach(sec => {
+        (sec.comments || []).forEach(c => { if (c.resolved === undefined) c.resolved = true; });
+      });
+    });
     if (!Array.isArray(data.wireframes)) data.wireframes = [];
     // Tableau reference links (2026-06): wireframes may cite live, deployed
     // dashboards as design reference points. Metadata only — never images.
@@ -41798,10 +41811,29 @@ const Sow = {
     const sec = sow.sections.find(s => s.id === sectionId);
     if (!sec) return;
     App.pushUndo('Comment on SOW section ' + sec.title);
-    sec.comments.push({ at: new Date().toISOString(), text: String(text).trim().slice(0, 500) });
+    sec.comments.push({ at: new Date().toISOString(), text: String(text).trim().slice(0, 500), resolved: false });
     this._history(sow, 'comment', sec.title);
     this._persist(sow, 'sow_comment:' + sectionId, '', String(text).slice(0, 60), 'user');
   },
+
+  // S4: resolve (or re-open) a review comment. Resolution clears it from the
+  // approval gate; audited + undoable like every other SOW mutation.
+  resolveComment(sowId, sectionId, index, resolved) {
+    const sow = this.get(sowId);
+    if (!sow) return;
+    const sec = sow.sections.find(s => s.id === sectionId);
+    const c = sec && sec.comments[index];
+    if (!c) return;
+    const next = resolved === undefined ? true : !!resolved;
+    if (!!c.resolved === next) return;
+    App.pushUndo((next ? 'Resolve' : 'Reopen') + ' SOW comment on ' + sec.title);
+    c.resolved = next;
+    this._history(sow, next ? 'comment_resolved' : 'comment_reopened', sec.title);
+    this._persist(sow, 'sow_comment_resolved:' + sectionId, next ? 'open' : 'resolved', next ? 'resolved' : 'open', 'user');
+  },
+
+  // S4 redline: count of comments still open on a section.
+  openComments(sec) { return (sec.comments || []).filter(c => !c.resolved).length; },
 
   // Generate + store the structured quote for the linked project and render
   // it into the Commercials section. Figures always come from Billing —
@@ -41944,6 +41976,15 @@ const Sow = {
       if (def.validation && def.validation.approval_requires && def.validation.approval_requires.indexOf('no_unresolved_flags') >= 0) errors.push(msg);
       else warnings.push(msg);
     }
+    // S4: open review comments block approval when the definition opts in
+    // (comments_resolved); otherwise they surface as a warning.
+    const withOpen = sow.sections.filter(s => this.openComments(s) > 0);
+    if (withOpen.length) {
+      const total = withOpen.reduce((n, s) => n + this.openComments(s), 0);
+      const msg = total + ' unresolved comment(s) across ' + withOpen.length + ' section(s): ' + withOpen.map(s => s.title).join(', ');
+      if (def.validation && def.validation.approval_requires && def.validation.approval_requires.indexOf('comments_resolved') >= 0) errors.push(msg);
+      else warnings.push(msg);
+    }
     return { ok: errors.length === 0, errors, warnings };
   },
 
@@ -41958,6 +41999,13 @@ const Sow = {
     if (status === 'Approved') sow.version = '1.0';
     const old = sow.status;
     sow.status = status;
+    // S4 redline: snapshot each section's content as the baseline for the
+    // states that anchor a review (Review / Approved), so subsequent edits can
+    // be compared against the version that was last circulated or signed off.
+    if (status === 'Review' || status === 'Approved') {
+      const at = new Date().toISOString();
+      sow.sections.forEach(sec => { sec.baseline = String(sec.content || ''); sec.baseline_status = status; sec.baseline_at = at; });
+    }
     this._history(sow, 'status', old + ' → ' + status);
     this._persist(sow, 'sow_status', old, status, 'user');
     return { ok: true, errors: [] };
@@ -42321,6 +42369,14 @@ const SowSkill = {
     this._commentingOn = null;
     this.render();
   },
+  uiResolveComment(sectionId, index, resolved) { Sow.resolveComment(this._sowId, sectionId, index, resolved); this.render(); },
+
+  // S4 redline: toggle the per-section compare view (baseline vs current).
+  _comparingOn: null,
+  uiToggleCompare(sectionId) {
+    this._comparingOn = this._comparingOn === sectionId ? null : sectionId;
+    this.render();
+  },
   uiSetStatus(status) {
     const def = this._def();
     const res = Sow.setStatus(this._sowId, status, def && def.files.definition);
@@ -42508,10 +42564,28 @@ const SowSkill = {
     const esc = Dashboard.esc;
     const sow = Sow.get(this._sowId);
     if (!sow) return this.renderListHtml();
-    const sections = sow.sections.map(sec => {
+    const sections = sow.sections.map((sec, secIdx) => {
       let comments = sec.comments.length
-        ? '<div class="sow-section-comments">' + sec.comments.map(c => '<div>' + new Date(c.at).toLocaleDateString('en-GB') + ' — ' + esc(c.text) + '</div>').join('') + '</div>'
+        ? '<div class="sow-section-comments">' + sec.comments.map((c, ci) =>
+            '<div class="sow-comment' + (c.resolved ? ' resolved' : '') + '">' +
+              '<span class="sow-comment-text">' + new Date(c.at).toLocaleDateString('en-GB') + ' — ' + esc(c.text) + (c.resolved ? ' <span class="sow-comment-state">(resolved)</span>' : '') + '</span>' +
+              '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiResolveComment(\'' + esc(sec.id) + '\', ' + ci + ', ' + (c.resolved ? 'false' : 'true') + ')">' + (c.resolved ? 'Reopen' : 'Resolve') + '</button>' +
+            '</div>').join('') + '</div>'
         : '';
+      // S4 redline: stacked diff of the review/approved baseline vs current.
+      if (this._comparingOn === sec.id) {
+        const hasBaseline = sec.baseline !== undefined && sec.baseline !== null;
+        const changed = hasBaseline && sec.baseline !== sec.content;
+        comments += '<div class="sow-section-comments" id="sowCompare">' +
+          '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Compare with ' + (hasBaseline ? esc(sec.baseline_status || 'baseline') + ' version' + (sec.baseline_at ? ' (' + new Date(sec.baseline_at).toLocaleDateString('en-GB') + ')' : '') : 'baseline') + '</div>' +
+          (!hasBaseline
+            ? '<div style="font-size:12px;color:var(--text-muted)">No baseline yet — send the SOW to Review to capture one.</div>'
+            : !changed
+              ? '<div style="font-size:12px;color:var(--text-muted)">Unchanged since the ' + esc(sec.baseline_status || 'baseline') + ' version.</div>'
+              : '<div style="text-decoration:line-through;color:var(--text-muted);white-space:pre-wrap;margin-bottom:6px">' + esc(sec.baseline) + '</div>' +
+                '<div style="white-space:pre-wrap;color:var(--text-dark);font-weight:600">' + esc(sec.content) + '</div>') +
+        '</div>';
+      }
       if (this._redraftingOn === sec.id && (!this._redraft || this._redraft.sectionId !== sec.id)) {
         comments += '<div class="sow-section-comments" style="display:flex;gap:6px">' +
           '<input id="sowRedraftInput" class="field-input" style="flex:1" placeholder="What should change? e.g. tighten to three bullets, make assumptions more defensive" aria-label="Redraft instruction for ' + esc(sec.title) + '"' +
@@ -42537,12 +42611,17 @@ const SowSkill = {
           '<button class="btn btn-primary btn-sm" onclick="SowSkill.uiCommentSubmit(\'' + esc(sec.id) + '\')">Add</button>' +
         '</div>';
       }
+      const openCount = Sow.openComments(sec);
+      const baselineChanged = sec.baseline !== undefined && sec.baseline !== null && sec.baseline !== sec.content;
       return '<div class="sow-section' + (sec.flagged ? ' flagged' : '') + '">' +
         '<div class="sow-section-head">' + esc(sec.title) +
           (sec.required ? '' : ' <span style="font-weight:400;color:var(--text-muted)">(optional)</span>') +
           (sec.flagged ? '<span class="sow-flag-chip" title="' + esc(sec.flag_reason) + '">needs review</span>' : '') +
+          (openCount ? '<span class="sow-flag-chip" title="Unresolved review comments">' + openCount + ' open</span>' : '') +
+          (baselineChanged ? '<span class="sow-edited-chip" title="Edited since the ' + esc(sec.baseline_status || 'baseline') + ' version">edited</span>' : '') +
           '<span style="margin-left:auto;display:flex;gap:4px">' +
             (sec.flagged ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiResolveFlag(\'' + esc(sec.id) + '\')" title="Mark reviewed">Resolve</button>' : '') +
+            ((sec.baseline !== undefined && sec.baseline !== null) ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiToggleCompare(\'' + esc(sec.id) + '\')" title="Compare against the last reviewed version">' + (this._comparingOn === sec.id ? 'Hide diff' : 'Compare') + '</button>' : '') +
             (sow.status !== 'Approved' ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiRedraftToggle(\'' + esc(sec.id) + '\')" title="Redraft this section with AI">AI redraft</button>' : '') +
             '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiComment(\'' + esc(sec.id) + '\')" title="Add comment">Comment</button>' +
           '</span>' +
@@ -44504,7 +44583,7 @@ Skills.register({
   "validation": {
     "enforce_section_order": true,
     "require_flag_when_unsupported": true,
-    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags"]
+    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags", "comments_resolved"]
   }
 }
 </script>
@@ -44746,7 +44825,7 @@ expected — these rules are the boundaries, not a script.
     "enforce_section_order": true,
     "require_flag_when_unsupported": true,
     "requires_quote": true,
-    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags", "quote_present"]
+    "approval_requires": ["all_required_sections_present", "all_required_sections_non_empty", "min_words_met", "no_unresolved_flags", "quote_present", "comments_resolved"]
   }
 }
 </script>
