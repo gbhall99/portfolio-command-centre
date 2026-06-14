@@ -23,6 +23,13 @@ test('build a wireframe: palette placement, conformance updates, title fix clear
   // The new component is selected; set a title via the properties panel.
   await page.fill('#wfTitleInput', 'North region drives growth');
   await expect(page.locator('#wfConf')).not.toContainText('no title');
+
+  // W2: a charted component with no bound metric is nudged (the demo customer
+  // has metrics). Bind one via the "Shows metric" picker to clear the nudge —
+  // then the layout fully conforms.
+  await expect(page.locator('#wfConf')).toContainText('not linked to a metric');
+  await page.selectOption('#wfMetricSelect', { index: 1 });
+  await expect(page.locator('#wfConf')).not.toContainText('not linked to a metric');
   await expect(page.locator('#wfConf')).toContainText('conforms');
 
   // Vocabulary is the governed one: palette has exactly the definition's components.
