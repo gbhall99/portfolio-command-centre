@@ -219,7 +219,7 @@ Build order = value first, and the three "if I could only do three" picks lead:
 
 | Order | Item | Status |
 |---|---|---|
-| 1 | S1 SOW draft-from-project | spec'd |
+| 1 | S1 SOW draft-from-project | DONE |
 | 2 | W1 visual grounding + build spec | spec'd |
 | 3 | AS1 portfolio scope + skills-as-tools | spec'd |
 | 4 | S2 RAID/clause library | spec'd |
