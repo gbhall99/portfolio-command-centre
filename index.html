@@ -42993,6 +42993,21 @@ const Wireframe = {
     this._persist(wf, 'wireframe_component', c.type, '', 'user');
   },
 
+  // W2: bind a component to the strategy metric it visualizes (or clear it with
+  // a falsy metricId). Validated against the wireframe customer's metrics.
+  setComponentMetric(wfId, compId, metricId) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return;
+    let mid = metricId || null;
+    if (mid && !(App.data.metrics || []).some(m => m.id === mid && m.customer === wf.customer)) mid = null;
+    if ((c.metric_id || null) === mid) return;
+    App.pushUndo('Bind wireframe component to metric');
+    if (mid) c.metric_id = mid; else delete c.metric_id;
+    this._persist(wf, 'wireframe_component_metric', c.type, mid || '(none)', 'user');
+  },
+
   toggleMetric(wfId, metricId) {
     const wf = this.get(wfId);
     if (!wf) return;
@@ -43099,6 +43114,13 @@ const Wireframe = {
     if (r) wf.components.filter(c => chartTypes.indexOf(c.type) >= 0 && !(c.title || '').trim()).forEach(c => {
       flag(r.severity, [c.id], 'A ' + c.type + ' chart has no title — titles carry the takeaway.');
     });
+    // W2: soft nudge — KPI/chart components with no bound metric aren't traceable
+    // to strategy (always a warning; never blocks, since binding is optional).
+    if ((App.data.metrics || []).some(m => m.customer === wf.customer)) {
+      wf.components.filter(c => (c.type === 'kpi' || chartTypes.indexOf(c.type) >= 0) && !c.metric_id).forEach(c => {
+        flag('warning', [c.id], 'The ' + c.type + ' component is not linked to a metric — bind it via "Shows metric" for traceability.');
+      });
+    }
     return { ok: errors.length === 0, errors, warnings, violating };
   }
 };
@@ -43118,6 +43140,7 @@ const WireframeSkill = {
   _selId: null,
   _drag: null,
   _busy: false,
+  _fixBusy: false,
 
   open(ctx) {
     this._mode = 'list'; this._wfId = null; this._selId = null;
@@ -43236,6 +43259,11 @@ const WireframeSkill = {
     Wireframe.updateComponent(this._wfId, this._selId, { title: el.value.slice(0, 160) }, this._def());
     this.renderCanvasAndConf();
   },
+  uiSetComponentMetric(sel) {
+    if (!this._selId) return;
+    Wireframe.setComponentMetric(this._wfId, this._selId, sel.value || null);
+    this.renderCanvasAndConf();
+  },
   uiAttach(sel) { Wireframe.attachProject(this._wfId, sel.value || null); this.render(); },
   uiDelete() {
     if (!confirm('Delete this wireframe? (Undo with Ctrl+Z)')) return;
@@ -43350,25 +43378,10 @@ const WireframeSkill = {
           }
         }
       });
-      let applied = 0, dropped = 0;
-      (out.ops || []).slice(0, 20).forEach(o => {
-        const exists = o.id && Wireframe.get(this._wfId).components.some(c => c.id === o.id);
-        if (o.op === 'add' && o.type) {
-          const comp = Wireframe.addComponent(this._wfId, o.type, def, (Number.isFinite(o.x) && Number.isFinite(o.y)) ? { x: App.toInteger(o.x), y: App.toInteger(o.y) } : undefined);
-          if (typeof comp === 'string') { dropped++; return; }
-          Wireframe.updateComponent(this._wfId, comp.id, {
-            x: App.toInteger(o.x !== undefined ? o.x : comp.x), y: App.toInteger(o.y !== undefined ? o.y : comp.y),
-            w: App.toInteger(o.w || comp.w), h: App.toInteger(o.h || comp.h),
-            title: typeof o.title === 'string' ? o.title.slice(0, 160) : comp.title
-          }, def);
-          applied++;
-        } else if (o.op === 'move' && exists) { Wireframe.updateComponent(this._wfId, o.id, { x: App.toInteger(o.x), y: App.toInteger(o.y) }, def); applied++; }
-        else if (o.op === 'resize' && exists) { Wireframe.updateComponent(this._wfId, o.id, { w: App.toInteger(o.w), h: App.toInteger(o.h) }, def); applied++; }
-        else if (o.op === 'retitle' && exists) { Wireframe.updateComponent(this._wfId, o.id, { title: String(o.title || '').slice(0, 160) }, def); applied++; }
-        else if (o.op === 'remove' && exists) { Wireframe.removeComponent(this._wfId, o.id); applied++; }
-        else dropped++;
-      });
-      App.toast('Applied ' + applied + ' change(s)' + (dropped ? ' — ' + dropped + ' invalid op(s) dropped' : '') + ' — Ctrl+Z to undo', applied ? 'success' : 'error');
+      const considered = Math.min(20, (out.ops || []).length);
+      const applied = this._applyOps(out.ops, def);
+      const dropped = considered - applied;
+      App.toast('Applied ' + applied + ' change(s)' + (dropped > 0 ? ' — ' + dropped + ' invalid op(s) dropped' : '') + ' — Ctrl+Z to undo', applied ? 'success' : 'error');
       if (input) input.value = '';
     } catch (e) {
       App.toast(AI.describeError(e), 'error');
@@ -43376,6 +43389,93 @@ const WireframeSkill = {
       this._refineBusy = false;
       this.render();
     }
+  },
+
+  // W4: one-click conformance fix. Feed the live checkConformance errors to
+  // the model and apply the returned patch ops through the same clamped
+  // mutators uiRefine uses — so the repair can never escape the vocabulary,
+  // the grid or the min-sizes, and the whole thing is one undo step.
+  async uiFixLayout() {
+    if (this._refineBusy || this._fixBusy) return;
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    if (!wf || !def) return;
+    const before = Wireframe.checkConformance(wf, def);
+    if (!before.errors.length) { App.toast('Layout already conforms — nothing to fix', 'success'); return; }
+    this._fixBusy = true;
+    this.render();
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You repair a Tableau dashboard wireframe on a ' + wf.grid.cols + 'x' + wf.grid.rows + ' grid by returning the minimal patch operations that clear the listed conformance errors WITHOUT redesigning it.\n' +
+            'Allowed component types and minimum sizes: ' + def.components.map(c => c.type + '(' + c.min_w + 'x' + c.min_h + ')').join(', ') + '.\n' +
+            'Ops: add (type, x, y, w, h, title), move (id, x, y), resize (id, w, h), retitle (id, title), remove (id). Reference existing components by their exact id.\n' +
+            'Design rules to satisfy: exactly one title at y=0, KPIs in the top third, filters in the top band or right rail, no overlaps, every component on-grid and at or above its minimum size, charts carry a title. Prefer moving/resizing existing components over adding or removing.' +
+            this._tableauPromptBlock(wf)
+        },
+        {
+          role: 'user',
+          content: 'CURRENT COMPONENTS:\n' + JSON.stringify(wf.components.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '' }))) +
+            '\n\nCONFORMANCE ERRORS TO FIX:\n' + before.errors.map((e, i) => (i + 1) + '. ' + e).join('\n')
+        }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, {
+        type: 'object', required: ['ops'],
+        properties: {
+          ops: {
+            type: 'array',
+            items: {
+              type: 'object', required: ['op'],
+              properties: {
+                op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove'] },
+                type: { type: 'string' },
+                id: { type: 'string' },
+                x: { type: 'number' }, y: { type: 'number' },
+                w: { type: 'number' }, h: { type: 'number' },
+                title: { type: 'string' }
+              }
+            }
+          }
+        }
+      });
+      const applied = this._applyOps(out.ops, def);
+      const after = Wireframe.checkConformance(this._wfId ? Wireframe.get(this._wfId) : wf, def);
+      const cleared = before.errors.length - after.errors.length;
+      if (!applied) App.toast('The model proposed no usable fixes — adjust manually', 'error');
+      else if (after.errors.length === 0) App.toast('Fixed — layout now conforms (' + applied + ' change(s)) — Ctrl+Z to undo', 'success');
+      else App.toast('Cleared ' + Math.max(0, cleared) + ' of ' + before.errors.length + ' error(s); ' + after.errors.length + ' remain — Ctrl+Z to undo', cleared > 0 ? 'success' : 'error');
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._fixBusy = false;
+      this.render();
+    }
+  },
+
+  // Shared patch-op applier for uiRefine/uiFixLayout: every op routes through
+  // the clamped mutators, so out-of-vocabulary types and off-grid geometry are
+  // dropped per-op rather than corrupting the layout. Returns the applied count.
+  _applyOps(ops, def) {
+    let applied = 0;
+    (ops || []).slice(0, 20).forEach(o => {
+      const exists = o.id && Wireframe.get(this._wfId).components.some(c => c.id === o.id);
+      if (o.op === 'add' && o.type) {
+        const comp = Wireframe.addComponent(this._wfId, o.type, def, (Number.isFinite(o.x) && Number.isFinite(o.y)) ? { x: App.toInteger(o.x), y: App.toInteger(o.y) } : undefined);
+        if (typeof comp === 'string') return;
+        Wireframe.updateComponent(this._wfId, comp.id, {
+          x: App.toInteger(o.x !== undefined ? o.x : comp.x), y: App.toInteger(o.y !== undefined ? o.y : comp.y),
+          w: App.toInteger(o.w || comp.w), h: App.toInteger(o.h || comp.h),
+          title: typeof o.title === 'string' ? o.title.slice(0, 160) : comp.title
+        }, def);
+        applied++;
+      } else if (o.op === 'move' && exists) { Wireframe.updateComponent(this._wfId, o.id, { x: App.toInteger(o.x), y: App.toInteger(o.y) }, def); applied++; }
+      else if (o.op === 'resize' && exists) { Wireframe.updateComponent(this._wfId, o.id, { w: App.toInteger(o.w), h: App.toInteger(o.h) }, def); applied++; }
+      else if (o.op === 'retitle' && exists) { Wireframe.updateComponent(this._wfId, o.id, { title: String(o.title || '').slice(0, 160) }, def); applied++; }
+      else if (o.op === 'remove' && exists) { Wireframe.removeComponent(this._wfId, o.id); applied++; }
+    });
+    return applied;
   },
 
   // --- exports ---
@@ -43627,7 +43727,10 @@ const WireframeSkill = {
     return '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Definition conformance</div>' +
       (conf.ok && !conf.warnings.length ? '<div class="ok">Layout conforms to the design guidelines.</div>' : '') +
       conf.errors.map(e => '<div class="err">• ' + esc(e) + '</div>').join('') +
-      conf.warnings.map(w => '<div class="warn">• ' + esc(w) + '</div>').join('');
+      conf.warnings.map(w => '<div class="warn">• ' + esc(w) + '</div>').join('') +
+      (conf.errors.length && AI.isConfigured()
+        ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiFixLayout()"' + (this._fixBusy ? ' disabled' : '') + ' title="Let AI clear the conformance errors with minimal moves">' + (this._fixBusy ? 'Fixing…' : 'Fix layout with AI') + '</button>'
+        : '');
   },
 
   renderEditHtml() {
@@ -43642,11 +43745,16 @@ const WireframeSkill = {
     const projects = (App.data.projects || []).filter(p => p.customer === wf.customer && p.status !== 'Closed');
     const projOpts = '<option value="">Not linked to a project</option>' +
       projects.map(p => '<option value="' + esc(p.id) + '"' + (wf.project_id === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+    const metricOpts = '<option value="">— no metric —</option>' +
+      (App.data.metrics || []).filter(m => m.customer === wf.customer)
+        .map(m => '<option value="' + esc(m.id) + '"' + (sel && sel.metric_id === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('');
     const props = sel
       ? '<div class="wf-props">' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Selected: ' + esc(sel.type) + '</div>' +
           '<label for="wfTitleInput">Title</label>' +
           '<input id="wfTitleInput" class="field-input" value="' + Dashboard.escAttr(sel.title || '') + '" oninput="WireframeSkill.uiTitleChange(this)">' +
+          '<label for="wfMetricSelect">Shows metric</label>' +
+          '<select id="wfMetricSelect" class="field-input" onchange="WireframeSkill.uiSetComponentMetric(this)" aria-label="Metric this component visualizes">' + metricOpts + '</select>' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + sel.w + '×' + sel.h + ' at (' + sel.x + ',' + sel.y + ') — drag to move, corner handle to resize</div>' +
           '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
         '</div>'

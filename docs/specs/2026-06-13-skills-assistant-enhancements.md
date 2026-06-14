@@ -224,10 +224,10 @@ Build order = value first, and the three "if I could only do three" picks lead:
 | 2b | W1a visual (vision) grounding | DEFERRED — needs a multimodal message layer across all adapters (openai/anthropic/gemini) + a `vision` capability + mock support; tracked as its own item |
 | 3 | AS1 portfolio scope + skills-as-tools | DONE |
 | 4 | S2 RAID/clause library | spec'd |
-| 5 | W2 component↔metric binding | spec'd |
+| 5 | W2 component↔metric binding | DONE |
 | 6 | AS2 proactive briefing | DONE |
 | 7 | S3 stale-quote | DONE |
-| 8 | W4 conformance one-click fix | spec'd |
+| 8 | W4 conformance one-click fix | DONE |
 | 9 | AS3 visible tool steps | DONE |
 | 10 | S4 redline + gate | spec'd |
 | 11 | W3 multi-dashboard sets | spec'd |
