@@ -15396,6 +15396,8 @@ const ScenarioLab = {
         .map(w => ({ project: w.project && w.project.name, detail: w.detail })),
       capacity_overflows: (result.warnings || []).filter(w => w.type === 'capacity_overflow' || w.type === 'zero_capacity')
         .map(w => ({ type: w.type, skill: w.skill, detail: w.detail })),
+      // Phase 2.2: the binding dependency chain (names), empty when none.
+      critical_path: (result.stats && result.stats.criticalPathNames) || [],
       warning_counts: byType
     };
   },
@@ -31535,6 +31537,14 @@ const Sprint = {
         (s.dependencyPushes ? '<div class="alloc-stat" title="Projects whose first sprint was pushed because a dependency had to finish first"><div class="alloc-stat-num" style="color:var(--accent-teal)">' + s.dependencyPushes + '</div><div class="alloc-stat-label">Dep Pushes</div></div>' : '') +
       '</div>';
 
+      // Phase 2.2: surface the critical dependency chain when there is one.
+      if (s.criticalPathLength >= 2) {
+        html += '<div class="alloc-critical-path" title="The longest blocked_by chain — shortening it shortens the plan" style="margin:-4px 0 12px;font-size:12px;color:var(--text-dark-secondary)">' +
+          '<strong style="color:var(--accent-violet)">Critical path:</strong> ' +
+          (s.criticalPathNames || []).map(n => Dashboard.esc(n)).join(' <span style="color:var(--text-muted)">→</span> ') +
+        '</div>';
+      }
+
       if (w.length) {
         // One-row-per-distinct-issue table. Status column tells the user immediately whether the
         // solver resolved it (informational row) or left it for them to fix (action row).
@@ -34711,6 +34721,44 @@ const Solver = {
       return (a.id || '').localeCompare(b.id || '');
     });
 
+    // Phase 2.2: dependency-aware allocation order. The forward pass already gates
+    // a project's start on any blocker already placed (live finishCache re-check in
+    // allocateProject), but that only fires if the blocker is allocated FIRST. The
+    // priority sort above can place a successor ahead of its blocker (e.g. the
+    // successor has the earlier deadline). A stable topological reorder fixes that:
+    // among ready projects we always keep the existing sort order, so a portfolio
+    // with no blocked_by edges is left exactly as sorted (no behaviour change).
+    // depAdj (blocker -> [successors]) is reused below to compute the critical path.
+    const depAdj = {};
+    {
+      const order = projects.map(p => p.id);
+      const idxOf = {}; order.forEach((id, i) => idxOf[id] = i);
+      const inSet = new Set(order);
+      const indeg = {};
+      order.forEach(id => { depAdj[id] = []; indeg[id] = 0; });
+      projects.forEach(p => {
+        this.normalizeDepsBidirectional(p, reverseBlocks).forEach(depId => {
+          if (cycleSet.has(p.id) && cycleSet.has(depId)) return;     // ignore edges inside a cycle
+          if (!inSet.has(depId) || depId === p.id) return;           // locked / cross-customer deps handled via finishCache
+          depAdj[depId].push(p.id); indeg[p.id]++;                   // edge: blocker -> successor
+        });
+      });
+      const hasEdges = Object.keys(indeg).some(id => indeg[id] > 0);
+      if (hasEdges) {
+        const ready = order.filter(id => indeg[id] === 0);
+        const result = [];
+        while (ready.length) {
+          ready.sort((a, b) => idxOf[a] - idxOf[b]);                 // keep the priority order among ready nodes
+          const id = ready.shift();
+          result.push(id);
+          depAdj[id].forEach(next => { if (--indeg[next] === 0) ready.push(next); });
+        }
+        order.forEach(id => { if (result.indexOf(id) < 0) result.push(id); }); // leftover cycle nodes, original order
+        const byId = {}; projects.forEach(p => { byId[p.id] = p; });
+        projects = result.map(id => byId[id]);
+      }
+    }
+
     // Zero-capacity skill warnings — name the blocked projects so the user can act without
     // cross-referencing the project list.
     SKILLS.forEach(sk => {
@@ -35318,6 +35366,33 @@ const Solver = {
       });
     });
 
+    // Phase 2.2: critical path — the longest chain of dependent ALLOCATED projects
+    // (blocker -> successor), tie-broken by latest finish. Reuses depAdj built above
+    // and the per-project finish indices in finishCache. Empty for dependency-free
+    // portfolios, so it never affects existing output.
+    let criticalPath = [];
+    {
+      // Longest-chain DP over the topological project order (projects is already topo-sorted).
+      const dp = {}, prev = {};
+      const ids = projects.map(p => p.id).filter(id => allocations[id]);
+      ids.forEach(id => { dp[id] = 1; prev[id] = null; });
+      ids.forEach(id => {
+        (depAdj[id] || []).forEach(next => {
+          if (!allocations[next]) return;
+          if (dp[id] + 1 > dp[next]) { dp[next] = dp[id] + 1; prev[next] = id; }
+        });
+      });
+      let end = null;
+      ids.forEach(id => {
+        if (!end || dp[id] > dp[end] || (dp[id] === dp[end] && (finishCache[id] || 0) > (finishCache[end] || 0))) end = id;
+      });
+      if (end && dp[end] >= 2) {
+        let cur = end;
+        while (cur) { criticalPath.unshift(cur); cur = prev[cur]; }
+      }
+    }
+    const projName = (id) => (allProjectMap[id] && allProjectMap[id].name) || id;
+
     return {
       allocations,
       warnings,
@@ -35335,7 +35410,11 @@ const Solver = {
         pastSprintBlocked,
         concurrentBlocked,
         // 1G: projects whose first sprint was pushed by a dependency finish. Counted from warnings.
-        dependencyPushes: warnings.filter(w => w.type === 'dependency_push').length
+        dependencyPushes: warnings.filter(w => w.type === 'dependency_push').length,
+        // Phase 2.2: the binding dependency chain (project ids + names), empty when none.
+        criticalPath,
+        criticalPathNames: criticalPath.map(projName),
+        criticalPathLength: criticalPath.length
       },
       utilizationGrid
     };
@@ -40423,14 +40502,16 @@ const AgentTools = {
         const levers = [];
         if (binding.length) levers.push('Add capacity (or reduce scope) in: ' + Array.from(new Set(binding.slice(0, 3).map(b => b.skill))).join(', '));
         if (base.deadline_misses.length) levers.push('Relax or move the deadline on: ' + base.deadline_misses.map(m => m.project).filter(Boolean).slice(0, 3).join(', '));
-        if (!binding.length && !base.deadline_misses.length) levers.push('No binding constraints — the plan has slack; you could pull work forward or take on more.');
+        if ((base.critical_path || []).length) levers.push('Shorten the critical dependency chain: ' + base.critical_path.join(' → '));
+        if (!binding.length && !base.deadline_misses.length && !(base.critical_path || []).length) levers.push('No binding constraints — the plan has slack; you could pull work forward or take on more.');
         return {
           plan_summary: { projects_allocated: base.projects_allocated, total_points: base.total_points, makespan_sprints: base.makespan_sprints, avg_utilisation_pct: base.avg_utilisation_pct },
           binding_constraints: binding.slice(0, 8),
           deadline_misses: base.deadline_misses,
           capacity_overflows: base.capacity_overflows,
+          critical_path: base.critical_path || [],
           levers,
-          note: 'Grounded in the live plan, solver and capacity. Explain these figures plainly; do not invent numbers.'
+          note: 'Grounded in the live plan, solver and capacity. The critical path is the longest blocked_by chain. Explain these figures plainly; do not invent numbers.'
         };
       }
     },
