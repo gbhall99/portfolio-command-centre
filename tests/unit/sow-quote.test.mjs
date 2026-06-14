@@ -126,6 +126,23 @@ describe('approval gating', () => {
     expect(v.errors.some(e => /different project — regenerate/.test(e))).toBe(true);
   });
 
+  it('S3: a quote goes stale when the project sizing changes; re-quoting clears it', () => {
+    const { Sow } = app;
+    const { sow, def } = makeQuotedSow();
+    Sow.attachProject(sow.id, 'A-1');
+    Sow.setQuote(sow.id);
+    expect(Sow.quoteIsStale(Sow.get(sow.id))).toBe(false);
+    // The project grows after the quote was generated → the quote drifts.
+    app.App.data.projects.find(p => p.id === 'A-1').size_engineering = 20;
+    expect(Sow.quoteIsStale(Sow.get(sow.id))).toBe(true);
+    Sow.get(sow.id).sections.forEach(s => { s.flagged = false; });
+    const v = Sow.validate(Sow.get(sow.id), def);
+    expect(v.errors.some(e => /out of date/.test(e))).toBe(true);
+    // Re-quoting against the new sizing clears the staleness.
+    Sow.setQuote(sow.id);
+    expect(Sow.quoteIsStale(Sow.get(sow.id))).toBe(false);
+  });
+
   it('the default template still approves without any quote', () => {
     const { Sow, Definitions } = app;
     const def = Definitions.loadJson('sow/sow-definition.json');

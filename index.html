@@ -41830,6 +41830,21 @@ const Sow = {
     return { ok: true, quote };
   },
 
+  // S3: a stored quote is stale when the linked project's current sizing / band /
+  // prepaid would produce a different quote than the one on file. Recomputed
+  // (no stored hash) so it never drifts from Billing's own logic.
+  quoteIsStale(sow) {
+    if (!sow || !sow.quote || !sow.project_id) return false;
+    const project = (App.data.projects || []).find(p => p.id === sow.project_id);
+    if (!project) return false;
+    let fresh;
+    try { fresh = Billing.quoteForProject(project); } catch (e) { return false; }
+    if (!fresh || !Array.isArray(fresh.lines) || !fresh.lines.length) return false;
+    const q = sow.quote.totals || {};
+    const f = fresh.totals || {};
+    return f.amount !== q.amount || f.billable_points !== q.billable_points || (fresh.hourly_rate || 0) !== (sow.quote.hourly_rate || 0);
+  },
+
   attachProject(sowId, projectId) {
     const sow = this.get(sowId);
     if (!sow) return;
@@ -41919,6 +41934,8 @@ const Sow = {
         errors.push('This template requires a generated quote — link a sized project and use “Generate quote”.');
       } else if (sow.quote.project_id !== sow.project_id) {
         errors.push('The quote was generated for a different project — regenerate it for the linked project.');
+      } else if (this.quoteIsStale(sow)) {
+        errors.push('The quote is out of date — the project’s sizing or rates changed since it was generated. Re-quote before approval.');
       }
     }
     const unresolved = sow.sections.filter(s => s.flagged);
@@ -42568,15 +42585,17 @@ const SowSkill = {
       (!sow.project_id ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="SowSkill.uiCreateProject()">Create project from this SOW</button>' : '') +
     '</div>';
     const requiresQuote = def && def.files.definition && def.files.definition.validation && def.files.definition.validation.requires_quote;
+    const stale = sow.quote && Sow.quoteIsStale(sow);
     const quoteBlock = '<div style="margin-bottom:12px">' +
       '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Quote' + (requiresQuote ? ' (required by this template)' : '') + '</div>' +
       (sow.quote
         ? '<div style="font-size:12px;color:var(--text-dark);margin-bottom:6px">' +
             esc(Billing.fmtMoney(sow.quote.totals.amount)) + ' billable · ' + App.fmtPoints(sow.quote.totals.prepaid_covered) + ' of ' + App.fmtPoints(sow.quote.totals.points) + ' SP covered by prepaid · ' + esc(sow.quote.currency) +
-          '</div>'
+          '</div>' +
+          (stale ? '<div class="sow-flag-chip" style="margin-bottom:6px" title="The project sizing or rates changed since this quote">Quote out of date</div>' : '')
         : '<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Prices the linked project’s sizing at the sell rates, netting off remaining prepaid arrangements.</div>') +
       (sow.status !== 'Approved'
-        ? '<button class="btn btn-outline btn-sm" onclick="SowSkill.uiGenerateQuote()"' + (sow.project_id ? '' : ' disabled title="Link a project first"') + '>' + (sow.quote ? 'Regenerate quote' : 'Generate quote') + '</button>'
+        ? '<button class="btn btn-' + (stale ? 'primary' : 'outline') + ' btn-sm" onclick="SowSkill.uiGenerateQuote()"' + (sow.project_id ? '' : ' disabled title="Link a project first"') + '>' + (stale ? 'Re-quote (out of date)' : (sow.quote ? 'Regenerate quote' : 'Generate quote')) + '</button>'
         : '') +
     '</div>';
     const source = sow.source_excerpt
