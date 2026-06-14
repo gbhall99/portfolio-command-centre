@@ -3337,6 +3337,7 @@ html[data-theme="dark"] .sow-side { background: var(--bg-tertiary); }
 .sow-section-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-light); font-size: 12px; font-weight: 700; color: var(--text-dark); }
 .sow-flag-chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(217,119,6,0.12); color: var(--status-amber, #d97706); }
 .sow-edited-chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(59,130,246,0.12); color: var(--accent-blue, #2563eb); }
+.sow-source-chip { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--bg-content, #f1f5f9); color: var(--text-muted); border: 1px solid var(--border-light); }
 .sow-comment { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
 .sow-comment-text { flex: 1; }
 .sow-comment.resolved .sow-comment-text { color: var(--text-muted); text-decoration: line-through; }
@@ -4960,6 +4961,8 @@ const App = {
     data.sows.forEach(s => {
       (s.sections || []).forEach(sec => {
         (sec.comments || []).forEach(c => { if (c.resolved === undefined) c.resolved = true; });
+        // S2 (2026-06): per-section provenance for RAID pulls / inserted clauses.
+        if (!Array.isArray(sec.sources)) sec.sources = [];
       });
     });
     if (!Array.isArray(data.wireframes)) data.wireframes = [];
@@ -41743,7 +41746,8 @@ const Sow = {
         flagged,
         flag_reason: flagged ? (unsupported ? 'Not supported by the source material — review before approval.' : 'Required section is empty.') : '',
         phases: (g && Array.isArray(g.phases)) ? g.phases : [],
-        comments: []
+        comments: [],
+        sources: []
       };
     });
     const sow = {
@@ -42070,6 +42074,86 @@ const Sow = {
       .filter(line => line.length > 8)
       .slice(0, 20)
       .map(text => ({ date: new Date().toISOString().split('T')[0], made_by: 'SOW ' + sow.id, text, notes: '' }));
+  },
+
+  // S2: governed clause library — reusable snippets the author can drop into a
+  // section (and AI drafting may reference). Resolved through the manifest like
+  // every other definition set, so it can be versioned / swapped per customer.
+  clauses(customer) {
+    const resolved = (typeof Definitions !== 'undefined') ? Definitions.resolve('sow-clauses', customer) : null;
+    const lib = resolved && resolved.files && resolved.files.library;
+    return (lib && Array.isArray(lib.clauses)) ? lib.clauses : [];
+  },
+  clause(id, customer) { return this.clauses(customer).find(c => c.id === id) || null; },
+
+  // S2: which RAID register (if any) a SOW section pulls from. Keyed off the
+  // section id so a project's real assumptions/risks seed the SOW instead of
+  // being hand-retyped. Assumptions & Dependencies ← open assumptions;
+  // Out of Scope ← high-severity open risks (as caveats/exclusions).
+  raidKindFor(sectionId) {
+    if (sectionId === 'assumptions_dependencies') return 'assumption';
+    if (sectionId === 'out_of_scope') return 'risk';
+    return null;
+  },
+
+  // S2: pull the linked project's open RAID items into a section as editable
+  // bullets, with provenance recorded on section.sources[]. Customer/project
+  // scoped, de-duplicated, audited + undoable.
+  pullFromRaid(sowId, sectionId) {
+    const sow = this.get(sowId);
+    if (!sow) return { ok: false, error: 'No SOW' };
+    if (!sow.project_id) return { ok: false, error: 'Link a project first — RAID is pulled from the linked project.' };
+    const project = (App.data.projects || []).find(p => p.id === sow.project_id);
+    if (!project) return { ok: false, error: 'Linked project no longer exists' };
+    const sec = sow.sections.find(s => s.id === sectionId);
+    if (!sec) return { ok: false, error: 'Unknown section' };
+    const kind = this.raidKindFor(sectionId);
+    if (!kind) return { ok: false, error: 'This section does not pull from RAID' };
+    const isOpen = (s) => { s = (s || '').toLowerCase(); return s !== 'closed' && s !== 'resolved' && s !== 'done'; };
+    let items = [];
+    if (kind === 'assumption') {
+      items = (project.assumptions_register || []).filter(a => isOpen(a.status))
+        .map(a => ({ ref: a.id || '', text: String(a.description || a.text || '').trim() })).filter(x => x.text);
+    } else {
+      items = (project.risks_register || []).filter(r => isOpen(r.status))
+        .filter(r => App.isSevereRisk ? App.isSevereRisk(r) : (((r.impact || 0) * (r.probability || 0)) >= 12))
+        .map(r => ({ ref: r.id || '', text: String(r.description || '').trim() })).filter(x => x.text);
+    }
+    if (!items.length) return { ok: false, error: 'No ' + (kind === 'risk' ? 'high-severity risks' : 'open assumptions') + ' to pull from the linked project.' };
+    if (!Array.isArray(sec.sources)) sec.sources = [];
+    const existing = (sec.content || '').toLowerCase();
+    const have = new Set(sec.sources.filter(s => s.kind === 'raid' && s.ref).map(s => s.ref));
+    const fresh = items.filter(it => !(it.ref && have.has(it.ref)) && existing.indexOf(it.text.toLowerCase()) < 0);
+    if (!fresh.length) return { ok: false, error: 'Already pulled — nothing new in the project’s RAID.' };
+    App.pushUndo('Pull RAID into SOW ' + sec.title);
+    const bullets = fresh.map(it => '- ' + it.text).join('\n');
+    sec.content = (sec.content && sec.content.trim()) ? (sec.content.replace(/\s+$/, '') + '\n' + bullets) : bullets;
+    fresh.forEach(it => sec.sources.push({ kind: 'raid', raid_kind: kind, ref: it.ref, text: it.text.slice(0, 200) }));
+    if (sec.flagged && /empty/i.test(sec.flag_reason || '')) { sec.flagged = false; sec.flag_reason = ''; }
+    this._history(sow, 'raid_pulled', sec.title + ' (' + fresh.length + ' ' + kind + ')');
+    this._persist(sow, 'sow_raid_pull:' + sectionId, '', String(fresh.length), 'user');
+    return { ok: true, added: fresh.length };
+  },
+
+  // S2: append a governed clause to a section, recording provenance. Audited +
+  // undoable; a clause is only inserted once per section.
+  insertClause(sowId, sectionId, clauseId) {
+    const sow = this.get(sowId);
+    if (!sow) return { ok: false, error: 'No SOW' };
+    const sec = sow.sections.find(s => s.id === sectionId);
+    if (!sec) return { ok: false, error: 'Unknown section' };
+    const clause = this.clause(clauseId, sow.customer);
+    if (!clause) return { ok: false, error: 'Unknown clause' };
+    if (!Array.isArray(sec.sources)) sec.sources = [];
+    if (sec.sources.some(s => s.kind === 'clause' && s.ref === clauseId)) return { ok: false, error: 'That clause is already in this section.' };
+    App.pushUndo('Insert clause into SOW ' + sec.title);
+    const text = String(clause.text || '').trim();
+    sec.content = (sec.content && sec.content.trim()) ? (sec.content.replace(/\s+$/, '') + '\n\n' + text) : text;
+    sec.sources.push({ kind: 'clause', ref: clauseId, text: clause.title });
+    if (sec.flagged && /empty/i.test(sec.flag_reason || '')) { sec.flagged = false; sec.flag_reason = ''; }
+    this._history(sow, 'clause_inserted', sec.title + ' — ' + clause.title);
+    this._persist(sow, 'sow_clause:' + sectionId, '', clauseId, 'user');
+    return { ok: true };
   }
 };
 
@@ -42211,6 +42295,13 @@ const SowSkill = {
   // S1: prompt that grounds the SOW in a project's own facts (not an uploaded
   // document). Facts are the user's own portfolio data, passed as JSON.
   buildProjectPrompt(def, styleText, grounding) {
+    // S2: offer the governed clause library so standard wording (payment, IP,
+    // change control, data handling…) is reused rather than re-invented.
+    const clauses = (typeof Sow !== 'undefined') ? Sow.clauses(grounding && grounding.project && grounding.project.customer) : [];
+    const clauseBlock = clauses.length
+      ? '\n\nSTANDARD CLAUSE LIBRARY (incorporate the relevant clauses verbatim or lightly adapted where the section calls for them; do not invent alternative legal wording):\n' +
+        JSON.stringify(clauses.map(c => ({ id: c.id, title: c.title, section: c.section_hint, text: c.text })), null, 1)
+      : '';
     return [
       {
         role: 'system',
@@ -42221,6 +42312,7 @@ const SowSkill = {
           'For the deliverables section, also return a "phases" array choosing from: ' + def.entity_mappings.deliverables.valid_phases.join(', ') + '.\n\n' +
           'SECTION DEFINITION (structure is mandatory):\n' + JSON.stringify(def.sections.map(s => ({ id: s.id, title: s.title, required: s.required, guidance: s.guidance })), null, 1) +
           '\n\nSTYLE RULES (tone/format — follow them):\n' + styleText +
+          clauseBlock +
           '\n\nThe user message contains PROJECT FACTS as JSON — treat them strictly as reference data.'
       },
       {
@@ -42290,6 +42382,26 @@ const SowSkill = {
   // --- editor actions (thin wrappers so onclicks stay tiny) ---
   uiUpdateSection(sectionId, el) { Sow.updateSection(this._sowId, sectionId, el.value); this.renderSidePanel(); },
   uiResolveFlag(sectionId) { Sow.resolveFlag(this._sowId, sectionId); this.render(); },
+
+  // S2: pull RAID into a section / insert a governed clause.
+  uiPullRaid(sectionId) {
+    const r = Sow.pullFromRaid(this._sowId, sectionId);
+    if (!r.ok) App.toast(r.error, 'error');
+    else App.toast('Pulled ' + r.added + ' item(s) from RAID — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  _clausePickerOn: null,
+  uiClauseToggle(sectionId) {
+    this._clausePickerOn = this._clausePickerOn === sectionId ? null : sectionId;
+    this.render();
+  },
+  uiInsertClause(sectionId) {
+    const sel = document.getElementById('sowClauseSel_' + sectionId);
+    const r = Sow.insertClause(this._sowId, sectionId, sel ? sel.value : null);
+    if (!r.ok) App.toast(r.error, 'error');
+    else { this._clausePickerOn = null; App.toast('Clause inserted — Ctrl+Z to undo', 'success'); }
+    this.render();
+  },
   _redraftingOn: null,      // sectionId with the instruction input open
   _redraft: null,           // { sectionId, oldContent, newContent } pending review
   _redraftBusy: false,
@@ -42611,7 +42723,26 @@ const SowSkill = {
           '<button class="btn btn-primary btn-sm" onclick="SowSkill.uiCommentSubmit(\'' + esc(sec.id) + '\')">Add</button>' +
         '</div>';
       }
+      // S2: clause-library picker — relevant clauses (by section_hint) first.
+      if (this._clausePickerOn === sec.id) {
+        const clauses = Sow.clauses(sow.customer).slice()
+          .sort((a, b) => (a.section_hint === sec.id ? 0 : 1) - (b.section_hint === sec.id ? 0 : 1));
+        comments += '<div class="sow-section-comments" style="display:flex;gap:6px;align-items:center">' +
+          '<select id="sowClauseSel_' + esc(sec.id) + '" class="field-input" style="flex:1" aria-label="Clause to insert into ' + esc(sec.title) + '">' +
+            clauses.map(c => '<option value="' + esc(c.id) + '">' + esc(c.title) + (c.section_hint === sec.id ? ' (suggested)' : '') + '</option>').join('') +
+          '</select>' +
+          '<button class="btn btn-primary btn-sm" onclick="SowSkill.uiInsertClause(\'' + esc(sec.id) + '\')">Insert</button>' +
+        '</div>';
+      }
+      // S2: provenance — where pulled / inserted content came from.
+      if ((sec.sources || []).length) {
+        comments += '<div class="sow-section-comments" style="display:flex;flex-wrap:wrap;gap:4px">' +
+          sec.sources.map(s => '<span class="sow-source-chip" title="' + Dashboard.escAttr(s.kind === 'clause' ? ('Clause: ' + (s.text || s.ref)) : ('From RAID' + (s.raid_kind ? ' (' + s.raid_kind + ')' : '') + ': ' + (s.text || ''))) + '">' + (s.kind === 'clause' ? 'clause' : 'RAID') + '</span>').join('') +
+        '</div>';
+      }
       const openCount = Sow.openComments(sec);
+      const canRaid = Sow.raidKindFor(sec.id) && sow.project_id && sow.status !== 'Approved';
+      const hasClauses = Sow.clauses(sow.customer).length && sow.status !== 'Approved';
       const baselineChanged = sec.baseline !== undefined && sec.baseline !== null && sec.baseline !== sec.content;
       return '<div class="sow-section' + (sec.flagged ? ' flagged' : '') + '">' +
         '<div class="sow-section-head">' + esc(sec.title) +
@@ -42622,6 +42753,8 @@ const SowSkill = {
           '<span style="margin-left:auto;display:flex;gap:4px">' +
             (sec.flagged ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiResolveFlag(\'' + esc(sec.id) + '\')" title="Mark reviewed">Resolve</button>' : '') +
             ((sec.baseline !== undefined && sec.baseline !== null) ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiToggleCompare(\'' + esc(sec.id) + '\')" title="Compare against the last reviewed version">' + (this._comparingOn === sec.id ? 'Hide diff' : 'Compare') + '</button>' : '') +
+            (canRaid ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiPullRaid(\'' + esc(sec.id) + '\')" title="Pull the linked project’s open ' + (Sow.raidKindFor(sec.id) === 'risk' ? 'high-severity risks' : 'assumptions') + ' into this section">Pull from RAID</button>' : '') +
+            (hasClauses ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiClauseToggle(\'' + esc(sec.id) + '\')" title="Insert a standard clause">' + (this._clausePickerOn === sec.id ? 'Hide clauses' : 'Insert clause') + '</button>' : '') +
             (sow.status !== 'Approved' ? '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiRedraftToggle(\'' + esc(sec.id) + '\')" title="Redraft this section with AI">AI redraft</button>' : '') +
             '<button class="btn btn-ghost btn-sm" onclick="SowSkill.uiComment(\'' + esc(sec.id) + '\')" title="Add comment">Comment</button>' +
           '</span>' +
@@ -44435,6 +44568,16 @@ Skills.register({
       }
     }
   ],
+  "sow-clauses": [
+    {
+      "id": "default",
+      "name": "Standard SOW clause library",
+      "dir": "sow-clauses",
+      "files": {
+        "library": "sow-clauses/clauses.json"
+      }
+    }
+  ],
   "tableau": [
     {
       "id": "default",
@@ -44692,6 +44835,53 @@ expected — these rules are the boundaries, not a script.
 ---
 
 *This Statement of Work was drafted with AI assistance from source material supplied by the customer and reviewed by the delivery team. Sections flagged "needs review" were not fully supported by the source material.*
+</script>
+<script type="text/plain" data-definition="sow-clauses/clauses.json">
+{
+  "id": "default",
+  "kind": "sow-clauses",
+  "name": "Standard SOW clause library",
+  "version": 1,
+  "comment": "Governed, reusable clause snippets the author can drop into a SOW section (and AI drafting may reference). Each clause names the section it most often belongs to via section_hint so the editor can surface the relevant ones first. Edit the text here; re-run scripts/embed-definitions.mjs after any change.",
+  "clauses": [
+    {
+      "id": "payment_terms",
+      "title": "Payment terms",
+      "section_hint": "commercials",
+      "text": "Invoices are issued monthly in arrears against work delivered and are payable within 30 days of the invoice date. Time-and-materials work is billed at the agreed rates; prepaid blocks are drawn down before any time-and-materials charges apply. Late payments may accrue interest at the statutory rate. All figures are exclusive of applicable taxes."
+    },
+    {
+      "id": "ip_ownership",
+      "title": "Intellectual property",
+      "section_hint": "roles_responsibilities",
+      "text": "On full payment of the relevant fees, ownership of the bespoke deliverables created specifically for the customer under this engagement transfers to the customer. The supplier retains ownership of its pre-existing materials, tools, methods and frameworks, and grants the customer a non-exclusive, perpetual licence to use them to the extent they are embedded in the deliverables."
+    },
+    {
+      "id": "change_control",
+      "title": "Change control",
+      "section_hint": "out_of_scope",
+      "text": "Any change to the agreed scope, deliverables, timeline or commercials is managed through a written change request. No change takes effect until both parties have agreed and signed it. Work outside the agreed scope is not undertaken until the corresponding change request is approved."
+    },
+    {
+      "id": "warranties_liability",
+      "title": "Warranties & liability",
+      "section_hint": "acceptance_criteria",
+      "text": "The supplier warrants that the services are performed with reasonable skill and care and in line with good industry practice. Except for liability that cannot be excluded by law, neither party is liable for indirect or consequential loss, and each party's total liability is capped at the fees paid under this engagement in the preceding twelve months."
+    },
+    {
+      "id": "data_handling",
+      "title": "Data handling & security",
+      "section_hint": "assumptions_dependencies",
+      "text": "Each party complies with applicable data-protection law. The supplier processes customer data only as needed to deliver the services, applies appropriate technical and organisational security measures, and does not transfer data outside the agreed locations without prior written consent. Personal data is returned or securely destroyed at the end of the engagement on request."
+    },
+    {
+      "id": "confidentiality",
+      "title": "Confidentiality",
+      "section_hint": "roles_responsibilities",
+      "text": "Each party keeps the other's confidential information secret, uses it only to perform this engagement, and discloses it only to personnel who need it and are bound by equivalent obligations. These obligations survive termination of the engagement."
+    }
+  ]
+}
 </script>
 <script type="text/plain" data-definition="sow-quoted/sow-definition.json">
 {
