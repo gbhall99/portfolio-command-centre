@@ -15703,6 +15703,136 @@ const ScenarioLab = {
 };
 
 /* ============================================================
+   HealthCheck (Phase 4.3 + 5.1) — on-demand, user-invoked digest.
+   Aggregates the existing briefing (recent_changes), plan drift
+   (check_plan_drift), commercial warnings (prepaid burn / sub-target margin /
+   stale SOW quotes) and readiness gaps into one panel. Read-only: runs only
+   when opened/refreshed — NOTHING fires on its own. Dismissals persist per
+   scope in UI state. quote_advisor is the grounded commercial advisor tool.
+   ============================================================ */
+const HealthCheck = {
+  PREPAID_LOW_PCT: 0.15,        // arrangement flagged when remaining ≤ 15% of prepaid
+  _targetMargin() {
+    const t = App.data && App.data.settings && App.data.settings.billing && App.data.settings.billing.target_margin_pct;
+    const n = App.toInteger(t);
+    return (n > 0 && n <= 100) ? n : 30;
+  },
+
+  // --- Commercial health (4.3) ---
+  commercial(customer) {
+    const rows = [];
+    if (!customer || typeof Billing === 'undefined') return rows;
+    // Prepaid running low.
+    let summary = null;
+    try { summary = Billing.customerSummary(customer); } catch (e) { /* no billing */ }
+    if (summary) {
+      (summary.arrangements || []).forEach(a => {
+        const prepaid = App.toInteger(a.prepaid_points);
+        if (prepaid > 0 && a.remaining_points <= Math.max(0, Math.round(prepaid * this.PREPAID_LOW_PCT))) {
+          rows.push({ kind: 'commercial', severity: 'amber', key: 'prepaid:' + a.label, text: 'Prepaid block “' + a.label + '” is running low — ' + App.fmtPoints(a.remaining_points) + ' of ' + App.fmtPoints(prepaid) + ' SP left.' });
+        }
+      });
+    }
+    // Sub-target margin.
+    if (Billing.plannedEconomics) {
+      const eco = Billing.plannedEconomics(customer);
+      const target = this._targetMargin();
+      if (eco && eco.revenue > 0 && eco.margin_pct < target) {
+        rows.push({ kind: 'commercial', severity: eco.margin_pct < target / 2 ? 'red' : 'amber', key: 'margin', text: 'Planned margin ' + eco.margin_pct + '% is below the ' + target + '% target (' + Billing.fmtMoney(eco.margin) + ' on ' + Billing.fmtMoney(eco.revenue) + ').' });
+      }
+    }
+    // Stale SOW quotes (planned vs quoted scope drift).
+    if (typeof Sow !== 'undefined' && Sow.isStale) {
+      (App.data.sows || []).filter(s => s.customer === customer).forEach(s => {
+        try { if (Sow.isStale(s)) rows.push({ kind: 'commercial', severity: 'amber', key: 'sow:' + s.id, text: 'SOW “' + (s.title || s.id) + '” quote is out of date — the project’s sizing/rates changed since it was generated.', deep_link: { type: 'sow', id: s.id } }); } catch (e) { /* skip */ }
+      });
+    }
+    return rows;
+  },
+
+  // --- Readiness gaps ---
+  readinessGaps(customer) {
+    const rows = [];
+    (App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed').forEach(p => {
+      const r = (App.computeReadiness ? App.computeReadiness(p) : null);
+      if (r && !r.planning && (r.missing || []).length) {
+        rows.push({ kind: 'readiness', severity: 'grey', key: 'ready:' + p.id, text: '“' + p.name + '” isn’t plan-ready — missing: ' + r.missing.join(', ') + '.', deep_link: { type: 'project', id: p.id } });
+      }
+    });
+    return rows;
+  },
+
+  // --- Aggregate everything (read-only; honours per-scope dismissals) ---
+  collect(customer) {
+    const out = [];
+    // Briefing (recent_changes) — counts + deadlines.
+    try {
+      const d = AgentTools.invoke('recent_changes', { days: 7 }, { customer, allScope: false, citations: [], proposals: [] });
+      if (d && !d.error) {
+        const c = d.counts || {};
+        const total = (c.status || 0) + (c.rag || 0) + (c.raid || 0) + (c.documents || 0);
+        if (total > 0) out.push({ kind: 'briefing', severity: 'info', key: 'briefing', text: total + ' change' + (total === 1 ? '' : 's') + ' in the last week (' + [c.status && c.status + ' status', c.rag && c.rag + ' RAG', c.raid && c.raid + ' RAID', c.documents && c.documents + ' docs'].filter(Boolean).join(', ') + ').' });
+        (d.deadlines_next_30_days || []).slice(0, 3).forEach(x => out.push({ kind: 'deadline', severity: x.days_left <= 14 ? 'red' : 'amber', key: 'dl:' + x.project, text: x.project + ' — hard deadline in ' + x.days_left + ' day' + (x.days_left === 1 ? '' : 's') + '.' }));
+      }
+    } catch (e) { /* briefing optional */ }
+    // Plan drift.
+    try {
+      const drift = AgentTools.invoke('check_plan_drift', {}, { customer, allScope: false, citations: [], proposals: [] });
+      if (drift && !drift.error && drift.recommend_rerun) out.push({ kind: 'drift', severity: 'amber', key: 'drift', text: drift.inputs_changed_since + ' input(s) changed since the last solve — re-run Auto-Allocate to refresh the plan.' });
+    } catch (e) { /* drift optional */ }
+    // Commercial + readiness.
+    this.commercial(customer).forEach(r => out.push(r));
+    this.readinessGaps(customer).forEach(r => out.push(r));
+    // Drop dismissed rows for this scope.
+    return out.filter(r => !this.isDismissed(customer, r.key));
+  },
+
+  _dismissKey(customer) { return 'healthcheck.dismissed.' + (customer || 'none'); },
+  isDismissed(customer, key) { return (App.uiStateGet(this._dismissKey(customer), []) || []).indexOf(key) >= 0; },
+  dismiss(customer, key) {
+    const arr = (App.uiStateGet(this._dismissKey(customer), []) || []).slice();
+    if (arr.indexOf(key) < 0) arr.push(key);
+    App.uiStateSet(this._dismissKey(customer), arr);
+  },
+  resetDismissals(customer) { App.uiStateSet(this._dismissKey(customer), null); },
+
+  // --- UI: user-invoked panel (⌘K / button). Re-rendered on open + refresh only. ---
+  open() { this._render(); },
+  refresh() { this._render(); },
+  _sevColor(sev) { return sev === 'red' ? 'var(--status-red,#dc2626)' : sev === 'amber' ? 'var(--rag-amber-strong,#b45309)' : sev === 'info' ? 'var(--accent-blue,#2563eb)' : 'var(--text-muted)'; },
+  _render() {
+    const esc = Dashboard.esc;
+    const customer = App.activeCustomer;
+    const rows = this.collect(customer);
+    const existing = document.getElementById('healthCheckOverlay');
+    if (existing) existing.remove();
+    const ov = document.createElement('div');
+    ov.id = 'healthCheckOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,25,0.55);display:flex;align-items:center;justify-content:center;z-index:10200;padding:16px';
+    ov.onclick = (e) => { if (e.target.id === 'healthCheckOverlay') ov.remove(); };
+    const rowHtml = rows.length
+      ? rows.map((r, i) => '<div class="hc-row" style="display:flex;align-items:flex-start;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border-light)">' +
+          '<span style="flex-shrink:0;width:8px;height:8px;border-radius:50%;margin-top:5px;background:' + this._sevColor(r.severity) + '"></span>' +
+          '<span style="flex:1;font-size:12.5px;color:var(--text-dark)">' + esc(r.text) + '</span>' +
+          (r.deep_link ? '<button class="btn btn-ghost btn-sm" onclick="HealthCheck._open(' + i + ')">Open</button>' : '') +
+          '<button class="btn btn-ghost btn-sm" title="Dismiss" onclick="HealthCheck._dismiss(' + i + ')">&times;</button>' +
+        '</div>').join('')
+      : '<div style="color:var(--text-muted);font-size:13px;padding:18px 4px;text-align:center">All clear — nothing needs your attention for ' + esc(customer || 'this customer') + '.</div>';
+    this._rows = rows;
+    ov.innerHTML = '<div style="background:var(--bg-card,#fff);border-radius:12px;padding:20px 24px;max-width:640px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.35)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><h3 style="margin:0;font-size:15px;font-weight:700">Needs your attention · ' + esc(customer || '') + '</h3>' +
+        '<div><button class="btn btn-ghost btn-sm" onclick="HealthCheck.refresh()" title="Re-check now">Refresh</button>' +
+        '<button onclick="document.getElementById(\'healthCheckOverlay\').remove()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted);margin-left:4px">&times;</button></div></div>' +
+      '<p style="font-size:11px;color:var(--text-muted);margin:0 0 12px 0">On-demand digest — briefing, plan drift, commercials and readiness. Nothing here runs on its own.</p>' +
+      rowHtml +
+    '</div>';
+    document.body.appendChild(ov);
+  },
+  _open(i) { const r = (this._rows || [])[i]; if (!r || !r.deep_link) return; const ov = document.getElementById('healthCheckOverlay'); if (ov) ov.remove(); const dl = r.deep_link; if (dl.type === 'project' && typeof DetailPanel !== 'undefined') DetailPanel.open(dl.id); else if (dl.type === 'sow' && typeof SowSkill !== 'undefined') { SowSkill.open({}); SowSkill.edit && SowSkill.edit(dl.id); } },
+  _dismiss(i) { const r = (this._rows || [])[i]; if (!r) return; this.dismiss(App.activeCustomer, r.key); this._render(); }
+};
+
+/* ============================================================
    ProjectImport — CSV bulk import + bulk edit
    CSV columns: Name, Customer, Manager, Status, Category, Start (YYYY-MM-DD),
                 Target (YYYY-MM-DD), Size (points), Priority, Notes
@@ -16047,6 +16177,7 @@ const CommandPalette = {
       { title: 'Toggle Boardroom mode', action: () => App.togglePresentation(), meta: 'Larger fonts for presenting' },
       { title: 'Toggle RAG patterns', action: () => App.toggleRagPattern(), meta: 'Colour-blind safe' },
       { title: 'Assistant — chat with your portfolio', action: () => Assistant.open(), meta: 'Ctrl/Cmd+J' },
+      { title: 'Health check — what needs my attention', action: () => HealthCheck.open(), meta: 'On-demand: briefing · drift · commercials · readiness' },
       { title: 'Briefing — what changed recently', action: () => Assistant.ask('What changed in the last week?'), meta: 'Grounded digest · deadlines ahead' },
       { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template' },
       { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules' },
@@ -40751,6 +40882,46 @@ const AgentTools = {
           else completion = { remaining_points: pf ? pf.remaining : 0, insufficient_history: true, note: 'Need ' + Forecast.MIN_HISTORY + '+ completed sprints to forecast completion.' };
         }
         return { economics: eco, completion, note: eco ? 'Narrate the revenue, margin and completion plainly; do not invent figures.' : 'No billing data configured for this customer — describe delivery completion only.' };
+      }
+    },
+    {
+      name: 'quote_advisor', scope: 'read',
+      description: 'Advise how to hit a commercial target on a project: pass max_amount (cap the quote) and/or min_margin_pct. Returns the current quote/cost/margin and concrete, grounded levers (story points to cut, or the gap to a rate-band uplift) — figures come from Billing only, nothing is invented or changed.',
+      params: {
+        project_id: { type: 'string', description: 'The project id' },
+        max_amount: { type: 'number', optional: true, description: 'Target maximum quoted amount (sell £)' },
+        min_margin_pct: { type: 'integer', optional: true, description: 'Target minimum margin %' }
+      },
+      handler(args, ctx) {
+        if (typeof Billing === 'undefined') return { error: 'Billing unavailable' };
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        let quote, cost;
+        try { quote = Billing.quoteForProject(p); } catch (e) { return { error: 'Could not quote this project — set sizing and a rate band.' }; }
+        cost = (App.computeProjectCost ? App.computeProjectCost(p) : { BAC: 0 }).BAC || 0;
+        const amount = quote.totals.amount || 0;
+        const margin = amount - cost;
+        const marginPct = amount > 0 ? Math.round(margin / amount * 100) : 0;
+        const hpp = quote.hours_per_point || Billing.hoursPerPoint();
+        const rate = quote.hourly_rate || 0;
+        const perPoint = hpp * rate; // sell value per billable SP
+        const levers = [];
+        if (args.max_amount != null && amount > args.max_amount && perPoint > 0) {
+          const cutHours = (amount - args.max_amount) / rate;
+          const cutPoints = Math.ceil(cutHours / hpp);
+          levers.push('To get under ' + Billing.fmtMoney(args.max_amount) + ', cut ~' + App.fmtPoints(cutPoints) + ' billable SP (≈ ' + Billing.fmtMoney(amount - args.max_amount) + ' over) or move work onto a prepaid block.');
+        }
+        if (args.min_margin_pct != null && marginPct < args.min_margin_pct) {
+          levers.push('Margin ' + marginPct + '% is below the ' + args.min_margin_pct + '% target — raise the rate band, shift cost to lower-cost members, or reduce scope (cost is ' + Billing.fmtMoney(cost) + ' on ' + Billing.fmtMoney(amount) + ').');
+        }
+        if (!levers.length) levers.push(args.max_amount != null || args.min_margin_pct != null ? 'Already meets the target.' : 'No target given — set max_amount and/or min_margin_pct for advice.');
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return {
+          project: p.name, currency: quote.currency,
+          current: { amount, cost: Math.round(cost), margin: Math.round(margin), margin_pct: marginPct, billable_points: quote.totals.billable_points, rate_band: quote.rate_band, hourly_rate: rate },
+          levers,
+          note: 'Advisory only — figures are from Billing. Apply changes with update_project_field (scope) or in Settings → Billing (rate band).'
+        };
       }
     },
 
