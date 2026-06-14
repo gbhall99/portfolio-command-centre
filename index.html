@@ -5028,6 +5028,11 @@ const App = {
     if (!Array.isArray(data.agent_memory.facts)) data.agent_memory.facts = [];
     if (!Array.isArray(data.agent_memory.worklog)) data.agent_memory.worklog = [];
 
+    // Phase 2.1 (2026-06): saved solver what-if scenarios (Scenario Lab).
+    // Distinct from data._scenarios (full backups) and data.scenarios
+    // (allocation snapshots). Additive, idempotent.
+    if (!Array.isArray(data.plan_scenarios)) data.plan_scenarios = [];
+
     // Lifecycle rework (2026-05): collapse 'Phase-1 Build' into 'Implementation'.
     (data.projects || []).forEach(p => {
       if (p.lifecycle_stage === 'Phase-1 Build') p.lifecycle_stage = 'Implementation';
@@ -15356,6 +15361,252 @@ const Scenarios = {
 };
 
 /* ============================================================
+   ScenarioLab (Phase 2.1) — saved, named, comparable solver what-ifs.
+   The engine (apply a hypothesis to a deep clone, run Solver, summarise) is the
+   single source of truth shared by the simulate_plan Assistant tool. Saved
+   scenarios live in data.plan_scenarios (distinct from data._scenarios full
+   backups and data.scenarios allocation snapshots). "Promote" turns a
+   scenario's hypotheses into confirm-gated write proposals (reusing the write
+   tools), so a what-if becomes the plan only on explicit confirmation.
+   ============================================================ */
+const ScenarioLab = {
+  VALID_PHASES: ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'],
+
+  _store() { if (!App.data) return []; if (!Array.isArray(App.data.plan_scenarios)) App.data.plan_scenarios = []; return App.data.plan_scenarios; },
+  list(customer) { return this._store().filter(s => !customer || s.customer === customer); },
+  get(id) { return this._store().find(s => s.id === id) || null; },
+
+  // Run the solver on a given data object, restoring App.data afterwards
+  // (capacity helpers read App.data directly). Synchronous.
+  _runOn(data, customer) {
+    const real = App.data;
+    App.data = data;
+    try { return Solver.solve(customer, Object.assign({}, Sprint.allocSettings), data, Sprint); }
+    finally { App.data = real; }
+  },
+  _summarise(result) {
+    const byType = {};
+    (result.warnings || []).forEach(w => { byType[w.type] = (byType[w.type] || 0) + 1; });
+    return {
+      projects_allocated: result.stats.projectsAllocated,
+      total_points: result.stats.totalPoints,
+      makespan_sprints: result.stats.makespan,
+      avg_utilisation_pct: result.stats.avgUtilization,
+      deadline_misses: (result.warnings || []).filter(w => w.type === 'deadline_miss')
+        .map(w => ({ project: w.project && w.project.name, detail: w.detail })),
+      capacity_overflows: (result.warnings || []).filter(w => w.type === 'capacity_overflow' || w.type === 'zero_capacity')
+        .map(w => ({ type: w.type, skill: w.skill, detail: w.detail })),
+      warning_counts: byType
+    };
+  },
+  baseline(customer) { return this._summarise(this._runOn(JSON.parse(JSON.stringify(App.data)), customer)); },
+
+  // Mutate `clone` per one hypothesis. Returns { applied } or { error }.
+  // seq disambiguates added-project ids when several are applied at once.
+  applyHypothesis(clone, args, customer, seq) {
+    const h = args.hypothesis;
+    if (h === 'add_project') {
+      const phases = (args.phases || ['Requirements', 'Data Engineering', 'Tableau', 'UAT']).filter(ph => this.VALID_PHASES.indexOf(ph) >= 0);
+      const sizes = ['size_requirements', 'size_engineering', 'size_data_science', 'size_tableau', 'size_uat_adoption']
+        .reduce((o, k) => { o[k] = App.toInteger(args[k] || 0); return o; }, {});
+      const totalSize = Object.values(sizes).reduce((s, v) => s + v, 0);
+      if (!totalSize) return { error: 'add_project needs at least one size_* value' };
+      clone.projects.push(Object.assign({
+        id: 'HYPO-' + (seq || 1), name: args.name || 'Hypothetical project', customer,
+        status: 'Not Started', priority: clone.projects.filter(p => p.customer === customer).length + 1,
+        lifecycle_stage: App.LIFECYCLE_STAGE_DEFAULT, moscow: 'Should', manager: 'Hypothetical',
+        target_date: args.hard_deadline || ((App.data.sprints[App.data.sprints.length - 1] || {}).end_date || null),
+        hard_deadline: args.hard_deadline || null, dependencies: [],
+        delivery_config: { phase_order: phases }, skill_splits: {},
+        size_total: totalSize, risks_register: [], issues_register: []
+      }, sizes));
+      return { applied: 'Added hypothetical project "' + (args.name || 'Hypothetical project') + '" (' + App.fmtPoints(totalSize) + ' SP' + (args.hard_deadline ? ', deadline ' + args.hard_deadline : '') + ')' };
+    }
+    if (h === 'change_deadline') {
+      const p = clone.projects.find(x => x.id === args.project_id && x.customer === customer);
+      if (!p) return { error: 'change_deadline needs a valid project_id for this customer' };
+      if (!args.hard_deadline) return { error: 'change_deadline needs hard_deadline (YYYY-MM-DD)' };
+      const applied = 'Moved hard deadline on "' + p.name + '" from ' + (p.hard_deadline || 'none') + ' to ' + args.hard_deadline;
+      p.hard_deadline = args.hard_deadline;
+      return { applied };
+    }
+    if (h === 'resize_skill') {
+      const p = clone.projects.find(x => x.id === args.project_id && x.customer === customer);
+      if (!p) return { error: 'resize_skill needs a valid project_id for this customer' };
+      if (!args.skill || args.points === undefined) return { error: 'resize_skill needs skill and points' };
+      const applied = 'Resized ' + args.skill + ' on "' + p.name + '" from ' + App.fmtPoints(p[args.skill] || 0) + ' to ' + App.fmtPoints(args.points) + ' SP';
+      p[args.skill] = App.toInteger(args.points);
+      p.skill_splits = p.skill_splits || {};
+      delete p.skill_splits[args.skill];
+      return { applied };
+    }
+    if (h === 'remove_member') {
+      const idx = (clone.team_members || []).findIndex(m => m.name === args.member_name);
+      if (idx === -1) return { error: 'remove_member: no team member named "' + (args.member_name || '') + '". Use list_team_members first.' };
+      clone.team_members.splice(idx, 1);
+      return { applied: 'Removed team member "' + args.member_name + '" from the plan' };
+    }
+    return { error: 'Unknown hypothesis' };
+  },
+
+  // simulate_plan delegates here: baseline + (single) hypothetical + delta.
+  simulate(customer, args) {
+    if (!customer) return { error: 'No active customer selected' };
+    if (!(App.data.sprints || []).length) return { error: 'No sprints defined — the solver needs a sprint calendar' };
+    const baseline = this.baseline(customer);
+    if (args.hypothesis === 'as_is') return { simulation: true, note: 'Read-only simulation — nothing was changed.', baseline };
+    const clone = JSON.parse(JSON.stringify(App.data));
+    const r = this.applyHypothesis(clone, args, customer, 1);
+    if (r.error) return { error: r.error };
+    const hypothetical = this._summarise(this._runOn(clone, customer));
+    return {
+      simulation: true,
+      note: 'Read-only simulation — nothing was changed. Present deltas to the user; offer the write tools if they want to make it real.',
+      applied: r.applied, baseline, hypothetical,
+      delta: {
+        makespan_sprints: hypothetical.makespan_sprints - baseline.makespan_sprints,
+        avg_utilisation_pct: hypothetical.avg_utilisation_pct - baseline.avg_utilisation_pct,
+        new_deadline_misses: hypothetical.deadline_misses.filter(m => !baseline.deadline_misses.some(b => b.project === m.project)),
+        resolved_deadline_misses: baseline.deadline_misses.filter(b => !hypothetical.deadline_misses.some(m => m.project === b.project))
+      }
+    };
+  },
+
+  // Run a list of hypotheses on ONE clone (sequentially). Returns { applied:[], summary } or { error }.
+  run(customer, hypotheses) {
+    if (!customer) return { error: 'No active customer selected' };
+    if (!(App.data.sprints || []).length) return { error: 'No sprints defined — the solver needs a sprint calendar' };
+    const clone = JSON.parse(JSON.stringify(App.data));
+    const applied = [];
+    let seq = 1;
+    for (const hyp of (hypotheses || [])) {
+      const r = this.applyHypothesis(clone, hyp, customer, seq++);
+      if (r.error) return { error: r.error };
+      if (r.applied) applied.push(r.applied);
+    }
+    return { applied, summary: this._summarise(this._runOn(clone, customer)) };
+  },
+
+  // Save a named scenario (runs the hypotheses now and stores baseline + result).
+  save(name, customer, hypotheses, source) {
+    if (!App.data) return { error: 'No data' };
+    const run = this.run(customer, hypotheses);
+    if (run.error) return run;
+    const sc = {
+      id: 'ps-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      name: String(name || 'Scenario').slice(0, 120), customer,
+      hypotheses: JSON.parse(JSON.stringify(hypotheses || [])),
+      applied: run.applied, baseline: this.baseline(customer), result: run.summary,
+      created_at: new Date().toISOString()
+    };
+    App.pushUndo('Save scenario "' + sc.name + '"');
+    this._store().push(sc);
+    App.logChange(null, 'plan_scenario_saved', '', sc.name + ' (' + customer + ')', source || 'user');
+    App.markDirty(); App.saveToLocalStorage();
+    return sc;
+  },
+  remove(id, source) {
+    const sc = this.get(id);
+    if (!sc) return false;
+    App.pushUndo('Delete scenario "' + sc.name + '"');
+    App.data.plan_scenarios = this._store().filter(s => s.id !== id);
+    App.logChange(null, 'plan_scenario_deleted', sc.name, '', source || 'user');
+    App.markDirty(); App.saveToLocalStorage();
+    return true;
+  },
+
+  // Baseline + each saved scenario with its delta vs baseline.
+  compare(customer, ids) {
+    const base = this.baseline(customer);
+    const rows = this.list(customer)
+      .filter(s => !ids || !ids.length || ids.indexOf(s.id) >= 0)
+      .map(s => ({
+        id: s.id, name: s.name, applied: s.applied,
+        makespan_sprints: s.result.makespan_sprints, avg_utilisation_pct: s.result.avg_utilisation_pct,
+        deadline_miss_count: (s.result.deadline_misses || []).length, total_points: s.result.total_points,
+        delta: {
+          makespan_sprints: s.result.makespan_sprints - base.makespan_sprints,
+          avg_utilisation_pct: s.result.avg_utilisation_pct - base.avg_utilisation_pct,
+          deadline_miss_count: (s.result.deadline_misses || []).length - (base.deadline_misses || []).length
+        }
+      }));
+    return { baseline: { makespan_sprints: base.makespan_sprints, avg_utilisation_pct: base.avg_utilisation_pct, deadline_miss_count: (base.deadline_misses || []).length, total_points: base.total_points }, scenarios: rows };
+  },
+
+  // Turn a scenario's hypotheses into confirm-gated write proposals (reusing the
+  // write tools). Returns { proposed, skipped }. Nothing is applied here.
+  promote(id, ctx) {
+    const sc = this.get(id);
+    if (!sc) return { error: 'No scenario with id ' + id };
+    const skipped = [];
+    let proposed = 0;
+    (sc.hypotheses || []).forEach(h => {
+      let r;
+      if (h.hypothesis === 'change_deadline') r = AgentTools.invoke('update_project_field', { project_id: h.project_id, field: 'hard_deadline', value: h.hard_deadline, reason: 'From scenario “' + sc.name + '”' }, ctx);
+      else if (h.hypothesis === 'resize_skill') r = AgentTools.invoke('update_project_field', { project_id: h.project_id, field: h.skill, value: String(h.points), reason: 'From scenario “' + sc.name + '”' }, ctx);
+      else if (h.hypothesis === 'add_project') r = AgentTools.invoke('create_project', { name: h.name, phases: h.phases, size_requirements: h.size_requirements, size_engineering: h.size_engineering, size_data_science: h.size_data_science, size_tableau: h.size_tableau, size_uat_adoption: h.size_uat_adoption, hard_deadline: h.hard_deadline, reason: 'From scenario “' + sc.name + '”' }, ctx);
+      else { skipped.push(h.hypothesis + ' (no automatic write — apply manually)'); return; }
+      if (r && r.proposed) proposed++; else skipped.push(h.hypothesis + (r && r.error ? ': ' + r.error : ''));
+    });
+    return { proposed, skipped, scenario: sc.name };
+  },
+
+  // --- UI ---
+  openUI() {
+    const esc = Dashboard.esc;
+    const customer = App.activeCustomer;
+    const cmp = this.compare(customer);
+    const sign = n => (n > 0 ? '+' : '') + n;
+    const rows = cmp.scenarios.map(s => {
+      const d = s.delta;
+      const dcell = (val, delta, suffix) => val + (suffix || '') + ' <span style="color:var(--text-muted);font-size:10px">(' + sign(delta) + (suffix || '') + ')</span>';
+      return '<tr style="border-bottom:1px solid var(--border-light)">' +
+        '<td style="padding:5px 8px;font-weight:600">' + esc(s.name) + (s.applied && s.applied.length ? '<div style="font-size:10px;color:var(--text-muted);font-weight:400">' + esc(s.applied.join('; ').slice(0, 90)) + '</div>' : '') + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + dcell(s.makespan_sprints, d.makespan_sprints) + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + dcell(s.avg_utilisation_pct, d.avg_utilisation_pct, '%') + '</td>' +
+        '<td style="padding:5px 8px;text-align:right">' + dcell(s.deadline_miss_count, d.deadline_miss_count) + '</td>' +
+        '<td style="padding:5px 8px;text-align:right;white-space:nowrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="ScenarioLab.promoteFromUI(\'' + esc(s.id) + '\')">Promote</button> ' +
+          '<button class="btn btn-ghost btn-sm" onclick="ScenarioLab.removeFromUI(\'' + esc(s.id) + '\')">Delete</button>' +
+        '</td></tr>';
+    }).join('');
+    const b = cmp.baseline;
+    const baseRow = '<tr style="border-bottom:2px solid var(--border-light);font-weight:700">' +
+      '<td style="padding:5px 8px">Baseline (current plan)</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + b.makespan_sprints + '</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + b.avg_utilisation_pct + '%</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + b.deadline_miss_count + '</td><td></td></tr>';
+    const existing = document.getElementById('scenarioLabOverlay');
+    if (existing) existing.remove();
+    const ov = document.createElement('div');
+    ov.id = 'scenarioLabOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,25,0.55);display:flex;align-items:center;justify-content:center;z-index:10200;padding:16px';
+    ov.onclick = (e) => { if (e.target.id === 'scenarioLabOverlay') ov.remove(); };
+    ov.innerHTML = '<div style="background:var(--bg-card,#fff);border-radius:12px;padding:22px 26px;max-width:760px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.35)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="margin:0;font-size:15px;font-weight:700">Scenario Lab · ' + esc(customer || '') + '</h3><button onclick="document.getElementById(\'scenarioLabOverlay\').remove()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">&times;</button></div>' +
+        '<p style="font-size:12px;color:var(--text-dark-secondary);margin:0 0 14px 0">Saved solver what-ifs compared to the current baseline. Ask the Assistant to “save a scenario where…”, then Promote to turn one into confirm-gated edits.</p>' +
+        (cmp.scenarios.length
+          ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:right;color:var(--text-muted);font-size:11px"><th style="text-align:left;padding:4px 8px">Scenario</th><th style="padding:4px 8px">Makespan</th><th style="padding:4px 8px">Avg util</th><th style="padding:4px 8px">Deadline misses</th><th></th></tr></thead><tbody>' + baseRow + rows + '</tbody></table>'
+          : '<div style="color:var(--text-muted);font-size:13px;padding:10px 0">No saved scenarios yet for ' + esc(customer || 'this customer') + '. In the Assistant: “Save a scenario called ‘Big Q3’ where we add a 30-point engineering project due in October.”</div>') +
+      '</div>';
+    document.body.appendChild(ov);
+  },
+  async promoteFromUI(id) {
+    const ctx = { customer: App.activeCustomer, allScope: false, citations: [], proposals: [] };
+    const r = this.promote(id, ctx);
+    if (r.error) { App.toast(r.error, 'error'); return; }
+    if (!ctx.proposals.length) { App.toast('Nothing to promote automatically' + (r.skipped && r.skipped.length ? ': ' + r.skipped.join('; ') : ''), 'info'); return; }
+    const ok = await App.confirm({ title: 'Promote scenario?', body: 'Apply <strong>' + ctx.proposals.length + '</strong> change(s) from this scenario to the live plan? You can undo with Ctrl+Z.', confirmLabel: 'Apply changes' });
+    if (!ok) return;
+    const res = App.runBatch('Promote scenario', ctx.proposals.map(p => () => p.apply()));
+    const ov = document.getElementById('scenarioLabOverlay'); if (ov) ov.remove();
+    App.toast('Applied ' + res.applied + ' change(s) — undo with Ctrl+Z', 'success');
+    App.refreshCurrentView();
+  },
+  removeFromUI(id) { if (this.remove(id, 'user')) { this.openUI(); App.toast('Scenario deleted', 'success'); } }
+};
+
+/* ============================================================
    ProjectImport — CSV bulk import + bulk edit
    CSV columns: Name, Customer, Manager, Status, Category, Start (YYYY-MM-DD),
                 Target (YYYY-MM-DD), Size (points), Priority, Notes
@@ -15694,6 +15945,7 @@ const CommandPalette = {
       { title: 'Bulk import projects (CSV)', action: () => ProjectImport.showImport(), meta: 'Paste rows or pick a file' },
       { title: 'Bulk edit visible projects', action: () => ProjectImport.showBulkEdit(), meta: 'Apply change to selected rows' },
       { title: 'Scenarios — save / compare / apply', action: () => Scenarios.openUI(), meta: 'What-if allocations' },
+      { title: 'Scenario Lab — compare solver what-ifs', action: () => ScenarioLab.openUI(), meta: 'Saved hypotheses · makespan/util/deadlines · promote' },
       { title: 'Auto-Prioritise', action: () => App.autoPrioritise(), meta: 'Rank by risk score' },
       { title: 'Toggle theme (light/dark)', action: () => App.toggleTheme(), meta: 'Colour mode' },
       { title: 'Toggle Boardroom mode', action: () => App.togglePresentation(), meta: 'Larger fonts for presenting' },
@@ -40065,100 +40317,83 @@ const AgentTools = {
         member_name: { type: 'string', optional: true, description: 'remove_member: exact team member name' }
       },
       handler(args, ctx) {
+        // Delegates to the shared ScenarioLab engine (single source of truth for
+        // hypothesis application + solve + summarise; also used by saved scenarios).
+        return ScenarioLab.simulate(ctx.customer, args);
+      }
+    },
+    {
+      name: 'save_scenario', scope: 'write',
+      description: 'Propose saving a named what-if as a reusable scenario (Scenario Lab). Same hypothesis options as simulate_plan; the solver result is stored so it can be compared later and promoted to the real plan. Omit hypothesis (or use as_is) to snapshot the current baseline. The user must confirm.',
+      params: {
+        scenario_name: { type: 'string', description: 'A name for the saved scenario' },
+        hypothesis: { type: 'string', optional: true, enum: ['as_is', 'add_project', 'change_deadline', 'resize_skill', 'remove_member'], description: 'The what-if to bake in (default as_is = baseline snapshot)' },
+        name: { type: 'string', optional: true, description: 'add_project: the hypothetical project name' },
+        size_requirements: { type: 'integer', optional: true }, size_engineering: { type: 'integer', optional: true },
+        size_data_science: { type: 'integer', optional: true }, size_tableau: { type: 'integer', optional: true },
+        size_uat_adoption: { type: 'integer', optional: true },
+        phases: { type: 'array', optional: true, items: { type: 'string' }, description: 'add_project: ordered phases' },
+        hard_deadline: { type: 'string', optional: true, description: 'add_project / change_deadline: YYYY-MM-DD' },
+        project_id: { type: 'string', optional: true, description: 'change_deadline / resize_skill: target project' },
+        skill: { type: 'string', optional: true, enum: ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption'], description: 'resize_skill: which skill' },
+        points: { type: 'integer', optional: true, description: 'resize_skill: new total points for that skill' },
+        member_name: { type: 'string', optional: true, description: 'remove_member: exact team member name' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
         if (!ctx.customer) return { error: 'No active customer selected' };
-        if (!(App.data.sprints || []).length) return { error: 'No sprints defined — the solver needs a sprint calendar' };
-
-        // The capacity helpers read App.data directly, so the simulation swaps
-        // in a deep clone for the duration of the (synchronous) solve and
-        // restores the real data in finally. Nothing is rendered or persisted.
-        const runOn = (data) => {
-          const real = App.data;
-          App.data = data;
-          try { return Solver.solve(ctx.customer, Object.assign({}, Sprint.allocSettings), data, Sprint); }
-          finally { App.data = real; }
-        };
-        const summarise = (result) => {
-          const byType = {};
-          (result.warnings || []).forEach(w => { byType[w.type] = (byType[w.type] || 0) + 1; });
-          return {
-            projects_allocated: result.stats.projectsAllocated,
-            total_points: result.stats.totalPoints,
-            makespan_sprints: result.stats.makespan,
-            avg_utilisation_pct: result.stats.avgUtilization,
-            deadline_misses: (result.warnings || []).filter(w => w.type === 'deadline_miss')
-              .map(w => ({ project: w.project && w.project.name, detail: w.detail })),
-            capacity_overflows: (result.warnings || []).filter(w => w.type === 'capacity_overflow' || w.type === 'zero_capacity')
-              .map(w => ({ type: w.type, skill: w.skill, detail: w.detail })),
-            warning_counts: byType
-          };
-        };
-
-        const baseline = summarise(runOn(JSON.parse(JSON.stringify(App.data))));
-        if (args.hypothesis === 'as_is') {
-          return { simulation: true, note: 'Read-only simulation — nothing was changed.', baseline };
-        }
-
-        const clone = JSON.parse(JSON.stringify(App.data));
-        let applied;
-        if (args.hypothesis === 'add_project') {
-          const VALID = ['Requirements', 'Data Sourcing', 'Data Engineering', 'Data Science', 'Tableau', 'UAT'];
-          const phases = (args.phases || ['Requirements', 'Data Engineering', 'Tableau', 'UAT']).filter(ph => VALID.indexOf(ph) >= 0);
-          const sizes = ['size_requirements', 'size_engineering', 'size_data_science', 'size_tableau', 'size_uat_adoption']
-            .reduce((o, k) => { o[k] = App.toInteger(args[k] || 0); return o; }, {});
-          const totalSize = Object.values(sizes).reduce((s, v) => s + v, 0);
-          if (!totalSize) return { error: 'add_project needs at least one size_* value' };
-          clone.projects.push(Object.assign({
-            id: 'HYPO-1', name: args.name || 'Hypothetical project', customer: ctx.customer,
-            status: 'Not Started', priority: clone.projects.filter(p => p.customer === ctx.customer).length + 1,
-            lifecycle_stage: App.LIFECYCLE_STAGE_DEFAULT,
-            // Satisfy the solver's planning readiness gate (moscow key,
-            // lifecycle, target_date, manager) so the hypothetical work is
-            // actually planned rather than skipped.
-            moscow: 'Should',
-            manager: 'Hypothetical',
-            target_date: args.hard_deadline || ((App.data.sprints[App.data.sprints.length - 1] || {}).end_date || null),
-            hard_deadline: args.hard_deadline || null, dependencies: [],
-            delivery_config: { phase_order: phases }, skill_splits: {},
-            size_total: totalSize, risks_register: [], issues_register: []
-          }, sizes));
-          applied = 'Added hypothetical project "' + (args.name || 'Hypothetical project') + '" (' + App.fmtPoints(totalSize) + ' SP' + (args.hard_deadline ? ', deadline ' + args.hard_deadline : '') + ')';
-        } else if (args.hypothesis === 'change_deadline') {
-          const p = clone.projects.find(x => x.id === args.project_id && x.customer === ctx.customer);
-          if (!p) return { error: 'change_deadline needs a valid project_id for this customer' };
-          if (!args.hard_deadline) return { error: 'change_deadline needs hard_deadline (YYYY-MM-DD)' };
-          applied = 'Moved hard deadline on "' + p.name + '" from ' + (p.hard_deadline || 'none') + ' to ' + args.hard_deadline;
-          p.hard_deadline = args.hard_deadline;
-        } else if (args.hypothesis === 'resize_skill') {
-          const p = clone.projects.find(x => x.id === args.project_id && x.customer === ctx.customer);
-          if (!p) return { error: 'resize_skill needs a valid project_id for this customer' };
-          if (!args.skill || args.points === undefined) return { error: 'resize_skill needs skill and points' };
-          applied = 'Resized ' + args.skill + ' on "' + p.name + '" from ' + App.fmtPoints(p[args.skill] || 0) + ' to ' + App.fmtPoints(args.points) + ' SP';
-          p[args.skill] = App.toInteger(args.points);
-          p.skill_splits = p.skill_splits || {};
-          delete p.skill_splits[args.skill]; // let the solver re-place the resized work
-        } else if (args.hypothesis === 'remove_member') {
-          const idx = (clone.team_members || []).findIndex(m => m.name === args.member_name);
-          if (idx === -1) return { error: 'remove_member: no team member named "' + (args.member_name || '') + '". Use list_team_members first.' };
-          clone.team_members.splice(idx, 1);
-          applied = 'Removed team member "' + args.member_name + '" from the plan';
-        } else {
-          return { error: 'Unknown hypothesis' };
-        }
-
-        const hypothetical = summarise(runOn(clone));
-        return {
-          simulation: true,
-          note: 'Read-only simulation — nothing was changed. Present deltas to the user; offer the write tools if they want to make it real.',
-          applied,
-          baseline,
-          hypothetical,
-          delta: {
-            makespan_sprints: hypothetical.makespan_sprints - baseline.makespan_sprints,
-            avg_utilisation_pct: hypothetical.avg_utilisation_pct - baseline.avg_utilisation_pct,
-            new_deadline_misses: hypothetical.deadline_misses.filter(m => !baseline.deadline_misses.some(b => b.project === m.project)),
-            resolved_deadline_misses: baseline.deadline_misses.filter(b => !hypothetical.deadline_misses.some(m => m.project === b.project))
+        const name = String(args.scenario_name || '').trim();
+        if (name.length < 2) return { error: 'save_scenario needs a scenario_name' };
+        const hyp = (!args.hypothesis || args.hypothesis === 'as_is') ? [] : [{
+          hypothesis: args.hypothesis, name: args.name,
+          size_requirements: args.size_requirements, size_engineering: args.size_engineering,
+          size_data_science: args.size_data_science, size_tableau: args.size_tableau, size_uat_adoption: args.size_uat_adoption,
+          phases: args.phases, hard_deadline: args.hard_deadline, project_id: args.project_id,
+          skill: args.skill, points: args.points, member_name: args.member_name
+        }];
+        // Dry-run now so the proposal can show the projected result; nothing stored.
+        const preview = ScenarioLab.run(ctx.customer, hyp);
+        if (preview.error) return { error: preview.error };
+        const base = ScenarioLab.baseline(ctx.customer);
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'save_scenario', summary: 'Save scenario “' + name + '”', reason: args.reason || '',
+          entity: { type: 'scenario', id: null, name },
+          changes: [{ field: 'projected makespan', before: base.makespan_sprints + ' sprints', after: preview.summary.makespan_sprints + ' sprints' }]
+            .concat(preview.applied.map(a => ({ field: 'hypothesis', before: '', after: a }))),
+          apply() {
+            const sc = ScenarioLab.save(name, ctx.customer, hyp, 'ai');
+            if (sc.error) return { error: sc.error };
+            proposal.entity.id = sc.id;
+            App.notifyDataChange();
+            return { applied: true, id: sc.id };
           }
         };
+        ctx.proposals.push(proposal);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, projected: { makespan_sprints: preview.summary.makespan_sprints, avg_utilisation_pct: preview.summary.avg_utilisation_pct, deadline_misses: preview.summary.deadline_misses.length }, note: 'Pending user confirmation — do not assume it has been saved.' };
+      }
+    },
+    {
+      name: 'compare_scenarios', scope: 'read',
+      description: 'Compare the saved Scenario Lab scenarios for the active customer against the current baseline plan: makespan, average utilisation and deadline-miss counts, with deltas. Use to weigh up what-ifs.',
+      params: {},
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const cmp = ScenarioLab.compare(ctx.customer);
+        return { baseline: cmp.baseline, scenarios: cmp.scenarios, note: cmp.scenarios.length ? undefined : 'No saved scenarios yet — use save_scenario.' };
+      }
+    },
+    {
+      name: 'promote_scenario', scope: 'write',
+      description: 'Propose making a saved scenario real: turns its hypotheses into confirm-gated edits (deadline/size changes, new projects). Identify it by id (from compare_scenarios). The user must confirm each resulting change.',
+      params: { scenario_id: { type: 'string', description: 'The saved scenario id' } },
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const sc = ScenarioLab.get(args.scenario_id);
+        if (!sc || sc.customer !== ctx.customer) return { error: 'No scenario with id ' + args.scenario_id + ' for this customer' };
+        const r = ScenarioLab.promote(args.scenario_id, ctx);
+        if (r.error) return r;
+        return { promoting: true, scenario: sc.name, proposed: r.proposed, skipped: r.skipped, note: r.proposed ? 'Created ' + r.proposed + ' change proposal(s) from “' + sc.name + '” — confirm to apply.' : 'Nothing could be promoted automatically' + (r.skipped.length ? ': ' + r.skipped.join('; ') : '') + '.' };
       }
     },
     {
