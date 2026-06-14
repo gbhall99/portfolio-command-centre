@@ -37822,20 +37822,40 @@ const Reports = {
         const refsHtml = spec.references.length
           ? '<ul>' + spec.references.map(r => '<li>' + esc(r.name) + (r.workbook ? ' <span style="color:var(--rp-muted)">(' + esc(r.workbook) + ')</span>' : '') + '</li>').join('') + '</ul>'
           : '<p>No reference dashboards linked.</p>';
+        // Phase 3.2: field/calc map + developer acceptance checklist for the page.
+        const fmRows = (spec._fieldMap || []);
+        const fieldMapHtml = fmRows.length
+          ? Reports.table({
+              columns: [
+                { key: 'component', label: 'Component', width: '16%' },
+                { key: 'title', label: 'Title', width: '22%', cell: r => esc(r.title || '—') },
+                { key: 'field', label: 'Field / measure', width: '24%', cell: r => esc(r.field) },
+                { key: 'aggregation', label: 'Aggregation', cell: r => esc(r.aggregation) + (r.calc ? ' — ' + esc(r.calc) : '') }
+              ], rows: fmRows, empty: 'No data-bearing components.'
+            })
+          : '<p>No KPIs or charts to map yet.</p>';
+        const checklistHtml = (spec._checklist || []).length
+          ? '<ul>' + spec._checklist.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>'
+          : '<p>Nothing to verify yet.</p>';
         const pre = label ? esc(label) + ' — ' : '';
         return [
           { id: 'ws-overview' + suffix, title: (multi ? pre : '') + 'Overview', html: overviewHtml, audiences: internal },
           { id: 'ws-components' + suffix, title: (multi ? pre : '') + 'Components (reading order)', html: componentsHtml, audiences: internal },
+          { id: 'ws-fieldmap' + suffix, title: (multi ? pre : '') + 'Field & calc map', html: fieldMapHtml, audiences: internal },
+          { id: 'ws-checklist' + suffix, title: (multi ? pre : '') + 'Acceptance checklist', html: checklistHtml, audiences: internal },
           { id: 'ws-refs' + suffix, title: (multi ? pre : '') + 'Reference dashboards', html: refsHtml, audiences: internal }
         ];
       };
+      // Phase 3.2: attach the field/calc map + acceptance checklist to each page's spec.
+      const tdef = (typeof Definitions !== 'undefined' && Definitions.resolve) ? ((Definitions.resolve('tableau', wf.customer) || {}).files || {}).definition : null;
+      const enrich = (spec, page) => { spec._fieldMap = Wireframe.fieldMap(page); spec._checklist = Wireframe.acceptanceChecklist(page, tdef); return spec; };
       let sections, title;
       if (multi) {
         sections = [];
-        pages.forEach((pg, i) => { pageSections(Wireframe.toBuildSpec(pg), '-' + i, 'Page ' + (i + 1) + ': ' + (pg.name || 'Wireframe')).forEach(s => sections.push(s)); });
+        pages.forEach((pg, i) => { pageSections(enrich(Wireframe.toBuildSpec(pg), pg), '-' + i, 'Page ' + (i + 1) + ': ' + (pg.name || 'Wireframe')).forEach(s => sections.push(s)); });
         title = 'Build Spec — ' + (Wireframe.setBaseName(wf) || 'Wireframe set') + ' (' + pages.length + ' dashboards)';
       } else {
-        const spec = Wireframe.toBuildSpec(wf);
+        const spec = enrich(Wireframe.toBuildSpec(wf), wf);
         sections = pageSections(spec, '', '');
         title = 'Build Spec — ' + (spec.name || 'Wireframe');
       }
@@ -44680,6 +44700,52 @@ const Wireframe = {
     };
   },
 
+  // Phase 3.2: a Tableau field/calc map for developers — one row per data-bearing
+  // component, mapping it to the field/measure to build and the aggregation its
+  // component type implies. Deterministic; bound metrics drive the field name,
+  // unbound data components are flagged as needing a calc/source.
+  CHART_TYPES: ['bar', 'line', 'area', 'scatter', 'table', 'map'],
+  _AGG: {
+    kpi: 'aggregate to a single headline figure (e.g. SUM/AVG)',
+    bar: 'measure aggregated by a dimension',
+    line: 'measure aggregated over a [Date] axis',
+    area: 'measure aggregated over a [Date] axis',
+    scatter: 'two measures (x, y) per mark',
+    table: 'dimensions × measures',
+    map: 'measure aggregated by geography'
+  },
+  fieldMap(wf) {
+    const spec = this.toBuildSpec(wf);
+    if (!spec) return [];
+    return spec.components
+      .filter(c => c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0)
+      .map(c => ({
+        component: c.type,
+        title: c.title || '',
+        field: c.metric ? '[' + c.metric + ']' : (c.title ? '[' + c.title + ']' : '[unbound measure]'),
+        aggregation: this._AGG[c.type] || 'measure',
+        calc: c.metric ? '' : 'Define the calc/source for this ' + c.type + ' (no metric bound).'
+      }));
+  },
+  // Phase 3.2: a developer acceptance checklist — global layout/answer checks
+  // plus a per-component "does the build match the concept" item.
+  acceptanceChecklist(wf, def) {
+    const spec = this.toBuildSpec(wf);
+    if (!spec) return [];
+    const items = [];
+    items.push('Layout matches the ' + spec.grid.cols + '×' + spec.grid.rows + ' grid (every component’s position and size).');
+    if (spec.metrics.length) items.push('The dashboard answers: ' + spec.metrics.join(', ') + '.');
+    spec.components.forEach(c => {
+      const where = c.title ? '“' + c.title + '”' : 'the ' + c.type;
+      if (c.type === 'kpi') items.push('KPI ' + where + ' shows ' + (c.metric || 'its bound measure') + ' as a single headline figure.');
+      else if (this.CHART_TYPES.indexOf(c.type) >= 0) items.push(c.type + ' chart ' + where + ' plots ' + (c.metric || 'its measure') + ' and carries a takeaway-style title.');
+      else if (c.type === 'filter') items.push('Filter ' + where + ' is wired to every relevant sheet.');
+      else if (c.type === 'title') items.push('Title ' + where + ' sits in the top row.');
+    });
+    if (def) { const conf = this.checkConformance(wf, def); items.push('Passes the governed design rules (currently: ' + (conf.ok ? 'passes' : conf.errors.length + ' error(s)') + ').'); }
+    return items;
+  },
+
   // W3: build spec for a whole set — every page in order, each its own
   // per-page build spec. A standalone wireframe yields a single-page set.
   toSetBuildSpec(wf) {
@@ -45253,6 +45319,82 @@ const WireframeSkill = {
     Reports.generate('wireframe_spec', { wireframeId: wf.id, audience: 'internal' });
   },
 
+  // Phase 3.2: compare a BUILT dashboard screenshot to the approved wireframe.
+  // Pure message builder so the vision/text branching is unit-testable: the
+  // screenshot rides as images[] ONLY when the model is vision-capable; the spec
+  // (components + field map + checklist) always grounds the comparison.
+  _parseDataUrl(dataUrl) {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(String(dataUrl || ''));
+    return m ? { mime: m[1], data: m[2] } : null;
+  },
+  _compareMessages(wf, image, visionCapable) {
+    const spec = Wireframe.toBuildSpec(wf);
+    const grounding = {
+      name: spec.name, grid: spec.grid, components: spec.components,
+      field_map: Wireframe.fieldMap(wf), acceptance_checklist: Wireframe.acceptanceChecklist(wf, this._def())
+    };
+    const sys = 'You verify whether a BUILT Tableau dashboard matches its APPROVED wireframe concept.\n' +
+      (visionCapable
+        ? 'A screenshot of the built dashboard is attached — compare it to the approved spec below.'
+        : 'No screenshot is available (this model is text-only) — produce the acceptance checklist the developer must verify by eye, and flag any gaps in the spec itself.') +
+      '\nReport three things: matches (what lines up), mismatches (components missing / extra / mis-placed vs the spec), and a one-line verdict. Refer ONLY to the approved spec — never invent components or figures.';
+    const messages = [
+      { role: 'system', content: sys },
+      { role: 'user', content: 'APPROVED SPEC (authoritative):\n' + JSON.stringify(grounding) }
+    ];
+    if (visionCapable && image && image.data) messages[1].images = [{ mime: image.mime || 'image/png', data: image.data }];
+    return messages;
+  },
+  uiCompareToBuilt() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) { App.toast('No wireframe selected', 'error'); return; }
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => this.compareToBuilt(reader.result);
+      reader.readAsDataURL(f);
+    };
+    inp.click();
+  },
+  async compareToBuilt(dataUrl) {
+    if (this._busy) return;
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const profile = AI.profileForTask('design');
+    const visionCapable = !!AI.capabilities(profile).vision;
+    const image = dataUrl ? this._parseDataUrl(dataUrl) : null;
+    if (image && !visionCapable) App.toast('This model is text-only — comparing against the spec (no image)', 'info');
+    this._busy = true; this.render();
+    try {
+      const messages = this._compareMessages(wf, image, visionCapable && !!image);
+      const out = await AI.chat(profile, messages, {});
+      this._showCompareResult(wf, out.text || '', visionCapable && !!image);
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._busy = false; this.render();
+    }
+  },
+  _showCompareResult(wf, text, hadImage) {
+    const esc = Dashboard.esc;
+    const existing = document.getElementById('wfCompareOverlay');
+    if (existing) existing.remove();
+    const ov = document.createElement('div');
+    ov.id = 'wfCompareOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,25,0.55);display:flex;align-items:center;justify-content:center;z-index:10300;padding:16px';
+    ov.onclick = (e) => { if (e.target.id === 'wfCompareOverlay') ov.remove(); };
+    ov.innerHTML = '<div style="background:var(--bg-card,#fff);border-radius:12px;padding:22px 26px;max-width:680px;width:100%;max-height:85vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,0.35)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0;font-size:15px;font-weight:700">Compare to built — ' + esc(wf.name) + '</h3><button onclick="document.getElementById(\'wfCompareOverlay\').remove()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">&times;</button></div>' +
+      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">' + (hadImage ? 'Vision comparison against the screenshot' : 'Text-only — spec acceptance checklist (no image used)') + '</div>' +
+      '<div style="font-size:13px;line-height:1.5;white-space:pre-wrap;color:var(--text-dark)">' + esc(text) + '</div>' +
+    '</div>';
+    document.body.appendChild(ov);
+  },
+
   exportJson() {
     const wf = Wireframe.get(this._wfId);
     if (!wf) return;
@@ -45602,7 +45744,8 @@ const WireframeSkill = {
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiRefine()"' + (this._refineBusy ? ' disabled' : '') + '>' + (this._refineBusy ? 'Refining…' : 'Refine') + '</button></div>' +
           '</div>' +
           '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">' +
-            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportBuildSpec()" title="Developer build specification — components, geometry, bound metrics">Build spec</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportBuildSpec()" title="Developer build specification — components, geometry, bound metrics, field/calc map, acceptance checklist">Build spec</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiCompareToBuilt()" title="Upload a screenshot of the built dashboard and compare it to this approved wireframe">Compare to built</button>' +
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportJson()">Export JSON</button>' +
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportPng()">PNG</button>' +
             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.exportPrint()">Print / PDF</button>' +
