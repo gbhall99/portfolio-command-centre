@@ -5015,6 +5015,12 @@ const App = {
     data.wireframes.forEach(w => { if (!Array.isArray(w.tableau_refs)) w.tableau_refs = []; });
     if (!Array.isArray(data.billing_arrangements)) data.billing_arrangements = [];
     if (!Array.isArray(data.status_reports)) data.status_reports = [];
+    // Phase 3.1 (living documents): ensure the drift-detection fields exist.
+    // Legacy reports keep grounding_snapshot null → treated as "not stale" (no baseline to nag about).
+    data.status_reports.forEach(r => {
+      if (r && !('grounding_snapshot' in r)) r.grounding_snapshot = null;
+      if (r && !('last_refreshed_at' in r)) r.last_refreshed_at = null;
+    });
 
     // Phase 0.1 (2026-06): durable agent memory — the pinned goals and facts the
     // assistant reads into context for every run, plus a worklog of batch/auto
@@ -43150,6 +43156,11 @@ const Sow = {
     return f.amount !== q.amount || f.billable_points !== q.billable_points || (fresh.hourly_rate || 0) !== (sow.quote.hourly_rate || 0);
   },
 
+  // Phase 3.1: shared "living document" contract — a SOW is stale when its
+  // commercial grounding (the quote) has drifted. (Approval is already blocked
+  // on this in validate(); this is the read-side flag for the needs-refresh chip.)
+  isStale(sow) { return this.quoteIsStale(sow); },
+
   attachProject(sowId, projectId) {
     const sow = this.get(sowId);
     if (!sow) return;
@@ -45564,7 +45575,10 @@ const StatusReport = {
         content: generated[ds.id] ? String(generated[ds.id].content || '').trim() : ''
       })),
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      // Phase 3.1: snapshot the grounding so we can later detect source drift.
+      grounding_snapshot: this._snapshot(opts.customer),
+      last_refreshed_at: null
     };
     App.pushUndo('Create status report ' + report.period);
     App.data.status_reports.push(report);
@@ -45629,6 +45643,53 @@ const StatusReport = {
         has_billing_data: billing.arrangements.length > 0 || billing.totals.billable_amount > 0
       }
     };
+  },
+
+  // Phase 3.1 (living documents): a deterministic signature of the grounding
+  // facts a report was built from — EXCLUDING as_at (today's date) so it only
+  // changes when the underlying project/RAID/billing data changes, not daily.
+  groundingSignature(customer) {
+    const g = this.groundingFor(customer);
+    if (!g) return null;
+    return JSON.stringify({ projects: g.projects, billing: g.billing });
+  },
+  // Capture the signature from the SAME state a save will persist: rule-derived
+  // RAG is applied on save (App.saveToLocalStorage → evaluateRagRules), so we
+  // evaluate it first, otherwise a snapshot taken before save would mismatch the
+  // post-save reads that isStale() performs.
+  _snapshot(customer) {
+    (App.data && App.data.projects || []).forEach(p => { if (App.evaluateRagRules) { try { App.evaluateRagRules(p); } catch (e) { /* rules optional */ } } });
+    return this.groundingSignature(customer);
+  },
+  // A report is stale when its source data has drifted since it was generated.
+  // Reports with no stored snapshot (legacy) report "not stale" — we never nag
+  // about a baseline we don't have.
+  isStale(report) {
+    if (!report || !report.grounding_snapshot) return false;
+    return this.groundingSignature(report.customer) !== report.grounding_snapshot;
+  },
+  // Re-ground a report with freshly generated sections: apply only changed
+  // sections, refresh the snapshot, audit, and return the redline.
+  applyRefresh(id, generatedSections, source) {
+    const r = this.get(id);
+    if (!r) return [];
+    const gen = {};
+    (generatedSections || []).forEach(g => { if (g && g.id) gen[g.id] = g; });
+    App.pushUndo('Refresh status report ' + r.period);
+    const changed = [];
+    r.sections.forEach(sec => {
+      if (gen[sec.id] === undefined) return;
+      const before = sec.content || '';
+      const after = String(gen[sec.id].content || '').trim();
+      if (before !== after) { changed.push({ id: sec.id, title: sec.title, before, after }); sec.content = after; }
+    });
+    r.grounding_snapshot = this._snapshot(r.customer);
+    r.last_refreshed_at = new Date().toISOString();
+    r.updated_at = r.last_refreshed_at;
+    App.logChange(null, 'status_report_refreshed', '', r.customer + ' ' + r.period + ' (' + changed.length + ' section' + (changed.length === 1 ? '' : 's') + ' changed)', source || 'ai', { event_type: 'status_report' });
+    App.markDirty();
+    App.saveToLocalStorage();
+    return changed;
   }
 };
 
@@ -45689,6 +45750,44 @@ const StatusReportSkill = {
     }
   },
 
+  // Phase 3.1: re-ground an existing report against current data and apply a
+  // redline of the changed sections. Same grounded prompt as generate().
+  async refresh(id) {
+    if (this._busy) return;
+    const r = StatusReport.get(id);
+    if (!r) return;
+    const def = this._def();
+    if (!def) { App.toast('No status-report definition available', 'error'); return; }
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    this._busy = true;
+    this.render();
+    try {
+      const grounding = StatusReport.groundingFor(r.customer);
+      const messages = [
+        {
+          role: 'system',
+          content: 'You draft periodic customer status reports for a delivery consultancy.\n' +
+            'Produce EVERY section listed, in order, using the exact ids. Use ONLY the facts in the grounding data — never invent figures, dates or project names. ' +
+            'Omit content for commercial_position when has_billing_data is false.\n' +
+            'SECTIONS:\n' + JSON.stringify(def.sections.map(s => ({ id: s.id, title: s.title, required: s.required, guidance: s.guidance })))
+        },
+        { role: 'user', content: 'Reporting period: ' + r.period + '\nThis is a REFRESH — the source data changed. Re-draft each section from the current facts.\nGROUNDING DATA (authoritative):\n' + JSON.stringify(grounding) }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('drafting'), messages, {
+        type: 'object', required: ['sections'],
+        properties: { sections: { type: 'array', items: { type: 'object', required: ['id', 'content'], properties: { id: { type: 'string' }, content: { type: 'string' } } } } }
+      });
+      const changed = StatusReport.applyRefresh(r.id, out.sections, 'ai');
+      App.toast(changed.length ? ('Refreshed — ' + changed.length + ' section' + (changed.length === 1 ? '' : 's') + ' updated (undo with Ctrl+Z)') : 'Refreshed — no section changed', 'success');
+      this.edit(r.id);
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._busy = false;
+      if (this._mode !== 'edit') this.render();
+    }
+  },
+
   uiUpdateSection(sectionId, el) { StatusReport.updateSection(this._id, sectionId, el.value); },
   uiDelete() {
     if (!confirm('Delete this status report? (Undo with Ctrl+Z)')) return;
@@ -45730,8 +45829,12 @@ const StatusReportSkill = {
       else {
         const def = this._def();
         const v = def ? StatusReport.validate(r, def) : { ok: true, errors: [] };
+        const stale = StatusReport.isStale(r);
         el.innerHTML = this._header('Status Report — ' + r.period, true) +
           '<div class="sow-modal-body"><div class="sow-main">' +
+            (stale
+              ? '<div class="sow-validation" style="border-left:3px solid var(--status-amber,#d97706);background:var(--tint-amber-weak,rgba(245,158,11,0.08))"><div class="err" style="color:var(--rag-amber-strong,#b45309)">Source data changed since this report was drafted — refresh to bring it up to date.</div></div>'
+              : '') +
             (v.ok ? '<div class="sow-validation"><div class="ok">Definition checks pass.</div></div>'
                   : '<div class="sow-validation">' + v.errors.map(x => '<div class="err">• ' + esc(x) + '</div>').join('') + '</div>') +
             r.sections.map(sec =>
@@ -45739,6 +45842,7 @@ const StatusReportSkill = {
               '<textarea aria-label="' + esc(sec.title) + '" onchange="StatusReportSkill.uiUpdateSection(\'' + esc(sec.id) + '\', this)">' + esc(sec.content) + '</textarea></div>'
             ).join('') +
             '<div style="display:flex;gap:8px;margin-top:6px">' +
+              '<button class="btn btn-' + (stale ? 'primary' : 'outline') + ' btn-sm" onclick="StatusReportSkill.refresh(\'' + esc(r.id) + '\')"' + (this._busy ? ' disabled' : '') + '>' + (this._busy ? 'Refreshing…' : (stale ? 'Refresh (out of date)' : 'Refresh')) + '</button>' +
               '<button class="btn btn-outline btn-sm" onclick="StatusReportSkill.exportPrint()">Print / PDF</button>' +
               '<button class="btn btn-outline btn-sm" onclick="StatusReportSkill.uiDelete()">Delete</button>' +
             '</div>' +
@@ -45750,7 +45854,7 @@ const StatusReportSkill = {
     el.innerHTML = this._header('Status reports — ' + (App.activeCustomer || '')) +
       '<div class="sow-modal-body"><div class="sow-main" style="border-right:none">' +
         (reports.length
-          ? reports.map(r => '<div class="sow-list-row" onclick="StatusReportSkill.edit(\'' + esc(r.id) + '\')"><span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(r.period) + '</span><span style="font-size:11px;color:var(--text-muted)">' + new Date(r.created_at).toLocaleDateString('en-GB') + '</span></div>').join('')
+          ? reports.map(r => '<div class="sow-list-row" onclick="StatusReportSkill.edit(\'' + esc(r.id) + '\')"><span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(r.period) + '</span>' + (StatusReport.isStale(r) ? '<span class="sow-badge" style="background:var(--tint-amber-weak,rgba(245,158,11,0.12));color:var(--rag-amber-strong,#b45309);font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;margin-right:8px" title="Source data changed since this report was drafted">Needs refresh</span>' : '') + '<span style="font-size:11px;color:var(--text-muted)">' + new Date(r.created_at).toLocaleDateString('en-GB') + '</span></div>').join('')
           : '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No status reports yet. Draft one from live project, RAID and billing data.</div>') +
         '<div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">' +
           '<input id="srPeriod" class="field-input" style="max-width:220px" placeholder="' + esc(new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })) + '" aria-label="Reporting period">' +
