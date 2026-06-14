@@ -15464,6 +15464,21 @@ const ScenarioLab = {
   },
   baseline(customer) { return this._summarise(this._runOn(JSON.parse(JSON.stringify(App.data)), customer)); },
 
+  // Phase 4.2: planned £ economics for a data object (restores App.data after,
+  // mirroring _runOn). Returns null when Billing isn't available.
+  _economicsOn(data, customer) {
+    if (typeof Billing === 'undefined' || !Billing.plannedEconomics) return null;
+    const real = App.data;
+    App.data = data;
+    try { return Billing.plannedEconomics(customer); }
+    finally { App.data = real; }
+  },
+  baselineEconomics(customer) { return this._economicsOn(JSON.parse(JSON.stringify(App.data)), customer); },
+  _ecoDelta(base, scn) {
+    if (!base || !scn) return null;
+    return { revenue: scn.revenue - base.revenue, cost: scn.cost - base.cost, margin: scn.margin - base.margin, margin_pct: scn.margin_pct - base.margin_pct, prepaid_remaining_points: scn.prepaid_remaining_points - base.prepaid_remaining_points };
+  },
+
   // Mutate `clone` per one hypothesis. Returns { applied } or { error }.
   // seq disambiguates added-project ids when several are applied at once.
   applyHypothesis(clone, args, customer, seq) {
@@ -15518,14 +15533,18 @@ const ScenarioLab = {
     if (!(App.data.sprints || []).length) return { error: 'No sprints defined — the solver needs a sprint calendar' };
     const baseline = this.baseline(customer);
     if (args.hypothesis === 'as_is') return { simulation: true, note: 'Read-only simulation — nothing was changed.', baseline };
+    const baseEco = this.baselineEconomics(customer);
     const clone = JSON.parse(JSON.stringify(App.data));
     const r = this.applyHypothesis(clone, args, customer, 1);
     if (r.error) return { error: r.error };
     const hypothetical = this._summarise(this._runOn(clone, customer));
+    const hypoEco = this._economicsOn(clone, customer);
     return {
       simulation: true,
       note: 'Read-only simulation — nothing was changed. Present deltas to the user; offer the write tools if they want to make it real.',
       applied: r.applied, baseline, hypothetical,
+      // Phase 4.2: planned £ economics for baseline + hypothetical.
+      baseline_economics: baseEco, economics: hypoEco, economics_delta: this._ecoDelta(baseEco, hypoEco),
       delta: {
         makespan_sprints: hypothetical.makespan_sprints - baseline.makespan_sprints,
         avg_utilisation_pct: hypothetical.avg_utilisation_pct - baseline.avg_utilisation_pct,
@@ -15547,7 +15566,7 @@ const ScenarioLab = {
       if (r.error) return { error: r.error };
       if (r.applied) applied.push(r.applied);
     }
-    return { applied, summary: this._summarise(this._runOn(clone, customer)) };
+    return { applied, summary: this._summarise(this._runOn(clone, customer)), economics: this._economicsOn(clone, customer) };
   },
 
   // Save a named scenario (runs the hypotheses now and stores baseline + result).
@@ -15560,6 +15579,8 @@ const ScenarioLab = {
       name: String(name || 'Scenario').slice(0, 120), customer,
       hypotheses: JSON.parse(JSON.stringify(hypotheses || [])),
       applied: run.applied, baseline: this.baseline(customer), result: run.summary,
+      // Phase 4.2: planned £ economics for the scenario + baseline (for compare deltas).
+      economics: run.economics || null, baseline_economics: this.baselineEconomics(customer),
       created_at: new Date().toISOString()
     };
     App.pushUndo('Save scenario "' + sc.name + '"');
@@ -15581,19 +15602,23 @@ const ScenarioLab = {
   // Baseline + each saved scenario with its delta vs baseline.
   compare(customer, ids) {
     const base = this.baseline(customer);
+    const baseEco = this.baselineEconomics(customer);
     const rows = this.list(customer)
       .filter(s => !ids || !ids.length || ids.indexOf(s.id) >= 0)
       .map(s => ({
         id: s.id, name: s.name, applied: s.applied,
         makespan_sprints: s.result.makespan_sprints, avg_utilisation_pct: s.result.avg_utilisation_pct,
         deadline_miss_count: (s.result.deadline_misses || []).length, total_points: s.result.total_points,
+        // Phase 4.2: £ economics + delta vs baseline (recomputed live so it tracks rate/scope changes).
+        economics: s.economics || null,
+        economics_delta: this._ecoDelta(baseEco, s.economics),
         delta: {
           makespan_sprints: s.result.makespan_sprints - base.makespan_sprints,
           avg_utilisation_pct: s.result.avg_utilisation_pct - base.avg_utilisation_pct,
           deadline_miss_count: (s.result.deadline_misses || []).length - (base.deadline_misses || []).length
         }
       }));
-    return { baseline: { makespan_sprints: base.makespan_sprints, avg_utilisation_pct: base.avg_utilisation_pct, deadline_miss_count: (base.deadline_misses || []).length, total_points: base.total_points }, scenarios: rows };
+    return { baseline: { makespan_sprints: base.makespan_sprints, avg_utilisation_pct: base.avg_utilisation_pct, deadline_miss_count: (base.deadline_misses || []).length, total_points: base.total_points, economics: baseEco }, scenarios: rows };
   },
 
   // Turn a scenario's hypotheses into confirm-gated write proposals (reusing the
@@ -15620,6 +15645,12 @@ const ScenarioLab = {
     const customer = App.activeCustomer;
     const cmp = this.compare(customer);
     const sign = n => (n > 0 ? '+' : '') + n;
+    const money = (typeof Billing !== 'undefined' && Billing.fmtMoney) ? (n => Billing.fmtMoney(n)) : (n => '£' + Math.round(n).toLocaleString('en-GB'));
+    const marginCell = (s) => {
+      if (!s.economics) return '<td style="padding:5px 8px;text-align:right;color:var(--text-muted)">—</td>';
+      const dm = s.economics_delta ? s.economics_delta.margin : 0;
+      return '<td style="padding:5px 8px;text-align:right">' + money(s.economics.margin) + ' <span style="color:var(--text-muted);font-size:10px">(' + (dm > 0 ? '+' : '') + money(dm) + ')</span></td>';
+    };
     const rows = cmp.scenarios.map(s => {
       const d = s.delta;
       const dcell = (val, delta, suffix) => val + (suffix || '') + ' <span style="color:var(--text-muted);font-size:10px">(' + sign(delta) + (suffix || '') + ')</span>';
@@ -15628,6 +15659,7 @@ const ScenarioLab = {
         '<td style="padding:5px 8px;text-align:right">' + dcell(s.makespan_sprints, d.makespan_sprints) + '</td>' +
         '<td style="padding:5px 8px;text-align:right">' + dcell(s.avg_utilisation_pct, d.avg_utilisation_pct, '%') + '</td>' +
         '<td style="padding:5px 8px;text-align:right">' + dcell(s.deadline_miss_count, d.deadline_miss_count) + '</td>' +
+        marginCell(s) +
         '<td style="padding:5px 8px;text-align:right;white-space:nowrap">' +
           '<button class="btn btn-outline btn-sm" onclick="ScenarioLab.promoteFromUI(\'' + esc(s.id) + '\')">Promote</button> ' +
           '<button class="btn btn-ghost btn-sm" onclick="ScenarioLab.removeFromUI(\'' + esc(s.id) + '\')">Delete</button>' +
@@ -15638,7 +15670,8 @@ const ScenarioLab = {
       '<td style="padding:5px 8px">Baseline (current plan)</td>' +
       '<td style="padding:5px 8px;text-align:right">' + b.makespan_sprints + '</td>' +
       '<td style="padding:5px 8px;text-align:right">' + b.avg_utilisation_pct + '%</td>' +
-      '<td style="padding:5px 8px;text-align:right">' + b.deadline_miss_count + '</td><td></td></tr>';
+      '<td style="padding:5px 8px;text-align:right">' + b.deadline_miss_count + '</td>' +
+      '<td style="padding:5px 8px;text-align:right">' + (b.economics ? money(b.economics.margin) : '—') + '</td><td></td></tr>';
     const existing = document.getElementById('scenarioLabOverlay');
     if (existing) existing.remove();
     const ov = document.createElement('div');
@@ -15649,7 +15682,7 @@ const ScenarioLab = {
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h3 style="margin:0;font-size:15px;font-weight:700">Scenario Lab · ' + esc(customer || '') + '</h3><button onclick="document.getElementById(\'scenarioLabOverlay\').remove()" style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">&times;</button></div>' +
         '<p style="font-size:12px;color:var(--text-dark-secondary);margin:0 0 14px 0">Saved solver what-ifs compared to the current baseline. Ask the Assistant to “save a scenario where…”, then Promote to turn one into confirm-gated edits.</p>' +
         (cmp.scenarios.length
-          ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:right;color:var(--text-muted);font-size:11px"><th style="text-align:left;padding:4px 8px">Scenario</th><th style="padding:4px 8px">Makespan</th><th style="padding:4px 8px">Avg util</th><th style="padding:4px 8px">Deadline misses</th><th></th></tr></thead><tbody>' + baseRow + rows + '</tbody></table>'
+          ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:right;color:var(--text-muted);font-size:11px"><th style="text-align:left;padding:4px 8px">Scenario</th><th style="padding:4px 8px">Makespan</th><th style="padding:4px 8px">Avg util</th><th style="padding:4px 8px">Deadline misses</th><th style="padding:4px 8px">Margin (£)</th><th></th></tr></thead><tbody>' + baseRow + rows + '</tbody></table>'
           : '<div style="color:var(--text-muted);font-size:13px;padding:10px 0">No saved scenarios yet for ' + esc(customer || 'this customer') + '. In the Assistant: “Save a scenario called ‘Big Q3’ where we add a 30-point engineering project due in October.”</div>') +
       '</div>';
     document.body.appendChild(ov);
@@ -40704,6 +40737,22 @@ const AgentTools = {
         };
       }
     },
+    {
+      name: 'commercial_forecast', scope: 'read',
+      description: 'Forward-looking commercials + delivery forecast for the active customer: planned revenue, internal cost and margin (rate card + sell rates, prepaid netted) plus completion P50/P80/P95 sprints from velocity history. Every figure is from data — never invented.',
+      params: {},
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const eco = (typeof Billing !== 'undefined' && Billing.plannedEconomics) ? Billing.plannedEconomics(ctx.customer) : null;
+        let completion = null;
+        if (typeof Forecast !== 'undefined' && Forecast.portfolioForecast) {
+          const pf = Forecast.portfolioForecast(ctx.customer);
+          if (pf && pf.distribution) completion = { remaining_points: pf.remaining, p50_sprints: pf.distribution.p50, p80_sprints: pf.distribution.p80, p95_sprints: pf.distribution.p95 };
+          else completion = { remaining_points: pf ? pf.remaining : 0, insufficient_history: true, note: 'Need ' + Forecast.MIN_HISTORY + '+ completed sprints to forecast completion.' };
+        }
+        return { economics: eco, completion, note: eco ? 'Narrate the revenue, margin and completion plainly; do not invent figures.' : 'No billing data configured for this customer — describe delivery completion only.' };
+      }
+    },
 
     // --- Write tools: proposal-only, confirmation-gated ---
     {
@@ -42840,6 +42889,25 @@ const Billing = {
       lines,
       totals: { points: totalPoints, prepaid_covered: coveredPoints, billable_points: totalPoints - coveredPoints, hours: (totalPoints - coveredPoints) * hpp, amount: Math.round(amount) }
     };
+  },
+
+  // Phase 4.1/4.2: forward-looking PLANNED economics for a customer from the
+  // current App.data — total planned cost (BAC across active projects), planned
+  // billable revenue (sum of per-project quotes, prepaid netted), margin and the
+  // remaining prepaid pool. Deterministic; reads App.data so it can be run on a
+  // swapped-in scenario clone for £ deltas. Excludes Complete/Closed projects.
+  plannedEconomics(customer) {
+    const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+    let cost = 0, revenue = 0, points = 0;
+    projects.forEach(p => {
+      const c = (App.computeProjectCost ? App.computeProjectCost(p) : { BAC: 0 });
+      cost += c.BAC || 0;
+      try { const q = this.quoteForProject(p); revenue += (q.totals.amount || 0); points += (q.totals.points || 0); } catch (e) { /* unsized */ }
+    });
+    let prepaidRemaining = 0;
+    try { prepaidRemaining = (this.customerSummary(customer).arrangements || []).reduce((s, a) => s + (a.remaining_points || 0), 0); } catch (e) { /* no billing */ }
+    revenue = Math.round(revenue); cost = Math.round(cost);
+    return { customer, currency: this.currency(), planned_points: points, revenue, cost, margin: revenue - cost, margin_pct: revenue > 0 ? Math.round((revenue - cost) / revenue * 100) : 0, prepaid_remaining_points: prepaidRemaining };
   },
 
   // Plain-text quote block for the SOW Commercials section.
