@@ -15972,7 +15972,9 @@ const CommandPalette = {
       const aiIntents = [
         { title: 'Ask AI: tidy up the portfolio', text: 'Tidy up the portfolio — find duplicate RAID items and out-of-order priorities and propose fixes I can confirm.' },
         { title: 'Ask AI: what is at risk, and why?', text: 'Which projects are at risk right now, and why? End with the single most useful next step.' },
-        { title: 'Ask AI: where are we over capacity?', text: 'Where are we over capacity in the next few sprints, and what would you move?' }
+        { title: 'Ask AI: where are we over capacity?', text: 'Where are we over capacity in the next few sprints, and what would you move?' },
+        { title: 'Ask AI: explain the current plan', text: 'Explain why the current plan is shaped the way it is — the binding constraints and the levers that would help.' },
+        { title: 'Ask AI: is the plan still valid?', text: 'Has anything changed since the last solve that means we should re-run the plan?' }
       ];
       const vp = Assistant.VIEW_PROMPTS && Assistant.VIEW_PROMPTS[App.currentView];
       if (vp) aiIntents.unshift({ title: 'Ask AI about this view', text: vp });
@@ -40394,6 +40396,69 @@ const AgentTools = {
         const r = ScenarioLab.promote(args.scenario_id, ctx);
         if (r.error) return r;
         return { promoting: true, scenario: sc.name, proposed: r.proposed, skipped: r.skipped, note: r.proposed ? 'Created ' + r.proposed + ' change proposal(s) from “' + sc.name + '” — confirm to apply.' : 'Nothing could be promoted automatically' + (r.skipped.length ? ': ' + r.skipped.join('; ') : '') + '.' };
+      }
+    },
+    {
+      name: 'explain_plan', scope: 'read',
+      description: 'Explain why the current plan is shaped the way it is, grounded in the solver and live capacity: makespan, average utilisation, the binding constraints (skills/sprints at or over capacity), any deadline misses, and the levers that would help. All figures come from the data — never invent numbers.',
+      params: {},
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        if (!(App.data.sprints || []).length) return { error: 'No sprints defined — the solver needs a sprint calendar' };
+        const base = ScenarioLab.baseline(ctx.customer);
+        // Per-sprint, per-skill utilisation scan → the binding constraints.
+        const binding = [];
+        (App.data.sprints || []).forEach(s => {
+          const caps = Sprint.calcSkillCapacityForSprint ? Sprint.calcSkillCapacityForSprint(ctx.customer, s.sprint_id) : {};
+          const demand = {};
+          AgentTools._projects(ctx).forEach(p => Object.keys(p.skill_splits || {}).forEach(k =>
+            (p.skill_splits[k] || []).forEach(sl => { if (sl.sprint === s.sprint_id) demand[k] = (demand[k] || 0) + (sl.points || 0); })));
+          Object.keys(demand).forEach(k => {
+            const cap = App.toInteger(caps[k] || 0), dem = App.toInteger(demand[k] || 0);
+            const util = cap > 0 ? Math.round(dem / cap * 100) : (dem > 0 ? 999 : 0);
+            if (util >= 90) binding.push({ sprint: s.sprint_id, skill: k.replace('size_', ''), demand: dem, capacity: cap, utilisation_pct: util });
+          });
+        });
+        binding.sort((a, b) => b.utilisation_pct - a.utilisation_pct);
+        const levers = [];
+        if (binding.length) levers.push('Add capacity (or reduce scope) in: ' + Array.from(new Set(binding.slice(0, 3).map(b => b.skill))).join(', '));
+        if (base.deadline_misses.length) levers.push('Relax or move the deadline on: ' + base.deadline_misses.map(m => m.project).filter(Boolean).slice(0, 3).join(', '));
+        if (!binding.length && !base.deadline_misses.length) levers.push('No binding constraints — the plan has slack; you could pull work forward or take on more.');
+        return {
+          plan_summary: { projects_allocated: base.projects_allocated, total_points: base.total_points, makespan_sprints: base.makespan_sprints, avg_utilisation_pct: base.avg_utilisation_pct },
+          binding_constraints: binding.slice(0, 8),
+          deadline_misses: base.deadline_misses,
+          capacity_overflows: base.capacity_overflows,
+          levers,
+          note: 'Grounded in the live plan, solver and capacity. Explain these figures plainly; do not invent numbers.'
+        };
+      }
+    },
+    {
+      name: 'check_plan_drift', scope: 'read',
+      description: 'Report whether the plan looks stale: when the solver last ran for this customer and which inputs changed since, so you can recommend re-running Auto-Allocate. Read-only.',
+      params: {},
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const meta = (App.data.settings && App.data.settings.solverRuns && App.data.settings.solverRuns[ctx.customer]) || null;
+        if (!meta || !meta.at) {
+          return { last_run: null, inputs_changed_since: 0, recommend_rerun: false, note: 'The solver has not been run for this customer yet — run Auto-Allocate to build a plan.' };
+        }
+        const cutoff = new Date(meta.at).getTime();
+        const changed = AgentTools._projects(ctx).filter(p => p.last_updated && new Date(p.last_updated).getTime() > cutoff);
+        const deadlineAffected = changed.some(p => p.hard_deadline);
+        const hoursAgo = Math.round((Date.now() - cutoff) / 3600000);
+        changed.slice(0, 20).forEach(p => AgentTools._cite(ctx, 'project', p.id, p.name));
+        return {
+          last_run: { at: meta.at, hours_ago: hoursAgo, project_count: meta.projectCount != null ? meta.projectCount : null },
+          inputs_changed_since: changed.length,
+          changed_projects: changed.slice(0, 20).map(p => p.name),
+          deadline_affected: deadlineAffected,
+          recommend_rerun: changed.length > 0,
+          note: changed.length
+            ? (changed.length + ' input(s) changed since the last solve' + (deadlineAffected ? ' (including a deadline)' : '') + ' — re-running Auto-Allocate will refresh the plan.')
+            : 'No inputs have changed since the last solve — the plan is current.'
+        };
       }
     },
     {
