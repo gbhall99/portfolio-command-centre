@@ -59,7 +59,7 @@ describe('ReportsHub — Documents hub view', () => {
     app.ReportsHub.render();
     const host = app.document.getElementById('reportsHubHost');
     const cards = Array.from(host.querySelectorAll('[data-hub-card]'));
-    expect(cards.length).toBe(8);
+    expect(cards.length).toBe(9);
     const cardFor = (title) => cards.find(c => c.querySelector('.hub-card-title').textContent === title);
     const multi = cardFor('Portfolio report');
     expect(multi.querySelectorAll('.hub-aud-chip').length).toBe(2);
