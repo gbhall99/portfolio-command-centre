@@ -222,7 +222,7 @@ Build order = value first, and the three "if I could only do three" picks lead:
 | 1 | S1 SOW draft-from-project | DONE |
 | 2a | W1b build-spec export | DONE |
 | 2b | W1a visual (vision) grounding | DEFERRED — needs a multimodal message layer across all adapters (openai/anthropic/gemini) + a `vision` capability + mock support; tracked as its own item |
-| 3 | AS1 portfolio scope + skills-as-tools | spec'd |
+| 3 | AS1 portfolio scope + skills-as-tools | DONE |
 | 4 | S2 RAID/clause library | spec'd |
 | 5 | W2 component↔metric binding | spec'd |
 | 6 | AS2 proactive briefing | spec'd |
