@@ -230,7 +230,7 @@ Build order = value first, and the three "if I could only do three" picks lead:
 | 8 | W4 conformance one-click fix | DONE |
 | 9 | AS3 visible tool steps | DONE |
 | 10 | S4 redline + gate | DONE |
-| 11 | W3 multi-dashboard sets | spec'd |
+| 11 | W3 multi-dashboard sets | DONE |
 | 12 | AS4 view-aware prompt chips | DONE |
 
 Update this table as items land. Each lands as its own tested commit; PR per

@@ -37326,34 +37326,52 @@ const Reports = {
       const internal = Reports.Builders._AUD_INTERNAL.slice();
       const wf = ((typeof App !== 'undefined' && App.data && App.data.wireframes) || []).find(w => w.id === wireframeId);
       if (!wf || typeof Wireframe === 'undefined') return null; // generate() toasts 'Wireframe not found'
-      const spec = Wireframe.toBuildSpec(wf);
-      const overviewHtml = '<p><strong>Grid:</strong> ' + spec.grid.cols + ' × ' + spec.grid.rows +
-        ' &middot; <strong>Components:</strong> ' + spec.components.length +
-        (spec.metrics.length ? ' &middot; <strong>Answers:</strong> ' + spec.metrics.map(esc).join(', ') : '') + '</p>';
-      const componentsHtml = Reports.table({
-        columns: [
-          { key: 'type', label: 'Component', width: '20%' },
-          { key: 'title', label: 'Title' },
-          { key: 'pos', label: 'Position', width: '14%', cell: r => '(' + r.x + ',' + r.y + ')' },
-          { key: 'size', label: 'Size', width: '12%', cell: r => r.w + '×' + r.h },
-          { key: 'metric', label: 'Shows', width: '20%', cell: r => esc(r.metric || '—') }
-        ],
-        rows: spec.components,
-        empty: 'No components placed yet'
-      });
-      const refsHtml = spec.references.length
-        ? '<ul>' + spec.references.map(r => '<li>' + esc(r.name) + (r.workbook ? ' <span style="color:var(--rp-muted)">(' + esc(r.workbook) + ')</span>' : '') + '</li>').join('') + '</ul>'
-        : '<p>No reference dashboards linked.</p>';
+      // W3: a wireframe that belongs to a multi-page set exports the whole set;
+      // a standalone wireframe keeps the original single-page section layout.
+      const pages = Wireframe.setOf(wf);
+      const multi = pages.length > 1;
+      const pageSections = (spec, suffix, label) => {
+        const overviewHtml = (label ? '<p style="font-weight:700">' + esc(label) + '</p>' : '') +
+          '<p><strong>Grid:</strong> ' + spec.grid.cols + ' × ' + spec.grid.rows +
+          ' &middot; <strong>Components:</strong> ' + spec.components.length +
+          (spec.metrics.length ? ' &middot; <strong>Answers:</strong> ' + spec.metrics.map(esc).join(', ') : '') + '</p>';
+        const componentsHtml = Reports.table({
+          columns: [
+            { key: 'type', label: 'Component', width: '20%' },
+            { key: 'title', label: 'Title' },
+            { key: 'pos', label: 'Position', width: '14%', cell: r => '(' + r.x + ',' + r.y + ')' },
+            { key: 'size', label: 'Size', width: '12%', cell: r => r.w + '×' + r.h },
+            { key: 'metric', label: 'Shows', width: '20%', cell: r => esc(r.metric || '—') }
+          ],
+          rows: spec.components,
+          empty: 'No components placed yet'
+        });
+        const refsHtml = spec.references.length
+          ? '<ul>' + spec.references.map(r => '<li>' + esc(r.name) + (r.workbook ? ' <span style="color:var(--rp-muted)">(' + esc(r.workbook) + ')</span>' : '') + '</li>').join('') + '</ul>'
+          : '<p>No reference dashboards linked.</p>';
+        const pre = label ? esc(label) + ' — ' : '';
+        return [
+          { id: 'ws-overview' + suffix, title: (multi ? pre : '') + 'Overview', html: overviewHtml, audiences: internal },
+          { id: 'ws-components' + suffix, title: (multi ? pre : '') + 'Components (reading order)', html: componentsHtml, audiences: internal },
+          { id: 'ws-refs' + suffix, title: (multi ? pre : '') + 'Reference dashboards', html: refsHtml, audiences: internal }
+        ];
+      };
+      let sections, title;
+      if (multi) {
+        sections = [];
+        pages.forEach((pg, i) => { pageSections(Wireframe.toBuildSpec(pg), '-' + i, 'Page ' + (i + 1) + ': ' + (pg.name || 'Wireframe')).forEach(s => sections.push(s)); });
+        title = 'Build Spec — ' + (Wireframe.setBaseName(wf) || 'Wireframe set') + ' (' + pages.length + ' dashboards)';
+      } else {
+        const spec = Wireframe.toBuildSpec(wf);
+        sections = pageSections(spec, '', '');
+        title = 'Build Spec — ' + (spec.name || 'Wireframe');
+      }
       return Reports.Doc.buildDoc({
         reportType: 'wireframe_spec',
-        title: 'Build Spec — ' + (spec.name || 'Wireframe'),
-        subtitle: 'Developer build specification',
-        customer: spec.customer || '',
-        sections: [
-          { id: 'ws-overview', title: 'Overview', html: overviewHtml, audiences: internal },
-          { id: 'ws-components', title: 'Components (reading order)', html: componentsHtml, audiences: internal },
-          { id: 'ws-refs', title: 'Reference dashboards', html: refsHtml, audiences: internal }
-        ]
+        title: title,
+        subtitle: multi ? 'Developer build specification (dashboard set)' : 'Developer build specification',
+        customer: wf.customer || '',
+        sections: sections
       });
     },
     // Governance forum agenda pre-read. Internal only.
@@ -43252,6 +43270,58 @@ const Wireframe = {
     this._persist(wf, 'wireframe_project_link', old || '', projectId || '', 'user');
   },
 
+  // W3: multi-dashboard sets. A "set" is just wireframes sharing a set_id; a
+  // wireframe with no set_id is a standalone (a set of one). Members are
+  // ordered by set_order, then created_at as a stable tiebreak.
+  set(setId) {
+    if (!setId) return [];
+    return (App.data.wireframes || []).filter(w => w.set_id === setId)
+      .sort((a, b) => ((a.set_order || 0) - (b.set_order || 0)) || String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  },
+  setOf(wf) {
+    if (!wf) return [];
+    return wf.set_id ? this.set(wf.set_id) : [wf];
+  },
+
+  // W3: add a linked dashboard page to the same set as an existing wireframe.
+  // The source is promoted into a set the first time a page is added. The new
+  // page inherits customer/project/template/grid; it starts blank. Audited +
+  // undoable (the promotion + the new page are one step).
+  addPage(wfId, name) {
+    const src = this.get(wfId);
+    if (!src) return null;
+    App.pushUndo('Add wireframe page');
+    if (!src.set_id) {
+      src.set_id = 'WS-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+      if (src.set_order === undefined || src.set_order === null) src.set_order = 0;
+    }
+    const members = this.set(src.set_id);
+    const maxOrder = members.reduce((m, w) => Math.max(m, w.set_order || 0), 0);
+    const page = {
+      id: 'WF-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      customer: src.customer,
+      project_id: src.project_id || null,
+      name: name || (this.setBaseName(src) + ' (' + (members.length + 1) + ')'),
+      template_id: src.template_id,
+      template_kind: src.template_kind,
+      status: 'Concept',
+      grid: { cols: src.grid.cols, rows: src.grid.rows },
+      components: [],
+      metric_ids: [],
+      tableau_refs: [],
+      set_id: src.set_id,
+      set_order: maxOrder + 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    App.data.wireframes.push(page);
+    this._persist(page, 'wireframe_page_added', src.name, page.name, 'user');
+    return page;
+  },
+
+  // Strip a trailing " (n)" page suffix to recover the set's base name.
+  setBaseName(wf) { return String((wf && wf.name) || 'Dashboard set').replace(/\s*\(\d+\)\s*$/, ''); },
+
   // W1b: structured, build-ready spec for a wireframe — components in reading
   // order with geometry + bound metric, the answered metrics, and any Tableau
   // reference dashboards. Pure (no I/O); the Reports engine renders it.
@@ -43272,6 +43342,14 @@ const Wireframe = {
       metrics: (wf.metric_ids || []).map(metricName).filter(Boolean),
       references: (wf.tableau_refs || []).map(r => ({ name: r.name, workbook: r.workbook || '' }))
     };
+  },
+
+  // W3: build spec for a whole set — every page in order, each its own
+  // per-page build spec. A standalone wireframe yields a single-page set.
+  toSetBuildSpec(wf) {
+    if (!wf) return null;
+    const pages = this.setOf(wf);
+    return { name: this.setBaseName(wf), customer: wf.customer, pages: pages.map(p => this.toBuildSpec(p)) };
   },
 
   // Machine-checkable subset of the design guidelines. Returns
@@ -43429,18 +43507,7 @@ const WireframeSkill = {
       ];
       const out = await AI.structuredOutput(profile, messages, this._layoutSchema(def));
       const wf = Wireframe.create({ customer: App.activeCustomer, definition: def, name: out.name || brief, source: 'ai-wireframe' });
-      let rejected = 0;
-      out.components.slice(0, 16).forEach(c => {
-        const spec = Wireframe.componentSpec(def, c.type);
-        if (!spec) { rejected++; return; }
-        const comp = Wireframe.addComponent(wf.id, c.type, def, { x: 0, y: 0 });
-        if (typeof comp === 'string') { rejected++; return; }
-        Wireframe.updateComponent(wf.id, comp.id, {
-          x: App.toInteger(c.x), y: App.toInteger(c.y),
-          w: Math.max(spec.min_w, App.toInteger(c.w)), h: Math.max(spec.min_h, App.toInteger(c.h)),
-          title: typeof c.title === 'string' ? c.title.slice(0, 120) : ''
-        }, def);
-      });
+      const rejected = this._applyLayoutComponents(wf.id, out.components, def);
       if (rejected) App.toast(rejected + ' component(s) outside the governed vocabulary were dropped', 'info');
       this.edit(wf.id);
     } catch (e) {
@@ -43449,6 +43516,92 @@ const WireframeSkill = {
       this._busy = false;
       if (this._mode !== 'edit') this.render();
     }
+  },
+
+  // Apply a model-proposed component list to a wireframe through the clamped,
+  // vocabulary-enforced mutators. Returns the count dropped as off-vocabulary.
+  _applyLayoutComponents(wfId, components, def) {
+    let rejected = 0;
+    (components || []).slice(0, 16).forEach(c => {
+      const spec = Wireframe.componentSpec(def, c.type);
+      if (!spec) { rejected++; return; }
+      const comp = Wireframe.addComponent(wfId, c.type, def, { x: 0, y: 0 });
+      if (typeof comp === 'string') { rejected++; return; }
+      Wireframe.updateComponent(wfId, comp.id, {
+        x: App.toInteger(c.x), y: App.toInteger(c.y),
+        w: Math.max(spec.min_w, App.toInteger(c.w)), h: Math.max(spec.min_h, App.toInteger(c.h)),
+        title: typeof c.title === 'string' ? c.title.slice(0, 120) : ''
+      }, def);
+    });
+    return rejected;
+  },
+
+  // W3: schema for a linked dashboard SET — N conforming dashboards from one
+  // brief. Each dashboard reuses the single-layout schema.
+  _setSchema(def) {
+    return {
+      type: 'object', required: ['dashboards'],
+      properties: {
+        dashboards: { type: 'array', items: this._layoutSchema(def) }
+      }
+    };
+  },
+
+  // W3: draft a whole set of linked dashboards. Page 1 is a fresh wireframe;
+  // the rest are added as pages of the same set, each governed + clamped.
+  async aiDraftSet(briefArg) {
+    if (this._busy) return;
+    const def = this._def();
+    const input = document.getElementById('wfAiPrompt');
+    const brief = String(briefArg || (input ? input.value : '') || '').trim();
+    if (!brief) { App.toast('Describe the dashboard set first (e.g. "exec suite: overview, sales, ops")', 'error'); return; }
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    this._busy = true;
+    this.render();
+    try {
+      const profile = AI.profileForTask('design');
+      const guidelines = Definitions.resolve('tableau', App.activeCustomer);
+      const messages = [
+        {
+          role: 'system',
+          content: 'You design a SET of 2–5 linked Tableau dashboard wireframes on a ' + def.grid.cols + '×' + def.grid.rows + ' grid (x,y zero-based; w,h spans). Return them in "dashboards", in reading order; each needs a distinct "name".\n' +
+            'Use ONLY these component types with their minimum sizes:\n' +
+            def.components.map(c => '- ' + c.type + ' (min ' + c.min_w + '×' + c.min_h + ')').join('\n') +
+            '\nDESIGN RULES per dashboard (mandatory): exactly one title at y=0; KPIs in the top third; filters in the top band or right rail; no overlaps; everything on-grid; every chart needs a takeaway-style title; at most 12 components.\n' +
+            ((App.data.metrics || []).filter(m => m.customer === App.activeCustomer).length
+              ? 'CUSTOMER METRICS (prefer these as KPI/chart subjects): ' + (App.data.metrics || []).filter(m => m.customer === App.activeCustomer).slice(0, 15).map(m => m.name).join('; ') + '\n'
+              : '') +
+            'GUIDELINES:\n' + String(guidelines.files.guidelines || '').slice(0, 2200)
+        },
+        { role: 'user', content: 'Design a linked dashboard set for: ' + brief }
+      ];
+      const out = await AI.structuredOutput(profile, messages, this._setSchema(def));
+      const dashboards = (out.dashboards || []).filter(d => d && Array.isArray(d.components)).slice(0, 6);
+      if (!dashboards.length) { App.toast('The model returned no dashboards', 'error'); return; }
+      let firstId = null;
+      dashboards.forEach((d, di) => {
+        const name = (typeof d.name === 'string' && d.name.trim()) ? d.name.trim().slice(0, 120) : (brief + ' (' + (di + 1) + ')');
+        const wf = di === 0
+          ? Wireframe.create({ customer: App.activeCustomer, definition: def, name, source: 'ai-wireframe' })
+          : Wireframe.addPage(firstId, name);
+        if (di === 0) firstId = wf.id;
+        if (wf) this._applyLayoutComponents(wf.id, d.components, def);
+      });
+      App.toast('Drafted a set of ' + dashboards.length + ' linked dashboards', 'success');
+      if (firstId) this.edit(firstId);
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._busy = false;
+      if (this._mode !== 'edit') this.render();
+    }
+  },
+
+  uiAddPage() {
+    const page = Wireframe.addPage(this._wfId);
+    if (!page) { App.toast('Could not add a page', 'error'); return; }
+    App.toast('Page added to the set — Ctrl+Z to undo', 'success');
+    this.edit(page.id);
   },
 
   // --- canvas interactions ---
@@ -43788,11 +43941,22 @@ const WireframeSkill = {
   renderListHtml() {
     const esc = Dashboard.esc;
     const wfs = Wireframe.list(App.activeCustomer);
-    const rows = wfs.map(w => {
-      const proj = w.project_id ? (App.data.projects.find(p => p.id === w.project_id) || {}).name : null;
-      return '<div class="wf-list-row" onclick="WireframeSkill.edit(\'' + esc(w.id) + '\')">' +
-        '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(w.name) + '</span>' +
-        '<span style="font-size:11px;color:var(--text-muted)">' + w.components.length + ' components</span>' +
+    // W3: collapse a set to a single row (open its first page); standalones stay.
+    const seenSets = {};
+    const rows = wfs.filter(w => {
+      if (!w.set_id) return true;
+      if (seenSets[w.set_id]) return false;
+      seenSets[w.set_id] = true; return true;
+    }).map(w => {
+      const members = w.set_id ? Wireframe.set(w.set_id) : [w];
+      const rep = members[0] || w;
+      const isSet = members.length > 1;
+      const proj = rep.project_id ? (App.data.projects.find(p => p.id === rep.project_id) || {}).name : null;
+      const comps = members.reduce((n, m) => n + (m.components ? m.components.length : 0), 0);
+      return '<div class="wf-list-row" onclick="WireframeSkill.edit(\'' + esc(rep.id) + '\')">' +
+        '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(isSet ? Wireframe.setBaseName(rep) : w.name) +
+          (isSet ? ' <span class="sow-source-chip" title="Multi-dashboard set">' + members.length + ' pages</span>' : '') + '</span>' +
+        '<span style="font-size:11px;color:var(--text-muted)">' + comps + ' components</span>' +
         (proj ? '<span style="font-size:11px;color:var(--text-muted)">→ ' + esc(proj) + '</span>' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">not linked</span>') +
       '</div>';
     }).join('');
@@ -43803,6 +43967,7 @@ const WireframeSkill = {
           '<button class="btn btn-primary btn-sm" onclick="WireframeSkill.startNew()">+ New blank wireframe</button>' +
           '<input id="wfAiPrompt" class="field-input" style="min-width:280px;max-width:420px" placeholder="…or describe it: exec sales dashboard with regional drilldown" aria-label="AI wireframe brief">' +
           '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.aiDraft()"' + (this._busy ? ' disabled' : '') + '>' + (this._busy ? 'Designing…' : 'AI draft') + '</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.aiDraftSet()"' + (this._busy ? ' disabled' : '') + ' title="Draft a set of linked dashboards from one brief">' + (this._busy ? 'Designing…' : 'AI draft a set') + '</button>' +
           (AI.isConfigured() ? '' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">AI draft needs a model — Settings → AI &amp; Assistant</span>') +
         '</div>' +
       '</div></div>';
@@ -43945,6 +44110,22 @@ const WireframeSkill = {
         : '');
   },
 
+  // W3: dashboard-set page strip — switch between pages, add a new one.
+  _pageStripHtml(wf) {
+    const esc = Dashboard.esc;
+    const members = Wireframe.setOf(wf);
+    const tabs = members.length > 1
+      ? members.map((m, i) => '<button class="btn btn-sm ' + (m.id === wf.id ? 'btn-primary' : 'btn-outline') + '" onclick="WireframeSkill.edit(\'' + esc(m.id) + '\')" title="' + Dashboard.escAttr(m.name) + '">' + (i + 1) + '</button>').join('')
+      : '';
+    return '<div style="margin-bottom:10px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Dashboard set' + (members.length > 1 ? ' (' + members.length + ' pages)' : '') + '</div>' +
+      '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+        tabs +
+        '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiAddPage()" title="Add a linked dashboard page">+ Add page</button>' +
+      '</div>' +
+    '</div>';
+  },
+
   renderEditHtml() {
     const esc = Dashboard.esc;
     const wf = Wireframe.get(this._wfId);
@@ -43976,6 +44157,7 @@ const WireframeSkill = {
         '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
         '<div class="wf-side">' +
           '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + Dashboard.escAttr(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
+          this._pageStripHtml(wf) +
           '<div class="wf-conf" id="wfConf">' + this.renderConfHtml() + '</div>' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Component palette (governed vocabulary)</div>' +
           '<div class="wf-palette">' + palette + '</div>' +
