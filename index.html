@@ -3448,6 +3448,14 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
 .assistant-suggestions { display: flex; flex-direction: column; gap: 6px; width: 100%; }
 .assistant-suggestion { font-size: 12px; text-align: left; padding: 7px 10px; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-dark-secondary); cursor: pointer; }
 .assistant-suggestion:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+/* AS2: proactive briefing card */
+.assistant-brief { border: 1px solid var(--border-light); border-left: 3px solid var(--accent-blue); border-radius: var(--radius-md); background: var(--tint-blue-weak, rgba(59,130,246,0.06)); padding: 8px 10px; margin-bottom: 10px; font-size: 12px; color: var(--text-dark-secondary); }
+.assistant-brief-head { display: flex; align-items: center; justify-content: space-between; color: var(--text-dark); margin-bottom: 3px; }
+.assistant-brief-row { margin-top: 2px; }
+.assistant-brief-x { background: none; border: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.assistant-brief-x:hover { color: var(--text-dark); }
+/* AS3: tool-trace line under an answer */
+.assistant-trace { align-self: flex-start; max-width: 92%; font-size: 10.5px; color: var(--text-muted); padding: 1px 4px 4px; font-family: var(--font-mono, monospace); }
 .assistant-footer { border-top: 1px solid var(--border-light); padding: 10px 12px; flex-shrink: 0; display: flex; gap: 8px; align-items: flex-end; }
 .assistant-input { flex: 1; resize: none; min-height: 38px; max-height: 120px; font-size: 13px; font-family: inherit; padding: 9px 10px; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--bg-card); color: var(--text-dark); }
 .assistant-input:focus { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
@@ -40335,6 +40343,7 @@ const Assistant = {
   isOpen: false,
   _threads: {},        // customer -> [{ role, content }] model-facing history
   _rendered: {},       // customer -> [render items {kind, ...}]
+  _briefDismissed: {}, // AS2: scope-key -> true once the proactive briefing is dismissed
   _pending: false,
   _abort: null,
   PERSIST_KEY: 'pcc_assistant_threads',
@@ -40387,7 +40396,67 @@ const Assistant = {
     'Where are we over capacity across the whole team?',
     'What changed across the portfolio in the last week?'
   ],
-  _suggestions() { return (App.allCustomers && !App.customerMode) ? this.SUGGESTIONS_ALL : this.SUGGESTIONS; },
+  // AS4: scope-aware + view-aware quick prompts. A view/context-specific chip is
+  // prepended so the suggestions match what the user is looking at right now.
+  VIEW_PROMPTS: {
+    raid: 'Summarise the open RAID items I should worry about.',
+    capacity: 'Where are we over capacity in the next few sprints?',
+    sprint: 'Is the current sprint plan realistic, and what would you move?',
+    roadmap: 'Which deliveries are at risk of slipping their dates?',
+    board: 'What is blocked right now and who is it waiting on?'
+  },
+  _suggestions() {
+    const base = (App.allCustomers && !App.customerMode) ? this.SUGGESTIONS_ALL : this.SUGGESTIONS;
+    const extra = [];
+    if (typeof DetailPanel !== 'undefined' && DetailPanel.currentId) extra.push('Draft a SOW for the project I have open.');
+    const vp = this.VIEW_PROMPTS[App.currentView];
+    if (vp) extra.push(vp);
+    // Prepend the context chips, de-duped, capped so the list stays scannable.
+    return extra.concat(base.filter(s => extra.indexOf(s) < 0)).slice(0, 6);
+  },
+
+  // AS2: a proactive "since last week" briefing built from the recent_changes
+  // read tool (pure — no model call). Shown once per scope-key until dismissed.
+  _computeBriefing() {
+    if (typeof AgentTools === 'undefined' || !App.data) return null;
+    const ctx = { customer: App.activeCustomer, allScope: App.allCustomers && !App.customerMode, citations: [], proposals: [] };
+    let d;
+    try { d = AgentTools.invoke('recent_changes', { days: 7 }, ctx); } catch (e) { return null; }
+    if (!d || d.error) return null;
+    const c = d.counts || {};
+    const changeTotal = (c.status || 0) + (c.rag || 0) + (c.raid || 0) + (c.priority || 0) + (c.documents || 0);
+    const deadlines = d.deadlines_next_30_days || [];
+    if (changeTotal === 0 && !deadlines.length) return null; // nothing worth interrupting for
+    return d;
+  },
+  _briefingHtml(d) {
+    const esc = Dashboard.esc;
+    const c = d.counts || {};
+    const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+    const bits = [];
+    if (c.status) bits.push(plural(c.status, 'status change'));
+    if (c.rag) bits.push(plural(c.rag, 'RAG flip'));
+    if (c.raid) bits.push(plural(c.raid, 'RAID update'));
+    if (c.documents) bits.push(plural(c.documents, 'document event'));
+    const dls = (d.deadlines_next_30_days || []).slice(0, 3)
+      .map(x => esc(x.project) + ' <span style="color:var(--text-muted)">' + x.days_left + 'd</span>').join(', ');
+    return '<div class="assistant-brief">' +
+      '<div class="assistant-brief-head"><strong>Since last week</strong>' +
+        '<button class="assistant-brief-x" title="Dismiss" aria-label="Dismiss briefing" onclick="Assistant.dismissBriefing()">&times;</button></div>' +
+      (bits.length ? '<div class="assistant-brief-row">' + esc(bits.join(' · ')) + '</div>' : '<div class="assistant-brief-row" style="color:var(--text-muted)">No notable changes.</div>') +
+      (dls ? '<div class="assistant-brief-row"><span style="color:var(--text-muted)">Deadlines ≤30d:</span> ' + dls + '</div>' : '') +
+      '<button class="assistant-suggestion" style="margin-top:6px" onclick="Assistant.ask(\'What changed in the last week, and what needs my attention?\')">Brief me</button>' +
+    '</div>';
+  },
+  dismissBriefing() { this._briefDismissed[this._customerKey()] = true; this.render(); },
+  // AS3: render the tools the assistant chained to reach the answer (transparency).
+  _traceHtml(trace) {
+    const esc = Dashboard.esc;
+    const tools = (trace || []).filter(t => t && t.tool);
+    if (!tools.length) return '';
+    return '<div class="assistant-trace" title="Tools the assistant used to answer">Steps: ' +
+      tools.map(t => esc(t.tool) + (t.ok === false ? ' ✗' : '')).join(' → ') + '</div>';
+  },
 
   // The "All customers" filter gets its own thread so the portfolio-wide
   // conversation never bleeds into a single customer's (and vice versa).
@@ -40491,7 +40560,7 @@ const Assistant = {
       thread.push({ role: 'user', content: text });
       thread.push({ role: 'assistant', content: res.text });
       this._saveThreads();
-      items.push({ kind: 'assistant', text: res.text });
+      items.push({ kind: 'assistant', text: res.text, trace: res.trace });
       if (res.citations && res.citations.length) items.push({ kind: 'cites', cites: res.citations });
       (res.proposals || []).forEach(p => items.push({ kind: 'proposal', proposal: p, state: 'pending' }));
     } catch (e) {
@@ -40576,16 +40645,21 @@ const Assistant = {
 
     const items = this._items();
     let html = '';
+    // AS2: proactive briefing sits at the top until dismissed for this scope.
+    if (!this._briefDismissed[this._customerKey()]) {
+      const brief = this._computeBriefing();
+      if (brief) html += this._briefingHtml(brief);
+    }
     if (!items.length) {
       html += '<div class="assistant-empty">' +
-        '<div style="font-weight:700;color:var(--text-dark)">Ask anything about ' + esc(App.activeCustomer || 'this customer') + '</div>' +
+        '<div style="font-weight:700;color:var(--text-dark)">Ask anything about ' + esc(App.allCustomers && !App.customerMode ? 'all customers' : (App.activeCustomer || 'this customer')) + '</div>' +
         '<div class="assistant-suggestions">' +
         this._suggestions().map((s, i) => '<button class="assistant-suggestion" onclick="Assistant.askSuggestion(' + i + ')">' + esc(s) + '</button>').join('') +
         '</div></div>';
     } else {
       items.forEach((item, idx) => {
         if (item.kind === 'user') html += '<div class="assistant-msg user">' + esc(item.text) + '</div>';
-        else if (item.kind === 'assistant') html += '<div class="assistant-msg assistant">' + esc(item.text) + '</div>';
+        else if (item.kind === 'assistant') html += '<div class="assistant-msg assistant">' + esc(item.text) + '</div>' + this._traceHtml(item.trace);
         else if (item.kind === 'error') html += '<div class="assistant-msg error">' + esc(item.text) + '</div>';
         else if (item.kind === 'cites') {
           html += '<div class="assistant-cites">' + item.cites.slice(0, 12).map((c, ci) =>

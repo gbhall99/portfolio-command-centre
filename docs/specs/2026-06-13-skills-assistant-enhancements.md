@@ -225,13 +225,13 @@ Build order = value first, and the three "if I could only do three" picks lead:
 | 3 | AS1 portfolio scope + skills-as-tools | DONE |
 | 4 | S2 RAID/clause library | spec'd |
 | 5 | W2 component↔metric binding | spec'd |
-| 6 | AS2 proactive briefing | spec'd |
+| 6 | AS2 proactive briefing | DONE |
 | 7 | S3 stale-quote | spec'd |
 | 8 | W4 conformance one-click fix | spec'd |
-| 9 | AS3 multi-step plans | spec'd |
+| 9 | AS3 visible tool steps | DONE |
 | 10 | S4 redline + gate | spec'd |
 | 11 | W3 multi-dashboard sets | spec'd |
-| 12 | AS4 prompt chips + local-model robustness | spec'd |
+| 12 | AS4 view-aware prompt chips | DONE |
 
 Update this table as items land. Each lands as its own tested commit; PR per
 small batch (≈3 items), suite green per the conventions above.
