@@ -13628,6 +13628,61 @@ const Metrics = {
     };
   },
 
+  // Phase 3.3: a grounded fact pack for narrating a metric — its movement (from
+  // recorded actuals, never invented), target, the objectives it serves, who is
+  // accountable/responsible (RACI), and which projects deliver it. Built on
+  // rollup() so it reuses the canonical cascade resolution.
+  insightFor(metricId) {
+    const m = this.byId(metricId);
+    if (!m) return null;
+    const r = this.rollup(metricId) || { holders: [], served_objectives: [], delivering_projects: [], raci_people: { accountable: [], responsible: [] }, raci_personas: { accountable: [] } };
+    const num = (v) => Number(v);
+    const actuals = (m.actuals || [])
+      .filter(a => a && a.period != null && a.value != null && isFinite(num(a.value)))
+      .map(a => ({ period: String(a.period), value: num(a.value) }))
+      .sort((a, b) => a.period.localeCompare(b.period));
+    const latest = actuals.length ? actuals[actuals.length - 1] : null;
+    const previous = actuals.length > 1 ? actuals[actuals.length - 2] : null;
+    let movement = null;
+    if (latest && previous) {
+      const delta = Math.round((latest.value - previous.value) * 100) / 100;
+      const betterIsUp = m.direction !== 'lower_is_better';
+      const dir = delta === 0 ? 'flat' : ((delta > 0) === betterIsUp ? 'improved' : 'worsened');
+      movement = { from: previous.value, to: latest.value, delta, direction: dir };
+    }
+    let target = null;
+    (r.holders || []).forEach(h => (h.holding && h.holding.targets || []).forEach(t => {
+      if (t && t.value != null && isFinite(num(t.value)) && (!target || String(t.period) > target.period)) {
+        target = { period: String(t.period), value: num(t.value), held_by: h.persona.name };
+      }
+    }));
+    const names = (arr) => (arr || []).map(x => x.name);
+    return {
+      id: m.id, name: m.name, unit: m.unit || '', direction: m.direction || 'higher_is_better',
+      definition: (m.definition || '').slice(0, 300),
+      has_actuals: actuals.length > 0, latest, previous, movement, target,
+      objectives: names(r.served_objectives),
+      accountable: names(r.raci_people.accountable), responsible: names(r.raci_people.responsible),
+      accountable_personas: names(r.raci_personas.accountable),
+      delivering_projects: (r.delivering_projects || []).map(p => ({ id: p.id, name: p.name }))
+    };
+  },
+  // A deterministic, grounded one-line narrative for a report/UI — every figure
+  // comes from recorded actuals/targets, never invented.
+  movementSummary(metricId) {
+    const i = this.insightFor(metricId);
+    if (!i) return '';
+    const u = i.unit ? ' ' + i.unit : '';
+    const parts = [];
+    if (i.movement) parts.push(i.name + ' ' + i.movement.direction + ' from ' + i.movement.from + u + ' to ' + i.movement.to + u);
+    else if (i.latest) parts.push(i.name + ' is ' + i.latest.value + u + ' (' + i.latest.period + ')');
+    else parts.push(i.name + ' — no actuals recorded yet');
+    if (i.target) parts.push('target ' + i.target.value + u + ' (' + i.target.period + ')');
+    if (i.objectives.length) parts.push('serves ' + i.objectives.join(', '));
+    if (i.accountable.length) parts.push('accountable: ' + i.accountable.join(', '));
+    return parts.join(' · ');
+  },
+
   // Returns the RACI letter(s) a Person has on a given metric, e.g. 'A' or 'CR'.
   // Empty string if none.
   raciFor(metric, personId) {
@@ -37717,7 +37772,8 @@ const Reports = {
       const metrics = (p.metric_ids || []).map(id => (typeof Metrics !== 'undefined' ? Metrics.byId(id) : null)).filter(Boolean);
       const metricsHtml = metrics.length
         ? '<p style="margin-top:8px"><strong>Metrics this delivery moves:</strong></p><ul>' +
-          metrics.map(m => '<li>' + esc(m.name) + (m.target != null && m.target !== '' ? ' — target ' + esc(String(m.target)) : '') + '</li>').join('') + '</ul>'
+          // Phase 3.3: grounded movement narration (recorded actuals/targets only).
+          metrics.map(m => '<li>' + esc((typeof Metrics !== 'undefined' && Metrics.movementSummary) ? (Metrics.movementSummary(m.id) || m.name) : m.name) + '</li>').join('') + '</ul>'
         : '';
       const benefitAnnual = Number(p.benefit_annual_gbp || 0);
       const valueHtml = benefitAnnual > 0 ? '<p>Estimated annual benefit: <strong>£' + benefitAnnual.toLocaleString('en-GB') + '</strong>.</p>' : '';
@@ -40318,6 +40374,24 @@ const AgentTools = {
         const rows = (App.data.metrics || []).filter(m => ctx.allScope || !ctx.customer || m.customer === ctx.customer);
         rows.forEach(m => AgentTools._cite(ctx, 'metric', m.id, m.name));
         return { metrics: rows.map(m => ({ id: m.id, name: m.name, definition: (m.definition || '').slice(0, 200), unit: m.unit || '' })) };
+      }
+    },
+    {
+      name: 'metric_insight', scope: 'read',
+      description: 'Grounded facts for narrating a strategy metric: its latest value and movement vs target (from RECORDED actuals — never invented), the objectives it serves, who is accountable/responsible (RACI), and the projects delivering it. Use to explain how a metric is moving and why it matters. Find the id with list_metrics.',
+      params: { metric_id: { type: 'string', description: 'The metric id' } },
+      handler(args, ctx) {
+        const m = (App.data.metrics || []).find(x => x.id === args.metric_id && (ctx.allScope || !ctx.customer || x.customer === ctx.customer));
+        if (!m) return { error: 'No metric with id ' + args.metric_id + ' for this customer' };
+        const i = Metrics.insightFor(m.id);
+        if (!i) return { error: 'Could not resolve metric ' + args.metric_id };
+        AgentTools._cite(ctx, 'metric', m.id, m.name);
+        i.delivering_projects.forEach(p => AgentTools._cite(ctx, 'project', p.id, p.name));
+        return Object.assign({
+          note: i.has_actuals
+            ? 'Narrate the movement plainly — every figure here is recorded data; do not invent numbers.'
+            : 'No actuals recorded for this metric — describe its strategic context and ownership; never invent a value.'
+        }, i);
       }
     },
     {
