@@ -39982,6 +39982,49 @@ const AgentTools = {
         };
       }
     },
+    {
+      name: 'list_dependencies', scope: 'read',
+      description: 'List dependencies declared on the active customer’s projects (both project-to-project links and external blockers). Use before manage_dependency to find the right index to remove.',
+      params: { project_id: { type: 'string', optional: true, description: 'Limit to one project id' } },
+      handler(args, ctx) {
+        const rows = [];
+        AgentTools._projects(ctx).filter(p => !args.project_id || p.id === args.project_id).forEach(p => {
+          (p.dependencies || []).forEach((d, i) => rows.push({
+            project_id: p.id, project_name: p.name, index: i,
+            kind: d.kind || 'project', type: d.type || '',
+            target_id: d.target_id || null, label: d.label || '', expected_date: d.expected_date || null
+          }));
+        });
+        rows.slice(0, 50).forEach(r => AgentTools._cite(ctx, 'project', r.project_id, r.project_name));
+        return { count: rows.length, note: 'index is per project — use it with manage_dependency remove', dependencies: rows.slice(0, 200) };
+      }
+    },
+    {
+      name: 'list_milestones', scope: 'read',
+      description: 'List customer milestones across the active customer’s projects (name, date, status). Use before set_milestone to find the index to update/remove.',
+      params: { project_id: { type: 'string', optional: true, description: 'Limit to one project id' } },
+      handler(args, ctx) {
+        const rows = [];
+        AgentTools._projects(ctx).filter(p => !args.project_id || p.id === args.project_id).forEach(p => {
+          (p.customer_milestones || []).forEach((m, i) => rows.push({
+            project_id: p.id, project_name: p.name, index: i,
+            name: m.name || '', date: m.date || null, status: m.status || 'Planned',
+            external_commitment: !!m.external_commitment
+          }));
+        });
+        rows.slice(0, 50).forEach(r => AgentTools._cite(ctx, 'project', r.project_id, r.project_name));
+        return { count: rows.length, note: 'index is per project — use it with set_milestone', milestones: rows.slice(0, 200) };
+      }
+    },
+    {
+      name: 'list_objectives', scope: 'read',
+      description: 'List strategy objectives for the active customer (id, name, status, time horizon).',
+      params: {},
+      handler(args, ctx) {
+        const rows = (App.data.objectives || []).filter(o => ctx.allScope || !ctx.customer || o.customer === ctx.customer);
+        return { objectives: rows.map(o => ({ id: o.id, name: o.name, status: o.status || 'active', start_date: (o.time_horizon || {}).start_date || null, target_date: (o.time_horizon || {}).target_date || null })) };
+      }
+    },
 
     {
       name: 'simulate_plan', scope: 'read',
@@ -40445,6 +40488,363 @@ const AgentTools = {
         };
         ctx.proposals.push(proposal);
         return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been saved.' };
+      }
+    },
+    // --- NL-to-action coverage (Phase 1.1): write tools for entities the
+    // assistant previously couldn't touch — dependencies, milestones, capacity,
+    // strategy, billing, governance. Each is proposal-gated, validated, and
+    // routes apply() through the canonical mutator (audited 'ai', undoable). ---
+    {
+      name: 'manage_dependency', scope: 'write',
+      description: 'Propose adding or removing a dependency on a project. action=add links to another project (give target_id) or an external blocker (give label). action=remove takes the index from list_dependencies. The user must confirm.',
+      params: {
+        project_id: { type: 'string', description: 'The project the dependency is on' },
+        action: { type: 'string', enum: ['add', 'remove'], description: 'add or remove' },
+        type: { type: 'string', optional: true, enum: ['blocked_by', 'blocks', 'related'], description: 'add: relationship type (default blocked_by)' },
+        target_id: { type: 'string', optional: true, description: 'add (project link): the other project id' },
+        label: { type: 'string', optional: true, description: 'add (external blocker): a short label instead of target_id' },
+        index: { type: 'integer', optional: true, description: 'remove: the index from list_dependencies' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        if (!Array.isArray(p.dependencies)) p.dependencies = [];
+        let summary, change, dep, idx;
+        if (args.action === 'add') {
+          const type = args.type || 'blocked_by';
+          if (args.target_id) {
+            const target = AgentTools._projects(ctx).find(x => x.id === args.target_id);
+            if (!target) return { error: 'No target project with id ' + args.target_id + ' for this customer' };
+            if (target.id === p.id) return { error: 'A project cannot depend on itself' };
+            if ((p.dependencies || []).some(d => d.kind !== 'external' && d.target_id === target.id && d.type === type)) return { error: 'That dependency already exists' };
+            dep = { kind: 'project', type, target_id: target.id };
+            change = { field: 'dependency', before: '', after: type.replace('_', ' ') + ' → ' + target.name };
+            summary = 'Add dependency on “' + p.name + '”: ' + type.replace('_', ' ') + ' ' + target.name;
+          } else if (args.label) {
+            dep = { kind: 'external', type, label: String(args.label).slice(0, 160), expected_date: null, notes: '' };
+            change = { field: 'external dependency', before: '', after: type.replace('_', ' ') + ' → ' + dep.label };
+            summary = 'Add external dependency on “' + p.name + '”: ' + dep.label;
+          } else {
+            return { error: 'add needs either target_id (project link) or label (external blocker)' };
+          }
+        } else {
+          idx = App.toInteger(args.index);
+          const existing = p.dependencies[idx];
+          if (!existing) return { error: 'No dependency at index ' + args.index + ' on ' + p.name + ' (it has ' + p.dependencies.length + ')' };
+          const desc = existing.kind === 'external' ? existing.label : ((AgentTools._projects(ctx).find(x => x.id === existing.target_id) || {}).name || existing.target_id);
+          change = { field: 'dependency #' + idx, before: (existing.type || '') + ' ' + (desc || ''), after: 'removed' };
+          summary = 'Remove a dependency from “' + p.name + '”';
+        }
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'manage_dependency', summary, reason: args.reason || '',
+          entity: { type: 'project', id: p.id, name: p.name }, changes: [change],
+          apply() {
+            App.pushUndo((args.action === 'add' ? 'Add' : 'Remove') + ' dependency on ' + p.name);
+            if (args.action === 'add') p.dependencies.push(dep);
+            else p.dependencies.splice(idx, 1);
+            p.last_updated = new Date().toISOString();
+            App.logChange(p.id, args.action === 'add' ? 'dependency_added' : 'dependency_removed', change.before || '', change.after, 'ai');
+            App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'set_milestone', scope: 'write',
+      description: 'Propose adding, updating or removing a customer milestone on a project (a dated commitment shown on the roadmap). action=add/update/remove. For update/remove pass the index from list_milestones. The user must confirm.',
+      params: {
+        project_id: { type: 'string', description: 'The project id' },
+        action: { type: 'string', enum: ['add', 'update', 'remove'], description: 'add, update or remove' },
+        name: { type: 'string', optional: true, description: 'add/update: milestone name' },
+        date: { type: 'string', optional: true, description: 'add/update: YYYY-MM-DD' },
+        status: { type: 'string', optional: true, enum: ['Planned', 'Achieved', 'Missed', 'At risk'], description: 'add/update: status' },
+        external_commitment: { type: 'boolean', optional: true, description: 'add/update: is this a commitment made to the customer' },
+        index: { type: 'integer', optional: true, description: 'update/remove: index from list_milestones' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
+        if (!Array.isArray(p.customer_milestones)) p.customer_milestones = [];
+        let summary, changes = [], idx;
+        if (args.action === 'add') {
+          if (!args.name || !args.date) return { error: 'add needs name and date (YYYY-MM-DD)' };
+          changes = [{ field: 'milestone', before: '', after: String(args.name).slice(0, 120) + ' (' + args.date + ', ' + (args.status || 'Planned') + ')' }];
+          summary = 'Add milestone “' + String(args.name).slice(0, 60) + '” to ' + p.name;
+        } else {
+          idx = App.toInteger(args.index);
+          const existing = p.customer_milestones[idx];
+          if (!existing) return { error: 'No milestone at index ' + args.index + ' on ' + p.name + ' (it has ' + p.customer_milestones.length + ')' };
+          if (args.action === 'remove') {
+            changes = [{ field: 'milestone #' + idx, before: (existing.name || '') + ' (' + (existing.date || '') + ')', after: 'removed' }];
+            summary = 'Remove milestone from ' + p.name;
+          } else {
+            if (args.name !== undefined && args.name !== '') changes.push({ field: 'name', before: existing.name || '', after: String(args.name).slice(0, 120) });
+            if (args.date !== undefined && args.date !== '') changes.push({ field: 'date', before: existing.date || '', after: args.date });
+            if (args.status !== undefined && args.status !== '') changes.push({ field: 'status', before: existing.status || '', after: args.status });
+            if (typeof args.external_commitment === 'boolean') changes.push({ field: 'external commitment', before: String(!!existing.external_commitment), after: String(args.external_commitment) });
+            if (!changes.length) return { error: 'update needs at least one of name, date, status, external_commitment' };
+            summary = 'Update milestone on ' + p.name;
+          }
+        }
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'set_milestone', summary, reason: args.reason || '',
+          entity: { type: 'project', id: p.id, name: p.name }, changes,
+          apply() {
+            App.pushUndo('Milestone change on ' + p.name);
+            if (args.action === 'add') {
+              p.customer_milestones.push({ name: String(args.name).slice(0, 120), date: args.date, status: args.status || 'Planned', notes: '', external_commitment: !!args.external_commitment });
+            } else if (args.action === 'remove') {
+              p.customer_milestones.splice(idx, 1);
+            } else {
+              const m = p.customer_milestones[idx];
+              if (args.name !== undefined && args.name !== '') m.name = String(args.name).slice(0, 120);
+              if (args.date !== undefined && args.date !== '') m.date = args.date;
+              if (args.status !== undefined && args.status !== '') m.status = args.status;
+              if (typeof args.external_commitment === 'boolean') m.external_commitment = args.external_commitment;
+            }
+            p.last_updated = new Date().toISOString();
+            App.logChange(p.id, 'customer_milestone_' + args.action, '', summary, 'ai');
+            App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'update_capacity', scope: 'write',
+      description: 'Propose changing a team member’s capacity: their default available story points per sprint, and/or a one-sprint override. Identify the member by exact name (use list_team_members). The user must confirm.',
+      params: {
+        member_name: { type: 'string', description: 'Exact team member name' },
+        available_points: { type: 'integer', optional: true, description: 'New default points available per sprint' },
+        sprint_id: { type: 'string', optional: true, description: 'A sprint id to override capacity for just that sprint' },
+        sprint_points: { type: 'integer', optional: true, description: 'Override points for sprint_id (needs sprint_id)' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        const m = (App.data.team_members || []).find(x => x.name === args.member_name && (ctx.allScope || !ctx.customer || x.customer === ctx.customer || x.customer === 'Both'));
+        if (!m) return { error: 'No team member named "' + (args.member_name || '') + '" for this customer. Use list_team_members.' };
+        const hasDefault = args.available_points !== undefined && args.available_points !== null && args.available_points !== '';
+        const hasOverride = args.sprint_id && args.sprint_points !== undefined && args.sprint_points !== null && args.sprint_points !== '';
+        if (!hasDefault && !hasOverride) return { error: 'Provide available_points, or both sprint_id and sprint_points' };
+        if (args.sprint_id && !hasOverride) return { error: 'sprint_id needs sprint_points' };
+        if (args.sprint_id && !(App.data.sprints || []).some(s => s.sprint_id === args.sprint_id)) return { error: 'Unknown sprint ' + args.sprint_id };
+        const changes = [];
+        if (hasDefault) changes.push({ field: 'available points / sprint', before: String(App.toInteger(m.available_points_per_sprint || 0)), after: String(App.toInteger(args.available_points)) });
+        if (hasOverride) {
+          const cur = ((m.sprint_overrides || {})[args.sprint_id] || {}).available_points;
+          changes.push({ field: args.sprint_id + ' override', before: cur === undefined ? '(default)' : String(cur), after: String(App.toInteger(args.sprint_points)) });
+        }
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'update_capacity', summary: 'Update capacity for ' + m.name, reason: args.reason || '',
+          entity: { type: 'member', id: m.name, name: m.name }, changes,
+          apply() {
+            App.pushUndo('Update capacity for ' + m.name);
+            if (hasDefault) m.available_points_per_sprint = App.toInteger(args.available_points);
+            if (hasOverride) {
+              if (!m.sprint_overrides || typeof m.sprint_overrides !== 'object') m.sprint_overrides = {};
+              if (!m.sprint_overrides[args.sprint_id] || typeof m.sprint_overrides[args.sprint_id] !== 'object') m.sprint_overrides[args.sprint_id] = {};
+              m.sprint_overrides[args.sprint_id].available_points = App.toInteger(args.sprint_points);
+            }
+            App.logChange(null, 'team_member_capacity', '', m.name + ': ' + changes.map(c => c.field + '=' + c.after).join(', '), 'ai');
+            App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'member', m.name, m.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'update_strategy', scope: 'write',
+      description: 'Propose creating or updating a strategy entity for the active customer. entity=objective (name/status/description) or metric (name/definition/unit). action=create or update (update needs id). The user must confirm.',
+      params: {
+        entity: { type: 'string', enum: ['objective', 'metric'], description: 'What to write' },
+        action: { type: 'string', enum: ['create', 'update'], description: 'create or update' },
+        id: { type: 'string', optional: true, description: 'update: the entity id' },
+        name: { type: 'string', optional: true, description: 'create/update: the name' },
+        status: { type: 'string', optional: true, description: 'objective: active/achieved/abandoned; metric: draft/active/retired' },
+        description: { type: 'string', optional: true, description: 'objective: description' },
+        definition: { type: 'string', optional: true, description: 'metric: definition' },
+        unit: { type: 'string', optional: true, description: 'metric: unit, e.g. % or £' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        const isObj = args.entity === 'objective';
+        const mod = isObj ? Objectives : Metrics;
+        let existing = null;
+        if (args.action === 'update') {
+          if (!args.id) return { error: 'update needs id' };
+          existing = mod.byId(args.id);
+          if (!existing || existing.customer !== ctx.customer) return { error: 'No ' + args.entity + ' with id ' + args.id + ' for this customer' };
+        } else if (!args.name) {
+          return { error: 'create needs a name' };
+        }
+        const patch = {};
+        const changes = [];
+        const setField = (key, val, label) => {
+          if (val === undefined || val === '') return;
+          patch[key] = val;
+          changes.push({ field: label || key, before: existing ? String(existing[key] != null ? existing[key] : '') : '', after: String(val) });
+        };
+        setField('name', args.name);
+        setField('status', args.status);
+        if (isObj) setField('description', args.description);
+        else { setField('definition', args.definition); setField('unit', args.unit); }
+        if (args.action === 'update' && !changes.length) return { error: 'update needs at least one field to change' };
+        const summary = (args.action === 'create' ? 'Create ' : 'Update ') + args.entity + ' ' + (args.name || (existing && existing.name) || '');
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'update_strategy', summary, reason: args.reason || '',
+          entity: { type: isObj ? 'objective' : 'metric', id: args.id || null, name: args.name || (existing && existing.name) || '' }, changes,
+          apply() {
+            App.pushUndo(summary);
+            let rec;
+            if (args.action === 'create') {
+              rec = mod.add(Object.assign({ customer: ctx.customer }, patch));
+              if (!rec) return { error: isObj ? 'Could not create objective' : 'Could not create metric (no metric group configured for this customer)' };
+              proposal.entity.id = rec.id;
+            } else {
+              rec = mod.update(args.id, patch);
+            }
+            App.logChange(null, args.entity + '_' + args.action + 'd', '', summary, 'ai');
+            App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+            return { applied: true, id: rec && rec.id };
+          }
+        };
+        ctx.proposals.push(proposal);
+        if (existing) AgentTools._cite(ctx, isObj ? 'objective' : 'metric', existing.id, existing.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'update_billing_arrangement', scope: 'write',
+      description: 'Propose adding or removing a prepaid billing block (retainer) for the active customer. action=add (label, skill, prepaid_points, optional amount_invoiced) or remove (id from billing_summary arrangements). skill is a size_* key or "any". The user must confirm.',
+      params: {
+        action: { type: 'string', enum: ['add', 'remove'], description: 'add or remove' },
+        label: { type: 'string', optional: true, description: 'add: a name for the block' },
+        skill: { type: 'string', optional: true, enum: ['size_requirements', 'size_tableau', 'size_engineering', 'size_data_science', 'size_uat_adoption', 'any'], description: 'add: which skill the prepaid points cover (default any)' },
+        prepaid_points: { type: 'integer', optional: true, description: 'add: number of prepaid story points' },
+        amount_invoiced: { type: 'number', optional: true, description: 'add: amount already invoiced for the block' },
+        id: { type: 'string', optional: true, description: 'remove: the arrangement id' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        let summary, changes, removeId;
+        if (args.action === 'add') {
+          if (!App.toInteger(args.prepaid_points)) return { error: 'add needs prepaid_points > 0' };
+          const label = String(args.label || 'Prepaid block').slice(0, 120);
+          const skill = args.skill || 'any';
+          summary = 'Add prepaid block “' + label + '” for ' + ctx.customer;
+          changes = [
+            { field: 'skill', before: '', after: skill === 'any' ? 'any skill' : skill.replace('size_', '') },
+            { field: 'prepaid points', before: '', after: String(App.toInteger(args.prepaid_points)) }
+          ].concat(args.amount_invoiced ? [{ field: 'amount invoiced', before: '', after: String(Number(args.amount_invoiced) || 0) }] : []);
+        } else {
+          if (!args.id) return { error: 'remove needs id' };
+          const arr = (App.data.billing_arrangements || []).find(a => a.id === args.id && a.customer === ctx.customer);
+          if (!arr) return { error: 'No billing arrangement with id ' + args.id + ' for this customer' };
+          removeId = arr.id;
+          summary = 'Remove prepaid block “' + arr.label + '” from ' + ctx.customer;
+          changes = [{ field: arr.label, before: arr.prepaid_points + ' SP prepaid', after: 'removed' }];
+        }
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'update_billing_arrangement', summary, reason: args.reason || '',
+          entity: { type: 'billing', id: removeId || null, name: ctx.customer }, changes,
+          apply() {
+            if (args.action === 'add') {
+              Billing.addArrangement({ customer: ctx.customer, label: args.label || 'Prepaid block', skill: args.skill || 'any', prepaid_points: App.toInteger(args.prepaid_points), amount_invoiced: Number(args.amount_invoiced) || 0 }, 'ai');
+            } else {
+              Billing.removeArrangement(removeId, 'ai');
+            }
+            App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+      }
+    },
+    {
+      name: 'update_governance', scope: 'write',
+      description: 'Propose a governance write: action=add_forum creates a governance forum for the active customer (name, optional cadence/next_date); action=log_decision records a decision on a project (project_id, decision text, optional rationale/decided_by). The user must confirm.',
+      params: {
+        action: { type: 'string', enum: ['add_forum', 'log_decision'], description: 'add_forum or log_decision' },
+        name: { type: 'string', optional: true, description: 'add_forum: forum name' },
+        cadence: { type: 'string', optional: true, enum: ['Weekly', 'Fortnightly', 'Monthly', 'Quarterly'], description: 'add_forum: cadence' },
+        next_date: { type: 'string', optional: true, description: 'add_forum: next meeting YYYY-MM-DD' },
+        project_id: { type: 'string', optional: true, description: 'log_decision: the project id' },
+        decision: { type: 'string', optional: true, description: 'log_decision: the decision text' },
+        rationale: { type: 'string', optional: true, description: 'log_decision: why' },
+        decided_by: { type: 'string', optional: true, description: 'log_decision: who decided' },
+        reason: { type: 'string', optional: true, description: 'One-line rationale shown to the user' }
+      },
+      handler(args, ctx) {
+        if (!ctx.customer) return { error: 'No active customer selected' };
+        if (args.action === 'add_forum') {
+          const name = String(args.name || '').trim().slice(0, 120);
+          if (name.length < 2) return { error: 'add_forum needs a name' };
+          if (!Array.isArray(App.data.governance_forums)) App.data.governance_forums = [];
+          if (App.data.governance_forums.some(f => f.name === name && f.customer === ctx.customer)) return { error: 'A forum named "' + name + '" already exists for this customer' };
+          const summary = 'Add governance forum “' + name + '” for ' + ctx.customer;
+          const proposal = {
+            id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+            kind: 'update_governance', summary, reason: args.reason || '',
+            entity: { type: 'forum', id: name, name }, changes: [
+              { field: 'forum', before: '', after: name },
+              { field: 'cadence', before: '', after: args.cadence || 'Monthly' }
+            ].concat(args.next_date ? [{ field: 'next meeting', before: '', after: args.next_date }] : []),
+            apply() {
+              App.pushUndo('Add governance forum ' + name);
+              App.data.governance_forums.push({ name, customer: ctx.customer, cadence: args.cadence || 'Monthly', next_date: args.next_date || null, description: '', actions: [], decisions: [] });
+              App.logChange(null, 'governance_forum_added', '', name + ' (' + ctx.customer + ')', 'ai');
+              App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+              return { applied: true };
+            }
+          };
+          ctx.proposals.push(proposal);
+          AgentTools._cite(ctx, 'forum', name, name);
+          return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
+        }
+        // log_decision
+        const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
+        if (!p) return { error: 'log_decision needs a valid project_id for this customer' };
+        const text = String(args.decision || '').trim().slice(0, 500);
+        if (text.length < 4) return { error: 'log_decision needs decision text' };
+        const summary = 'Log a decision on “' + p.name + '”';
+        const proposal = {
+          id: 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+          kind: 'update_governance', summary, reason: args.reason || '',
+          entity: { type: 'project', id: p.id, name: p.name }, changes: [{ field: 'decision', before: '', after: text }]
+            .concat(args.rationale ? [{ field: 'rationale', before: '', after: String(args.rationale).slice(0, 200) }] : []),
+          apply() {
+            App.pushUndo('Log decision on ' + p.name);
+            if (!Array.isArray(p.decisions_register)) p.decisions_register = [];
+            p.decisions_register.push({ id: 'dec-ai-' + Date.now().toString(36), date: new Date().toISOString().split('T')[0], decided_by: String(args.decided_by || 'Assistant').slice(0, 80), decision: text, text, rationale: String(args.rationale || '').slice(0, 300), tag: 'assistant', meta: {} });
+            p.last_updated = new Date().toISOString();
+            App.logChange(p.id, 'decision_logged', '', text.slice(0, 80), 'ai');
+            App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
+            return { applied: true };
+          }
+        };
+        ctx.proposals.push(proposal);
+        AgentTools._cite(ctx, 'project', p.id, p.name);
+        return { proposed: true, proposal_id: proposal.id, summary: proposal.summary, note: 'Pending user confirmation — do not assume it has been applied.' };
       }
     },
     // --- Skills as tools: the assistant can run the governed generators. Each
@@ -41689,7 +42089,7 @@ const Billing = {
     return (App.data && App.data.billing_arrangements || []).filter(a => !customer || a.customer === customer);
   },
   getArrangement(id) { return (App.data && App.data.billing_arrangements || []).find(a => a.id === id) || null; },
-  addArrangement(fields) {
+  addArrangement(fields, source) {
     if (!App.data || !fields || !fields.customer) return null;
     const arr = {
       id: 'BA-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
@@ -41705,17 +42105,17 @@ const Billing = {
     };
     App.pushUndo('Add billing arrangement ' + arr.label);
     App.data.billing_arrangements.push(arr);
-    App.logChange(null, 'billing_arrangement_added', '', arr.label + ' (' + arr.customer + ')', 'user', { event_type: 'billing' });
+    App.logChange(null, 'billing_arrangement_added', '', arr.label + ' (' + arr.customer + ')', source || 'user', { event_type: 'billing' });
     App.markDirty();
     App.saveToLocalStorage();
     return arr;
   },
-  removeArrangement(id) {
+  removeArrangement(id, source) {
     const arr = this.getArrangement(id);
     if (!arr) return;
     App.pushUndo('Delete billing arrangement ' + arr.label);
     App.data.billing_arrangements = App.data.billing_arrangements.filter(a => a.id !== id);
-    App.logChange(null, 'billing_arrangement_removed', arr.label, '', 'user', { event_type: 'billing' });
+    App.logChange(null, 'billing_arrangement_removed', arr.label, '', source || 'user', { event_type: 'billing' });
     App.markDirty();
     App.saveToLocalStorage();
   },
