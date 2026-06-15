@@ -106,6 +106,22 @@ describe('adapter request shaping (pure, no network)', () => {
     expect(parsed.toolCalls[0]).toEqual({ id: 'tu1', name: 'f', args: { y: 2 } });
   });
 
+  it('groq: served by the openai adapter via a preset (base URL, bearer key, tools)', () => {
+    const { AI } = app;
+    // Groq is OpenAI-compatible — it ships as a preset on the openai adapter.
+    const preset = AI.PRESETS.groq;
+    expect(preset.adapter).toBe('openai');
+    expect(preset.baseUrl).toBe('https://api.groq.com/openai/v1');
+    expect(preset.model).toBeTruthy();
+    const profile = { adapter: preset.adapter, baseUrl: preset.baseUrl, model: preset.model, apiKey: 'gsk_test', temperature: 0.1, toolMode: preset.toolMode };
+    const req = AI.ADAPTERS.openai.buildRequest(profile, messages, { tools });
+    expect(req.url).toBe('https://api.groq.com/openai/v1/chat/completions');
+    expect(req.headers.Authorization).toBe('Bearer gsk_test');
+    expect(req.body.tools[0].function.name).toBe('t1');
+    // Tool calling is available with the preset's default tool mode.
+    expect(AI.capabilities(profile).tools).toBe(true);
+  });
+
   it('gemini: key in header not URL, functionDeclarations, role mapping', () => {
     const { AI } = app;
     const profile = { adapter: 'gemini', model: 'gemini-2.0-flash', apiKey: 'k3' };
