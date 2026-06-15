@@ -103,9 +103,10 @@ For each project P, each sprint S, the solver maintains `projectTime[P][S] = { p
 5. Reserve locked projects' capacity (aggregate + per-person when `assigned_to` is populated).
 6. Filter to allocatable projects. Detect circular dependencies; emit `circular_dependency` warning.
 7. Sort projects by: deadline sprint (asc, `-1` → last) → MoSCoW band (Must → Should → Could → Won't, asc) → WSJF score (desc) → `priority` (asc) → `id` (lex, stable).
+8. **Dependency-aware reorder (Phase 2.2)**: stably topologically reorder the sorted list so a project never precedes a same-customer `blocked_by` blocker (a successor that sorts earlier — e.g. earlier deadline — is moved after its blocker). Stable Kahn keyed by the sort index, so a portfolio with **no `blocked_by` edges is left exactly as sorted** (no behaviour change). Cycle edges are ignored; locked / cross-customer deps keep flowing through `finishCache`. This guarantees the blocker is allocated first, so `allocateProject`'s live `finishCache` re-check (which gates a successor's `minIdx` to `blockerFinish + 1`) fires for unlocked chains too.
 
 ### Pass 1 — Forward Schedule
-For each project P in sorted order: call the shared `allocateProject(P, -1)` primitive.
+For each project P in (topologically reordered) sorted order: call the shared `allocateProject(P, -1)` primitive.
 
 `allocateProject`:
 - For each phase group `g` (phase 1, 2, 3, …):
@@ -189,6 +190,7 @@ Emitted on the `warnings: [ { type, project: {id,name}|null, skill: string|null,
 | Buffer Slides | Count of R2/R6 buffer-push events. |
 | Over-Cap Averted | Count of R4 per-person slides. |
 | Time Splits | Count of R11 day-budget clamps (slice split across sprints). |
+| Critical Path | `stats.criticalPath` (ids) / `criticalPathNames` / `criticalPathLength` — the longest chain of dependent **allocated** projects (`blocker → successor`), tie-broken by latest finish. Empty (`[]`) when there are no chains. Surfaced in Allocation Results, `explain_plan`, and Scenario Lab summaries. |
 
 ---
 
