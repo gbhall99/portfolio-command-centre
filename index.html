@@ -25419,7 +25419,12 @@ const Gantt = {
       }
     }
 
-    const rowH = 36;
+    const rowH = 56;          // px — MUST match the .gantt-row / .gantt-label-row CSS height (1960/1984), else the label & bar columns drift apart row-by-row.
+    // Annotation row height — two lanes so colliding date labels (sprint/Today/FY) can stagger
+    // vertically instead of overprinting. Single source of truth for the annotation-row markup, the
+    // label column's "Timeline" header height (they must match or every bar sits below its label),
+    // and the project-row Y-offset / total-height maths below.
+    const ANNOTATION_H = 34;
     // H10: executive mode collapses to one row per project, milestones only.
     const isExecutive = !!this.executiveMode;
     const isDetailed = !isExecutive && document.getElementById('ganttDetailed') && document.getElementById('ganttDetailed').checked;
@@ -25447,7 +25452,7 @@ const Gantt = {
         '<div class="gantt-label-pri-head">#</div>' +
         '<div style="flex:1;padding:0 12px;display:flex;align-items:center">Project</div>' +
       '</div>' +
-      '<div style="height:22px;border-bottom:1px solid var(--border-dim);background:var(--surface-2);display:flex;align-items:center;padding:0 12px;font-size:var(--fs-2xs);color:var(--text-muted);font-weight:700;letter-spacing:0.6px;text-transform:uppercase">Timeline</div>';
+      '<div class="gantt-timeline-head" style="height:' + ANNOTATION_H + 'px;border-bottom:1px solid var(--border-dim);background:var(--surface-2);display:flex;align-items:center;padding:0 12px;font-size:var(--fs-2xs);color:var(--text-muted);font-weight:700;letter-spacing:0.6px;text-transform:uppercase">Timeline</div>';
     let lastGroup = null;
     // Reset zebra-index for this render pass — used to alternate shading per project (labels + rows).
     this._projectZebraIndex = 0;
@@ -25533,11 +25538,6 @@ const Gantt = {
       const diffDays = (dt - minDate) / (1000 * 60 * 60 * 24);
       return diffDays * pxPerDay;
     };
-
-    // Annotation row height — two lanes so colliding date labels (sprint/Today/FY) can stagger
-    // vertically instead of overprinting. Single source of truth for both the row markup and the
-    // project-row Y-offset / total-height maths below.
-    const ANNOTATION_H = 34;
 
     const showBaseline = document.getElementById('ganttBaseline').checked;
 
@@ -26079,7 +26079,7 @@ const Gantt = {
       laneRight[lane] = l.right;
       annotationItems += '<span style="position:absolute;top:' + annLaneTop[lane] + 'px;left:' + l.x + 'px;font-size:var(--fs-2xs);white-space:nowrap;' + l.style + (l.centred ? ';transform:translateX(-50%)' : '') + '">' + l.text + '</span>';
     });
-    const annotationRow = '<div style="height:' + ANNOTATION_H + 'px;position:relative;border-bottom:1px solid var(--border-light);background:var(--surface-2);width:' + totalWidth + 'px">' + annotationItems + '</div>';
+    const annotationRow = '<div class="gantt-annotation-row" style="height:' + ANNOTATION_H + 'px;position:relative;border-bottom:1px solid var(--border-light);background:var(--surface-2);width:' + totalWidth + 'px">' + annotationItems + '</div>';
 
     // Vertical lines (span full height, no labels — labels are in annotation bar)
     const todayHtml = '<div class="gantt-today-line" style="left:' + todayX + 'px"></div>';
@@ -26148,7 +26148,7 @@ const Gantt = {
         ' Q' + midX + ' ' + toY + ' ' + (midX + r) + ' ' + toY +
         ' H' + toX;
     };
-    const mainBarMidOffset = 6 + 24 / 2;
+    const mainBarMidOffset = 22 + 24 / 2;   // .gantt-bar CSS top (22) + height/2 → vertical centre of the main bar
     const emitDep = (fromId, toId, kind) => {
       const key = fromId + '|' + toId + '|' + kind;
       if (edgeSeen.has(key)) return;
