@@ -1,5 +1,6 @@
 // Issues 5, 6, 7 — Gantt cleanup.
-// 5. Remove ganttCriticalPath / ganttExecutive / ganttConfidence toggles + priority recommendation chip overlay
+// 5. Removed ganttExecutive / ganttConfidence toggles + priority recommendation chip overlay.
+//    (The Critical Path toggle was re-introduced — now solver-backed — at user request.)
 // 6. --gantt-labels-width default = 440px
 // 7. Lifecycle chip is no longer rendered inside Gantt bar labels
 
@@ -16,10 +17,13 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INDEX_HTML = fs.readFileSync(path.join(REPO_ROOT, 'index.html'), 'utf8');
 
 describe('Gantt cleanup — Issues 5, 6, 7', () => {
-  it('the toolbar no longer contains the Critical Path / Executive / Confidence checkboxes', () => {
-    expect(INDEX_HTML).not.toMatch(/id="ganttCriticalPath"/);
+  it('the toolbar no longer contains the Executive / Confidence checkboxes', () => {
     expect(INDEX_HTML).not.toMatch(/id="ganttExecutive"/);
     expect(INDEX_HTML).not.toMatch(/id="ganttConfidence"/);
+  });
+
+  it('the Critical Path toggle is present (re-introduced, solver-backed)', () => {
+    expect(INDEX_HTML).toMatch(/id="ganttCriticalPath"/);
   });
 
   it('default --gantt-labels-width CSS variable is 440px', () => {
