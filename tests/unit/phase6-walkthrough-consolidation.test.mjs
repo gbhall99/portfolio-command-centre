@@ -162,10 +162,10 @@ describe('Phase 6 / AC-6.5 — sub-section deep-link routing', () => {
     app.teardown();
   });
 
-  it('openDetailAt({ section: "prioritisation" }) opens Detail on Scope tab', async () => {
+  it('openDetailAt({ section: "prioritisation" }) opens Detail on the Overview tab (where Prioritisation lives)', async () => {
     const { app } = await bootWithProject();
     app.Walkthrough.openDetailAt({ projectId: 'P6', section: 'prioritisation' });
-    expect(app.DetailPanel.activeTab).toBe('scope');
+    expect(app.DetailPanel.activeTab).toBe('overview');
     app.teardown();
   });
 

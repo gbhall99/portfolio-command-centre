@@ -163,10 +163,11 @@ describe('project Documents section', () => {
     // Unlinked projects still get the section, now with create affordances.
     Sow.attachProject(sow.id, null);
     Wireframe.attachProject(wf.id, null);
-    const emptyHtml = DetailPanel.renderDocuments('A-1');
-    expect(emptyHtml).toContain('New SOW');
-    expect(emptyHtml).toContain('New wireframe');
-    expect(emptyHtml).toContain('No documents linked yet');
+    const sowHtml = DetailPanel.renderSows('A-1');
+    const wfHtml = DetailPanel.renderWireframes('A-1');
+    expect(sowHtml).toContain('New SOW');
+    expect(wfHtml).toContain('New wireframe');
+    expect(sowHtml).toContain('No SOW linked yet');
   });
 });
 

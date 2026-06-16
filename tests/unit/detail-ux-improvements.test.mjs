@@ -34,7 +34,7 @@ describe('Detail NAV-2 — History lives in the Overview tab only', () => {
   it('the change-history section is inside the Overview panel and not at panel-body root', async () => {
     const app = await openPanel();
     const overview = app.document.querySelector('[data-dp-tab="overview"]');
-    const others = ['delivery', 'scope', 'raid'].map(t => app.document.querySelector('[data-dp-tab="' + t + '"]').innerHTML).join('');
+    const others = ['delivery', 'value', 'sow', 'wireframe', 'billing', 'raid'].map(t => app.document.querySelector('[data-dp-tab="' + t + '"]').innerHTML).join('');
     expect(overview.innerHTML).toMatch(/data-section="change-history"|>History</);
     expect(others).not.toMatch(/data-section="change-history"/);
     app.teardown();

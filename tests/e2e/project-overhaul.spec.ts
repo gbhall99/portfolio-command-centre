@@ -46,8 +46,8 @@ test('Adding a benefit and a success criterion persists', async ({ page }) => {
   await openAppWithData(page);
   const id = await page.evaluate(() => (window as any).App.data.projects[0].id);
   await page.evaluate((pid) => (window as any).DetailPanel.open(pid), id);
-  // Benefits + Success criteria live in the Setup tab; the panel defaults to Health.
-  await page.evaluate(() => (window as any).DetailPanel.switchTab('setup'));
+  // Benefits + Success criteria live on the Value tab; the panel defaults to Overview.
+  await page.evaluate(() => (window as any).DetailPanel.switchTab('value'));
   // Add a benefit
   await page.locator('#detailPanel button:has-text("+ Add Benefit")').first().click();
   // Add a success criterion

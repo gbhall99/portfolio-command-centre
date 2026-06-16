@@ -107,6 +107,29 @@ describe('Sow.pullFromRaid', () => {
   });
 });
 
+describe('Sow.raidCandidates / pullSelectedRaid — only appropriate items are offered', () => {
+  it('offers only open assumptions / open high-severity risks', () => {
+    const sow = makeLinkedSow();
+    const a = app.Sow.raidCandidates(sow.id, 'assumptions_dependencies');
+    expect(a.ok).toBe(true);
+    expect(a.items.some(i => /Source data access granted/.test(i.text))).toBe(true);
+    expect(a.items.some(i => /Closed assumption/.test(i.text))).toBe(false);
+    const r = app.Sow.raidCandidates(sow.id, 'out_of_scope');
+    expect(r.items.length).toBe(1);            // only the open, severe risk
+    expect(r.items[0].text).toContain('Vendor SLA risk');
+  });
+
+  it('pulls only the selected item, and selecting nothing adds nothing', () => {
+    const sow = makeLinkedSow();
+    expect(app.Sow.pullSelectedRaid(sow.id, 'assumptions_dependencies', []).ok).toBe(false);
+    const res = app.Sow.pullSelectedRaid(sow.id, 'assumptions_dependencies', ['a1']);
+    expect(res.ok).toBe(true);
+    expect(res.added).toBe(1);
+    const sec = app.Sow.get(sow.id).sections.find(s => s.id === 'assumptions_dependencies');
+    expect(sec.content).toContain('Source data access granted');
+  });
+});
+
 describe('Sow.insertClause', () => {
   it('appends the clause text and records provenance', () => {
     const sow = makeLinkedSow();
