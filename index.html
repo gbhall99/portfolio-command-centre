@@ -23908,11 +23908,12 @@ const DetailPanel = {
   quickAdd(templateId) {
     if (!App.data) return;
 
-    // D6 + Phase 4: no templateId → open the 3-step create wizard. Step 1 is
-    // mandatory (name + customer + size); Steps 2/3 are optional with a single
-    // "Add details later →" shortcut.
+    // No templateId → open the conversational onboarding wizard (resumable,
+    // proactive defaults from prior customer projects). The classic 3-step form
+    // stays available via the wizard's "Use form" button / _openCreateWizard().
     if (templateId === undefined) {
-      this._openCreateWizard();
+      if (typeof ProjectWizard !== 'undefined') ProjectWizard.open();
+      else this._openCreateWizard();
       return;
     }
 
@@ -43169,6 +43170,320 @@ const Kanban = {
    as the inline demo dataset: island first, fetch fallback). A unit test
    asserts authored === embedded so they cannot drift.
    ============================================================================ */
+/* ============================================================================
+   ProjectWizard — conversational, resumable "new project" wizard.
+   Deterministic core (slots + parsers + prior-project prefill + summary +
+   create) so it works with no AI. The user can answer one question at a time
+   (coaxed) OR paste "field: value" lines all at once; progress is saved per
+   customer in uiState so they can continue later. Only the name is required —
+   optional fields are never forced.
+   ============================================================================ */
+const ProjectWizard = {
+  LIFECYCLES: ['Idea', 'Discovery', 'POC', 'Phase-1 Build', 'Implementation', 'Run/BAU'],
+  MOSCOW: ['Must', 'Should', 'Could', "Won't"],
+  _state: null,
+
+  _parseDate(t) {
+    const v = (t || '').trim().toLowerCase();
+    if (!v || ['skip', 'none', 'no', 'n/a', 'later', '-'].indexOf(v) >= 0) return { value: null, skipped: true };
+    const m = (t || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return { error: 'Use YYYY-MM-DD (e.g. 2026-09-01), or say “skip”.' };
+    const d = new Date(t.trim());
+    if (isNaN(d.getTime())) return { error: 'That date doesn’t look valid — try YYYY-MM-DD.' };
+    return { value: m[0] };
+  },
+
+  // Slots in ask-order. Only `name` is required.
+  SLOTS: [
+    { key: 'name', label: 'Project name', required: true,
+      prompt: () => 'What should we call this project?',
+      parse: (t) => { t = (t || '').trim(); return t ? { value: t } : { error: 'It needs a name to continue.' }; } },
+    { key: 'manager', label: 'Delivery manager', required: false,
+      prompt: (s) => 'Who’ll be the delivery manager?' + ProjectWizard._sugTip(s, 'manager'),
+      parse: (t) => ({ value: (t || '').trim() }) },
+    { key: 'lifecycle_stage', label: 'Lifecycle stage', required: false,
+      prompt: (s) => 'What stage is it at? (' + ProjectWizard.LIFECYCLES.join(', ') + ')' + ProjectWizard._sugTip(s, 'lifecycle_stage'),
+      parse: (t) => { const m = ProjectWizard.LIFECYCLES.find(x => x.toLowerCase() === (t || '').trim().toLowerCase()); return m ? { value: m } : { error: 'Pick one of: ' + ProjectWizard.LIFECYCLES.join(', ') + '.' }; } },
+    { key: 'size_total', label: 'Size (story points)', required: false,
+      prompt: (s) => 'Rough size in story points?' + ProjectWizard._sugTip(s, 'size_total'),
+      parse: (t) => { const n = parseInt(String(t).replace(/[^0-9]/g, ''), 10); return isNaN(n) ? { error: 'Give a whole number of points, or say “skip”.' } : { value: n }; } },
+    { key: 'target_date', label: 'Target date', required: false,
+      prompt: () => 'Target delivery date? (YYYY-MM-DD, or “skip”)',
+      parse: (t) => ProjectWizard._parseDate(t) },
+    { key: 'hard_deadline', label: 'Hard deadline', required: false,
+      prompt: () => 'Any hard external deadline? (YYYY-MM-DD, or “none”)',
+      parse: (t) => ProjectWizard._parseDate(t) },
+    { key: 'moscow', label: 'Priority (MoSCoW)', required: false,
+      prompt: () => 'Priority — Must, Should, Could or Won’t?',
+      parse: (t) => { const v = (t || '').trim().toLowerCase(); if (v.indexOf('must') === 0) return { value: 'Must' }; if (v.indexOf('should') === 0) return { value: 'Should' }; if (v.indexOf('could') === 0) return { value: 'Could' }; if (v.indexOf('won') === 0) return { value: "Won't" }; return { error: 'Must, Should, Could or Won’t?' }; } },
+    { key: 'category', label: 'Category', required: false,
+      prompt: (s) => 'Category or workstream?' + ProjectWizard._sugTip(s, 'category'),
+      parse: (t) => ({ value: (t || '').trim() }) }
+  ],
+
+  // Keyword → slot key, for the "paste it all at once" path (field: value lines).
+  _PAIR_KEYS: {
+    name: 'name', project: 'name',
+    manager: 'manager', lead: 'manager', owner: 'manager',
+    stage: 'lifecycle_stage', lifecycle: 'lifecycle_stage',
+    size: 'size_total', points: 'size_total', sp: 'size_total', est: 'size_total', estimate: 'size_total',
+    target: 'target_date', 'target date': 'target_date', due: 'target_date',
+    deadline: 'hard_deadline', 'hard deadline': 'hard_deadline',
+    priority: 'moscow', moscow: 'moscow',
+    category: 'category', workstream: 'category'
+  },
+
+  // Prior-project prefill: the most common manager/stage/category and a typical
+  // size for this customer, so we can proactively suggest sensible defaults.
+  _suggestionsFor(customer) {
+    const prior = (App.data && App.data.projects || []).filter(p => p.customer === customer);
+    if (!prior.length) return {};
+    const mode = (key) => {
+      const counts = {};
+      prior.forEach(p => { const v = (p[key] || '').trim(); if (v) counts[v] = (counts[v] || 0) + 1; });
+      let best = '', n = 0;
+      Object.keys(counts).forEach(k => { if (counts[k] > n) { n = counts[k]; best = k; } });
+      return best || null;
+    };
+    const sizes = prior.map(p => App.toInteger(p.size_total || 0)).filter(n => n > 0);
+    const typicalSize = sizes.length ? Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length) : null;
+    return { manager: mode('manager'), lifecycle_stage: mode('lifecycle_stage'), category: mode('category'), size_total: typicalSize };
+  },
+  _sugTip(state, key) {
+    const sug = state && state.suggestions && state.suggestions[key];
+    if (sug == null || sug === '') return '';
+    const shown = key === 'size_total' ? (sug + ' SP') : sug;
+    return ' (others on ' + (state.customer || 'this account') + ' use ' + shown + ' — say “yes” to use that)';
+  },
+
+  _draftKey(customer) { return 'onboarding.draft.' + (customer || 'global'); },
+
+  // --- lifecycle ---
+  open(customer) {
+    if (!App.data) { if (App.toast) App.toast('Load a portfolio first', 'error'); return; }
+    customer = customer || App.activeCustomer || (App.getCustomers ? App.getCustomers()[0] : '') || '';
+    const draft = App.uiStateGet(this._draftKey(customer), null);
+    this._state = {
+      customer,
+      answers: (draft && draft.answers) || {},
+      log: [],
+      idx: 0,
+      suggestions: this._suggestionsFor(customer),
+      done: false
+    };
+    this._renderShell();
+    const resuming = draft && draft.answers && Object.keys(draft.answers).length;
+    this._say('bot', 'Let’s set up a new project for <b>' + Dashboard.esc(customer) + '</b>.' +
+      (resuming ? ' I found a saved draft' + (draft.answers.name ? ' for “' + Dashboard.esc(draft.answers.name) + '”' : '') + ' — picking up where you left off.' :
+        ' Answer one question at a time, or paste everything at once as <code>field: value</code> lines. Say “skip” for anything optional, or “done” when you’ve told me enough.'));
+    this._advance(true);
+  },
+  _persist() {
+    if (!this._state) return;
+    App.uiStateSet(this._draftKey(this._state.customer), { answers: this._state.answers, at: new Date().toISOString() });
+  },
+  saveAndClose() { this._persist(); if (App.toast) App.toast('Draft saved — reopen “New project” to continue', 'info'); this.close(); },
+  close() { const ov = document.getElementById('onboardingOverlay'); if (ov) ov.remove(); },
+  useForm() { this.close(); if (typeof DetailPanel !== 'undefined' && DetailPanel._openCreateWizard) DetailPanel._openCreateWizard(); },
+
+  // --- conversation engine ---
+  _say(role, html) { if (this._state) this._state.log.push({ role, html }); this._renderLog(); },
+  _slot(i) { return this.SLOTS[i]; },
+  _firstUnfilled(from) {
+    for (let i = Math.max(0, from || 0); i < this.SLOTS.length; i++) {
+      const s = this.SLOTS[i];
+      if (!(s.key in this._state.answers)) return i;
+    }
+    return -1;
+  },
+  _advance(initial) {
+    const st = this._state;
+    // Required name first; then walk optionals.
+    let i = this._firstUnfilled(0);
+    if (i < 0) { this._toSummary(); return; }
+    st.idx = i;
+    const slot = this.SLOTS[i];
+    if (!initial || !st.log.some(l => l.role === 'botq')) {
+      this._state.log.push({ role: 'botq', html: Dashboard.esc(slot.label) + ' — ' + slot.prompt(st) });
+      this._renderLog();
+    }
+  },
+  submitAnswer(text) {
+    const st = this._state;
+    if (!st) return;
+    text = (text || '').trim();
+    if (!text) return;
+    this._say('user', Dashboard.esc(text));
+    const low = text.toLowerCase();
+    // Global commands.
+    if (low === 'done' || low === "that's all" || low === 'thats all' || low === 'finish') {
+      if (!st.answers.name) { this._say('bot', 'I just need a name first — what should we call it?'); return; }
+      this._toSummary(); return;
+    }
+    // "Paste it all at once" — field: value lines (also handles a single pair).
+    const filledPairs = this._applyPairs(text);
+    if (filledPairs > 0) {
+      this._say('bot', 'Got it — recorded ' + filledPairs + ' field' + (filledPairs === 1 ? '' : 's') + '.');
+      this._persist(); this._advance(); return;
+    }
+    // Otherwise treat as the answer to the current slot.
+    const slot = this.SLOTS[st.idx];
+    if (!slot) { this._toSummary(); return; }
+    // Accept a suggestion with "yes"/"same"/"as usual".
+    if (['yes', 'y', 'same', 'as usual', 'usual', 'default', 'sure', 'ok'].indexOf(low) >= 0 && st.suggestions && st.suggestions[slot.key] != null && st.suggestions[slot.key] !== '') {
+      st.answers[slot.key] = st.suggestions[slot.key];
+      this._persist(); this._advance(); return;
+    }
+    // Skip an optional slot.
+    if (!slot.required && ['skip', 'later', 'none', 'no', 'n/a', '-'].indexOf(low) >= 0) {
+      st.answers[slot.key] = (slot.key === 'target_date' || slot.key === 'hard_deadline') ? null : (slot.key === 'size_total' ? null : '');
+      this._persist(); this._advance(); return;
+    }
+    const res = slot.parse(text);
+    if (res.error) { this._say('bot', res.error); return; }
+    st.answers[slot.key] = res.value;
+    this._persist();
+    this._advance();
+  },
+  _applyPairs(text) {
+    const chunks = text.split(/[\n;]+/).map(s => s.trim()).filter(Boolean);
+    let filled = 0;
+    chunks.forEach(chunk => {
+      const m = chunk.match(/^([A-Za-z][A-Za-z \-]*?)\s*[:=]\s*(.+)$/);
+      if (!m) return;
+      const key = this._PAIR_KEYS[m[1].trim().toLowerCase()];
+      if (!key) return;
+      const slot = this.SLOTS.find(s => s.key === key);
+      if (!slot) return;
+      const res = slot.parse(m[2].trim());
+      if (res && !res.error) { this._state.answers[key] = res.value; filled++; }
+    });
+    return filled;
+  },
+  _toSummary() {
+    this._state.done = true;
+    this._persist();
+    this._renderLog();
+    this._renderSummary();
+  },
+
+  // --- create ---
+  create() {
+    const st = this._state;
+    if (!st || !st.answers.name) { if (App.toast) App.toast('A project needs a name', 'error'); return; }
+    const a = st.answers;
+    const cust = st.customer;
+    const size = App.toInteger(a.size_total || 0) || 0;
+    const id = App.generateId(cust);
+    const phaseOrder = ['Requirements', 'Data Engineering', 'Tableau', 'UAT'];
+    const newProject = {
+      id, name: String(a.name).trim(), customer: cust,
+      ownership: 'Lead & Delivery', category: (a.category || '').trim() || 'General',
+      lifecycle_stage: a.lifecycle_stage || 'Idea', visibility: 'Internal',
+      sponsor: '', manager: (a.manager || '').trim(), teams_involved: [],
+      moscow: a.moscow || null, assumptions: '',
+      rag_schedule: null, rag_resourcing: null, rag_scope: null, rag_manual_override: {},
+      size_requirements: 0, size_tableau: 0, size_engineering: 0, size_data_science: 0, size_uat_adoption: 0, size_total: 0,
+      start_date: null, target_date: a.target_date || null, hard_deadline: a.hard_deadline || null, actual_date: null,
+      baseline_start: null, baseline_end: null, current_sprint: null, target_sprint: null,
+      priority: null, status: 'Not Started', governance_forum: '', dependencies: [],
+      objective_ids: [], metric_ids: [], persona_ids: [], product_ids: [],
+      delivery_config: { data_sourcing_type: 'Internal', include_req: true, include_de: true, include_ds: false, include_tableau: true, include_uat: true, phase_order: phaseOrder.slice() },
+      notes: '', last_updated: new Date().toISOString(), devops_link: '',
+      risks_register: [], issues_register: [],
+      data_sourcing: { type: 'Internal', team: '', uat_release_date: null, go_live_date: null },
+      skill_splits: {},
+      stages: { 'Requirements': 'Not Started', 'Data Sourcing': 'Not Started', 'Data Modeling': 'Not Started', 'Development': 'Not Started', 'UAT': 'Not Started' }
+    };
+    // Split the size evenly across enabled phase skills (mirrors the create wizard).
+    if (size > 0 && typeof Solver !== 'undefined' && Solver.PHASE_SKILL_MAP) {
+      const phaseSkills = phaseOrder.map(ph => Solver.PHASE_SKILL_MAP[ph]).filter(Boolean);
+      const even = phaseSkills.length ? Math.floor(size / phaseSkills.length) : 0;
+      let leftover = size - even * phaseSkills.length;
+      phaseSkills.forEach(sk => { newProject[sk] = even + (leftover > 0 ? 1 : 0); if (leftover > 0) leftover--; });
+    }
+    newProject.size_total = (newProject.size_requirements || 0) + (newProject.size_tableau || 0) + (newProject.size_engineering || 0) + (newProject.size_data_science || 0) + (newProject.size_uat_adoption || 0);
+    if (newProject.size_total === 0) newProject.size_total = size;
+    newProject.priority = (App.data.projects.filter(pp => pp.customer === cust).length) + 1;
+    App.addProject(newProject);
+    App.uiStateSet(this._draftKey(cust), null);  // clear the draft
+    this.close();
+    if (typeof Dashboard !== 'undefined') { try { Dashboard.populateFilters(); Dashboard.applyFilters(); Dashboard.renderSummaryCards(); } catch (_e) {} }
+    if (typeof DetailPanel !== 'undefined') DetailPanel.open(id, { entryPoint: 'projects' });
+    return newProject;
+  },
+
+  // --- rendering ---
+  _renderShell() {
+    let ov = document.getElementById('onboardingOverlay');
+    if (ov) ov.remove();
+    ov = document.createElement('div');
+    ov.id = 'onboardingOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:400;display:flex;align-items:center;justify-content:center;padding:12px';
+    ov.innerHTML =
+      '<div role="dialog" aria-label="New project wizard" style="background:var(--bg-card,#fff);color:var(--text-dark);border-radius:12px;width:520px;max-width:96vw;height:min(640px,92vh);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden">' +
+        '<div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-light)">' +
+          '<div style="font-weight:800;font-size:15px;flex:1">New project</div>' +
+          '<button class="btn btn-outline btn-sm" onclick="ProjectWizard.useForm()" title="Use the classic form instead">Use form</button>' +
+          '<button onclick="ProjectWizard.close()" aria-label="Close" style="background:transparent;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--text-muted)">&times;</button>' +
+        '</div>' +
+        '<div id="onbLog" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5"></div>' +
+        '<div id="onbFooter" style="border-top:1px solid var(--border-light);padding:10px 12px"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    this._renderInput();
+  },
+  _renderLog() {
+    const el = document.getElementById('onbLog');
+    if (!el || !this._state) return;
+    const bubble = (item) => {
+      if (item.role === 'user') return '<div style="align-self:flex-end;max-width:82%;background:var(--accent-blue,#3b82f6);color:#fff;border-radius:12px 12px 2px 12px;padding:7px 11px">' + item.html + '</div>';
+      const isQ = item.role === 'botq';
+      return '<div style="align-self:flex-start;max-width:88%;background:var(--surface-2,#f1f5f9);border-radius:12px 12px 12px 2px;padding:7px 11px' + (isQ ? ';font-weight:600' : '') + '">' + item.html + '</div>';
+    };
+    el.innerHTML = this._state.log.map(bubble).join('');
+    el.scrollTop = el.scrollHeight;
+  },
+  _renderInput() {
+    const f = document.getElementById('onbFooter');
+    if (!f) return;
+    f.innerHTML =
+      '<div style="display:flex;gap:8px;align-items:flex-end">' +
+        '<textarea id="onbInput" rows="1" placeholder="Type your answer… (or paste field: value lines)" style="flex:1;resize:none;max-height:120px;padding:8px 10px;border:1px solid var(--border-dim);border-radius:8px;font-family:var(--font-sans);font-size:13px" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();ProjectWizard._send()}"></textarea>' +
+        '<button class="btn btn-primary btn-sm" onclick="ProjectWizard._send()">Send</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;margin-top:8px;font-size:11px;color:var(--text-muted)">' +
+        '<a href="#" onclick="event.preventDefault();ProjectWizard._quick(\'skip\')">Skip</a>' +
+        '<a href="#" onclick="event.preventDefault();ProjectWizard._quick(\'done\')">Done</a>' +
+        '<a href="#" onclick="event.preventDefault();ProjectWizard.saveAndClose()">Save &amp; continue later</a>' +
+      '</div>';
+    const ta = document.getElementById('onbInput');
+    if (ta) setTimeout(() => ta.focus(), 0);
+  },
+  _send() { const ta = document.getElementById('onbInput'); if (!ta) return; const v = ta.value; ta.value = ''; this.submitAnswer(v); },
+  _quick(cmd) { this.submitAnswer(cmd); },
+  _renderSummary() {
+    const f = document.getElementById('onbFooter');
+    if (!f || !this._state) return;
+    const a = this._state.answers;
+    const esc = Dashboard.esc;
+    const fmt = (k) => { const v = a[k]; if (v == null || v === '') return '<span style="color:var(--text-muted)">—</span>'; return esc(k === 'size_total' ? (App.fmtPoints(v) + ' SP') : String(v)); };
+    const row = (label, k) => '<div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dashed var(--border-light)"><span style="color:var(--text-muted)">' + label + '</span><span style="font-weight:600;text-align:right">' + fmt(k) + '</span></div>';
+    this._say('bot', 'Here’s what I’ve got. Review and create when you’re happy — you can fine-tune anything afterwards.');
+    f.innerHTML =
+      '<div style="font-size:12px;max-height:200px;overflow:auto;margin-bottom:10px">' +
+        row('Name', 'name') + row('Manager', 'manager') + row('Stage', 'lifecycle_stage') + row('Size', 'size_total') +
+        row('Target date', 'target_date') + row('Hard deadline', 'hard_deadline') + row('Priority', 'moscow') + row('Category', 'category') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+        '<button class="btn btn-outline btn-sm" onclick="ProjectWizard._resume()">Keep editing</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="ProjectWizard.saveAndClose()">Save for later</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="ProjectWizard.create()">Create project</button>' +
+      '</div>';
+  },
+  _resume() { if (!this._state) return; this._state.done = false; this._renderInput(); this._advance(); }
+};
+
 const Definitions = {
   _cache: {},
 
