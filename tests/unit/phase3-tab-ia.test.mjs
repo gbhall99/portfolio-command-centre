@@ -24,9 +24,9 @@ describe('Phase 3 / AC-3.1 — ARIA tablist', () => {
     const tablist = body.querySelector('[role="tablist"]');
     expect(tablist).toBeTruthy();
     const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(7);
     const ids = tabs.map(t => t.dataset.dpTabTrigger);
-    expect(ids).toEqual(['overview', 'delivery', 'scope', 'raid']);
+    expect(ids).toEqual(['overview', 'delivery', 'value', 'sow', 'wireframe', 'billing', 'raid']);
     // Each tab carries aria-controls pointing at a tabpanel with matching id.
     tabs.forEach(tab => {
       const target = tab.getAttribute('aria-controls');
@@ -82,7 +82,8 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     app.DetailPanel.open('P-T3');
     const overview = app.document.querySelector('[data-dp-tab="overview"]');
     const delivery = app.document.querySelector('[data-dp-tab="delivery"]');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
+    const value = app.document.querySelector('[data-dp-tab="value"]');
+    const sow = app.document.querySelector('[data-dp-tab="sow"]');
     const raid = app.document.querySelector('[data-dp-tab="raid"]');
 
     // Overview holds: Status & Health (TASK-1 co-locates Status + RAG dials), plus Identity + Prioritisation.
@@ -102,15 +103,17 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
 
     // User-IA-rev: Identity + Prioritisation moved from Scope to Overview.
     const overviewTitles = Array.from(overview.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
-    const scopeTitles = Array.from(scope.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
+    const valueTitles = Array.from(value.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
+    const sowTitles = Array.from(sow.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
     expect(overviewTitles.some(t => /^Identity/.test(t))).toBe(true);
     expect(overviewTitles.some(t => /^Prioritisation/.test(t))).toBe(true);
-    // Scope & Value: Strategy linkage / Benefits / Success criteria / Milestones & Dates / Stakeholders / Sponsor sign-off / Gate reviews.
-    expect(scopeTitles.some(t => /^Strategy linkage/.test(t))).toBe(true);
-    expect(scopeTitles.some(t => /^Benefits/.test(t))).toBe(true);
-    expect(scopeTitles.some(t => /^Success criteria/.test(t))).toBe(true);
-    expect(scopeTitles.some(t => /^Milestones/.test(t))).toBe(true);
-    expect(scopeTitles.some(t => /^Stakeholders/.test(t))).toBe(true);
+    // Value (outcomes only): Strategy linkage / Benefits / Success criteria.
+    expect(valueTitles.some(t => /^Strategy linkage/.test(t))).toBe(true);
+    expect(valueTitles.some(t => /^Benefits/.test(t))).toBe(true);
+    expect(valueTitles.some(t => /^Success criteria/.test(t))).toBe(true);
+    // SoW (scope): Milestones & Dates / Stakeholders / Sponsor sign-off / Gate reviews + the SOW.
+    expect(sowTitles.some(t => /^Milestones/.test(t))).toBe(true);
+    expect(sowTitles.some(t => /^Stakeholders/.test(t))).toBe(true);
 
     // RAID holds: Assumptions, Risks, Decisions, Issues
     const raidTitles = Array.from(raid.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
@@ -141,7 +144,7 @@ describe('Phase 3 / AC-3.3 — entry-point routing', () => {
     { entryPoint: 'walkthrough', expected: 'overview' },
     { entryPoint: 'projects', expected: 'overview' },
     { entryPoint: 'roadmap', expected: 'delivery' },
-    { entryPoint: 'strategy', expected: 'scope' }
+    { entryPoint: 'strategy', expected: 'value' }
   ];
   fixtures.forEach(({ entryPoint, expected }) => {
     it(`entryPoint=${entryPoint} → landing tab=${expected}`, async () => {
@@ -164,8 +167,8 @@ describe('Phase 3 / AC-3.4 — hash routing round-trips', () => {
   it('switchTab writes the hash #/p/<id>/<tab>', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('P-T3');
-    app.DetailPanel.switchTab('scope');
-    expect(app.window.location.hash).toBe('#/p/P-T3/scope');
+    app.DetailPanel.switchTab('value');
+    expect(app.window.location.hash).toBe('#/p/P-T3/value');
     app.DetailPanel.switchTab('raid');
     expect(app.window.location.hash).toBe('#/p/P-T3/raid');
     app.teardown();
@@ -183,7 +186,7 @@ describe('Phase 3 / AC-3.4 — hash routing round-trips', () => {
     const { app } = await bootWithProject();
     app.window.history.replaceState(null, '', '#/p/P-T3/setup');
     app.DetailPanel.open('P-T3');
-    expect(app.DetailPanel.activeTab).toBe('scope');
+    expect(app.DetailPanel.activeTab).toBe('sow');
     app.teardown();
   });
 

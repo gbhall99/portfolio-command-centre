@@ -655,8 +655,8 @@ body.no-data .view-titlebar { display: none !important; }
 .dash-card-verdict-word.dash-card-verdict-red { color: var(--status-red); }
 
 /* Detail Panel three-tab redesign — Issue 9 */
-.dp-tabs { display: flex; gap: var(--space-1); margin-bottom: var(--space-4); border-bottom: 1px solid var(--border-dim); padding-bottom: 0; }
-.dp-tab-trigger { background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-sm) var(--radius-sm) 0 0; padding: var(--space-2) var(--space-4); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-muted); cursor: pointer; position: relative; bottom: -1px; transition: color 0.15s, background 0.15s; }
+.dp-tabs { display: flex; gap: var(--space-1); margin-bottom: var(--space-4); border-bottom: 1px solid var(--border-dim); padding-bottom: 0; overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.dp-tab-trigger { background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-sm) var(--radius-sm) 0 0; padding: var(--space-2) var(--space-4); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-muted); cursor: pointer; position: relative; bottom: -1px; transition: color 0.15s, background 0.15s; flex-shrink: 0; white-space: nowrap; }
 .dp-tab-trigger:hover { color: var(--text-strong); background: var(--surface-2); }
 .dp-tab-trigger-active { color: var(--accent-blue); background: var(--surface); border-color: var(--border-light); border-bottom-color: var(--surface); }
 html[data-theme="dark"] .dp-tab-trigger-active { background: var(--bg-card); border-color: #1f2937; border-bottom-color: var(--bg-card); }
@@ -20162,15 +20162,18 @@ const DetailPanel = {
   // Default tab is entry-point-aware (see open()'s entryPoint param + ENTRY_TAB_MAP).
   // Legacy `setup` and `health` tab keys are auto-mapped on switchTab for back-compat
   // with any callsite that still passes the old names.
-  TABS: ['overview', 'delivery', 'scope', 'raid'],
-  TAB_LABELS: { overview: 'Overview', delivery: 'Delivery', scope: 'Scope & Value', raid: 'RAID' },
+  TABS: ['overview', 'delivery', 'value', 'sow', 'wireframe', 'billing', 'raid'],
+  TAB_LABELS: { overview: 'Overview', delivery: 'Delivery', value: 'Value', sow: 'SoW', wireframe: 'Wireframe', billing: 'Billing', raid: 'RAID' },
   ENTRY_TAB_MAP: {
     dashboard: 'overview', walkthrough: 'overview', share: 'overview',
     cmdk: 'overview', notification: 'overview',
     projects: 'overview', backlog: 'overview', roadmap: 'delivery',
-    strategy: 'scope', personas: 'scope', metrics: 'scope'
+    strategy: 'value', personas: 'value', metrics: 'value'
   },
-  _legacyTabAlias: { setup: 'scope', health: 'overview' },
+  // 'scope' is the legacy id for the old combined "Scope & Value" tab — it now
+  // splits into Value (outcomes) + SoW (scope/milestones/stakeholders). Old
+  // deep-links land on Value.
+  _legacyTabAlias: { setup: 'sow', health: 'overview', scope: 'value' },
   activeTab: 'overview',
   switchTab(tab, opts) {
     opts = opts || {};
@@ -21366,7 +21369,10 @@ const DetailPanel = {
     // Phase 3 / AC-3.2: 4 tab section arrays. Health/Setup section bodies are
     // distributed across these per the §3.13 migration map.
     const overviewSections = [];
-    const scopeSections = [];
+    const valueSections = [];     // Value tab — outcomes only (no scope)
+    const sowSections = [];       // SoW tab — scope, milestones, stakeholders + the SOW
+    const wireframeSections = []; // Wireframe tab
+    const billingSections = [];   // Billing tab
     const raidSections = [];
     const deliverySections = [];
 
@@ -21697,20 +21703,20 @@ const DetailPanel = {
     );
     // S5: Stakeholders co-located with Sponsor sign-off on Scope & Value (both are "people" concerns).
     // Delivery is now a clean execution surface: Delivery Setup → Sprint window → Delivery Phases.
-    scopeSections.push(
+    valueSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Strategy linkage</div>' +
         this.renderStrategyEditFields(p) +
       '</div>'
     );
-    scopeSections.push(
+    valueSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Benefits <span class="risk-count" id="benefitCount">' + ((p.benefits || []).length || 0) + '</span></div>' +
         '<div id="benefitListInner">' + this.renderBenefits(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addBenefit()">+ Add Benefit</button>' +
       '</div>'
     );
-    scopeSections.push(
+    valueSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Success criteria <span class="risk-count" id="successCriteriaCount">' + ((p.success_criteria || []).length || 0) + '</span></div>' +
         '<div id="successCriteriaListInner">' + this.renderSuccessCriteria(p) + '</div>' +
@@ -21718,9 +21724,9 @@ const DetailPanel = {
       '</div>'
     );
 
-    // Phase 7 / AC-7.1: Gate reviews register on Scope & Value (collapsed by
+    // Phase 7 / AC-7.1: Gate reviews register on the SoW tab (collapsed by
     // default). 6 gate names locked: Discovery / Design / Build / UAT / Live / Hypercare.
-    scopeSections.push(
+    sowSections.push(
       '<div class="panel-section dp-gate-reviews-section collapsed">' +
         '<div class="panel-section-title">Gate reviews <span class="risk-count" id="gateReviewCount">' + ((p.gate_reviews || []).length || 0) + '</span></div>' +
         '<div id="gateReviewList">' + this.renderGateReviews(p) + '</div>' +
@@ -21730,7 +21736,7 @@ const DetailPanel = {
     // S5: Customer Milestones + Dates + Stakeholders + Sponsor sign-off all move to Scope & Value.
     // Hard deadline + Target date are promoted from an embedded sub-block to first-class field-grid
     // fields at the top of a "Milestones & Dates" section — they're the most consequential date fields.
-    scopeSections.push(
+    sowSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Milestones &amp; Dates</div>' +
         '<div class="field-grid" data-dates-subblock style="margin-bottom:10px">' +
@@ -21749,14 +21755,14 @@ const DetailPanel = {
         '<button class="risk-add-btn" onclick="DetailPanel.addCustomerMilestone()">+ Add milestone</button>' +
       '</div>'
     );
-    scopeSections.push(
+    sowSections.push(
       '<div class="panel-section">' +
         '<div class="panel-section-title">Stakeholders <span class="risk-count" id="stakeholderCount">' + ((p.stakeholders || []).length || 0) + '</span></div>' +
         '<div id="stakeholderList">' + this.renderStakeholders(p) + '</div>' +
         '<button class="risk-add-btn" onclick="DetailPanel.addStakeholder()">+ Add Stakeholder</button>' +
       '</div>'
     );
-    scopeSections.push(
+    sowSections.push(
       '<div class="panel-section dp-sponsor-signoff-section">' +
         '<div class="panel-section-title">Sponsor sign-off log <span class="risk-count">' + ((p.stakeholders || []).filter(s => s && s.type === 'sponsor_sign_off').length) + '</span></div>' +
         '<div id="sponsorSignOffList">' + this.renderSponsorSignOffLog(p) + '</div>' +
@@ -21860,7 +21866,10 @@ const DetailPanel = {
       '<div class="dp-tabs" role="tablist" aria-label="Project detail sections">' +
         tab('overview', this.TAB_LABELS.overview, 'Read-mostly: what is this project right now?') +
         tab('delivery', this.TAB_LABELS.delivery, 'How are we executing? Daily ops surface.') +
-        tab('scope', this.TAB_LABELS.scope, 'What are we delivering and why?') +
+        tab('value', this.TAB_LABELS.value, 'Why are we doing this? Outcomes, benefits, success criteria.') +
+        tab('sow', this.TAB_LABELS.sow, 'Scope, milestones, stakeholders and the Statement of Work.') +
+        tab('wireframe', this.TAB_LABELS.wireframe, 'Linked dashboard wireframes.') +
+        tab('billing', this.TAB_LABELS.billing, 'Quote, internal cost and margin for this project.') +
         tab('raid', this.TAB_LABELS.raid, 'Risks · Assumptions · Issues · Decisions') +
       '</div>';
     const panelDiv = (id, sectionsHtml) =>
@@ -21871,8 +21880,11 @@ const DetailPanel = {
       // outside all four tab panels, so it leaked onto every tab with a stray History chip.
       panelDiv('overview', overviewSections.join('') + this.renderAuditLog(p.id)) +
       panelDiv('delivery', deliverySections.join('')) +
-      // SOWs + wireframes are scope/value artifacts — surfaced under "Scope & Value".
-      panelDiv('scope', scopeSections.join('') + this.renderDocuments(p.id)) +
+      // Value (outcomes) · SoW (scope + the Statement of Work) · Wireframe · Billing.
+      panelDiv('value', valueSections.join('')) +
+      panelDiv('sow', sowSections.join('') + this.renderSows(p.id)) +
+      panelDiv('wireframe', wireframeSections.join('') + this.renderWireframes(p.id)) +
+      panelDiv('billing', billingSections.join('') + this.renderBilling(p.id)) +
       panelDiv('raid', raidSections.join(''));
 
     document.getElementById('panelBody').innerHTML = html;
@@ -22500,32 +22512,76 @@ const DetailPanel = {
 
   // Linked AI-skill artefacts (SOWs, wireframes). Index-based open handlers —
   // entity names are user/model input and never enter inline JS strings.
-  renderDocuments(projectId) {
-    if (typeof Sow === 'undefined' || typeof Wireframe === 'undefined') return '';
+  // SOWs and wireframes now live on their own tabs (split out of the old
+  // combined Documents block). renderSows → SoW tab, renderWireframes →
+  // Wireframe tab, renderBilling → Billing tab.
+  renderSows(projectId) {
+    if (typeof Sow === 'undefined') return '';
     const esc = Dashboard.esc;
     const sows = (App.data.sows || []).filter(s => s.project_id === projectId);
-    const wfs = (App.data.wireframes || []).filter(w => w.project_id === projectId);
     const rows = sows.map((s, i) =>
       '<div class="sow-list-row" onclick="DetailPanel.openLinkedSow(' + i + ')" data-doc-kind="sow">' +
         '<span class="sow-status-chip ' + esc(s.status) + '">' + esc(s.status) + '</span>' +
         '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(s.name) + '</span>' +
         '<span style="font-size:11px;color:var(--text-muted)">SOW · ' + new Date(s.updated_at).toLocaleDateString('en-GB') + '</span>' +
       '</div>'
-    ).concat(wfs.map((w, i) =>
+    ).join('');
+    return '<div class="panel-section">' +
+      '<div class="panel-section-title">Statement of Work' + (sows.length ? ' <span class="risk-count">' + sows.length + '</span>' : '') + '</div>' +
+      (rows || '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No SOW linked yet — one created here attaches to this project and is grounded in its scope.</div>') +
+      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-outline btn-sm" onclick="DetailPanel.newLinkedSow()">+ New SOW</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="DetailPanel.draftSowFromProject()" title="AI-draft a SOW grounded in this project’s data">Draft SOW from project</button>' +
+      '</div>' +
+    '</div>';
+  },
+  renderWireframes(projectId) {
+    if (typeof Wireframe === 'undefined') return '';
+    const esc = Dashboard.esc;
+    const wfs = (App.data.wireframes || []).filter(w => w.project_id === projectId);
+    const rows = wfs.map((w, i) =>
       '<div class="sow-list-row" onclick="DetailPanel.openLinkedWireframe(' + i + ')" data-doc-kind="wireframe">' +
         '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(w.name) + '</span>' +
-        '<span style="font-size:11px;color:var(--text-muted)">Wireframe · ' + w.components.length + ' components</span>' +
+        '<span style="font-size:11px;color:var(--text-muted)">Wireframe · ' + (w.components || []).length + ' components</span>' +
       '</div>'
-    )).join('');
-    const createBtns = '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
-      '<button class="btn btn-outline btn-sm" onclick="DetailPanel.newLinkedSow()">+ New SOW</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="DetailPanel.draftSowFromProject()" title="AI-draft a SOW grounded in this project’s data">Draft SOW from project</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="DetailPanel.newLinkedWireframe()">+ New wireframe</button>' +
-    '</div>';
+    ).join('');
     return '<div class="panel-section">' +
-      '<div class="panel-section-title">Documents' + ((sows.length + wfs.length) ? ' <span class="risk-count">' + (sows.length + wfs.length) + '</span>' : '') + '</div>' +
-      (rows || '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No documents linked yet — SOWs and wireframes created here attach to this project.</div>') +
-      createBtns +
+      '<div class="panel-section-title">Wireframes' + (wfs.length ? ' <span class="risk-count">' + wfs.length + '</span>' : '') + '</div>' +
+      (rows || '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">No wireframe linked yet — one created here attaches to this project.</div>') +
+      '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
+        '<button class="btn btn-outline btn-sm" onclick="DetailPanel.newLinkedWireframe()">+ New wireframe</button>' +
+      '</div>' +
+    '</div>';
+  },
+  renderBilling(projectId) {
+    const esc = Dashboard.esc;
+    const p = (App.data.projects || []).find(x => x.id === projectId);
+    if (!p) return '';
+    const money = (n) => (typeof Billing !== 'undefined' && Billing.fmtMoney) ? Billing.fmtMoney(n) : '£' + Math.round(n || 0).toLocaleString('en-GB');
+    let cost = null, quote = null;
+    try { if (App.computeProjectCost) cost = App.computeProjectCost(p); } catch (e) { /* unsized */ }
+    try { if (typeof Billing !== 'undefined' && Billing.quoteForProject) quote = Billing.quoteForProject(p); } catch (e) { /* no rate band */ }
+    const rows = [];
+    if (quote && quote.totals) {
+      rows.push(['Quoted (planned)', money(quote.totals.amount || 0)]);
+      if (quote.totals.points != null) rows.push(['Planned scope', App.fmtPoints(quote.totals.points) + ' SP']);
+      if (quote.totals.prepaid_covered) rows.push(['Covered by prepaid', App.fmtPoints(quote.totals.prepaid_covered) + ' SP']);
+      if (quote.totals.billable_points != null) rows.push(['Billable (T&amp;M)', App.fmtPoints(quote.totals.billable_points) + ' SP']);
+    }
+    if (cost && cost.BAC != null) {
+      rows.push(['Internal cost (BAC)', money(cost.BAC)]);
+      if (quote && quote.totals && quote.totals.amount != null) {
+        const margin = (quote.totals.amount || 0) - (cost.BAC || 0);
+        const pct = quote.totals.amount > 0 ? Math.round(margin / quote.totals.amount * 100) : 0;
+        rows.push(['Margin', money(margin) + ' (' + pct + '%)']);
+      }
+    }
+    const body = rows.length
+      ? '<table style="width:100%;border-collapse:collapse;font-size:12px">' + rows.map(r => '<tr><td style="padding:4px 0;color:var(--text-muted)">' + r[0] + '</td><td style="padding:4px 0;text-align:right;font-weight:600">' + esc(String(r[1])) + '</td></tr>').join('') + '</table>'
+      : '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">Size the project and set a customer rate band (Settings → Billing) to see a quote, cost and margin here.</div>';
+    return '<div class="panel-section">' +
+      '<div class="panel-section-title">Billing &amp; commercials</div>' + body +
+      '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Figures derive from the rate card and billing settings — never hand-entered.</div>' +
     '</div>';
   },
   // One-click linked creation — answers "where do I make a SOW/wireframe?"
