@@ -189,7 +189,7 @@ describe('Slot D — Item 5: Milestone add + Mark reviewed in the Walkthrough', 
     app.document.getElementById('wtMsAddDate').value = '2026-08-01';
     app.Walkthrough._addMilestoneFromWalkthrough('D1');
     app.DetailPanel.open('D1');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
+    const scope = app.document.querySelector('[data-dp-tab="sow"]');
     expect(scope.innerHTML).toContain('WT-added');
     app.teardown();
   });

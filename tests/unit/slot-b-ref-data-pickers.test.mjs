@@ -128,7 +128,7 @@ describe('Slot B — Item 6: compact strategy pickers (chip strip + +button popo
   it('renders chip strips for Objectives, Metrics, Personas — no <details> open by default', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('B1');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
+    const scope = app.document.querySelector('[data-dp-tab="value"]');
     expect(scope).toBeTruthy();
     const section = scope.querySelector('.dp-strategy-section');
     expect(section).toBeTruthy();
@@ -140,7 +140,7 @@ describe('Slot B — Item 6: compact strategy pickers (chip strip + +button popo
   it('Objectives row comes before Metrics row (Item 4 ordering — Objectives first)', async () => {
     const { app } = await bootWithProject();
     app.DetailPanel.open('B1');
-    const scope = app.document.querySelector('[data-dp-tab="scope"]');
+    const scope = app.document.querySelector('[data-dp-tab="value"]');
     const rows = Array.from(scope.querySelectorAll('.dp-strategy-row'));
     const labels = rows.map(r => r.querySelector('.dp-strategy-label').textContent);
     const oIdx = labels.indexOf('Objectives');

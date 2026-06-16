@@ -76,7 +76,7 @@ test('Strategy round-trip — assign metric to persona and verify project deriva
     // The derived-objective/persona assertions are intentionally dropped: derivation
     // lived only in the removed read-only section, and the objective + persona are
     // already verified above via the top-level personas/metrics/strategy view checks.
-    await page.evaluate(() => (window as any).DetailPanel.switchTab('scope'));
+    await page.evaluate(() => (window as any).DetailPanel.switchTab('value'));
     const strategySec = page.locator('#detailPanel .dp-strategy-section');
     await expect(strategySec).toContainText('E2E Total opex');
   }
