@@ -2308,8 +2308,10 @@ html[data-theme="dark"] .gantt-sprint-link:hover { background: #1e293b; border-c
 .team-skill-num { font-size: var(--fs-2xs); color: var(--text-muted); min-width: 50px; text-align: right; font-variant-numeric: tabular-nums; }
 .team-holiday { font-size: 11px; color: var(--accent-rose); display: flex; align-items: center; gap: 4px; }
 .team-pts { font-size: 12px; font-weight: 700; color: var(--text-dark); min-width: 40px; text-align: center; }
-.team-actions { display: flex; gap: 4px; min-width: 60px; justify-content: flex-end; }
-.team-actions button { width: 24px; height: 24px; border: none; background: none; cursor: pointer; color: var(--text-muted); border-radius: var(--radius-sm); font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.team-actions { display: flex; gap: 4px; min-width: 60px; justify-content: flex-end; flex-wrap: wrap; }
+/* Buttons size to their content (the "Impact?" / "Availability / leave…" text
+   buttons were forced into a 24px box, so their text overflowed and overlapped). */
+.team-actions button { min-width: 24px; height: 24px; width: auto; padding: 0 6px; white-space: nowrap; border: none; background: none; cursor: pointer; color: var(--text-muted); border-radius: var(--radius-sm); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
 .team-actions button:hover { background: var(--bg-content); color: var(--text-dark); }
 .team-actions button.delete:hover { background: rgba(239,68,68,0.1); color: var(--status-red); }
 .team-add-btn { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 10px; border: 1px dashed var(--border-light); border-radius: var(--radius-md); background: none; cursor: pointer; color: var(--text-muted); font-size: 12px; font-weight: 500; width: 100%; transition: all 0.15s; margin-top: 8px; }
@@ -2681,6 +2683,15 @@ html[data-theme="dark"] .team-edit-modal > #forumModalFields::-webkit-scrollbar-
      they are desktop affordances; the command palette still reaches them. */
   .header-tools, #viewAsPicker, .header-divider, .undo-group, #btnRedo { display: none !important; }
   .header-customer-select { max-width: 130px; text-overflow: ellipsis; }
+
+  /* View titlebar: on phones let the "Data as at" stamp drop to its own line
+     instead of overlapping the customer pill. */
+  .view-titlebar { padding: 8px 12px; gap: 4px 10px; flex-wrap: wrap; }
+  .view-titlebar-name { font-size: var(--fs-sm); }
+  .view-titlebar-divider { display: none; }
+  .view-titlebar-spacer { display: none; }
+  .view-titlebar-customer { font-size: var(--fs-2xs); padding: 2px 8px; max-width: 100%; }
+  .view-titlebar-asof { flex-basis: 100%; font-size: var(--fs-2xs); order: 5; }
 
   /* Sidebar overlay */
   .sidebar {
@@ -3272,19 +3283,40 @@ html[data-theme="dark"] .pcc-tooltip[data-tip]:focus-visible::after { background
    Applies up to 768px so portrait tablets get the readable card view instead of
    a ~1240px table that only scrolls sideways. */
 @media (max-width: 768px) {
-  /* Override the min-width:600/700 from the wider breakpoints so the card list
+  /* Override the min-width:600/700 from the wider breakpoints so the card grid
      fills the viewport instead of forcing a horizontal page scroll. */
-  .project-table { min-width: 0 !important; width: 100% !important; }
+  .project-table { min-width: 0 !important; width: 100% !important; border-collapse: separate; }
   .project-table thead { display: none; }
-  .project-table, .project-table tbody, .project-table tr, .project-table td { display: block; width: 100% !important; }
-  .project-table tr { border: 1px solid var(--border-light); border-radius: var(--radius-md); margin-bottom: 8px; background: var(--bg-card); padding: 8px 4px; }
-  .project-table td { border: none !important; padding: 4px 12px; white-space: normal; overflow: visible; max-width: none !important; min-width: 0 !important; }
-  .project-table td::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); font-weight: 700; margin-bottom: 1px; }
+  .project-table, .project-table tbody { display: block; width: 100% !important; }
+  /* Each row becomes a card: name as a full-width header, the rest a 2-col grid. */
+  .project-table tr {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; align-items: start;
+    border: 1px solid var(--border-light); border-radius: var(--radius-md);
+    margin-bottom: 10px; background: var(--bg-card); padding: 12px 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .project-table tr.row-at-risk { border-left: 3px solid var(--status-amber, #d97706); }
+  .project-table tr.row-blocked { border-left: 3px solid var(--status-red, #dc2626); }
+  .project-table td {
+    display: block; border: none !important; padding: 0; margin: 0;
+    white-space: normal; overflow: visible; max-width: none !important; min-width: 0 !important;
+    font-size: 12.5px; line-height: 1.3; align-self: start;
+  }
+  .project-table td::before {
+    content: attr(data-label); display: block; font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--text-muted); font-weight: 700; margin-bottom: 2px;
+  }
   .project-table td:empty { display: none; }
-  /* Drag/pin chrome is mouse-only; drop it on phones and make the name the card title. */
+  /* Drag/pin chrome is mouse-only; drop it on phones. */
   .project-table td[data-col-id="__drag"], .project-table td[data-col-id="__pin"] { display: none !important; }
-  .project-table td[data-col-id="name"] { font-size: 14px; font-weight: 700; padding-top: 8px; }
+  /* Name is the card header (full width, no label, divider beneath). */
+  .project-table td[data-col-id="name"] {
+    grid-column: 1 / -1; font-size: 15px; font-weight: 700; color: var(--text-dark);
+    padding-bottom: 8px; border-bottom: 1px solid var(--border-light) !important;
+  }
   .project-table td[data-col-id="name"]::before { display: none; }
+  /* Priority + status read better full-width. */
+  .project-table td[data-col-id="priority"], .project-table td[data-col-id="status"] { grid-column: 1 / -1; }
   .project-name-cell { max-width: none !important; min-width: 0 !important; }
 }
 
@@ -40477,7 +40509,11 @@ const AI = {
       ? '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--text-muted);font-size:var(--fs-2xs);text-transform:uppercase"><th style="padding:6px 8px">Name</th><th style="padding:6px 8px">Adapter</th><th style="padding:6px 8px">Model</th><th style="padding:6px 8px">Endpoint</th><th style="padding:6px 8px">Key</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>'
       : '<div style="font-size:13px;color:var(--text-muted);padding:10px 0">No model profiles yet. Add one to enable the Assistant and AI skills — any OpenAI-compatible endpoint works, including local models (Ollama, LM Studio, vLLM).</div>';
 
-    const editing = this._editingProfileId === 'new' ? { adapter: 'openai', temperature: 0.4 } : this.getProfile(this._editingProfileId);
+    // New profiles default to Groq (fast, OpenAI-compatible cloud) — the user
+    // just pastes a key. Server-side keys can't be read by the browser (see note).
+    const editing = this._editingProfileId === 'new'
+      ? { adapter: this.PRESETS.groq.adapter, baseUrl: this.PRESETS.groq.baseUrl, model: this.PRESETS.groq.model, toolMode: this.PRESETS.groq.toolMode, temperature: 0.4 }
+      : this.getProfile(this._editingProfileId);
     const form = editing ? this._renderProfileForm(editing) : '';
 
     const taskRow = (task, label) => {
@@ -40489,7 +40525,8 @@ const AI = {
     return '' +
       '<div class="config-card" style="background:var(--bg-card);border:1px solid var(--border-light);border-radius:var(--radius-md);padding:16px;margin-bottom:14px">' +
         '<div style="font-weight:700;margin-bottom:4px;color:var(--text-dark)">Model profiles</div>' +
-        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Keys are stored only in this browser’s localStorage — they are never written into portfolio data, exports or backups.</div>' +
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Keys are stored only in this browser’s localStorage — they are never written into portfolio data, exports or backups.</div>' +
+        '<div style="font-size:12px;background:var(--surface-2,#f1f5f9);border:1px solid var(--border-light);border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:10px;line-height:1.55"><b>Using Groq?</b> New profiles default to Groq (<code>llama-3.3-70b-versatile</code>) — just paste your <code>gsk_…</code> key below and Save. <b>Note:</b> a <code>GROQ_API_KEY</code> set in your host (e.g. Vercel) lives on the server and <b>cannot</b> be read by this browser-only app, so it is never used — paste the key here instead.</div>' +
         table +
         '<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="AI.uiEditProfile(\'new\')">+ Add profile</button></div>' +
         form +
