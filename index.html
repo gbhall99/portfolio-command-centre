@@ -44630,7 +44630,11 @@ const Sow = {
   // S2: pull the linked project's open RAID items into a section as editable
   // bullets, with provenance recorded on section.sources[]. Customer/project
   // scoped, de-duplicated, audited + undoable.
-  pullFromRaid(sowId, sectionId) {
+  // The ONLY RAID items appropriate to bring into a section: open assumptions,
+  // or open high-severity risks (score ≥ 12). Nothing else is ever offered —
+  // the picker is built from exactly this list. Each item carries `already` so
+  // the UI can hide items previously pulled.
+  raidCandidates(sowId, sectionId) {
     const sow = this.get(sowId);
     if (!sow) return { ok: false, error: 'No SOW' };
     if (!sow.project_id) return { ok: false, error: 'Link a project first — RAID is pulled from the linked project.' };
@@ -44650,20 +44654,40 @@ const Sow = {
         .filter(r => App.isSevereRisk ? App.isSevereRisk(r) : (((r.impact || 0) * (r.probability || 0)) >= 12))
         .map(r => ({ ref: r.id || '', text: String(r.description || '').trim() })).filter(x => x.text);
     }
-    if (!items.length) return { ok: false, error: 'No ' + (kind === 'risk' ? 'high-severity risks' : 'open assumptions') + ' to pull from the linked project.' };
-    if (!Array.isArray(sec.sources)) sec.sources = [];
     const existing = (sec.content || '').toLowerCase();
-    const have = new Set(sec.sources.filter(s => s.kind === 'raid' && s.ref).map(s => s.ref));
-    const fresh = items.filter(it => !(it.ref && have.has(it.ref)) && existing.indexOf(it.text.toLowerCase()) < 0);
-    if (!fresh.length) return { ok: false, error: 'Already pulled — nothing new in the project’s RAID.' };
+    const have = new Set((sec.sources || []).filter(s => s.kind === 'raid' && s.ref).map(s => s.ref));
+    items.forEach(it => { it.already = (it.ref && have.has(it.ref)) || existing.indexOf(it.text.toLowerCase()) >= 0; });
+    return { ok: true, kind, items, sow, sec };
+  },
+  _appendRaid(sow, sec, kind, chosen) {
+    if (!chosen.length) return { ok: false, error: 'Nothing new to add.' };
+    if (!Array.isArray(sec.sources)) sec.sources = [];
     App.pushUndo('Pull RAID into SOW ' + sec.title);
-    const bullets = fresh.map(it => '- ' + it.text).join('\n');
+    const bullets = chosen.map(it => '- ' + it.text).join('\n');
     sec.content = (sec.content && sec.content.trim()) ? (sec.content.replace(/\s+$/, '') + '\n' + bullets) : bullets;
-    fresh.forEach(it => sec.sources.push({ kind: 'raid', raid_kind: kind, ref: it.ref, text: it.text.slice(0, 200) }));
+    chosen.forEach(it => sec.sources.push({ kind: 'raid', raid_kind: kind, ref: it.ref, text: it.text.slice(0, 200) }));
     if (sec.flagged && /empty/i.test(sec.flag_reason || '')) { sec.flagged = false; sec.flag_reason = ''; }
-    this._history(sow, 'raid_pulled', sec.title + ' (' + fresh.length + ' ' + kind + ')');
-    this._persist(sow, 'sow_raid_pull:' + sectionId, '', String(fresh.length), 'user');
-    return { ok: true, added: fresh.length };
+    this._history(sow, 'raid_pulled', sec.title + ' (' + chosen.length + ' ' + kind + ')');
+    this._persist(sow, 'sow_raid_pull:' + sec.id, '', String(chosen.length), 'user');
+    return { ok: true, added: chosen.length };
+  },
+  // Pull every fresh appropriate item (back-compat for non-picker callers).
+  pullFromRaid(sowId, sectionId) {
+    const c = this.raidCandidates(sowId, sectionId);
+    if (!c.ok) return c;
+    const fresh = c.items.filter(it => !it.already);
+    if (!fresh.length) return { ok: false, error: c.items.length ? 'Already pulled — nothing new in the project’s RAID.' : 'No ' + (c.kind === 'risk' ? 'high-severity risks' : 'open assumptions') + ' to pull from the linked project.' };
+    return this._appendRaid(c.sow, c.sec, c.kind, fresh);
+  },
+  // Pull only the chosen appropriate items (the picker path). refs match an
+  // item's ref (or its text when it has no id).
+  pullSelectedRaid(sowId, sectionId, refs) {
+    const c = this.raidCandidates(sowId, sectionId);
+    if (!c.ok) return c;
+    const want = new Set(refs || []);
+    const chosen = c.items.filter(it => !it.already && (want.has(it.ref) || want.has(it.text)));
+    if (!chosen.length) return { ok: false, error: 'Select at least one item to add.' };
+    return this._appendRaid(c.sow, c.sec, c.kind, chosen);
   },
 
   // S2: append a governed clause to a section, recording provenance. Audited +
@@ -44915,11 +44939,35 @@ const SowSkill = {
   uiResolveFlag(sectionId) { Sow.resolveFlag(this._sowId, sectionId); this.render(); },
 
   // S2: pull RAID into a section / insert a governed clause.
+  // Picker: only APPROPRIATE items (open assumptions / open severe risks) are
+  // listed and selectable — nothing else can be brought into the document.
   uiPullRaid(sectionId) {
-    const r = Sow.pullFromRaid(this._sowId, sectionId);
-    if (!r.ok) App.toast(r.error, 'error');
-    else App.toast('Pulled ' + r.added + ' item(s) from RAID — Ctrl+Z to undo', 'success');
-    this.render();
+    const c = Sow.raidCandidates(this._sowId, sectionId);
+    if (!c.ok) { App.toast(c.error, 'error'); return; }
+    const fresh = c.items.filter(it => !it.already);
+    if (!fresh.length) { App.toast(c.items.length ? 'Already pulled — nothing new to add.' : 'No ' + (c.kind === 'risk' ? 'high-severity risks' : 'open assumptions') + ' to add.', 'info'); return; }
+    const esc = Dashboard.esc;
+    const old = document.getElementById('raidPickerOverlay'); if (old) old.remove();
+    const rows = fresh.map(it => '<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:13px"><input type="checkbox" class="rp-raid-item" checked value="' + Dashboard.escAttr(it.ref || it.text) + '" style="margin-top:3px"><span>' + esc(it.text) + '</span></label>').join('');
+    const ov = document.createElement('div');
+    ov.id = 'raidPickerOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:500;display:flex;align-items:center;justify-content:center;padding:12px';
+    ov.innerHTML = '<div role="dialog" aria-label="Add from RAID" style="background:var(--bg-card,#fff);color:var(--text-dark);border-radius:12px;width:460px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden">' +
+      '<div style="padding:14px 16px;border-bottom:1px solid var(--border-light);font-weight:800">Add ' + (c.kind === 'risk' ? 'high-severity risks' : 'open assumptions') + '</div>' +
+      '<div style="padding:8px 16px;overflow:auto">' + rows + '</div>' +
+      '<div style="padding:10px 16px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px">' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'raidPickerOverlay\').remove()">Cancel</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="SowSkill._confirmPullRaid(\'' + esc(sectionId) + '\')">Add selected</button>' +
+      '</div></div>';
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  },
+  _confirmPullRaid(sectionId) {
+    const refs = Array.from(document.querySelectorAll('.rp-raid-item:checked')).map(el => el.value);
+    const ov = document.getElementById('raidPickerOverlay'); if (ov) ov.remove();
+    const r = Sow.pullSelectedRaid(this._sowId, sectionId, refs);
+    if (r && r.ok) { App.toast('Added ' + r.added + ' item' + (r.added === 1 ? '' : 's') + ' — Ctrl+Z to undo', 'success'); this.render(); }
+    else if (r && r.error) App.toast(r.error, 'error');
   },
   _clausePickerOn: null,
   uiClauseToggle(sectionId) {
