@@ -182,15 +182,15 @@ describe('Slot D — Item 5: Milestone add + Mark reviewed in the Walkthrough', 
     app.teardown();
   });
 
-  it('milestones added in the walkthrough surface on Scope & Value tab', async () => {
-    // S5: Customer Milestones moved from Delivery to the "Milestones & Dates" section on Scope & Value.
+  it('milestones added in the walkthrough surface on the Delivery tab', async () => {
+    // Milestones & Dates lives on Delivery (date-centric section).
     const { app } = await bootWithProject();
     app.document.getElementById('wtMsAddName').value = 'WT-added';
     app.document.getElementById('wtMsAddDate').value = '2026-08-01';
     app.Walkthrough._addMilestoneFromWalkthrough('D1');
     app.DetailPanel.open('D1');
-    const scope = app.document.querySelector('[data-dp-tab="sow"]');
-    expect(scope.innerHTML).toContain('WT-added');
+    const delivery = app.document.querySelector('[data-dp-tab="delivery"]');
+    expect(delivery.innerHTML).toContain('WT-added');
     app.teardown();
   });
 

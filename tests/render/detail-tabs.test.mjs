@@ -65,18 +65,20 @@ describe('Detail Panel — tab IA', () => {
     expect(q('overview')).toMatch(/panel-section-title[^>]*>Status &amp; Health/);
     expect(q('overview')).toMatch(/panel-section-title[^>]*>Prioritisation</);
     expect(q('delivery')).toMatch(/Delivery Phases/);
+    // Date-centric "Milestones & Dates" lives on Delivery now.
+    expect(q('delivery')).toMatch(/Milestones &amp; Dates/);
     // Value = outcomes only (Strategy linkage + Benefits + Success criteria), NO scope/Identity.
     expect(q('value')).toMatch(/Strategy linkage/);
     expect(q('value')).toMatch(/Benefits/);
     expect(q('value')).toMatch(/Success criteria/);
-    expect(q('value')).not.toMatch(/Statement of Work/);
-    // SoW = scope info (Milestones & Dates, Stakeholders) + the Statement of Work.
-    expect(q('sow')).toMatch(/Milestones &amp; Dates/);
+    expect(q('value')).not.toMatch(/Scope of Work/);
+    // SoW = scope info (Stakeholders, Gate reviews) + the Scope of Work; dates moved to Delivery.
     expect(q('sow')).toMatch(/Stakeholders/);
-    expect(q('sow')).toMatch(/Statement of Work/);
-    // Wireframe + Billing are their own tabs.
+    expect(q('sow')).toMatch(/Scope of Work/);
+    expect(q('sow')).not.toMatch(/Milestones &amp; Dates/);
+    // Wireframe + Estimates are their own tabs.
     expect(q('wireframe')).toMatch(/Wireframes/);
-    expect(q('billing')).toMatch(/Billing &amp; commercials/);
+    expect(q('billing')).toMatch(/Estimates/);
     // RAID unchanged.
     expect(q('raid')).toMatch(/panel-section-title[^>]*>Blockers</);
     app.teardown();
