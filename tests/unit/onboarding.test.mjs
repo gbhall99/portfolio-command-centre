@@ -91,6 +91,38 @@ describe('proactive suggestions from prior projects', () => {
   });
 });
 
+describe('transcript upload → extraction', () => {
+  it('extracts and applies project fields from a transcript via the mock model', async () => {
+    const O = await boot();
+    const id = app.AI.upsertProfile({ name: 'Mock', adapter: 'mock', model: 'mock-1' });
+    app.AI.setDefaultProfile(id);
+    app.AI.ADAPTERS.mock.program([{ text: JSON.stringify({
+      name: 'Atlas Migration', manager: 'Priya', size_total: 24, hard_deadline: '2026-12-01', moscow: 'Must', lifecycle_stage: 'Discovery'
+    }) }]);
+    O.open('Acme Industries');
+    const raw = await O._extractFromText('Kickoff notes: Atlas Migration, led by Priya, ~24 points, hard deadline 1 Dec 2026, must-have.');
+    const applied = O._applyExtracted(raw);
+    expect(applied.length).toBeGreaterThan(0);
+    expect(O._state.answers.name).toBe('Atlas Migration');
+    expect(O._state.answers.manager).toBe('Priya');
+    expect(O._state.answers.size_total).toBe(24);
+    expect(O._state.answers.hard_deadline).toBe('2026-12-01');
+    expect(O._state.answers.moscow).toBe('Must');
+    expect(O._state.answers.lifecycle_stage).toBe('Discovery');
+  });
+
+  it('_applyExtracted validates through the slot parsers and drops bad values', async () => {
+    const O = await boot();
+    O.open('Acme Industries');
+    const applied = O._applyExtracted({ name: 'X', size_total: 'lots', target_date: 'soon', moscow: 'Maybe' });
+    expect(O._state.answers.name).toBe('X');
+    expect('size_total' in O._state.answers).toBe(false);
+    expect('target_date' in O._state.answers).toBe(false);
+    expect('moscow' in O._state.answers).toBe(false);
+    expect(applied).toEqual(['Project name']);
+  });
+});
+
 describe('resume', () => {
   it('persists a draft per customer and restores it on reopen', async () => {
     const O = await boot();
