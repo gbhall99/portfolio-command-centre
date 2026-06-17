@@ -151,16 +151,16 @@ describe('WireframeSkill.uiFixLayout', () => {
     expect(app.App.data.audit_log.length).toBe(before); // nothing mutated
   });
 
-  it('renders a "Fix layout with AI" button only while errors remain and a model is set', () => {
+  it('renders a "Fix with AI" button only while errors remain and a model is set', () => {
     const { AI, WireframeSkill, Wireframe, document } = app;
     const pid = AI.upsertProfile({ name: 'Mock', adapter: 'mock', model: 'mock' });
     AI.setDefaultProfile(pid);
     brokenWf(app);
     WireframeSkill.open({}); WireframeSkill.edit('WF-X');
-    expect(document.getElementById('wfConf').textContent).toContain('Fix layout with AI');
+    expect(document.getElementById('wfConf').textContent).toContain('Fix with AI');
     // Once it conforms, the button disappears.
     Wireframe.updateComponent('WF-X', 't1', { y: 0 }, def(app));
     WireframeSkill.render();
-    expect(document.getElementById('wfConf').textContent).not.toContain('Fix layout with AI');
+    expect(document.getElementById('wfConf').textContent).not.toContain('Fix with AI');
   });
 });

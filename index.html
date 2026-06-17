@@ -47148,14 +47148,44 @@ const WireframeSkill = {
     const wf = Wireframe.get(this._wfId);
     if (!wf) return '';
     const esc = Dashboard.esc;
-    const conf = Wireframe.checkConformance(wf, this._def());
+    const def = this._def();
+    const conf = Wireframe.checkConformance(wf, def);
+    const ready = Wireframe.buildReady(wf, def);
+    // Binding blockers aren't structural conformance — show them under the rules.
+    const bindingBlockers = ready.blockers.filter(b => conf.errors.indexOf(b) < 0);
+    const tidyBtn = conf.errors.length
+      ? '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiTidyLayout()" title="Auto-fix overlaps, off-grid and undersized components — no model needed">Tidy layout</button>'
+      : '';
+    const aiBtn = conf.errors.length && AI.isConfigured()
+      ? '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiFixLayout()"' + (this._fixBusy ? ' disabled' : '') + ' title="Let AI clear the conformance errors with minimal moves">' + (this._fixBusy ? 'Fixing…' : 'Fix with AI') + '</button>'
+      : '';
+    const buttons = (tidyBtn || aiBtn) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + tidyBtn + aiBtn + '</div>' : '';
+    const readyLine = '<div style="margin-top:8px;font-size:11px;font-weight:700;color:var(--' + (ready.ok ? 'status-green' : 'status-amber') + ')">' +
+      (ready.ok ? 'Build-ready' : ready.blockers.length + ' item' + (ready.blockers.length === 1 ? '' : 's') + ' before build hand-off') + '</div>';
     return '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Definition conformance</div>' +
       (conf.ok && !conf.warnings.length ? '<div class="ok">Layout conforms to the design guidelines.</div>' : '') +
       conf.errors.map(e => '<div class="err">• ' + esc(e) + '</div>').join('') +
       conf.warnings.map(w => '<div class="warn">• ' + esc(w) + '</div>').join('') +
-      (conf.errors.length && AI.isConfigured()
-        ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiFixLayout()"' + (this._fixBusy ? ' disabled' : '') + ' title="Let AI clear the conformance errors with minimal moves">' + (this._fixBusy ? 'Fixing…' : 'Fix layout with AI') + '</button>'
-        : '');
+      bindingBlockers.map(b => '<div class="warn">• ' + esc(b) + '</div>').join('') +
+      buttons + readyLine;
+  },
+  uiTidyLayout() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    const n = Wireframe.autoFix(wf, this._def());
+    App.toast(n ? ('Tidied ' + n + ' component' + (n === 1 ? '' : 's') + ' — Ctrl+Z to undo') : 'Layout already tidy', n ? 'success' : 'info');
+    this.renderCanvasAndConf();
+  },
+  uiCoord(field, val) {
+    const n = parseInt(val, 10);
+    if (isNaN(n) || !this._selId) return;
+    Wireframe.updateComponent(this._wfId, this._selId, { [field]: n }, this._def());
+    this.render();
+  },
+  uiNoMetric(el) {
+    if (!this._selId) return;
+    Wireframe.setComponentNoMetric(this._wfId, this._selId, el.checked);
+    this.render();
   },
 
   // W3: dashboard-set page strip — switch between pages, add a new one.
@@ -47214,6 +47244,9 @@ const WireframeSkill = {
     const metricOpts = '<option value="">— no metric —</option>' +
       (App.data.metrics || []).filter(m => m.customer === wf.customer)
         .map(m => '<option value="' + esc(m.id) + '"' + (sel && sel.metric_id === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('');
+    const coord = (lbl, f, v, max) => '<label style="display:flex;flex-direction:column;font-size:10px;color:var(--text-muted);flex:1;gap:2px">' + lbl +
+      '<input type="number" class="field-input" style="padding:2px 4px" min="0" max="' + max + '" value="' + v + '" onchange="WireframeSkill.uiCoord(\'' + f + '\', this.value)" aria-label="' + lbl + '"></label>';
+    const isData = Wireframe.isDataBearing(sel);
     const props = sel
       ? '<div class="wf-props">' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Selected: ' + esc(sel.type) + '</div>' +
@@ -47221,10 +47254,13 @@ const WireframeSkill = {
           '<input id="wfTitleInput" class="field-input" value="' + Dashboard.escAttr(sel.title || '') + '" oninput="WireframeSkill.uiTitleChange(this)">' +
           '<label for="wfMetricSelect">Shows metric</label>' +
           '<select id="wfMetricSelect" class="field-input" onchange="WireframeSkill.uiSetComponentMetric(this)" aria-label="Metric this component visualizes">' + metricOpts + '</select>' +
-          '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">' + sel.w + '×' + sel.h + ' at (' + sel.x + ',' + sel.y + ') — drag to move, corner handle to resize</div>' +
+          (isData ? '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:4px;color:var(--text-muted)"><input type="checkbox"' + (sel.props && sel.props.no_metric ? ' checked' : '') + ' onchange="WireframeSkill.uiNoMetric(this)"> No metric (intentional)</label>' : '') +
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:8px">Position &amp; size (grid cells)</div>' +
+          '<div style="display:flex;gap:6px;margin-top:2px">' + coord('X', 'x', sel.x, wf.grid.cols - 1) + coord('Y', 'y', sel.y, wf.grid.rows - 1) + coord('W', 'w', sel.w, wf.grid.cols) + coord('H', 'h', sel.h, wf.grid.rows) + '</div>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Drag to move · corner handle to resize · arrows nudge · Shift+arrows resize · Del removes</div>' +
           '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
         '</div>'
-      : '<div style="font-size:11px;color:var(--text-muted)">Select a component to edit its title or remove it.</div>';
+      : '<div style="font-size:11px;color:var(--text-muted)">Select a component to edit its title, position, or metric. Tip: arrows nudge · Shift+arrows resize · Del removes.</div>';
     return this._header(wf.name, true) +
       '<div class="wf-body">' +
         '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
