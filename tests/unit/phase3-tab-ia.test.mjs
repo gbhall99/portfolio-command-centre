@@ -99,7 +99,8 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     expect(delivery.innerHTML).toMatch(/Sprint window/);
     expect(delivery.innerHTML).toMatch(/Delivery Phases/);
     expect(delivery.innerHTML).not.toMatch(/Stakeholders/);
-    expect(delivery.innerHTML).not.toMatch(/Customer Milestones/);
+    // Date-centric Milestones & Dates now lives on Delivery.
+    expect(delivery.innerHTML).toMatch(/Milestones &amp; Dates/);
 
     // User-IA-rev: Identity + Prioritisation moved from Scope to Overview.
     const overviewTitles = Array.from(overview.querySelectorAll('.panel-section-title')).map(t => t.textContent.trim());
@@ -111,8 +112,8 @@ describe('Phase 3 / AC-3.2 — section migration map (zero orphans)', () => {
     expect(valueTitles.some(t => /^Strategy linkage/.test(t))).toBe(true);
     expect(valueTitles.some(t => /^Benefits/.test(t))).toBe(true);
     expect(valueTitles.some(t => /^Success criteria/.test(t))).toBe(true);
-    // SoW (scope): Milestones & Dates / Stakeholders / Sponsor sign-off / Gate reviews + the SOW.
-    expect(sowTitles.some(t => /^Milestones/.test(t))).toBe(true);
+    // SoW (scope): Stakeholders / Sponsor sign-off / Gate reviews + the SOW; dates moved to Delivery.
+    expect(sowTitles.some(t => /^Milestones/.test(t))).toBe(false);
     expect(sowTitles.some(t => /^Stakeholders/.test(t))).toBe(true);
 
     // RAID holds: Assumptions, Risks, Decisions, Issues
