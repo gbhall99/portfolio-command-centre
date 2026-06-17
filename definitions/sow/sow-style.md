@@ -1,6 +1,6 @@
 # SOW Style Guide
 
-Tone, language and formatting rules for every generated Statement of Work.
+Tone, language and formatting rules for every generated Scope of Work.
 The structure is fixed by `sow-definition.json`; this file governs how the
 content inside each section reads. Nuance per customer and project is
 expected — these rules are the boundaries, not a script.

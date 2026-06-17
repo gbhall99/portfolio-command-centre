@@ -65,14 +65,15 @@ describe('Phase 2 / AC-2.1 — 2-row sticky header', () => {
     app.teardown();
   });
 
-  it('falls back to "No active sprint" chip in row 2 when no current_sprint', async () => {
+  it('falls back to "No active sprint" in the summary chip when no current_sprint', async () => {
     const p = makeProject({ id: 'S4', name: 'P', customer: 'Acme Industries' });
     const app = await loadApp(makeDataset({ projects: [p] }));
     await openDetailPanel(app, 'S4');
     const meta = app.document.getElementById('panelStickyMeta');
-    const row2 = meta.querySelector('.psm-row-2');
-    expect(row2).toBeTruthy();
-    expect(row2.textContent).toContain('No active sprint');
+    // Sprint lives only in the <summary> now (not duplicated into row 2).
+    const summary = meta.querySelector('details.psm-collapse > summary');
+    expect(summary).toBeTruthy();
+    expect(summary.textContent).toContain('No active sprint');
     app.teardown();
   });
 });
