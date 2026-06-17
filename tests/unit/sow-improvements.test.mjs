@@ -99,6 +99,31 @@ describe('Sow bulk resolve', () => {
   });
 });
 
+describe('editor UI affordances', () => {
+  it('renders readiness summary, bulk-resolve, Suggest edit (Review) and Draft this section (empty)', () => {
+    const { Sow, SowSkill, AI, document } = app;
+    const def = app.Definitions.loadJson('sow/sow-definition.json');
+    const filler = Array.from({ length: 45 }, (_, i) => 'w' + i).join(' ');
+    const sow = Sow.create({
+      customer: 'Acme Industries', definition: def,
+      generatedSections: def.sections.map((s, i) => ({ id: s.id, content: i === 0 ? '' : filler, supported_by_source: true, phases: [] })),
+      name: 'UI SOW', source_text: 'src'
+    });
+    sow.sections[1].flagged = true; sow.sections[1].flag_reason = 'x';
+    sow.sections[2].flagged = true; sow.sections[2].flag_reason = 'y';
+    const id = AI.upsertProfile({ name: 'Mock', adapter: 'mock', model: 'm' });
+    AI.setDefaultProfile(id);
+    Sow.setStatus(sow.id, 'Review', def);
+    SowSkill.open({}); SowSkill.edit(sow.id);
+    const main = document.querySelector('.sow-main').textContent;
+    const side = document.getElementById('sowSide').textContent;
+    expect(main).toContain('Draft this section');     // section 0 is empty + a model is set
+    expect(main).toContain('Suggest edit');           // always shown in Review
+    expect(side).toMatch(/issue.*before Approve/);    // empty required section blocks
+    expect(side).toContain('Resolve all flags');      // >1 flagged section
+  });
+});
+
 describe('validate phase-alignment warning', () => {
   it('warns when Deliverables name a phase not in the linked project plan', () => {
     const { Sow, App } = app;
