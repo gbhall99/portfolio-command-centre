@@ -44487,6 +44487,84 @@ const Sow = {
   // on this in validate(); this is the read-side flag for the needs-refresh chip.)
   isStale(sow) { return this.quoteIsStale(sow); },
 
+  // Accuracy: currency amounts in the document that don't trace to the generated
+  // quote (totals or line amounts). Only runs when a quote grounds the figures,
+  // so there are no false positives on un-quoted SOWs. Returns [{section, amount}].
+  figuresCheck(sow) {
+    const out = [];
+    if (!sow || !sow.quote) return out;
+    const allowed = new Set();
+    const addAmt = (n) => { const v = Math.round(Number(n)); if (!isNaN(v) && v !== 0) allowed.add(v); };
+    const q = sow.quote;
+    if (q.totals) { addAmt(q.totals.amount); addAmt(q.totals.prepaid_covered_value); addAmt(q.totals.billable_value); }
+    (q.lines || []).forEach(l => addAmt(l.amount));
+    const reMoney = /[£$]\s?(\d[\d,]*(?:\.\d+)?)/g;
+    sow.sections.forEach(sec => {
+      const text = sec.content || '';
+      let m;
+      while ((m = reMoney.exec(text))) {
+        const val = Math.round(parseFloat(m[1].replace(/,/g, '')));
+        if (isNaN(val) || val === 0) continue;
+        if (!allowed.has(val) && ![...allowed].some(a => Math.abs(a - val) <= 1)) out.push({ section: sec.title, amount: m[0].trim() });
+      }
+    });
+    return out;
+  },
+  // Human-readable reason a stored quote is stale (the drift the user should see
+  // instead of a bare "out of date").
+  quoteStaleReason(sow) {
+    if (!this.quoteIsStale(sow)) return '';
+    const project = (App.data.projects || []).find(p => p.id === sow.project_id);
+    if (!project) return 'the linked project changed';
+    let fresh;
+    try { fresh = Billing.quoteForProject(project); } catch (e) { return 'the project changed'; }
+    const q = sow.quote.totals || {}, f = fresh.totals || {};
+    const money = (n) => (typeof Billing !== 'undefined' && Billing.fmtMoney) ? Billing.fmtMoney(n || 0) : ('£' + Math.round(n || 0));
+    const bits = [];
+    if ((f.billable_points || 0) !== (q.billable_points || 0)) bits.push('billable points ' + App.fmtPoints(q.billable_points || 0) + ' → ' + App.fmtPoints(f.billable_points || 0));
+    if ((fresh.hourly_rate || 0) !== (sow.quote.hourly_rate || 0)) bits.push('rate ' + money(sow.quote.hourly_rate) + ' → ' + money(fresh.hourly_rate));
+    if ((f.amount || 0) !== (q.amount || 0)) bits.push('total ' + money(q.amount) + ' → ' + money(f.amount));
+    return bits.join(', ') || 'the project changed';
+  },
+  // Word count for a section's content (the same rule validate() uses).
+  sectionWordCount(content) { return (content || '').trim().split(/\s+/).filter(Boolean).length; },
+  // Would applying `newContent` to a section regress it below the definition's
+  // bar? Used to warn before an AI redraft is accepted. Returns string[].
+  regressionWarnings(sectionId, newContent, def) {
+    const out = [];
+    if (!def) return out;
+    const ds = (def.sections || []).find(s => s.id === sectionId);
+    if (!ds || !ds.required) return out;
+    const words = this.sectionWordCount(newContent);
+    if (words === 0) out.push('This would leave a required section empty.');
+    else if (ds.min_words && words < ds.min_words) out.push('This drops “' + ds.title + '” to ' + words + ' words (needs ' + ds.min_words + '+).');
+    return out;
+  },
+  // Bulk-resolve every flagged section / every open comment as one undo step.
+  resolveAllFlags(sowId) {
+    const sow = this.get(sowId);
+    if (!sow) return 0;
+    const flagged = sow.sections.filter(s => s.flagged);
+    if (!flagged.length) return 0;
+    App.pushUndo('Resolve all SOW flags');
+    flagged.forEach(s => { s.flagged = false; s.flag_reason = ''; });
+    this._history(sow, 'flags_resolved', flagged.length + ' section(s)');
+    this._persist(sow, 'sow_resolve_all_flags', '', String(flagged.length), 'user');
+    return flagged.length;
+  },
+  resolveAllComments(sowId) {
+    const sow = this.get(sowId);
+    if (!sow) return 0;
+    let n = 0;
+    sow.sections.forEach(s => (s.comments || []).forEach(cm => { if (!cm.resolved) n++; }));
+    if (!n) return 0;
+    App.pushUndo('Resolve all SOW comments');
+    sow.sections.forEach(s => (s.comments || []).forEach(cm => { if (!cm.resolved) cm.resolved = true; }));
+    this._history(sow, 'comments_resolved', n + ' comment(s)');
+    this._persist(sow, 'sow_resolve_all_comments', '', String(n), 'user');
+    return n;
+  },
+
   attachProject(sowId, projectId) {
     const sow = this.get(sowId);
     if (!sow) return;
@@ -44571,6 +44649,19 @@ const Sow = {
         if (mapping.valid_phases.indexOf(ph) === -1) errors.push('Deliverables map to unknown phase "' + ph + '"');
       });
     }
+    // Phase-alignment (warning): deliverables phases should exist in the linked
+    // project's actual plan, not just the generic vocabulary.
+    if (deliverables && deliverables.phases && deliverables.phases.length && sow.project_id) {
+      const proj = (App.data.projects || []).find(p => p.id === sow.project_id);
+      const planPhases = proj && proj.delivery_config && proj.delivery_config.phase_order;
+      if (planPhases && planPhases.length) {
+        const missing = deliverables.phases.filter(ph => planPhases.indexOf(ph) === -1);
+        if (missing.length) warnings.push('Deliverables name phase(s) not in the linked project’s plan: ' + missing.join(', ') + '.');
+      }
+    }
+    // Figures-trace (warning): any currency amount in the document that isn't in
+    // the generated quote is worth a human check (a likely invention).
+    this.figuresCheck(sow).forEach(f => warnings.push('“' + f.section + '” cites ' + f.amount + ', which isn’t in the generated quote — verify it’s grounded.'));
     if (def.validation && def.validation.requires_quote) {
       if (!sow.quote || !Array.isArray(sow.quote.lines) || !sow.quote.lines.length) {
         errors.push('This template requires a generated quote — link a sized project and use “Generate quote”.');
@@ -45928,8 +46019,20 @@ const Wireframe = {
     if (mid && !(App.data.metrics || []).some(m => m.id === mid && m.customer === wf.customer)) mid = null;
     if ((c.metric_id || null) === mid) return;
     App.pushUndo('Bind wireframe component to metric');
-    if (mid) c.metric_id = mid; else delete c.metric_id;
+    if (mid) { c.metric_id = mid; if (c.props) delete c.props.no_metric; } else delete c.metric_id;
     this._persist(wf, 'wireframe_component_metric', c.type, mid || '(none)', 'user');
+  },
+  // A data-bearing component may be intentionally left unbound (e.g. a derived
+  // calc with no governed metric). This escape hatch keeps build-readiness honest.
+  setComponentNoMetric(wfId, compId, on) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return;
+    App.pushUndo('Mark component metric intent');
+    if (!c.props) c.props = {};
+    if (on) { c.props.no_metric = true; delete c.metric_id; } else delete c.props.no_metric;
+    this._persist(wf, 'wireframe_component_no_metric', c.type, on ? 'true' : 'false', 'user');
   },
 
   toggleMetric(wfId, metricId) {
@@ -46052,18 +46155,82 @@ const Wireframe = {
     table: 'dimensions × measures',
     map: 'measure aggregated by geography'
   },
+  isDataBearing(c) { return c && (c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0); },
+  // Phase 3.2 + follow-on: a per-component map for the developer hand-off. Covers
+  // data-bearing components (field + aggregation) AND the supporting components
+  // (filters/text/containers) so nothing on the canvas is left unspecified.
   fieldMap(wf) {
     const spec = this.toBuildSpec(wf);
     if (!spec) return [];
-    return spec.components
-      .filter(c => c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0)
-      .map(c => ({
-        component: c.type,
-        title: c.title || '',
-        field: c.metric ? '[' + c.metric + ']' : (c.title ? '[' + c.title + ']' : '[unbound measure]'),
-        aggregation: this._AGG[c.type] || 'measure',
-        calc: c.metric ? '' : 'Define the calc/source for this ' + c.type + ' (no metric bound).'
-      }));
+    const rows = [];
+    spec.components.forEach(c => {
+      if (c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0) {
+        rows.push({
+          component: c.type, title: c.title || '',
+          field: c.metric ? '[' + c.metric + ']' : (c.title ? '[' + c.title + ']' : '[unbound measure]'),
+          aggregation: this._AGG[c.type] || 'measure',
+          calc: c.metric ? '' : 'Define the calc/source for this ' + c.type + ' (no metric bound).'
+        });
+      } else if (c.type === 'filter') {
+        rows.push({ component: 'filter', title: c.title || '',
+          field: c.title ? '[' + c.title + ']' : '[name the field]', aggregation: 'quick filter',
+          calc: c.title ? 'Wire this filter to every relevant sheet.' : 'Name the field this filter controls, then wire it to every relevant sheet.' });
+      } else if (c.type === 'text') {
+        rows.push({ component: 'text', title: c.title || '', field: '—', aggregation: 'static text',
+          calc: c.title ? 'Static annotation: “' + c.title + '”.' : 'Add the annotation text for this block.' });
+      } else if (c.type === 'container') {
+        rows.push({ component: 'container', title: c.title || '', field: '—', aggregation: 'layout', calc: 'Layout container — arrange the inner sheets.' });
+      }
+    });
+    return rows;
+  },
+  // Deterministic "is this ready to hand to a developer?" — structural
+  // conformance errors plus any data-bearing component still unbound (when the
+  // customer has metrics and it isn't explicitly marked "no metric"). No model.
+  buildReady(wf, def) {
+    const blockers = [];
+    const conf = def ? this.checkConformance(wf, def) : { errors: [], violating: {} };
+    conf.errors.forEach(e => blockers.push(e));
+    if ((App.data.metrics || []).some(m => m.customer === wf.customer)) {
+      wf.components.filter(c => this.isDataBearing(c) && !c.metric_id && !(c.props && c.props.no_metric)).forEach(c => {
+        blockers.push('Bind a metric to the ' + c.type + (c.title ? ' “' + c.title + '”' : '') + ' (or mark it “no metric”) before build hand-off.');
+      });
+    }
+    return { ok: blockers.length === 0, blockers, violating: conf.violating };
+  },
+  // Deterministic layout tidy (no model): clamp to grid + minimum sizes, force
+  // the title to the top row, and re-pack everything in reading order so nothing
+  // overlaps. pushUndo BEFORE mutating (single undo for the whole tidy).
+  autoFix(wf, def) {
+    if (!wf || !Array.isArray(wf.components) || !wf.components.length) return 0;
+    const order = wf.components.slice().sort((a, b) => {
+      const at = a.type === 'title' ? 0 : 1, bt = b.type === 'title' ? 0 : 1;
+      return at !== bt ? at - bt : ((a.y - b.y) || (a.x - b.x));
+    });
+    const placed = [], targets = {};
+    order.forEach(c => {
+      const spec = this.componentSpec(def, c.type);
+      const w = Math.min(Math.max(c.w, spec ? spec.min_w : 1), wf.grid.cols);
+      const h = Math.min(Math.max(c.h, spec ? spec.min_h : 1), wf.grid.rows);
+      let spot = null;
+      const yMax = c.type === 'title' ? 0 : (wf.grid.rows - h);
+      for (let y = 0; y <= yMax && !spot; y++) {
+        for (let x = 0; x <= wf.grid.cols - w && !spot; x++) {
+          const cand = { x, y, w, h };
+          if (!placed.some(p => this._overlaps(p, cand))) spot = cand;
+        }
+      }
+      if (!spot) spot = { x: Math.max(0, Math.min(c.x, wf.grid.cols - w)), y: Math.max(0, Math.min(c.y, wf.grid.rows - h)), w, h };
+      targets[c.id] = spot; placed.push(spot);
+    });
+    let changes = 0;
+    wf.components.forEach(c => { const t = targets[c.id]; if (t.x !== c.x || t.y !== c.y || t.w !== c.w || t.h !== c.h) changes++; });
+    if (changes > 0) {
+      App.pushUndo('Tidy wireframe layout');
+      wf.components.forEach(c => { const t = targets[c.id]; c.x = t.x; c.y = t.y; c.w = t.w; c.h = t.h; });
+      this._persist(wf, 'wireframe_autofix', '', String(changes), 'user');
+    }
+    return changes;
   },
   // Phase 3.2: a developer acceptance checklist — global layout/answer checks
   // plus a per-component "does the build match the concept" item.
