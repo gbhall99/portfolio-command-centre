@@ -44361,6 +44361,7 @@ const Sow = {
       status: 'Draft',
       version: '0.1',
       sections,
+      wireframe_ids: Array.isArray(opts.wireframe_ids) ? opts.wireframe_ids.slice() : [],
       source_excerpt: String(opts.source_text || '').slice(0, 4000),
       history: [],
       created_at: new Date().toISOString(),
@@ -44575,6 +44576,31 @@ const Sow = {
     this._persist(sow, 'sow_project_link', old || '', projectId || '', 'user');
   },
 
+  // Wireframes attached to this SOW for sign-off. Approving the SOW co-signs
+  // them (see setStatus), so attaching is the opt-in to the wireframe gate.
+  attachedWireframes(sow) {
+    const ids = (sow && Array.isArray(sow.wireframe_ids)) ? sow.wireframe_ids : [];
+    return ids.map(id => (typeof Wireframe !== 'undefined' ? Wireframe.get(id) : null)).filter(Boolean);
+  },
+  toggleWireframe(sowId, wfId) {
+    const sow = this.get(sowId);
+    if (!sow) return;
+    if (!Array.isArray(sow.wireframe_ids)) sow.wireframe_ids = [];
+    const wf = (typeof Wireframe !== 'undefined') ? Wireframe.get(wfId) : null;
+    // Only same-customer wireframes can ride a SOW's sign-off.
+    if (wf && wf.customer !== sow.customer) return;
+    const on = sow.wireframe_ids.indexOf(wfId) >= 0;
+    App.pushUndo(on ? 'Detach wireframe from SOW' : 'Attach wireframe to SOW');
+    sow.wireframe_ids = on ? sow.wireframe_ids.filter(x => x !== wfId) : sow.wireframe_ids.concat([wfId]);
+    this._history(sow, on ? 'wireframe_detached' : 'wireframe_attached', wf ? wf.name : wfId);
+    this._persist(sow, 'sow_wireframe_link', on ? wfId : '', on ? '' : wfId, 'user');
+  },
+  // The wireframe (tableau) definition for this SOW's customer — used to
+  // build-ready-check attached wireframes during validation / co-sign.
+  _wireframeDef(customer) {
+    try { return Definitions.resolve('tableau', customer).files.definition; } catch (e) { return null; }
+  },
+
   // S1: read-only fact pack for grounding a SOW draft in a project's own data
   // (mirrors StatusReport.groundingFor). Figures the model is allowed to use —
   // it must never invent beyond these.
@@ -44662,6 +44688,14 @@ const Sow = {
     // Figures-trace (warning): any currency amount in the document that isn't in
     // the generated quote is worth a human check (a likely invention).
     this.figuresCheck(sow).forEach(f => warnings.push('“' + f.section + '” cites ' + f.amount + ', which isn’t in the generated quote — verify it’s grounded.'));
+    // Attached wireframes are co-signed on approval, so each must be build-ready
+    // (structurally conformant + metric-bound) before the SOW can be approved.
+    const wfDef = this._wireframeDef(sow.customer);
+    this.attachedWireframes(sow).forEach(wf => {
+      if (wf.status === 'Superseded') return; // retired concepts don't gate
+      const ready = (typeof Wireframe !== 'undefined') ? Wireframe.buildReady(wf, wfDef) : { ok: true };
+      if (!ready.ok) errors.push('Attached wireframe “' + wf.name + '” isn’t build-ready (' + ready.blockers.length + ' item' + (ready.blockers.length === 1 ? '' : 's') + ') — fix it before approving, or detach it.');
+    });
     if (def.validation && def.validation.requires_quote) {
       if (!sow.quote || !Array.isArray(sow.quote.lines) || !sow.quote.lines.length) {
         errors.push('This template requires a generated quote — link a sized project and use “Generate quote”.');
@@ -44700,6 +44734,19 @@ const Sow = {
     if (status === 'Approved') sow.version = '1.0';
     const old = sow.status;
     sow.status = status;
+    // Co-sign: approving the SOW also approves its attached wireframes, inside
+    // this single undo (App._batching suppresses their nested pushUndo). Validate
+    // has already guaranteed each is build-ready, so these calls succeed.
+    if (status === 'Approved') {
+      const attached = this.attachedWireframes(sow).filter(wf => wf.status !== 'Approved' && wf.status !== 'Superseded');
+      if (attached.length) {
+        const wfDef = this._wireframeDef(sow.customer);
+        const prevBatch = App._batching; App._batching = true;
+        try { attached.forEach(wf => Wireframe.setStatus(wf.id, 'Approved', wfDef, { source: 'sow-cosign' })); }
+        finally { App._batching = prevBatch; }
+        this._history(sow, 'wireframes_cosigned', attached.map(w => w.name).join(', '));
+      }
+    }
     // S4 redline: snapshot each section's content as the baseline for the
     // states that anchor a review (Review / Approved), so subsequent edits can
     // be compared against the version that was last circulated or signed off.
@@ -46011,6 +46058,28 @@ const Wireframe = {
     App.logChange(wf.project_id || null, 'wireframe_deleted', wf.name, '', 'user', { event_type: 'wireframe' });
     App.markDirty();
     App.saveToLocalStorage();
+  },
+
+  // Lifecycle: Concept (working) → Approved (signed off; gated on buildReady so a
+  // non-conformant / unbound concept can never be approved) → Superseded (retired
+  // when a newer concept replaces it). pushUndo respects App._batching, so the
+  // SoW co-sign can approve attached wireframes inside the SoW's single undo.
+  STATUSES: ['Concept', 'Approved', 'Superseded'],
+  setStatus(wfId, status, def, opts) {
+    const wf = this.get(wfId);
+    if (!wf) return { ok: false, error: 'No wireframe' };
+    if (this.STATUSES.indexOf(status) < 0) return { ok: false, error: 'Unknown status' };
+    const from = wf.status || 'Concept';
+    if (status === from) return { ok: true, wf };
+    if (status === 'Approved') {
+      const ready = this.buildReady(wf, def);
+      if (!ready.ok) return { ok: false, error: ready.blockers.length + ' item(s) before approval — ' + ready.blockers[0] };
+    }
+    App.pushUndo('Wireframe ' + status.toLowerCase());
+    wf.status = status;
+    if (status === 'Approved') wf.approved_at = new Date().toISOString();
+    this._persist(wf, 'wireframe_status', from, status, (opts && opts.source) || 'user');
+    return { ok: true, wf };
   },
 
   // Vocabulary-enforced component creation. Returns the component or an error string.
