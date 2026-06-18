@@ -45343,6 +45343,11 @@ const SowSkill = {
     App.toast(n ? ('Resolved ' + n + ' comment' + (n === 1 ? '' : 's') + ' — Ctrl+Z to undo') : 'No open comments', n ? 'success' : 'info');
     this.render();
   },
+  uiToggleWireframe(wfId) { Sow.toggleWireframe(this._sowId, wfId); this.render(); },
+  uiAttachWireframe() {
+    const sel = document.getElementById('sowWfPicker');
+    if (sel && sel.value) { Sow.toggleWireframe(this._sowId, sel.value); this.render(); }
+  },
   uiRedraftAccept() {
     if (!this._redraft) return;
     const r = this._redraft;
@@ -45490,6 +45495,19 @@ const SowSkill = {
     ).join('');
     const sections = sow.sections.filter(s => (s.content || '').trim())
       .map(s => ({ id: s.id, title: s.title, html: toHtml(s.content), audiences: ['customer', 'internal'] }));
+    // Attached wireframes ride the SOW as a signed-off appendix: status + the
+    // developer field/calc map + acceptance checklist (all data-derived).
+    const wfDefn = Sow._wireframeDef(sow.customer);
+    Sow.attachedWireframes(sow).forEach(wf => {
+      const fm = (typeof Wireframe !== 'undefined' && Wireframe.fieldMap) ? Wireframe.fieldMap(wf) : [];
+      const checklist = (typeof Wireframe !== 'undefined' && Wireframe.acceptanceChecklist) ? Wireframe.acceptanceChecklist(wf, wfDefn) : [];
+      let html = '<p><strong>Status:</strong> ' + esc(wf.status || 'Concept') + (wf.approved_at ? ' · approved ' + new Date(wf.approved_at).toLocaleDateString('en-GB') : '') + '</p>';
+      if (fm.length) html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin:6px 0"><thead><tr>' +
+        ['Component', 'Title', 'Field / source', 'Aggregation'].map(h => '<th style="text-align:left;border-bottom:1px solid #ccc;padding:3px 6px">' + h + '</th>').join('') + '</tr></thead><tbody>' +
+        fm.map(r => '<tr>' + [r.component, r.title, r.field, r.aggregation].map(v => '<td style="border-bottom:1px solid #eee;padding:3px 6px">' + esc(v || '') + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+      if (checklist.length) html += '<p><strong>Acceptance checklist:</strong></p><ul>' + checklist.map(c => '<li>' + esc(c) + '</li>').join('') + '</ul>';
+      sections.push({ id: 'wireframe_' + wf.id, title: 'Dashboard wireframe — ' + wf.name, html, audiences: ['customer', 'internal'] });
+    });
     // A SOW prints with the customer_pack treatment: full density, cover + ToC, Confidential.
     const doc = Reports.Doc.buildDoc(Object.assign({}, Reports._DEFAULTS_BY_TYPE.customer_pack, {
       reportType: 'sow',
@@ -45729,6 +45747,39 @@ const SowSkill = {
         ? '<button class="btn btn-' + (stale ? 'primary' : 'outline') + ' btn-sm" onclick="SowSkill.uiGenerateQuote()"' + (sow.project_id ? '' : ' disabled title="Link a project first"') + '>' + (stale ? 'Re-quote (out of date)' : (sow.quote ? 'Regenerate quote' : 'Generate quote')) + '</button>'
         : '') +
     '</div>';
+    // Wireframes attached for sign-off — approving the SOW co-signs them.
+    const allWfs = (typeof Wireframe !== 'undefined') ? Wireframe.list(sow.customer) : [];
+    const attachedIds = Array.isArray(sow.wireframe_ids) ? sow.wireframe_ids : [];
+    const attached = Sow.attachedWireframes(sow);
+    const wfDefn = Sow._wireframeDef(sow.customer);
+    const attachedHtml = attached.map(wf => {
+      const ready = Wireframe.buildReady(wf, wfDefn);
+      const warn = (wf.status !== 'Approved' && wf.status !== 'Superseded' && !ready.ok) ? ' <span style="font-size:11px;color:var(--status-amber)">' + ready.blockers.length + ' to fix</span>' : '';
+      return '<div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0">' +
+        '<span style="flex:1;color:var(--text-dark)">' + esc(wf.name) + '</span>' +
+        WireframeSkill._statusChip(wf.status) + warn +
+        (sow.status !== 'Approved' ? '<button class="btn btn-ghost btn-sm" title="Detach" onclick="SowSkill.uiToggleWireframe(\'' + esc(wf.id) + '\')">&times;</button>' : '') +
+      '</div>';
+    }).join('');
+    const candidates = allWfs.filter(w => attachedIds.indexOf(w.id) < 0 && w.status !== 'Superseded')
+      .sort((a, b) => ((b.project_id === sow.project_id) - (a.project_id === sow.project_id)));
+    const picker = (sow.status !== 'Approved' && candidates.length)
+      ? '<div style="display:flex;gap:6px;margin-top:6px">' +
+          '<select id="sowWfPicker" class="field-input" style="flex:1" aria-label="Wireframe to attach">' +
+            candidates.map(w => '<option value="' + esc(w.id) + '">' + esc(w.name) + (w.project_id === sow.project_id ? ' (this project)' : '') + '</option>').join('') +
+          '</select>' +
+          '<button class="btn btn-outline btn-sm" onclick="SowSkill.uiAttachWireframe()">Attach</button>' +
+        '</div>'
+      : '';
+    const wireframeBlock = (attached.length || candidates.length)
+      ? '<div style="margin-bottom:12px">' +
+          '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Wireframes for sign-off</div>' +
+          (attached.length
+            ? attachedHtml + '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Approving this SoW co-signs the above wireframe' + (attached.length === 1 ? '' : 's') + ' (each must be build-ready first).</div>'
+            : '<div style="font-size:11px;color:var(--text-muted)">Attach a dashboard wireframe to sign it off alongside this SoW.</div>') +
+          picker +
+        '</div>'
+      : '';
     const source = sow.source_excerpt
       ? '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Source material (excerpt)</div><div class="sow-source-box">' + esc(sow.source_excerpt) + '</div>'
       : '';
@@ -45748,7 +45799,7 @@ const SowSkill = {
         : '<button class="btn btn-outline btn-sm" onclick="SowSkill.uiSuggestSizes()"' + (this._sizingBusy ? ' disabled' : '') + '>' + (this._sizingBusy ? 'Estimating…' : 'Suggest sizes (AI)') + '</button>' +
           '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Per-skill story-point estimates grounded in the source material and comparable completed projects.</div>') +
     '</div>';
-    return validation + statusBtns + linkage + quoteBlock + sizingBlock + source + history;
+    return validation + statusBtns + linkage + wireframeBlock + quoteBlock + sizingBlock + source + history;
   }
 };
 
@@ -47112,6 +47163,37 @@ const WireframeSkill = {
     if (conf) conf.innerHTML = this.renderConfHtml();
   },
 
+  _statusChip(status) {
+    const st = status || 'Concept';
+    const colors = { Concept: '#64748b', Approved: 'var(--status-green,#16a34a)', Superseded: '#94a3b8' };
+    return '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;color:#fff;background:' + (colors[st] || '#64748b') + '"' + (st === 'Superseded' ? ' title="Retired concept"' : '') + '>' + Dashboard.esc(st) + '</span>';
+  },
+  // Status controls: Approve is gated on build-readiness; Approved/Superseded
+  // can be reopened to Concept; an Approved concept can be retired (Superseded).
+  _statusHtml(wf) {
+    const st = wf.status || 'Concept';
+    const ready = Wireframe.buildReady(wf, this._def());
+    let btns;
+    if (st === 'Concept') {
+      btns = '<button class="btn btn-primary btn-sm" onclick="WireframeSkill.uiSetStatus(\'Approved\')"' + (ready.ok ? '' : ' disabled title="' + Dashboard.escAttr(ready.blockers[0] || 'Not build-ready yet') + '"') + '>Approve</button>';
+    } else if (st === 'Approved') {
+      btns = '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiSetStatus(\'Concept\')">Reopen</button>' +
+             '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiSetStatus(\'Superseded\')">Mark superseded</button>';
+    } else {
+      btns = '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiSetStatus(\'Concept\')">Reopen</button>';
+    }
+    return '<div style="margin-bottom:10px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Status</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + this._statusChip(st) + btns + '</div>' +
+    '</div>';
+  },
+  uiSetStatus(status) {
+    const r = Wireframe.setStatus(this._wfId, status, this._def());
+    if (!r.ok) { App.toast(r.error || 'Could not change status', 'error'); return; }
+    App.toast('Wireframe ' + status.toLowerCase() + (status === 'Approved' ? ' — Ctrl+Z to undo' : ''), 'success');
+    this.render();
+  },
+
   _header(title, backBtn) {
     const esc = Dashboard.esc;
     return '<div class="sow-modal-header">' +
@@ -47142,6 +47224,7 @@ const WireframeSkill = {
       return '<div class="wf-list-row" onclick="WireframeSkill.edit(\'' + esc(rep.id) + '\')">' +
         '<span style="flex:1;font-weight:600;color:var(--text-dark)">' + esc(isSet ? Wireframe.setBaseName(rep) : w.name) +
           (isSet ? ' <span class="sow-source-chip" title="Multi-dashboard set">' + members.length + ' pages</span>' : '') + '</span>' +
+        this._statusChip(rep.status) +
         '<span style="font-size:11px;color:var(--text-muted)">' + comps + ' components</span>' +
         (proj ? '<span style="font-size:11px;color:var(--text-muted)">→ ' + esc(proj) + '</span>' : '<span style="font-size:11px;color:var(--status-amber,#d97706)">not linked</span>') +
       '</div>';
@@ -47404,6 +47487,7 @@ const WireframeSkill = {
         '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
         '<div class="wf-side">' +
           '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + Dashboard.escAttr(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
+          this._statusHtml(wf) +
           this._pageStripHtml(wf) +
           '<div class="wf-conf" id="wfConf">' + this.renderConfHtml() + '</div>' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Component palette (governed vocabulary)</div>' +

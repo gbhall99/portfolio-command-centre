@@ -125,3 +125,34 @@ describe('SoW approval co-signs attached wireframes', () => {
     expect(Sow.validate(Sow.get(sow.id), def).ok).toBe(true);
   });
 });
+
+describe('sign-off UI', () => {
+  it('wireframe editor shows a status chip + an Approve button gated on build-readiness', () => {
+    const { Wireframe, WireframeSkill, document } = app;
+    const wf = makeWf(false);
+    WireframeSkill.open({}); WireframeSkill.edit(wf.id);
+    const side = document.querySelector('.wf-side');
+    expect(side.textContent).toContain('Concept');
+    const approve = [...side.querySelectorAll('button')].find(b => b.textContent.trim() === 'Approve');
+    expect(approve).toBeTruthy();
+    expect(approve.disabled).toBe(true);                 // not build-ready
+    Wireframe.setComponentMetric(wf.id, 'k', 'MET-1');
+    WireframeSkill.render();
+    const approve2 = [...document.querySelector('.wf-side').querySelectorAll('button')].find(b => b.textContent.trim() === 'Approve');
+    expect(approve2.disabled).toBe(false);               // now build-ready
+  });
+
+  it('SoW side panel offers a wireframe picker and reflects an attachment', () => {
+    const { Sow, SowSkill, document } = app;
+    const sow = makeSow();
+    const wf = makeWf(true);
+    SowSkill.open({}); SowSkill.edit(sow.id);
+    expect(document.getElementById('sowSide').textContent).toContain('Wireframes for sign-off');
+    expect(document.getElementById('sowWfPicker')).toBeTruthy();
+    Sow.toggleWireframe(sow.id, wf.id);
+    SowSkill.render();
+    const side = document.getElementById('sowSide').textContent;
+    expect(side).toContain('Board');      // attached wireframe name
+    expect(side).toContain('co-signs');
+  });
+});
