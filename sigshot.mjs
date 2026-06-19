@@ -1,0 +1,22 @@
+import { chromium } from '@playwright/test';
+const BASE='http://127.0.0.1:8775';
+const b=await chromium.launch({channel:'chromium-headless-shell'}).catch(()=>chromium.launch());
+const p=await b.newPage({viewport:{width:1120,height:840}});
+const json=await (await p.request.get(BASE+'/portfolio-data.json')).text();
+await p.goto(BASE+'/index.html');
+await p.evaluate(d=>{localStorage.setItem('portfolio-command-centre-data',d);localStorage.setItem('portfolio-command-centre-meta',JSON.stringify({savedAt:new Date().toISOString(),projectCount:JSON.parse(d).projects.length}));},json);
+await p.reload();
+const r=await p.$('#restoreBanner button.btn-primary'); if(r) await r.click();
+await p.waitForSelector('#projectTableBody tr',{timeout:8000});
+await p.evaluate(()=>{App.setActiveCustomer('Acme Industries');
+  const d=Definitions.loadJson('tableau/wireframe-definition.json');
+  const wf=Wireframe.create({customer:'Acme Industries',definition:d,name:'Exec sales dashboard'});
+  // build a ready wireframe: title + bound kpi
+  const t=Wireframe.addComponent(wf.id,'title',d); Wireframe.updateComponent(wf.id,t.id,{x:0,y:0,w:12,h:1},d);
+  const k=Wireframe.addComponent(wf.id,'kpi',d); Wireframe.updateComponent(wf.id,k.id,{x:0,y:1,w:3,h:2},d);
+  const met=(App.data.metrics||[]).find(m=>m.customer==='Acme Industries'); if(met) Wireframe.setComponentMetric(wf.id,k.id,met.id);
+  WireframeSkill.open({}); WireframeSkill.edit(wf.id);
+});
+await p.waitForTimeout(400);
+await p.screenshot({path:'dist/shots/wf-status.png'});
+await b.close();
