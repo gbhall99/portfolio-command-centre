@@ -4,12 +4,12 @@ The persistent memory of the /harden loop (see .claude/commands/harden.md).
 Updated and committed every iteration. Do not edit by hand mid-loop.
 
 ## Status
-- Last completed iteration: 4
-- Next lens: still L1 — finish open items H-003 (value= inputs), H-004 (alt/data),
-  then rotate to L2 (undo/audit contracts). H-005 reachable part fixed; bulk
-  id-handler class deferred (see Deferred log D-001).
+- Last completed iteration: 5
+- Next lens: ROTATE to L2 (undo/audit contracts). L1 reachable sinks fixed;
+  remaining low-likelihood L1 classes tracked as D-001 (id handlers) and D-002
+  (value=/option= long tail). Re-enter L1 for those in a dedicated iteration.
 - Consecutive clean iterations: 0
-- Last PR batch: none (next PR at i5)
+- Last PR batch: opening PR for i1–i5 now
 - Loop complete: no (contract: >= 20 iterations AND 2 consecutive clean)
 - Note: now running on branch claude/security-hardening-dpkwh8 (fresh from main;
   H-001 + ledger already merged via PR #70). Hardening commits push here.
@@ -19,7 +19,7 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 ## Lens coverage
 | Lens | Visits | Last iteration |
 |---|---|---|
-| L1 | 4 | 4 |
+| L1 | 5 | 5 |
 | L2–L20 | 0 | — |
 
 ## Findings register
@@ -28,13 +28,14 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | H-001 | 1 | L1 | P1 | index.html Personas._renderRichTable (≈11446/11481/11499) | Free-text (persona role_title, RACI metric names, definition) interpolated into `title="…"` via `esc()`, which does not encode quotes → attribute breakout → stored XSS via imported/model data. Fixed: use `Dashboard.escAttr` for the attribute value. Pinned by tests/render/persona-escaping.test.mjs (jsdom DOM-level breakout assertion). | Fixed | (this commit) |
 | H-002 | 1 | L1 | P1 | index.html ≈12968 (objective desc), ≈11596 (persona-chip role_title), ≈13925/13929 (metric RACI pill name/role), ≈13955 (metric definition), ≈14198 (RACI matrix col head persona name/role_title), ≈20104 (strategy-picker derived `via`) | Same bug class as H-001 in other Strategy `title="…"` sinks. Fixed: `esc`→`Dashboard.escAttr` for the seven attribute values. Pinned by tests/render/strategy-escaping.test.mjs (DOM-level breakout on objective description + metric definition + persona RACI pill; escAttr-vs-esc contract guard). | Fixed | i2 |
 | H-006 | 2 | L1 | P1 | index.html remaining free-text `title="…"` sinks app-wide via esc() — Gantt p.name (≈26212/27624/27626), capacity tm.name (≈28225/33179), kanban card name/manager/assignee (≈29464/29567/29573/29814/42889), RAID descriptions (≈39406/39412/39417/39560), SoW flag_reason (≈45777), activity old/new value (≈22658), wt-ms-notes (≈28476) | Same bug class beyond Strategy. Fixed: 17 sinks converted to `Dashboard.escAttr` (controlled enums — RAG/status/sprint-id/skill labels/dates/EVM static tips — verified NOT findings, left on esc). Pinned by tests/render/title-attr-escaping.test.mjs (DOM breakout on Gantt pipeline label + bar). | Fixed | i3 |
-| H-003 | 1 | L1 | P1 | index.html free-text `value="…"` inputs via esc() — e.g. ≈8929 (customer name), ≈10835 (holiday name), ≈11720 (persona field), ≈11776 (business question), ≈13329/13332 (product name/owner), ≈12571 (person field), ≈13114 (objective field) | esc() in `value="…"` lets a quote break out and inject e.g. `onfocus`. Higher regression risk than display attrs — must verify the input still round-trips after escAttr. | Open | — |
-| H-004 | 1 | L1 | P2 | index.html `alt="…"`/`data-…="…"` via esc() — e.g. ≈8917 (customer name alt), ≈8659 (data-capmember member name) | Same class, lower severity (alt/data rarely script-bearing but still breakout-able). | Open | — |
+| H-003 | 1 | L1 | P1 | index.html free-text `value="…"` inputs via esc() | Refined risk: `value="…"` is double-quoted, so an apostrophe is harmless; only a literal `"` breaks out → injection-via-pasted/imported-data (low likelihood), not a common functional break. Fixed the core entity-NAME authoring inputs (customer 8929, holiday 10835, team member name/role 33698/33699, product name/owner/versions/tech 13330/13332/13333/13334, persona/person/objective generic field inputs 11721/12572/13115) → `Dashboard.escAttr`, round-trip-safe. Pinned by tests/render/input-value-escaping.test.mjs (member modal: `"`-bearing name can't break out AND value round-trips byte-for-byte). Remaining value=/option= long tail → D-002. | Fixed (core) | i5 |
+| H-004 | 1 | L1 | P2 | index.html `alt="…"`/`data-…="…"` via esc() — e.g. ≈8917 (customer name alt), ≈8659 (data-capmember member name) | Same class, lower severity (alt/data rarely script-bearing but still breakout-able on a literal `"`). Folded into D-002. | Deferred → D-002 | — |
 | H-005 | 1 | L1 | P1 | index.html single-quoted inline handlers passing free-text — reachable sink: Capacity member-impact buttons (≈33572 `openMemberImpactModal('<name>')`, ≈33083 `_runMemberImpact('<name>')`). Member names are free text (no id field), so e.g. `O'Brien` breaks the JS string in normal use (functional break) and a hostile imported name injects. | Fixed: grid button now index-based (`openMemberImpactModal(idx)`, matching edit/delete); name resolved internally; in-modal Simulate wired via addEventListener over a closure (no interpolation). Pinned by tests/render/capacity-handler-escaping.test.mjs. Bulk id-handler class (≈130 sites passing generated `esc(id)`) deferred → D-001. | Fixed | i4 |
 
 ## Deferred / wontfix log
 | ID | Reason / proposal |
 |---|---|
+| D-002 | **value=/option=/alt=/data= attribute long tail (~50 sites).** Free-text values still on esc() in: `<option value="…">` lists (sponsor/owner/forum/member names, ≈22722/22725/24309/36516/…), RAID & Detail-panel inline grids (risk/issue owner, stakeholder name/org/contact, decided_by, benefit, customer-milestone, success measure/name, assumption made_by — ≈22787/22982/23037-23371), governance roster/attendee inputs (≈36272/36501/36506/36509/36520/36828), business question (≈11777), customer-name onchange `nameAttr` (≈8914, only escapes `'` not `"`/`\`), `alt=`/`data-=` (H-004: ≈8917/8659). All double-quoted, so only a literal `"` (or for the JS-string nameAttr, `"`/`\`) is exploitable — low likelihood, injection-via-hostile-data. **Proposal:** mechanical esc→escAttr per sink (round-trip-safe for inputs/options) in a dedicated L1 iteration; for `nameAttr` switch the customer row to an index/id-based handler. Batch with a per-area DOM breakout test. |
 | D-001 | **Bulk id-bearing inline-handler hardening (~130 sites).** Handlers like `onclick="X._open('" + esc(id) + "')"` interpolate generated entity ids (`PER-/MET-/OBJ-/PROJ-…-Date.now()-rand`) which can never contain quotes from app creation — the only exploit path is a hand-crafted malicious imported JSON whose ids contain `'`/`"`/`\`. Low likelihood (requires loading a hostile file), but real defense-in-depth. NOT fixable minimally in one iteration (130 mechanical edits + tests). **Proposal:** (a) add `Dashboard.escAttrJs(s)` = `esc(s)` then `\`→`\\`, `'`→`\'`, `"`→`&quot;` (correct for a JS single-quoted string inside a double-quoted attribute) and mechanically apply to the id interpolations; AND/OR (b) enforce a safe-id charset at the migrateSchema/import boundary (reject or slugify ids not matching `^[A-Za-z0-9._:-]+$`, updating cross-refs in the same pass). Prefer (b) as it neutralises the whole class at the source. Schedule as its own L1/L8 iteration. |
 
 ## Notes for the next session
