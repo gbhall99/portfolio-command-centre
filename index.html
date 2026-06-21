@@ -34654,14 +34654,22 @@ const Solver = {
   },
 
   // Topological sort to detect circular dependencies; returns { order: [], cycles: [] }
+  // Uses the SAME bidirectional edge set the allocator schedules on
+  // (normalizeDepsBidirectional: own `blocked_by` edges + reverse `blocks` edges).
+  // The UI mirrors every dependency, so for UI-authored data this is identical to
+  // following `blocked_by` alone — but imported JSON or AI-added (`manage_dependency`,
+  // which does not mirror) `blocks`-only edges would otherwise hide a cycle from this
+  // detector while the solver's reorder/finishCache graph still saw it. Following the
+  // bidirectional graph keeps the cycle warning and the schedule consistent.
   topoSort(projects) {
     const ids = new Set(projects.map(p => p.id));
+    const reverseBlocks = this.buildReverseBlocks(projects);
     const inDeg = {};
     const adj = {};
     projects.forEach(p => { inDeg[p.id] = 0; adj[p.id] = []; });
     projects.forEach(p => {
-      this.normalizeDeps(p).forEach(depId => {
-        if (ids.has(depId)) { adj[depId].push(p.id); inDeg[p.id]++; }
+      this.normalizeDepsBidirectional(p, reverseBlocks).forEach(depId => {
+        if (ids.has(depId) && depId !== p.id) { adj[depId].push(p.id); inDeg[p.id]++; }
       });
     });
     const queue = Object.keys(inDeg).filter(id => inDeg[id] === 0);
