@@ -11956,7 +11956,9 @@ const Personas = {
       if (v) bq.push(v);
     });
     patch.business_questions = bq;
+    App.pushUndo('Edit persona');
     this.update(personaId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -12796,7 +12798,9 @@ const Person = {
         patch[key] = (el.value == null ? '' : String(el.value));
       }
     });
+    App.pushUndo('Edit person');
     this.update(personId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -13239,7 +13243,9 @@ const Objectives = {
     if (Object.keys(timeHorizon).length || (this.byId(objectiveId) && this.byId(objectiveId).time_horizon)) {
       patch.time_horizon = { ...(this.byId(objectiveId).time_horizon || {}), ...timeHorizon };
     }
+    App.pushUndo('Edit objective');
     this.update(objectiveId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -14802,7 +14808,15 @@ const Strategy = {
         return;
       }
       if (next === originalValue) { cancel(); return; }
-      try { src.update(entityId, dataField, next); }
+      // L2: snapshot BEFORE the mutation so Ctrl+Z reverts the edit, and persist
+      // immediately — the entity mutators are memory-only (App._save is a no-op),
+      // so the UI caller owns undo + save. (AI writes use the mutators directly
+      // and pushUndo themselves, so they never hit this path.)
+      try {
+        App.pushUndo('Edit ' + (dataField || 'strategy'));
+        src.update(entityId, dataField, next);
+        App.saveToLocalStorage();
+      }
       catch (e) { console.error('[strategy quick-edit]', e); App.toast('Save failed', 'warn'); cancel(); return; }
       reRender();
       delete cell.dataset.editing;

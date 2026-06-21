@@ -4,12 +4,14 @@ The persistent memory of the /harden loop (see .claude/commands/harden.md).
 Updated and committed every iteration. Do not edit by hand mid-loop.
 
 ## Status
-- Last completed iteration: 5
-- Next lens: ROTATE to L2 (undo/audit contracts). L1 reachable sinks fixed;
-  remaining low-likelihood L1 classes tracked as D-001 (id handlers) and D-002
-  (value=/option= long tail). Re-enter L1 for those in a dedicated iteration.
+- Last completed iteration: 6
+- Next lens: L3 (customer scoping). L2 primary Strategy edit paths fixed; finer
+  managed-list L2 ops tracked as D-003.
 - Consecutive clean iterations: 0
-- Last PR batch: opening PR for i1–i5 now
+- Last PR batch: PR #71 (i1–i5) open. i6 pushed to same branch.
+- CI note (i4): the i4 index-based change broke tests/e2e/capacity-overlay.spec
+  (it calls openMemberImpactModal by NAME). Fixed by accepting index OR name.
+  LESSON: before changing any function signature, grep tests/e2e for callers.
 - Loop complete: no (contract: >= 20 iterations AND 2 consecutive clean)
 - Note: now running on branch claude/security-hardening-dpkwh8 (fresh from main;
   H-001 + ledger already merged via PR #70). Hardening commits push here.
@@ -20,7 +22,8 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | Lens | Visits | Last iteration |
 |---|---|---|
 | L1 | 5 | 5 |
-| L2–L20 | 0 | — |
+| L2 | 1 | 6 |
+| L3–L20 | 0 | — |
 
 ## Findings register
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -31,10 +34,12 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | H-003 | 1 | L1 | P1 | index.html free-text `value="…"` inputs via esc() | Refined risk: `value="…"` is double-quoted, so an apostrophe is harmless; only a literal `"` breaks out → injection-via-pasted/imported-data (low likelihood), not a common functional break. Fixed the core entity-NAME authoring inputs (customer 8929, holiday 10835, team member name/role 33698/33699, product name/owner/versions/tech 13330/13332/13333/13334, persona/person/objective generic field inputs 11721/12572/13115) → `Dashboard.escAttr`, round-trip-safe. Pinned by tests/render/input-value-escaping.test.mjs (member modal: `"`-bearing name can't break out AND value round-trips byte-for-byte). Remaining value=/option= long tail → D-002. | Fixed (core) | i5 |
 | H-004 | 1 | L1 | P2 | index.html `alt="…"`/`data-…="…"` via esc() — e.g. ≈8917 (customer name alt), ≈8659 (data-capmember member name) | Same class, lower severity (alt/data rarely script-bearing but still breakout-able on a literal `"`). Folded into D-002. | Deferred → D-002 | — |
 | H-005 | 1 | L1 | P1 | index.html single-quoted inline handlers passing free-text — reachable sink: Capacity member-impact buttons (≈33572 `openMemberImpactModal('<name>')`, ≈33083 `_runMemberImpact('<name>')`). Member names are free text (no id field), so e.g. `O'Brien` breaks the JS string in normal use (functional break) and a hostile imported name injects. | Fixed: grid button now index-based (`openMemberImpactModal(idx)`, matching edit/delete); name resolved internally; in-modal Simulate wired via addEventListener over a closure (no interpolation). Pinned by tests/render/capacity-handler-escaping.test.mjs. Bulk id-handler class (≈130 sites passing generated `esc(id)`) deferred → D-001. | Fixed | i4 |
+| H-007 | 6 | L2 | P2 | index.html Strategy edit paths — Personas/Person/Objectives `_saveDetailModal` (≈11959/12799/13242) and the inline strategy-table quick-edit `commit` (≈14805) called the entity `.update()` mutators with NO `App.pushUndo()` and relied on the `App._save` no-op for persistence. Result: strategy edits were not undoable (Ctrl+Z couldn't revert) and only persisted via the 60s autosave timer (reload within the window lost edits). NOT "wrong post-mutation snapshot" (the auditing agent's phrasing) — there was no snapshot at all. | Fixed: wrapped the 3 detail-modal saves + the single shared quick-edit commit choke point (covers objectives/personas/people inline edits) with `App.pushUndo(label)` before the mutation + `App.saveToLocalStorage()` after. pushUndo added at the UI-caller layer (NOT inside the mutators, which AI apply() paths share). Pinned by tests/render/strategy-undo.test.mjs (real detail-modal save + real `_openQuickEdit`→blur commit, both assert one undo snapshot + Ctrl+Z revert). Finer managed-list ops → D-003. | Fixed (primary) | i6 |
 
 ## Deferred / wontfix log
 | ID | Reason / proposal |
 |---|---|
+| D-003 | **Finer Strategy managed-list ops still not undoable (L2).** The primary edit paths (the 3 detail-modal "Save" buttons + the inline table quick-edit choke point) now pushUndo+saveToLocalStorage (i6). Still missing pushUndo/explicit-save at the UI callers for: Personas `_addBusinessQuestion`/`_removeBusinessQuestion` (≈11971/11980), `_addHoldingForMetric` (≈12144), Person `setTargetOverride`/`clearTargetOverride` callers (≈12277/12288), MetricsView `_editHolding`/`_addHolderPrompt` (≈14589/14616), and the `_addPrompt` create flows (persona/objective). All currently rely on the 60s autosave timer for persistence and are NOT undoable. Low-ish severity (autosave masks data loss; these are add/remove of sub-items). **Proposal:** wrap each UI caller with `App.pushUndo(label)` before + `App.saveToLocalStorage()` after the mutator call (do NOT add pushUndo inside the low-level Objectives/Metrics/Personas/Person mutators — they are shared with AI apply() paths that already pushUndo, so that would double-count). Pin with a per-action undo test. Schedule as a follow-up L2 iteration. |
 | D-002 | **value=/option=/alt=/data= attribute long tail (~50 sites).** Free-text values still on esc() in: `<option value="…">` lists (sponsor/owner/forum/member names, ≈22722/22725/24309/36516/…), RAID & Detail-panel inline grids (risk/issue owner, stakeholder name/org/contact, decided_by, benefit, customer-milestone, success measure/name, assumption made_by — ≈22787/22982/23037-23371), governance roster/attendee inputs (≈36272/36501/36506/36509/36520/36828), business question (≈11777), customer-name onchange `nameAttr` (≈8914, only escapes `'` not `"`/`\`), `alt=`/`data-=` (H-004: ≈8917/8659). All double-quoted, so only a literal `"` (or for the JS-string nameAttr, `"`/`\`) is exploitable — low likelihood, injection-via-hostile-data. **Proposal:** mechanical esc→escAttr per sink (round-trip-safe for inputs/options) in a dedicated L1 iteration; for `nameAttr` switch the customer row to an index/id-based handler. Batch with a per-area DOM breakout test. |
 | D-001 | **Bulk id-bearing inline-handler hardening (~130 sites).** Handlers like `onclick="X._open('" + esc(id) + "')"` interpolate generated entity ids (`PER-/MET-/OBJ-/PROJ-…-Date.now()-rand`) which can never contain quotes from app creation — the only exploit path is a hand-crafted malicious imported JSON whose ids contain `'`/`"`/`\`. Low likelihood (requires loading a hostile file), but real defense-in-depth. NOT fixable minimally in one iteration (130 mechanical edits + tests). **Proposal:** (a) add `Dashboard.escAttrJs(s)` = `esc(s)` then `\`→`\\`, `'`→`\'`, `"`→`&quot;` (correct for a JS single-quoted string inside a double-quoted attribute) and mechanically apply to the id interpolations; AND/OR (b) enforce a safe-id charset at the migrateSchema/import boundary (reject or slugify ids not matching `^[A-Za-z0-9._:-]+$`, updating cross-refs in the same pass). Prefer (b) as it neutralises the whole class at the source. Schedule as its own L1/L8 iteration. |
 
