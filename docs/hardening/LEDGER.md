@@ -4,12 +4,15 @@ The persistent memory of the /harden loop (see .claude/commands/harden.md).
 Updated and committed every iteration. Do not edit by hand mid-loop.
 
 ## Status
-- Last completed iteration: 8
-- Next lens: L5 (integer points & money).
-- Consecutive clean iterations: 2  (i7/L3 + i8/L4 — zero fixable code findings)
-- Last PR batch: PR #71 (i1–i5) open. i6/i7/i8 pushed to same branch.
-- Context note: this session is getting heavy; safe to hand off — ledger resumes
-  the loop at L5. CI on PR #71: E2E green after the i4 signature fix.
+- Last completed iteration: 9
+- Next lens: L6 (solver invariants).
+- Consecutive clean iterations: 0  (i9/L5 found + fixed H-010 → counter reset)
+- Last PR batch: PR #71 (i1–i8) merged. Now on branch
+  claude/security-hardening-p1rtm9 (fresh from the merge). i9+ push here.
+- Context note: branch is at the i1–i8 merged state; deps installed via npm install.
+- CI note (i4): the i4 index-based change broke tests/e2e/capacity-overlay.spec
+  (it calls openMemberImpactModal by NAME). Fixed by accepting index OR name.
+  LESSON: before changing any function signature, grep tests/e2e for callers.
 - CI note (i4): the i4 index-based change broke tests/e2e/capacity-overlay.spec
   (it calls openMemberImpactModal by NAME). Fixed by accepting index OR name.
   LESSON: before changing any function signature, grep tests/e2e for callers.
@@ -26,7 +29,8 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | L2 | 1 | 6 |
 | L3 | 1 | 7 |
 | L4 | 1 | 8 |
-| L5–L20 | 0 | — |
+| L5 | 1 | 9 |
+| L6–L20 | 0 | — |
 
 ## Findings register
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -37,6 +41,7 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | H-003 | 1 | L1 | P1 | index.html free-text `value="…"` inputs via esc() | Refined risk: `value="…"` is double-quoted, so an apostrophe is harmless; only a literal `"` breaks out → injection-via-pasted/imported-data (low likelihood), not a common functional break. Fixed the core entity-NAME authoring inputs (customer 8929, holiday 10835, team member name/role 33698/33699, product name/owner/versions/tech 13330/13332/13333/13334, persona/person/objective generic field inputs 11721/12572/13115) → `Dashboard.escAttr`, round-trip-safe. Pinned by tests/render/input-value-escaping.test.mjs (member modal: `"`-bearing name can't break out AND value round-trips byte-for-byte). Remaining value=/option= long tail → D-002. | Fixed (core) | i5 |
 | H-004 | 1 | L1 | P2 | index.html `alt="…"`/`data-…="…"` via esc() — e.g. ≈8917 (customer name alt), ≈8659 (data-capmember member name) | Same class, lower severity (alt/data rarely script-bearing but still breakout-able on a literal `"`). Folded into D-002. | Deferred → D-002 | — |
 | H-005 | 1 | L1 | P1 | index.html single-quoted inline handlers passing free-text — reachable sink: Capacity member-impact buttons (≈33572 `openMemberImpactModal('<name>')`, ≈33083 `_runMemberImpact('<name>')`). Member names are free text (no id field), so e.g. `O'Brien` breaks the JS string in normal use (functional break) and a hostile imported name injects. | Fixed: grid button now index-based (`openMemberImpactModal(idx)`, matching edit/delete); name resolved internally; in-modal Simulate wired via addEventListener over a closure (no interpolation). Pinned by tests/render/capacity-handler-escaping.test.mjs. Bulk id-handler class (≈130 sites passing generated `esc(id)`) deferred → D-001. | Fixed | i4 |
+| H-010 | 9 | L5 | P2 | index.html Billing.quoteAsText (≈44155 line hours / ≈44159 total hours) | Per-line hours in a customer-facing quote rendered via `App.fmtPoints(billable_hours)` — fmtPoints rounds to a whole integer AND is points-semantic — while the total hours rendered raw. With a fractional `hours_per_point` (settable via the billing UI / `uiSetHoursPerPoint`, e.g. 7.5) the per-line "23 hours" disagreed with the fractional total (e.g. 22.5) in the SAME quote/SOW Commercials document. Fixed: added `Billing.fmtHours(n)` (whole→plain, fractional→1 dp) and used it for both render sites so they always agree and hours are never silently rounded. Pinned by tests/unit/billing.test.mjs ("renders fractional hours consistently per-line and in the total (H-010)"). | Fixed | i9 |
 | H-009 | 8 | L4 | — | tests/unit/migration.test.mjs idempotency test compared only `data.projects`, leaving every other collection's migration unguarded; no explicit export→import round-trip test. | No code bug — migrateSchema verified fully idempotent across the ENTIRE data object and export→import verified lossless on the bundled dataset. Closed the coverage gap with tests/unit/export-roundtrip.test.mjs (full-object second-migrate idempotency + JSON round-trip through validateAndLoad, excluding only the volatile meta.exported_at). | Reviewed (coverage added) | i8 |
 | H-008 | 7 | L3 | — | index.html customer-scoping | REVIEWED — zero fixable findings. Audited all list/render/agent-tool/picker paths. Confirmed: every `list(customer)`/`*.list()` filters by customer; SOW & wireframe project pickers scope `projects` to the entity's own customer (`p.customer === sow.customer`) so `attachProject` never gets a foreign id; AI write tools scope via `AgentTools._projects(ctx)` (filters `ctx.customer`, aggregates only on `ctx.allScope`) and explicit `a.customer === ctx.customer` checks (e.g. billing remove). The `byId`/`get` single-entity lookups are intentionally customer-AGNOSTIC because the "All customers" aggregate views (Documents/Board/RAID/etc. are ALL_CAPABLE) and deep-links/citations require cross-customer resolution — adding a guard would BREAK those. An audit agent flagged ~13 `byId`/`get` methods as "P1 leaks" but none has a reachable foreign-id path (ids originate from scoped lists/pickers), and this is a single-user client-side app (one owner of all data) so cross-customer is a UI-correctness concern, not a security boundary. Defense-in-depth note → D-004. | Reviewed (no fix) | i7 |
 | H-007 | 6 | L2 | P2 | index.html Strategy edit paths — Personas/Person/Objectives `_saveDetailModal` (≈11959/12799/13242) and the inline strategy-table quick-edit `commit` (≈14805) called the entity `.update()` mutators with NO `App.pushUndo()` and relied on the `App._save` no-op for persistence. Result: strategy edits were not undoable (Ctrl+Z couldn't revert) and only persisted via the 60s autosave timer (reload within the window lost edits). NOT "wrong post-mutation snapshot" (the auditing agent's phrasing) — there was no snapshot at all. | Fixed: wrapped the 3 detail-modal saves + the single shared quick-edit commit choke point (covers objectives/personas/people inline edits) with `App.pushUndo(label)` before the mutation + `App.saveToLocalStorage()` after. pushUndo added at the UI-caller layer (NOT inside the mutators, which AI apply() paths share). Pinned by tests/render/strategy-undo.test.mjs (real detail-modal save + real `_openQuickEdit`→blur commit, both assert one undo snapshot + Ctrl+Z revert). Finer managed-list ops → D-003. | Fixed (primary) | i6 |

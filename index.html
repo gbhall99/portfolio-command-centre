@@ -43835,6 +43835,15 @@ const Billing = {
     const h = Number(this.settings().hours_per_point);
     return isFinite(h) && h > 0 ? h : 8;
   },
+  // Render an HOURS figure (points × hours_per_point). Hours are NOT story points,
+  // so they must not go through App.fmtPoints (which rounds to a whole integer and
+  // is points-semantic). Whole hours render plainly; fractional hours keep one
+  // decimal — consistently for both per-line and total figures in a quote.
+  fmtHours(n) {
+    const x = Number(n);
+    if (!isFinite(x)) return '0';
+    return Number.isInteger(x) ? String(x) : String(Math.round(x * 10) / 10);
+  },
   countries() { return Object.keys(this.settings().rate_table); },
   levels() {
     const set = [];
@@ -44152,11 +44161,11 @@ const Billing = {
     const lines = quote.lines.map(l =>
       '- ' + l.label + ': ' + App.fmtPoints(l.points) + ' SP' +
       (l.prepaid_covered ? ' (' + App.fmtPoints(l.prepaid_covered) + ' SP covered by prepaid arrangement)' : '') +
-      (l.billable_points ? ' — ' + App.fmtPoints(l.billable_hours) + ' hours at ' + this.fmtMoney(l.rate) + '/hour = ' + this.fmtMoney(l.amount) : ' — no charge')
+      (l.billable_points ? ' — ' + this.fmtHours(l.billable_hours) + ' hours at ' + this.fmtMoney(l.rate) + '/hour = ' + this.fmtMoney(l.amount) : ' — no charge')
     );
     lines.push('');
     lines.push('Rates basis: ' + (quote.rate_band || 'standard') + ' at ' + this.fmtMoney(quote.hourly_rate) + '/hour; 1 story point = ' + quote.hours_per_point + ' hours.');
-    lines.push('Total scope: ' + App.fmtPoints(quote.totals.points) + ' SP. Covered by prepaid: ' + App.fmtPoints(quote.totals.prepaid_covered) + ' SP. Billable: ' + App.fmtPoints(quote.totals.billable_points) + ' SP (' + quote.totals.hours + ' hours).');
+    lines.push('Total scope: ' + App.fmtPoints(quote.totals.points) + ' SP. Covered by prepaid: ' + App.fmtPoints(quote.totals.prepaid_covered) + ' SP. Billable: ' + App.fmtPoints(quote.totals.billable_points) + ' SP (' + this.fmtHours(quote.totals.hours) + ' hours).');
     lines.push('Quoted amount (' + quote.currency + ', excl. taxes): ' + this.fmtMoney(quote.totals.amount) + '.');
     lines.push('Prices hold for 30 days from the date of this document. Prepaid coverage is subject to remaining balance at engagement start.');
     return lines.join('\n');
