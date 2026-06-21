@@ -9177,8 +9177,15 @@ const App = {
         rows.map(r => '<tr><td style="padding:6px 8px;border-bottom:1px solid var(--border-dim);font-family:var(--font-mono,monospace);color:var(--accent-blue);white-space:nowrap">' + Dashboard.esc(r[0]) + '</td><td style="padding:6px 8px;border-bottom:1px solid var(--border-dim)">' + Dashboard.esc(r[1]) + '</td></tr>').join('') +
       '</table>' +
       '<div class="split-actions" style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="App.closeShortcutsOverlay()">Close</button></div>';
+    // A11y: trap Tab inside the dialog and move focus into it on open so a
+    // keyboard-only user can operate (and Escape-close — see dismissTopModal) the
+    // shortcuts overlay rather than tabbing through the background.
+    modal.setAttribute('tabindex', '-1');
+    modal.addEventListener('keydown', (e) => this._modalTabTrap(e, modal));
     document.body.appendChild(overlay);
     document.body.appendChild(modal);
+    const closeBtn = modal.querySelector('button');
+    if (closeBtn) closeBtn.focus();
   },
 
   closeShortcutsOverlay() {
@@ -9317,6 +9324,10 @@ const App = {
       const el = document.getElementById(id);
       if (el && el.offsetParent !== null) { el.remove(); return true; }
     }
+    // Keyboard-shortcuts overlay (opened with "?") — Escape must dismiss it like
+    // any other dialog (it sits above the split-modal stack on z-order).
+    const shortcutsModal = document.getElementById('shortcutsOverlayModal');
+    if (shortcutsModal) { this.closeShortcutsOverlay(); return true; }
     // Holiday form modal — close via its handler so _holidayEditIndex is reset
     const holidayOverlay = document.getElementById('holidayFormOverlay');
     if (holidayOverlay) { this.closeHolidayForm(); return true; }

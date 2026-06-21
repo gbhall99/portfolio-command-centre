@@ -224,6 +224,25 @@ describe('a11y helpers', () => {
     container.remove();
   });
 
+  it('keyboard-shortcuts overlay is Escape-dismissable and focus-managed (H-016)', () => {
+    const { App, document } = app;
+    App.openShortcutsOverlay();
+    const modal = document.getElementById('shortcutsOverlayModal');
+    expect(modal).toBeTruthy();
+    // Dialog semantics + a tab trap wired (tabindex makes it programmatically focusable).
+    expect(modal.getAttribute('role')).toBe('dialog');
+    expect(modal.getAttribute('aria-modal')).toBe('true');
+    expect(modal.getAttribute('tabindex')).toBe('-1');
+    // Escape closes it via the shared modal-dismiss stack (no longer orphaned).
+    expect(App.dismissTopModal()).toBe(true);
+    expect(document.getElementById('shortcutsOverlayModal')).toBeNull();
+    expect(document.getElementById('shortcutsOverlayOverlay')).toBeNull();
+    // Opening with "?" toggles closed when already open (no duplicate overlay).
+    App.openShortcutsOverlay();
+    App.openShortcutsOverlay();
+    expect(document.querySelectorAll('#shortcutsOverlayModal').length).toBe(0);
+  });
+
   it('arrow keys nudge the selected wireframe component; Delete removes it', () => {
     const { Wireframe, WireframeSkill, Definitions } = app;
     const def = Definitions.loadJson('tableau/wireframe-definition.json');
