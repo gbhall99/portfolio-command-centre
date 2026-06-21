@@ -93,3 +93,34 @@ describe('Success Story', () => {
     doc.sections.forEach(s => expect(s.audiences).toContain('customer'));
   });
 });
+
+describe('generate failure surfaces (H-017)', () => {
+  it('a throwing builder speaks via a toast instead of failing silently', () => {
+    const { Reports, App } = app;
+    const toasts = [];
+    const origToast = App.toast;
+    const origBuild = Reports._build;
+    App.toast = (msg, kind) => toasts.push({ msg, kind });
+    Reports._build = () => { throw new Error('boom in builder'); };
+    try {
+      // Must NOT throw out of the (inline-onclick) call path.
+      expect(() => Reports.generate('portfolio_overview', { customer: 'Acme Industries' })).not.toThrow();
+    } finally {
+      Reports._build = origBuild;
+      App.toast = origToast;
+    }
+    expect(toasts.length).toBe(1);
+    expect(toasts[0].kind).toBe('error');
+    expect(toasts[0].msg).toContain('boom in builder');
+  });
+
+  it('a missing entity still gets its specific not-found toast (null path unchanged)', () => {
+    const { Reports, App } = app;
+    const toasts = [];
+    const origToast = App.toast;
+    App.toast = (msg, kind) => toasts.push({ msg, kind });
+    try { Reports.generate('success_story', { projectId: 'NOPE' }); }
+    finally { App.toast = origToast; }
+    expect(toasts.some(t => t.kind === 'error' && /not found/i.test(t.msg))).toBe(true);
+  });
+});

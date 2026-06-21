@@ -38807,7 +38807,18 @@ const Reports = {
   // Single entry point: build → thread audience → serialize → open → audit.
   generate(reportId, args) {
     args = args || {};
-    const doc = this._build(reportId, args);
+    // A builder that THROWS on edge data (vs returning null for a missing entity)
+    // used to propagate out of the inline onclick and fail SILENTLY — the button
+    // appeared dead with no feedback. Surface it as a toast so every failure
+    // speaks. (Palette-invoked reports were already protected by the dispatch
+    // wrapper; direct onclick="Reports.generate(...)" buttons were not.)
+    let doc;
+    try { doc = this._build(reportId, args); }
+    catch (e) {
+      if (typeof console !== 'undefined') console.error('[Reports.generate]', reportId, e);
+      if (App.toast) App.toast('Could not build this report — the data may be incomplete. (' + (e && e.message || e) + ')', 'error');
+      return;
+    }
     if (!doc) {
       if (App.toast) App.toast(this._MISSING_ENTITY_TOAST[reportId] || ('Unknown report: ' + reportId), 'error');
       return;
@@ -38826,7 +38837,13 @@ const Reports = {
       audience = catEntry.audiences.indexOf('internal') >= 0 ? 'internal' : catEntry.audiences[0];
     }
     doc.audience = audience;
-    const html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer));
+    let html;
+    try { html = Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer || args.customer)); }
+    catch (e) {
+      if (typeof console !== 'undefined') console.error('[Reports.generate:toHtml]', reportId, e);
+      if (App.toast) App.toast('Could not render this report. (' + (e && e.message || e) + ')', 'error');
+      return;
+    }
     // Pop-up blocked → no export happened, so nothing to audit (matches the
     // gated call sites: baseline variance + walkthrough briefing pack).
     if (!this.open(html)) return;

@@ -4,11 +4,11 @@ The persistent memory of the /harden loop (see .claude/commands/harden.md).
 Updated and committed every iteration. Do not edit by hand mid-loop.
 
 ## Status
-- Last completed iteration: 15
-- Next lens: L12 (error/empty/loading states).
-- Consecutive clean iterations: 0  (i15/L11 found + fixed H-016 → reset)
-- PR: #72 open, ready for review. Retitle/refresh at i15 to cover i9–i15.
-  e5a20cc full `tests` CI PASSED; later commits build on green. Vercel green.
+- Last completed iteration: 16
+- Next lens: L13 (event hygiene — listener leaks, stale ids, races).
+- Consecutive clean iterations: 0  (i16/L12 found + fixed H-017)
+- PR: #72 open (titled i9–15), ready for review. e5a20cc full `tests` CI PASSED;
+  later commits build on green. Vercel green. i16 pushed to same branch.
 - L9 METHOD (reuse for L10): standalone Playwright script (chromium-headless-shell,
   not committed) — seed portfolio-data.json into localStorage, click the restore
   banner, bridge globals, `App.applyTheme('light'|'dark')`, click each
@@ -43,7 +43,8 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | L9 | 1 | 13 |
 | L10 | 1 | 14 |
 | L11 | 1 | 15 |
-| L12–L20 | 0 | — |
+| L12 | 1 | 16 |
+| L13–L20 | 0 | — |
 
 ## Findings register
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -54,6 +55,7 @@ Updated and committed every iteration. Do not edit by hand mid-loop.
 | H-003 | 1 | L1 | P1 | index.html free-text `value="…"` inputs via esc() | Refined risk: `value="…"` is double-quoted, so an apostrophe is harmless; only a literal `"` breaks out → injection-via-pasted/imported-data (low likelihood), not a common functional break. Fixed the core entity-NAME authoring inputs (customer 8929, holiday 10835, team member name/role 33698/33699, product name/owner/versions/tech 13330/13332/13333/13334, persona/person/objective generic field inputs 11721/12572/13115) → `Dashboard.escAttr`, round-trip-safe. Pinned by tests/render/input-value-escaping.test.mjs (member modal: `"`-bearing name can't break out AND value round-trips byte-for-byte). Remaining value=/option= long tail → D-002. | Fixed (core) | i5 |
 | H-004 | 1 | L1 | P2 | index.html `alt="…"`/`data-…="…"` via esc() — e.g. ≈8917 (customer name alt), ≈8659 (data-capmember member name) | Same class, lower severity (alt/data rarely script-bearing but still breakout-able on a literal `"`). Folded into D-002. | Deferred → D-002 | — |
 | H-005 | 1 | L1 | P1 | index.html single-quoted inline handlers passing free-text — reachable sink: Capacity member-impact buttons (≈33572 `openMemberImpactModal('<name>')`, ≈33083 `_runMemberImpact('<name>')`). Member names are free text (no id field), so e.g. `O'Brien` breaks the JS string in normal use (functional break) and a hostile imported name injects. | Fixed: grid button now index-based (`openMemberImpactModal(idx)`, matching edit/delete); name resolved internally; in-modal Simulate wired via addEventListener over a closure (no interpolation). Pinned by tests/render/capacity-handler-escaping.test.mjs. Bulk id-handler class (≈130 sites passing generated `esc(id)`) deferred → D-001. | Fixed | i4 |
+| H-017 | 16 | L12 | P1 | index.html Reports.generate (≈38808) | A report BUILDER that throws on edge data (vs returning `null` for a missing entity) propagated the exception out of the inline `onclick="Reports.generate(...)"` and failed SILENTLY — the export button appeared dead, no toast, blank result. (Palette-invoked reports were protected by the dispatch try/catch at ≈16425; the many direct-onclick report buttons — Governance packs, detail-panel project reports, etc. — were not.) Fixed: wrapped `_build` AND `Reports.Doc.toHtml` in try/catch that console.errors + toasts "Could not build/render this report …". The graceful `null` path keeps its specific `_MISSING_ENTITY_TOAST`. Pinned by tests/unit/reports-new-outputs.test.mjs ("a throwing builder speaks via a toast instead of failing silently" + null-path-unchanged). REVIEWED, well-handled already: popup-blocked (`Reports.open` toasts), localStorage quota (`saveToLocalStorage` → `showStorageWarning` + backup export), no-AI (`No AI model configured` + "Open Settings → AI" button), AI endpoint down (CORS/timeout guidance via `describeError`), empty states (Products/Activity/Backlog speak). | Fixed | i16 |
 | H-016 | 15 | L11 | P2 | index.html App.openShortcutsOverlay (≈9145) + dismissTopModal (≈9302) | The "?" keyboard-shortcuts overlay — itself an accessibility affordance — was not keyboard-operable: (a) Escape did NOT close it (the overlay was absent from the Escape stack / `dismissTopModal`, so a keyboard user was stuck — only a second "?" or a backdrop click dismissed it); (b) no Tab focus trap (Tab escaped to the background); (c) focus was never moved into the dialog on open. Fixed: wired `_modalTabTrap` on the modal + `tabindex=-1` + focus the Close button on open, and added the overlay to `dismissTopModal` so Escape dismisses it like every other dialog. Pinned by tests/unit/roadmap-batch.test.mjs a11y block ("keyboard-shortcuts overlay is Escape-dismissable and focus-managed (H-016)"). REVIEWED, no bug: the global Escape stack order (palette → wf-skill → sow-skill → split-modals → detail panel → assistant) is z-order-correct; `_modalTabTrap` wraps both ends; the four skill modals + split-modals declare role=dialog/aria-modal and trap focus. | Fixed | i15 |
 | H-015 | 14 | L10 | — | responsive UI @ 768 + 414, key views (dashboard/board/capacity/raid/sprint/config/strategy) | REVIEWED via real Playwright screenshots at both widths. Mobile drawer (`.mobile-menu-btn` → `.sidebar.mobile-open`) opens over a dimmed backdrop with all nav items legible; header collapses (customer pill truncates, desktop power-tools hidden per the ≤768 media query); KPI/summary/workload cards stack/reflow; dense boards/grids/RAID tables scroll horizontally (expected). Zero page errors at either width. No fix. | Reviewed (clean) | i14 |
 | H-014 | 13 | L9 | — | desktop UI @ 1440, light + dark, all 15 views | REVIEWED via real Playwright screenshots (no code reading substitute). No broken layout, no `[object Object]`, no unreadable contrast, no clipped controls, zero console/page errors. Minor non-issues left as-is: the Metrics RACI table scrolls horizontally past 1440 (intentional `.table-wrapper{overflow-x:auto}`, same pattern as Projects); the Capacity "data-quality" amber banner + "Fix" button read fine in both themes. No fix. | Reviewed (clean) | i13 |
