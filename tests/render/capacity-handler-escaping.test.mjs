@@ -41,6 +41,13 @@ describe('Capacity member-impact — handler escaping (L1/H-005)', () => {
     expect(onclick).not.toContain('onmouseover');
   });
 
+  it('the modal accepts a name too (programmatic/back-compat callers)', () => {
+    const { Capacity, document } = app;
+    Capacity.openMemberImpactModal(HOSTILE); // by name
+    expect(document.getElementById('memberImpactOverlay')).toBeTruthy();
+    document.getElementById('memberImpactOverlay').remove();
+  });
+
   it('opening the modal by index renders without breaking out of any handler', () => {
     const { Capacity, document } = app;
     Capacity.openMemberImpactModal(0);
