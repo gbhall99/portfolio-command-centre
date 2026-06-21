@@ -14635,7 +14635,12 @@ const ProductsView = {
       '</div>';
     let body;
     if (!prods.length) {
-      body = '<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No products yet for ' + esc(App.activeCustomer || 'this customer') + '. Add one to start linking projects.</div>';
+      body = '<div class="portfolio-empty" style="padding:40px 24px">' +
+        '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:0.5;margin-bottom:8px"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>' +
+        '<div style="font-weight:600;color:var(--text-dark)">No products yet for ' + esc(App.activeCustomer || 'this customer') + '</div>' +
+        '<div style="font-size:12px;margin-top:2px">Products group the projects that build and run a deliverable. Add one to start linking projects.</div>' +
+        (ro ? '' : '<div style="margin-top:14px"><button class="btn btn-primary btn-sm" onclick="Products._openForm()">+ Add the first product</button></div>') +
+      '</div>';
     } else {
       const th = (t) => '<th style="text-align:left;padding:8px 10px;font-size:var(--fs-xs);text-transform:uppercase;color:var(--text-muted);border-bottom:2px solid var(--border-light)">' + t + '</th>';
       body = '<div class="table-wrapper"><table style="width:100%;border-collapse:collapse;font-size:var(--fs-sm)">' +
@@ -39589,6 +39594,21 @@ const AuditPanel = {
   setFilter(val) { this.currentFilter = val; this.render(); },
   setSourceFilter(val) { this.sourceFilter = val; this.render(); },
   setSearch(val) { this.searchText = (val || '').toLowerCase().trim(); this.render(); },
+  // Widen only the time window (preserve any source/search the user set), syncing
+  // the window control so it reflects the change. Used by the empty-state CTA.
+  widenToAll() {
+    this.currentFilter = 'all';
+    const w = document.getElementById('activityFilter'); if (w) w.value = 'all';
+    this.render();
+  },
+  // Reset every activity filter back to its default and sync the controls.
+  clearFilters() {
+    this.currentFilter = 'all'; this.sourceFilter = 'all'; this.searchText = '';
+    const w = document.getElementById('activityFilter'); if (w) w.value = 'all';
+    const s = document.getElementById('activitySource'); if (s) s.value = 'all';
+    const q = document.getElementById('activitySearch'); if (q) q.value = '';
+    this.render();
+  },
   toggleRun(runId) { this._expandedRuns[runId] = !this._expandedRuns[runId]; this.render(); },
 
   _sourceBucket(source) {
@@ -39626,7 +39646,31 @@ const AuditPanel = {
       return true;
     }).reverse();
 
-    if (!filtered.length) { feed.innerHTML = '<div class="audit-empty">No activity matches your filters</div>'; return; }
+    if (!filtered.length) {
+      // Distinguish "nothing in this time window" from "filters too narrow", and
+      // offer the one-click fix instead of a dead-end (the audit/manager persona
+      // returning after a break would otherwise see an empty feed that looks
+      // broken). Count entries that match source/search but fall outside the
+      // window; if any, point straight at "Show all time".
+      const outsideWindow = (this.currentFilter !== 'all') ? log.filter(e => {
+        if (sourceFilter !== 'all' && this._sourceBucket(e.source) !== sourceFilter) return false;
+        if (search) {
+          const hay = (e.projectName + ' ' + e.field + ' ' + e.oldValue + ' ' + e.newValue + ' ' + (e.source || '')).toLowerCase();
+          if (hay.indexOf(search) === -1) return false;
+        }
+        return true;
+      }).length : 0;
+      if (outsideWindow > 0) {
+        feed.innerHTML = '<div class="audit-empty">No activity in this time window — but <strong>' + outsideWindow + '</strong> matching change' + (outsideWindow === 1 ? '' : 's') + ' fall outside it.' +
+          '<div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="AuditPanel.widenToAll()">Show all time</button></div></div>';
+      } else {
+        const narrowed = (sourceFilter !== 'all') || !!search;
+        feed.innerHTML = '<div class="audit-empty">No activity matches your filters.' +
+          (narrowed ? '<div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="AuditPanel.clearFilters()">Clear filters</button></div>' : '') +
+          '</div>';
+      }
+      return;
+    }
 
     // M4: group by day, then within a day collapse runs (entries sharing run_id) into a single expandable row.
     const dayGroups = {};
