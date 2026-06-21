@@ -40297,9 +40297,17 @@ const AI = {
     const parts = buffer.split(/\r?\n\r?\n/);
     const rest = parts.pop();
     parts.forEach(block => {
+      // SSE spec §9.2: an event may carry MULTIPLE `data:` lines that are joined
+      // with LF into one payload. Collect per-block (not per-line) so a JSON
+      // payload a provider/proxy split across `data:` lines reassembles instead of
+      // yielding two invalid-JSON fragments. One leading space after the colon is
+      // stripped per spec; non-`data:` lines (`event:`, `id:`, `:`-comments /
+      // keep-alives) are ignored.
+      const dataLines = [];
       block.split(/\r?\n/).forEach(line => {
-        if (line.indexOf('data:') === 0) events.push(line.slice(5).trim());
+        if (line.indexOf('data:') === 0) dataLines.push(line.slice(5).replace(/^ /, ''));
       });
+      if (dataLines.length) events.push(dataLines.join('\n').trim());
     });
     return { events, rest };
   },
