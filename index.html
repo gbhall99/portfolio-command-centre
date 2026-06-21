@@ -8926,7 +8926,7 @@ const App = {
         var sponsorCell = '<span style="font-size:11px;color:var(--text-dark-secondary)">' + sponsorPreview + '</span>' +
           ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px" onclick="App._openSponsorEditor(\'' + nameAttr + '\')" title="Edit sponsors">&#9998;</button>';
         tbl += '<tr>' +
-          '<td><input type="text" value="' + Dashboard.esc(c.name) + '" onchange="App.renameCustomer(\'' + nameAttr + '\',this.value)"></td>' +
+          '<td><input type="text" value="' + Dashboard.escAttr(c.name) + '" onchange="App.renameCustomer(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="color" value="' + (c.color || '#6366f1') + '" onchange="App.updateCustomerColor(\'' + nameAttr + '\',this.value)"></td>' +
           '<td><input type="number" value="' + (c.staleThreshold || 14) + '" min="1" max="90" onchange="App.updateCustomerStaleThreshold(\'' + nameAttr + '\',this.value)"></td>' +
           '<td style="font-size:11px;color:var(--text-muted)">' + pCount + '</td>' +
@@ -10832,7 +10832,7 @@ const App = {
     modal.innerHTML =
       '<h3 style="font-size:15px;font-weight:700;color:var(--text-dark)">' + (this._holidayEditIndex != null ? 'Edit holiday' : 'Add holiday') + '</h3>' +
       '<div class="team-edit-body" style="display:flex;flex-direction:column;gap:12px">' +
-        '<label style="' + labelStyle + '">Name<input type="text" id="holidayFormName" value="' + esc(h.name || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Name<input type="text" id="holidayFormName" value="' + Dashboard.escAttr(h.name || '') + '" style="' + fieldStyle + '"></label>' +
         '<label style="' + labelStyle + '">Date<input type="date" id="holidayFormDate" value="' + esc(h.date || '') + '" style="' + fieldStyle + '"></label>' +
         '<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-dark)"><input type="checkbox" id="holidayFormRecurring"' + (h.recurring ? ' checked' : '') + '> Repeats every year</label>' +
         '<label style="' + labelStyle + '">Country<select id="holidayFormCountry" onchange="App._holidayFormCountryChanged()" style="' + fieldStyle + '">' + countryOpts + '</select></label>' +
@@ -11593,7 +11593,7 @@ const Personas = {
     const people = (typeof Person !== 'undefined') ? Person.byPersonaId(p.id) : [];
     const activePeople = people.filter(prn => prn.active !== false);
     const peopleChips = activePeople.slice(0, 4).map(prn =>
-      '<span class="persona-chip" title="' + esc(prn.role_title || '') + '" onclick="event.stopPropagation();Person._openDetail(\''
+      '<span class="persona-chip" title="' + Dashboard.escAttr(prn.role_title || '') + '" onclick="event.stopPropagation();Person._openDetail(\''
       + esc(prn.id) + '\')">' + esc(prn.name) + '</span>'
     ).join('');
     const peopleOverflow = activePeople.length > 4
@@ -11718,7 +11718,7 @@ const Personas = {
              + '</label>';
       }
       return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(cfg.label)
-           +   '<input type="text" class="field-input" data-persona-field="' + key + '" value="' + esc(val) + '" '
+           +   '<input type="text" class="field-input" data-persona-field="' + key + '" value="' + Dashboard.escAttr(val) + '" '
            +     'style="display:block;margin-top:4px;width:100%">'
            + '</label>';
     };
@@ -11956,7 +11956,9 @@ const Personas = {
       if (v) bq.push(v);
     });
     patch.business_questions = bq;
+    App.pushUndo('Edit persona');
     this.update(personaId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -12569,7 +12571,7 @@ const Person = {
       type = type || 'text';
       const val = prn[key] == null ? '' : String(prn[key]);
       return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(label)
-           +   '<input type="' + type + '" class="field-input" data-person-field="' + key + '" value="' + esc(val) + '" '
+           +   '<input type="' + type + '" class="field-input" data-person-field="' + key + '" value="' + Dashboard.escAttr(val) + '" '
            +     'style="display:block;margin-top:4px;width:100%">'
            + '</label>';
     };
@@ -12796,7 +12798,9 @@ const Person = {
         patch[key] = (el.value == null ? '' : String(el.value));
       }
     });
+    App.pushUndo('Edit person');
     this.update(personId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -12965,7 +12969,7 @@ const Objectives = {
         const desc = o.description || '';
         if (!desc) return '<span style="color:var(--text-faint);font-style:italic">—</span>';
         const truncated = desc.slice(0, 120);
-        return '<span class="objective-description" title="' + Dashboard.esc(desc) + '">'
+        return '<span class="objective-description" title="' + Dashboard.escAttr(desc) + '">'
           + Dashboard.esc(truncated) + (desc.length > 120 ? '…' : '') + '</span>';
       },
       edit: { type: 'textarea', field: 'description' } },
@@ -13112,7 +13116,7 @@ const Objectives = {
       type = type || 'text';
       const val = o[key] == null ? '' : String(o[key]);
       return '<label class="field-label" style="display:block;margin-bottom:8px">' + esc(label)
-           +   '<input type="' + type + '" class="field-input" data-objective-field="' + key + '" value="' + esc(val) + '" '
+           +   '<input type="' + type + '" class="field-input" data-objective-field="' + key + '" value="' + Dashboard.escAttr(val) + '" '
            +     'style="display:block;margin-top:4px;width:100%">'
            + '</label>';
     };
@@ -13239,7 +13243,9 @@ const Objectives = {
     if (Object.keys(timeHorizon).length || (this.byId(objectiveId) && this.byId(objectiveId).time_horizon)) {
       patch.time_horizon = { ...(this.byId(objectiveId).time_horizon || {}), ...timeHorizon };
     }
+    App.pushUndo('Edit objective');
     this.update(objectiveId, patch);
+    App.saveToLocalStorage();
     this._closeDetailModal();
     if (App.renderActiveView) App.renderActiveView();
   },
@@ -13327,11 +13333,11 @@ const Products = {
     modal.innerHTML =
       '<h3 style="font-size:15px;font-weight:700;color:var(--text-dark)">' + (this._editId ? 'Edit product' : 'Add product') + '</h3>' +
       '<div class="team-edit-body" style="display:flex;flex-direction:column;gap:12px">' +
-        '<label style="' + labelStyle + '">Name<input type="text" id="pfName" value="' + esc(p.name || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Name<input type="text" id="pfName" value="' + Dashboard.escAttr(p.name || '') + '" style="' + fieldStyle + '"></label>' +
         '<label style="' + labelStyle + '">Type<select id="pfType" style="' + fieldStyle + '">' + typeOpts + '</select></label>' +
-        '<label style="' + labelStyle + '">Versions (comma-separated)<input type="text" id="pfVersions" value="' + esc((p.versions || []).join(', ')) + '" placeholder="v2.0, v1.9" style="' + fieldStyle + '"></label>' +
-        '<label style="' + labelStyle + '">Product owner<input type="text" id="pfOwner" value="' + esc(p.product_owner || '') + '" style="' + fieldStyle + '"></label>' +
-        '<label style="' + labelStyle + '">Tech stack (comma-separated)<input type="text" id="pfTech" value="' + esc((p.tech_stack || []).join(', ')) + '" placeholder="React, Node, Postgres" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Versions (comma-separated)<input type="text" id="pfVersions" value="' + Dashboard.escAttr((p.versions || []).join(', ')) + '" placeholder="v2.0, v1.9" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Product owner<input type="text" id="pfOwner" value="' + Dashboard.escAttr(p.product_owner || '') + '" style="' + fieldStyle + '"></label>' +
+        '<label style="' + labelStyle + '">Tech stack (comma-separated)<input type="text" id="pfTech" value="' + Dashboard.escAttr((p.tech_stack || []).join(', ')) + '" placeholder="React, Node, Postgres" style="' + fieldStyle + '"></label>' +
         '<label style="' + labelStyle + '">Description<textarea id="pfDescription" rows="3" style="' + fieldStyle + ';resize:vertical">' + esc(p.description || '') + '</textarea></label>' +
         (this._editId ? '<div style="font-size:var(--fs-xs);font-weight:600;color:var(--text-dark)">Linked projects<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' + linkedHtml + '</div></div>' : '') +
       '</div>' +
@@ -13922,11 +13928,11 @@ const Metrics = {
       const className = showPeople ? 'raci-pill-group raci-pill-group-people' : 'raci-pill-group raci-pill-group-personas';
       const pills = items.map(e => {
         if (showPeople) {
-          return '<span class="raci-pill raci-pill-' + letter + '" title="' + esc(e.name) + (e.role ? ' — ' + esc(e.role) : '') + '" '
+          return '<span class="raci-pill raci-pill-' + letter + '" title="' + Dashboard.escAttr(e.name) + (e.role ? ' — ' + Dashboard.escAttr(e.role) : '') + '" '
             + 'onclick="event.stopPropagation();Person._openDetail(\'' + esc(e.id) + '\')">'
             + '<span class="raci-pill-name">' + esc(e.name) + '</span></span>';
         }
-        return '<span class="raci-pill raci-pill-' + letter + ' raci-pill-template" title="' + esc(e.name) + ' (persona — role archetype)" '
+        return '<span class="raci-pill raci-pill-' + letter + ' raci-pill-template" title="' + Dashboard.escAttr(e.name) + ' (persona — role archetype)" '
           + 'onclick="event.stopPropagation();App.navigate(\'personas\');setTimeout(()=>Personas._openDetail(\'' + esc(e.id) + '\'),60)">'
           + '<svg class="raci-persona-mark" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5" r="2.6"/><path d="M3.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4"/></svg>'
           + '<span class="raci-pill-name">' + esc(e.name) + '</span></span>';
@@ -13952,7 +13958,7 @@ const Metrics = {
     };
     const definitionCell = (text) => {
       if (!text) return '<span class="metric-cell-empty">—</span>';
-      return '<span class="metric-definition" title="' + esc(text) + '">' + esc(text) + '</span>';
+      return '<span class="metric-definition" title="' + Dashboard.escAttr(text) + '">' + esc(text) + '</span>';
     };
     // Format a target value compactly using the metric's unit when set.
     // Large amounts collapse to k/M/B so the chip fits the column.
@@ -14195,7 +14201,7 @@ const Metrics = {
             + 'style="position:sticky;top:0;z-index:2;background:var(--surface-2);border-bottom:1px solid var(--border-light);'
             + 'border-right:1px solid var(--border-light);padding:6px 4px;cursor:pointer;'
             + 'min-width:100px;max-width:160px;vertical-align:bottom;font-weight:600;font-size:11px;color:var(--text-dark)" '
-            + 'title="' + esc(prn.name) + (prn.role_title ? ' — ' + esc(prn.role_title) : '') + '">'
+            + 'title="' + Dashboard.escAttr(prn.name) + (prn.role_title ? ' — ' + Dashboard.escAttr(prn.role_title) : '') + '">'
             + '<div class="raci-col-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center">'
             +   esc(prn.name)
             + '</div>'
@@ -14802,7 +14808,15 @@ const Strategy = {
         return;
       }
       if (next === originalValue) { cancel(); return; }
-      try { src.update(entityId, dataField, next); }
+      // L2: snapshot BEFORE the mutation so Ctrl+Z reverts the edit, and persist
+      // immediately — the entity mutators are memory-only (App._save is a no-op),
+      // so the UI caller owns undo + save. (AI writes use the mutators directly
+      // and pushUndo themselves, so they never hit this path.)
+      try {
+        App.pushUndo('Edit ' + (dataField || 'strategy'));
+        src.update(entityId, dataField, next);
+        App.saveToLocalStorage();
+      }
       catch (e) { console.error('[strategy quick-edit]', e); App.toast('Save failed', 'warn'); cancel(); return; }
       reRender();
       delete cell.dataset.editing;
@@ -20101,7 +20115,7 @@ const DetailPanel = {
           ).join('')
         : '<span class="strategy-picker-empty">none selected</span>';
       const derivedChips = (derived || []).filter(d => !selected.has(d.id)).map(d =>
-        '<span class="strategy-picker-chip strategy-picker-chip-derived" title="' + esc(d.via || '') + '">'
+        '<span class="strategy-picker-chip strategy-picker-chip-derived" title="' + Dashboard.escAttr(d.via || '') + '">'
         + esc(d.name) + ' <small>derived</small></span>'
       ).join('');
       const checkboxes = options.length
@@ -22655,7 +22669,7 @@ const DetailPanel = {
       const srcBadge = srcLabel ? ' <span class="audit-entry-source ' + srcCls + '">' + srcLabel + '</span>' : '';
       let detail = '<span class="audit-field">' + Dashboard.esc(e.field) + '</span>';
       if (e.field === 'project_created') { detail = 'Project created'; }
-      else if (e.oldValue && e.newValue) { detail += ': <span title="' + Dashboard.esc(String(e.oldValue) + ' \u2192 ' + String(e.newValue)) + '">' + Dashboard.esc(String(e.oldValue).substring(0, 80)) + ' \u2192 ' + Dashboard.esc(String(e.newValue).substring(0, 80)) + '</span>'; }
+      else if (e.oldValue && e.newValue) { detail += ': <span title="' + Dashboard.escAttr(String(e.oldValue) + ' \u2192 ' + String(e.newValue)) + '">' + Dashboard.esc(String(e.oldValue).substring(0, 80)) + ' \u2192 ' + Dashboard.esc(String(e.newValue).substring(0, 80)) + '</span>'; }
       else if (e.newValue) { detail += ': set to ' + Dashboard.esc(String(e.newValue).substring(0, 60)); }
       return '<div class="audit-entry"><span class="audit-time">' + timeStr + '</span>' + srcBadge + '<span class="audit-detail">' + detail + '</span></div>';
     }).join('');
@@ -26209,7 +26223,7 @@ const Gantt = {
         priCell +
         '<div class="gantt-label-body">' +
           ragDotsHtml +
-          '<div class="label-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+          '<div class="label-name" title="' + Dashboard.escAttr(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
           blockedCountChip +
         '</div>' +
       '</div>';
@@ -27621,9 +27635,9 @@ const Gantt = {
       const dl = ok(p.hard_deadline) ? pct(p.hard_deadline) : null;
       const ms = dl != null ? '<span class="gp-ms" style="left:' + dl + '%" title="Hard deadline ' + esc(p.hard_deadline) + '"></span>' : '';
       const label = (p.priority ? '<span class="gp-pri">' + esc(String(p.priority)) + '</span>' : '') + esc(p.name);
-      return '<div class="gp-row"><div class="gp-label" title="' + esc(p.name) + '">' + label + '</div>' +
+      return '<div class="gp-row"><div class="gp-label" title="' + Dashboard.escAttr(p.name) + '">' + label + '</div>' +
         '<div class="gp-track">' + todayLine +
-          '<span class="gp-bar" style="left:' + l + '%;width:' + w + '%;background:' + barColor(p) + '" title="' + esc(p.name) + ': ' + esc(p.start_date) + ' to ' + esc(p.target_date) + '"></span>' + ms +
+          '<span class="gp-bar" style="left:' + l + '%;width:' + w + '%;background:' + barColor(p) + '" title="' + Dashboard.escAttr(p.name) + ': ' + Dashboard.escAttr(p.start_date) + ' to ' + Dashboard.escAttr(p.target_date) + '"></span>' + ms +
         '</div></div>';
     }).join('');
     const style = '<style>' +
@@ -28222,7 +28236,7 @@ const Walkthrough = {
           '<div class="d" style="background:' + App.ragColor(c.ragSummary.resourcing) + '"></div>' +
           '<div class="d" style="background:' + App.ragColor(c.ragSummary.scope) + '"></div>' +
         '</div>' +
-        '<div class="wt-list-name" title="' + esc(c.project.name) + '">' + esc(c.project.name) + '</div>' +
+        '<div class="wt-list-name" title="' + Dashboard.escAttr(c.project.name) + '">' + esc(c.project.name) + '</div>' +
         incompleteChip +
         '<span class="wt-list-att">' + c.attentionScore + '</span>' +
       '</div>';
@@ -28473,7 +28487,7 @@ const Walkthrough = {
         '<option value="' + esc(s) + '"' + (s === (m.status || 'Planned') ? ' selected' : '') + '>' + esc(s) + '</option>'
       ).join('');
       const notes = m.notes
-        ? '<div class="wt-ms-notes" title="' + esc(m.notes) + '">' + esc(m.notes) + '</div>'
+        ? '<div class="wt-ms-notes" title="' + Dashboard.escAttr(m.notes) + '">' + esc(m.notes) + '</div>'
         : '';
       // Slot D / Item 5 — Mark-reviewed affordance per milestone row. Shows the
       // reviewed-stamp once set; stamps reviewed_at + reviewed_by_walkthrough_id.
@@ -29461,7 +29475,7 @@ const Sprint = {
           '<div class="group-header" onclick="Sprint.toggleGroup(\'' + gid + '\')">' +
             '<span class="group-toggle' + (startCollapsed ? ' collapsed' : '') + '" id="gt-' + gid + '">\u25BC</span>' +
             '<div class="group-customer-dot" style="background:' + color + '"></div>' +
-            '<div class="group-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+            '<div class="group-name" title="' + Dashboard.escAttr(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
             '<span class="group-total">' + totalPts + 'pts</span>' +
             '<span style="font-size:var(--fs-2xs);color:var(--text-muted)">#' + (p.priority || '') + '</span>' +
             (p.recommended_priority && p.recommended_priority !== p.priority
@@ -29564,13 +29578,13 @@ const Sprint = {
       warningBadge +
       '<div class="card-top">' +
         '<div class="card-customer-dot" style="background:' + color + '"></div>' +
-        '<div class="card-name" title="' + Dashboard.esc(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
+        '<div class="card-name" title="' + Dashboard.escAttr(p.name) + '">' + Dashboard.esc(p.name) + '</div>' +
         '<span class="card-priority">#' + (p.priority || '') + '</span>' +
       '</div>' +
       '<div class="card-bottom">' +
         '<span style="font-size:var(--fs-2xs);font-weight:600;color:' + skillColor + ';background:' + skillColor + '15;padding:1px 6px;border-radius:3px">' + (c.skill ? Sprint.skillShape(c.skill.key) : '') + skillLabel + '</span>' +
         (ptsLabel ? '<span class="card-size">' + ptsLabel + '</span>' : '') +
-        '<span class="card-manager" title="' + Dashboard.esc(p.manager || '') + '">' + Dashboard.esc(p.manager || '') + '</span>' +
+        '<span class="card-manager" title="' + Dashboard.escAttr(p.manager || '') + '">' + Dashboard.esc(p.manager || '') + '</span>' +
         '<div class="card-rag-dots">' +
           '<div class="card-rag-dot" style="background:' + App.ragColor(p.rag_schedule) + '"></div>' +
           '<div class="card-rag-dot" style="background:' + App.ragColor(p.rag_resourcing) + '"></div>' +
@@ -29811,7 +29825,7 @@ const Sprint = {
           if (a.assignee) {
             var parts = a.assignee.split(' ');
             var initials = parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : (parts[0] || '').substring(0, 2).toUpperCase();
-            assigneeBadge = '<span class="sl-chip-assignee" title="' + Dashboard.esc(a.assignee) + '">' + initials + '</span>';
+            assigneeBadge = '<span class="sl-chip-assignee" title="' + Dashboard.escAttr(a.assignee) + '">' + initials + '</span>';
           }
           // H3: chip overflow menu (three dots) — discoverable alternative to double-click / drag.
           const overflowBtn = '<button class="sl-chip-overflow" onclick="event.stopPropagation();Sprint.openChipMenu(event, \'' + p.id + '\', \'' + a.key + '\', \'' + s.sprint_id + '\')" aria-label="Chip options" title="Options">\u22EE</button>';
@@ -33065,7 +33079,17 @@ const Capacity = {
     return { member: memberName, fromSprintId, before, after, supplyDelta: after.totalSupply - before.totalSupply, affectedSprints };
   },
 
-  openMemberImpactModal(memberName) {
+  openMemberImpactModal(ref) {
+    // ref is the App.data.team_members index (the grid button passes the index,
+    // matching the row's edit/delete buttons) or, for programmatic/test callers,
+    // the member name. Resolving the member here — rather than interpolating the
+    // name into the button's onclick — keeps a member name containing a
+    // quote/apostrophe (e.g. O'Brien) from breaking out of the inline handler
+    // (L1/H-005).
+    const members = (App.data && App.data.team_members) || [];
+    const tm = typeof ref === 'number' ? members[ref] : members.find(m => m.name === ref);
+    if (!tm) return;
+    const memberName = tm.name;
     const sprints = (App.data && App.data.sprints || []);
     if (!sprints.length) { App.toast('No sprints', 'error'); return; }
     const existing = document.getElementById('memberImpactOverlay');
@@ -33080,13 +33104,16 @@ const Capacity = {
         '<h3 style="margin:0 0 12px;font-size:14px;font-weight:700">Member impact — ' + esc(memberName) + '</h3>' +
         '<label style="font-size:11px;font-weight:600;display:block;margin-bottom:8px">Drop from sprint<br><select id="miFromSprint" style="width:100%;padding:5px 8px;border:1px solid var(--border-light);border-radius:var(--radius-sm);font-size:12px;margin-top:2px">' + opts + '</select></label>' +
         '<div style="display:flex;gap:8px;margin-bottom:10px">' +
-          '<button class="btn btn-primary btn-sm" onclick="Capacity._runMemberImpact(\'' + esc(memberName) + '\')">Simulate</button>' +
+          '<button class="btn btn-primary btn-sm" id="miRunImpact">Simulate</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'memberImpactOverlay\').remove()">Close</button>' +
         '</div>' +
         '<div id="memberImpactOutput" style="font-size:12px;background:var(--surface-2);padding:10px;border-radius:var(--radius-sm);min-height:60px"></div>' +
       '</div>';
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
+    // Wire Simulate via a closure over the resolved name (no string interpolation).
+    const runBtn = overlay.querySelector('#miRunImpact');
+    if (runBtn) runBtn.addEventListener('click', () => this._runMemberImpact(memberName));
   },
 
   _runMemberImpact(memberName) {
@@ -33176,7 +33203,7 @@ const Capacity = {
         if (e < start || s > end) return '';
         const left = Math.max(0, ((Math.max(s, start) - start) / totalMs) * 100);
         const width = Math.max(0.5, ((Math.min(e, end) - Math.max(s, start)) / totalMs) * 100);
-        return '<div class="leave-bar" title="' + esc(tm.name) + ' off ' + esc(h.start) + ' → ' + esc(h.end) + '" style="position:absolute;left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;height:14px;top:4px;background:var(--accent-amber,#f59e0b);border-radius:3px;opacity:0.85"></div>';
+        return '<div class="leave-bar" title="' + Dashboard.escAttr(tm.name) + ' off ' + Dashboard.escAttr(h.start) + ' → ' + Dashboard.escAttr(h.end) + '" style="position:absolute;left:' + left.toFixed(2) + '%;width:' + width.toFixed(2) + '%;height:14px;top:4px;background:var(--accent-amber,#f59e0b);border-radius:3px;opacity:0.85"></div>';
       }).join('');
       return '<div class="leave-row" style="display:grid;grid-template-columns:140px 1fr;align-items:center;gap:8px;padding:4px 0">' +
         '<span style="font-size:12px;font-weight:600">' + esc(tm.name) + '</span>' +
@@ -33569,7 +33596,7 @@ const Capacity = {
           '<div class="team-skills">' + (skillBars || '<span style="font-size:11px;color:var(--text-muted)">No assignments in horizon</span>') + '</div>' +
           overallCol +
           '<div class="team-actions">' +
-            '<button onclick="event.stopPropagation();Capacity.openMemberImpactModal(\'' + Dashboard.esc(tm.name) + '\')" title="Simulate dropping this member" style="font-size:var(--fs-2xs)">Impact?</button>' +
+            '<button onclick="event.stopPropagation();Capacity.openMemberImpactModal(' + idx + ')" title="Simulate dropping this member" style="font-size:var(--fs-2xs)">Impact?</button>' +
             '<button onclick="event.stopPropagation();Capacity.editSprintCapacity(' + idx + ')" title="Set per-sprint availability — mark off sick / on leave" style="font-size:var(--fs-2xs)">Availability / leave…</button>' +
             '<button onclick="event.stopPropagation();Capacity.editMember(' + idx + ')" title="Edit">\u270E</button>' +
             '<button class="delete" onclick="event.stopPropagation();Capacity.deleteMember(' + idx + ')" title="Remove">\u2715</button>' +
@@ -33685,8 +33712,8 @@ const Capacity = {
     };
 
     const fieldsHtml =
-      '<div class="field-group"><div class="field-label">Name</div><input type="text" class="field-input" id="tmName" value="' + Dashboard.esc(tm.name) + '"></div>' +
-      '<div class="field-group"><div class="field-label">Role</div><input type="text" class="field-input" id="tmRole" value="' + Dashboard.esc(tm.role) + '"></div>' +
+      '<div class="field-group"><div class="field-label">Name</div><input type="text" class="field-input" id="tmName" value="' + Dashboard.escAttr(tm.name) + '"></div>' +
+      '<div class="field-group"><div class="field-label">Role</div><input type="text" class="field-input" id="tmRole" value="' + Dashboard.escAttr(tm.role) + '"></div>' +
       '<div class="field-group"><div class="field-label">Customer</div><select class="field-input" id="tmCustomer">' +
         customers.map(c => '<option value="' + c + '"' + (c === tm.customer ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></div>' +
       '<div class="field-group"><div class="field-label">Contracted Hours / Week</div><input type="number" class="field-input" id="tmHours" value="' + (tm.contracted_hours_per_week || 37.5) + '"></div>' +
@@ -39403,18 +39430,18 @@ const RaidView = {
       const d = r.row.target_date ? RaidIntel._daysBetween(today, r.row.target_date) : null;
       const dueStr = d === null ? '' : (d < 0 ? 'overdue' : 'in ' + d + 'd');
       return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'risks\',' + r.idx + ')">' +
-        this._scoreChip(r.sev) + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        this._scoreChip(r.sev) + '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Dashboard.escAttr(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
         '<span style="font-size:var(--fs-2xs);color:' + (r.near ? 'var(--status-red)' : 'var(--text-muted)') + '">' + dueStr + '</span>' +
       '</div>';
     }).join('');
     const issueItems = issues.map(r =>
       '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(r.project.id)) + ',\'issues\',' + r.idx + ')">' +
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Dashboard.escAttr(r.row.description || '') + '">' + esc((r.row.description || '').slice(0, 60)) + '</span>' +
         '<span style="font-size:var(--fs-2xs);font-weight:700;color:' + (RaidIntel.issueAging(r.row, today) === 'red' ? 'var(--status-red)' : 'var(--status-amber)') + '">open ' + r.age + 'd</span>' +
       '</div>').join('');
     const decisionItems = decisions.map(d =>
       '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;cursor:pointer" onclick="RaidView._openForum(' + d.forumIdx + ')">' +
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(d.decision.text || '') + '">' + esc((d.decision.text || '').slice(0, 60)) + '</span>' +
+        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Dashboard.escAttr(d.decision.text || '') + '">' + esc((d.decision.text || '').slice(0, 60)) + '</span>' +
         '<span style="font-size:var(--fs-2xs);font-weight:700;color:var(--status-amber)">pending ' + d.age + 'd</span>' +
       '</div>').join('');
     return '<div class="raid-attention" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
@@ -39557,7 +39584,7 @@ const RaidView = {
       const updatedStr = this._fmtUpdated(row.ts || project.last_updated);
       return '<tr class="raid-row" data-raid-row data-kind="' + kind + '" data-project-id="' + esc(project.id) + '" data-row-idx="' + idx + '" tabindex="0" role="button" onclick="RaidView.openDetailPanelFor(' + esc(JSON.stringify(project.id)) + ',' + esc(JSON.stringify(kind)) + ',' + idx + ')" style="cursor:pointer;border-bottom:1px solid var(--border-light)">' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-dark)">' + esc(project.name) + '</td>' +
-        '<td class="raid-cell-desc" title="' + esc(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
+        '<td class="raid-cell-desc" title="' + Dashboard.escAttr(String(desc)) + '" style="padding:6px 10px;font-size:12px;color:var(--text-dark-secondary)">' + esc(String(desc).slice(0, 120)) + '</td>' +
         '<td class="raid-cell-clip" style="padding:6px 10px;font-size:12px;color:var(--text-muted)">' + esc(row.owner || row.decided_by || '—') + '</td>' +
         (hasScore ? '<td style="padding:6px 10px;font-size:12px;color:var(--text-dark)">' + this._scoreChip(score) + '</td>' : '') +
         (hasTarget ? '<td style="padding:6px 10px;font-size:var(--fs-2xs)">' + this._targetCell(row, today) + '</td>' : '') +
@@ -42886,7 +42913,7 @@ const Kanban = {
       render(p, esc) {
         const people = Kanban._assignees(p);
         if (!people.length) return '';
-        const shown = people.slice(0, 5).map(n => '<span class="kb-assignee" title="' + esc(n) + '">' + esc(Kanban._initials(n)) + '</span>').join('');
+        const shown = people.slice(0, 5).map(n => '<span class="kb-assignee" title="' + Dashboard.escAttr(n) + '">' + esc(Kanban._initials(n)) + '</span>').join('');
         const more = people.length > 5 ? '<span class="kb-assignee kb-assignee-more">+' + (people.length - 5) + '</span>' : '';
         return '<div class="kb-card-assignees" title="Assigned: ' + esc(people.join(', ')) + '">' + shown + more + '</div>';
       }
@@ -45774,7 +45801,7 @@ const SowSkill = {
       return '<div class="sow-section' + (sec.flagged ? ' flagged' : '') + '">' +
         '<div class="sow-section-head">' + esc(sec.title) +
           (sec.required ? '' : ' <span style="font-weight:400;color:var(--text-muted)">(optional)</span>') +
-          (sec.flagged ? '<span class="sow-flag-chip" title="' + esc(sec.flag_reason) + '">needs review</span>' : '') +
+          (sec.flagged ? '<span class="sow-flag-chip" title="' + Dashboard.escAttr(sec.flag_reason) + '">needs review</span>' : '') +
           (openCount ? '<span class="sow-flag-chip" title="Unresolved review comments">' + openCount + ' open</span>' : '') +
           (baselineChanged ? '<span class="sow-edited-chip" title="Edited since the ' + esc(sec.baseline_status || 'baseline') + ' version">edited</span>' : '') +
           '<span style="margin-left:auto;display:flex;gap:4px">' +
