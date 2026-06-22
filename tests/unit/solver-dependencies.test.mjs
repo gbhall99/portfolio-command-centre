@@ -129,4 +129,52 @@ describe('critical path', () => {
     // Cycle edges are ignored, so no 2+ chain is reported.
     expect(res.stats.criticalPath).toEqual([]);
   });
+
+  // H-011: topoSort (the app-wide cycle detector + the solver's cycleSet source)
+  // must follow the SAME bidirectional graph the allocator schedules on — own
+  // `blocked_by` edges AND reverse `blocks` edges. The UI mirrors dependencies, but
+  // imported JSON or AI-added (`manage_dependency`) `blocks`-only edges do not mirror,
+  // and used to slip past cycle detection while the solver's reorder still saw them.
+  it('detects a cycle built from non-mirrored `blocks`-only edges (H-011)', async () => {
+    resetIdSeq();
+    app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries' }],
+      projects: [
+        // Mutual `blocks` with NO mirrored `blocked_by` — exactly what an AI add or a
+        // hand-crafted import produces. A→blocks→B means B depends on A, and vice versa.
+        ready({ id: 'P', name: 'P', size_engineering: 5, priority: 1, dependencies: [{ kind: 'project', type: 'blocks', target_id: 'Q' }] }),
+        ready({ id: 'Q', name: 'Q', size_engineering: 5, priority: 2, dependencies: [{ kind: 'project', type: 'blocks', target_id: 'P' }] })
+      ],
+      sprints: makeSprintSequence(4, '2026-07-06'),
+      team_members: [makeMember({ name: 'Dana', available_points_per_sprint: 10, primary_skills: ['Data Engineering'] })]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const { Solver } = app;
+    // The detector follows reverse `blocks` edges, so both nodes are flagged as a cycle.
+    const topo = Solver.topoSort(app.App.data.projects);
+    expect(topo.cycles.sort()).toEqual(['P', 'Q']);
+    // And the solve surfaces the warning + does not crash / hang.
+    const res = solve();
+    expect(res.warnings.some(w => w.type === 'circular_dependency')).toBe(true);
+  });
+
+  it('is still a no-op for mirrored UI dependencies (one edge, no false cycle)', async () => {
+    resetIdSeq();
+    app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries' }],
+      projects: [
+        // A real, acyclic dependency mirrored exactly as the UI writes it:
+        // SUCC blocked_by BLOCK, and BLOCK blocks SUCC.
+        ready({ id: 'BLOCK', name: 'Blocker', size_engineering: 5, priority: 2, dependencies: [{ kind: 'project', type: 'blocks', target_id: 'SUCC' }] }),
+        ready({ id: 'SUCC', name: 'Successor', size_engineering: 5, priority: 1, dependencies: [{ kind: 'project', type: 'blocked_by', target_id: 'BLOCK' }] })
+      ],
+      sprints: makeSprintSequence(4, '2026-07-06'),
+      team_members: [makeMember({ name: 'Dana', available_points_per_sprint: 10, primary_skills: ['Data Engineering'] })]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    const { Solver } = app;
+    const topo = Solver.topoSort(app.App.data.projects);
+    expect(topo.cycles).toEqual([]);                 // mirrored edges must NOT read as a cycle
+    expect(topo.order).toEqual(['BLOCK', 'SUCC']);   // blocker first, single de-duped edge
+  });
 });

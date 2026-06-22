@@ -34,6 +34,22 @@ describe('SSE parsing (pure)', () => {
     expect(r.events).toEqual(['{"x":1}']);
     expect(r.rest).toBe('');
   });
+
+  it('joins multiple data lines within one event and ignores comments/keep-alives (H-012)', () => {
+    const { AI } = app;
+    // SSE spec §9.2: consecutive data: lines belong to ONE event, joined by LF.
+    // A JSON payload split across data lines must reassemble into valid JSON.
+    let r = AI._sseSplit('data: {"a":1,\ndata: "b":2}\n\n');
+    expect(r.events).toEqual(['{"a":1,\n"b":2}']);
+    expect(JSON.parse(r.events[0])).toEqual({ a: 1, b: 2 });
+    expect(r.rest).toBe('');
+    // Comment lines (": keep-alive") and event:/id: fields carry no data → no event.
+    r = AI._sseSplit(': keep-alive\n\nid: 7\nevent: ping\n\n');
+    expect(r.events).toEqual([]);
+    // A single data line is unchanged (one leading space stripped).
+    r = AI._sseSplit('data: {"only":true}\n\n');
+    expect(r.events).toEqual(['{"only":true}']);
+  });
 });
 
 describe('stream event assembly (pure, per adapter)', () => {
@@ -206,6 +222,25 @@ describe('a11y helpers', () => {
     App._modalTabTrap({ key: 'Tab', shiftKey: true, preventDefault: () => {} }, container);
     expect(document.activeElement.id).toBe('t2');
     container.remove();
+  });
+
+  it('keyboard-shortcuts overlay is Escape-dismissable and focus-managed (H-016)', () => {
+    const { App, document } = app;
+    App.openShortcutsOverlay();
+    const modal = document.getElementById('shortcutsOverlayModal');
+    expect(modal).toBeTruthy();
+    // Dialog semantics + a tab trap wired (tabindex makes it programmatically focusable).
+    expect(modal.getAttribute('role')).toBe('dialog');
+    expect(modal.getAttribute('aria-modal')).toBe('true');
+    expect(modal.getAttribute('tabindex')).toBe('-1');
+    // Escape closes it via the shared modal-dismiss stack (no longer orphaned).
+    expect(App.dismissTopModal()).toBe(true);
+    expect(document.getElementById('shortcutsOverlayModal')).toBeNull();
+    expect(document.getElementById('shortcutsOverlayOverlay')).toBeNull();
+    // Opening with "?" toggles closed when already open (no duplicate overlay).
+    App.openShortcutsOverlay();
+    App.openShortcutsOverlay();
+    expect(document.querySelectorAll('#shortcutsOverlayModal').length).toBe(0);
   });
 
   it('arrow keys nudge the selected wireframe component; Delete removes it', () => {

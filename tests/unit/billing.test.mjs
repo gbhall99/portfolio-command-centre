@@ -204,6 +204,26 @@ describe('quoting (planned work, prepaid netting)', () => {
     expect(text).toContain('Prices hold for 30 days');
     expect(text).not.toMatch(/\d\.\d+ SP/);  // points stay integers
   });
+
+  it('renders fractional hours consistently per-line and in the total (H-010)', () => {
+    const { Billing, App } = app;
+    // A fractional hours_per_point makes billable_hours non-integer. Per-line and
+    // total hours must agree — the per-line figure must NOT be rounded to a whole
+    // number (the old fmtPoints path) while the total stays fractional.
+    App.data.settings.billing.hours_per_point = 7.5;
+    // 3 SP DE billable -> 22.5 hours; one line so line hours === total hours.
+    const q = Billing.quoteForProject({ id: 'Y', customer: 'Acme Industries', size_engineering: 3 });
+    expect(q.totals.hours).toBe(22.5);
+    const text = Billing.quoteAsText(q);
+    // The line shows the true fractional hours, not a rounded "23 hours".
+    expect(text).toContain('22.5 hours');
+    expect(text).not.toContain('23 hours');
+    // The two hour figures in the document agree (no per-line vs total drift).
+    const hourMatches = text.match(/[\d.]+ hours/g) || [];
+    const distinct = new Set(hourMatches.map(s => s.replace(' hours', '')));
+    expect(distinct.has('22.5')).toBe(true);
+    expect([...distinct]).not.toContain('23');
+  });
 });
 
 describe('settings UI + report', () => {
