@@ -48344,6 +48344,16 @@ const StatusReport = {
       if (ds.required && words === 0) errors.push('Required section is empty: ' + ds.title);
       else if (ds.required && ds.min_words && words < ds.min_words) errors.push(ds.title + ' is too thin (' + words + ' words; needs ' + ds.min_words + '+)');
     });
+    // The definition can fix the section sequence (enforce_section_order). Mirror
+    // Sow.validate so this claimed rule is actually enforced — a refreshed/imported/
+    // AI-built report with reordered sections is caught before it reads as valid.
+    if (def.validation && def.validation.enforce_section_order) {
+      const expectedIds = def.sections.slice().sort((a, b) => a.order - b.order).map(s => s.id);
+      const ids = report.sections.map(s => s.id);
+      const known = ids.filter(id => expectedIds.indexOf(id) >= 0);
+      const sorted = known.slice().sort((a, b) => expectedIds.indexOf(a) - expectedIds.indexOf(b));
+      if (JSON.stringify(known) !== JSON.stringify(sorted)) errors.push('Sections are out of order — the definition fixes the section sequence.');
+    }
     return { ok: errors.length === 0, errors };
   },
 
