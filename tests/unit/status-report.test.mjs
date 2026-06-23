@@ -92,6 +92,19 @@ describe('validation + editing', () => {
     v = StatusReport.validate(StatusReport.get(r.id), def());
     expect(v.ok).toBe(true);
   });
+
+  it('enforces the definition section order (enforce_section_order) — H-022', () => {
+    const { StatusReport } = app;
+    const r = StatusReport.create({ customer: 'Acme Industries', period: 'Sep 2026', definition: def(), generatedSections: goodSections(), source: 'user' });
+    const report = StatusReport.get(r.id);
+    // Sanity: as built (sorted by order) it validates.
+    expect(StatusReport.validate(report, def()).ok).toBe(true);
+    // Swap the first two sections out of the definition's fixed sequence.
+    [report.sections[0], report.sections[1]] = [report.sections[1], report.sections[0]];
+    const v = StatusReport.validate(report, def());
+    expect(v.ok).toBe(false);
+    expect(v.errors.some(e => /out of order/i.test(e))).toBe(true);
+  });
 });
 
 describe('editor + export safety', () => {
