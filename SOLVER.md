@@ -65,7 +65,7 @@ All configurable via the **Settings** button in Sprint Planning.
 
 ---
 
-## 4. Rules (R1–R11)
+## 4. Rules (R1–R12)
 
 | # | Rule | Config | Notes |
 |---|---|---|---|
@@ -80,6 +80,7 @@ All configurable via the **Settings** button in Sprint Planning.
 | **R9** | `autoPrioritise` adds graded deadline urgency: ≤7d +60, ≤14d +40, ≤30d +20, ≤60d +10. | — | See §6. |
 | **R10** | Every slice carries `assigned_to: [{ member, points }]` and `reasons: string[]`. | — | UI tooltip source. |
 | **R11** | Project sequential day-budget inside a sprint ≤ `devDaysForSprint(s)` (working days between `start_date` and `hardening_start`). Overruns split the offending phase across sprints. | — | **NEW** — fixes the "everything in one sprint" bug. |
+| **R12** | Concurrent single-person guard: a member is never assigned to two **overlapping** deliveries in the same sprint unless BOTH skills are in `concurrentOverlapAllowedSkills` (collaborative/async phases). | `enforceConcurrentSinglePerson` (default `true`); `concurrentOverlapAllowedSkills` (default `['size_requirements','size_uat_adoption']` = Req + UAT) | Hard constraint when on. See `tests/unit/solver-r12.test.mjs`. |
 
 ### How R11 works in detail
 
@@ -211,7 +212,7 @@ Emitted on the `warnings: [ { type, project: {id,name}|null, skill: string|null,
 - **Add a setting** — append to `Sprint.allocSettings`, surface in the Settings modal (`Sprint.openAllocSettings` / `saveAllocSettings`), read in `Solver.solve` where relevant.
 - **Add a warning type** — emit via `this._warn(warnings, type, project, skill, sprint, detail)`. Register the type in the `typeMeta` map in `Sprint.renderAllocTab` (Summary tab warning grouping).
 - **Add a new stat** — push into the return `stats` object in `Solver.solve`; render in `Sprint.renderAllocTab`'s Summary block.
-- **Test it** — extend `/tmp/pcc-solver-test.js`. The existing 12 tests are a template. New invariants should be structural (e.g. "no slice X in condition Y") rather than exact-match numeric so they don't break on data changes.
+- **Test it** — add to the solver suites under `tests/unit/` (`solver.test.mjs`, `solver-r12.test.mjs`, `solver-dependencies.test.mjs`, `solver-overflow.test.mjs`). New invariants should be structural (e.g. "no slice X in condition Y") rather than exact-match numeric so they don't break on data changes.
 
 ---
 
