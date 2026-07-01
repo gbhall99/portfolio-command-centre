@@ -6,7 +6,7 @@
 A zero-infrastructure, single-file HTML+JS portfolio management app for managing projects across multiple customer accounts. Runs client-side in the browser. Reads/writes JSON data with localStorage auto-save. The app is **customer-scoped** — `App.activeCustomer` is always a real working customer (every authoring/creation flow depends on it). The global header selector also offers an **"All customers"** option (`App.allCustomers` flag) that aggregates the read/overview + planning-list views — see "Customer scoping & the All filter" below. Demo data ships with three fictional customers (Acme Industries, Globex, Initech); rename or replace them in Settings → Customers. An optional, provider-agnostic AI layer adds an Assistant and governed generation skills — the app stays fully functional with no model configured.
 
 ## Files
-- `index.html` — The complete single-file app (~18,000 lines). All CSS, HTML, and JS in one file.
+- `index.html` — The complete single-file app (~52,000 lines). All CSS, HTML, and JS in one file.
 - `portfolio-data.json` — Sample (fictional) data shipped with the repo for first-time loaders. For private/local data, drop a file matching `*.local.json` (gitignored).
 - `portfolio-data-demo.json` — Same sample data, also embedded inline for the **Load demo dataset** button (file:// safe).
 - `definitions/` — Governed template/definition files for AI skills (SOW sections + style, Tableau wireframe vocabulary + design rules, manifest of template sets). Authored files are the source of truth; `scripts/embed-definitions.mjs` mirrors them into `index.html` as data islands and `tests/unit/skills.test.mjs` fails on drift. **Run the script after any edit under `definitions/`.**
