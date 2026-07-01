@@ -3544,6 +3544,28 @@ html[data-theme="dark"] .assistant-msg.assistant { background: var(--bg-tertiary
 .assistant-input:focus { outline: 2px solid var(--accent-blue); outline-offset: -1px; }
 .assistant-send { flex-shrink: 0; }
 .assistant-disclaimer { font-size: 10px; color: var(--text-muted); text-align: center; padding: 0 12px 8px; }
+
+/* === Guided tour (Tour) — spotlight walkthrough of the main views.
+   Layer sits below the command palette (10500) and toasts (10600) so both
+   stay reachable while a tour is running. The spot's giant box-shadow IS the
+   backdrop; centered steps (no target) dim the layer itself instead. === */
+.tour-layer { position: fixed; inset: 0; z-index: 10400; }
+.tour-layer.tour-centered { background: rgba(15,20,25,0.55); backdrop-filter: blur(2px); }
+.tour-spot { position: absolute; border-radius: var(--radius-md); box-shadow: 0 0 0 9999px rgba(15,20,25,0.55), 0 0 0 3px var(--accent-blue); transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease; pointer-events: none; }
+.tour-layer.tour-centered .tour-spot { display: none; }
+.tour-card { position: absolute; width: 340px; max-width: calc(100vw - 24px); background: var(--bg-card, #fff); border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,0.35); padding: 16px 18px; }
+html[data-theme="dark"] .tour-card { background: #111827; }
+.tour-layer.tour-centered .tour-card { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); }
+.tour-step-count { font-size: var(--fs-2xs); font-weight: var(--fw-bold); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+.tour-title { font-size: var(--fs-lg); font-weight: var(--fw-bold); color: var(--text-dark); margin-bottom: 6px; }
+.tour-body { font-size: var(--fs-sm); color: var(--text-dark-secondary, var(--text-dark)); line-height: var(--lh-normal); }
+.tour-actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.tour-actions .tour-skip { margin-right: auto; }
+.tour-offer { position: fixed; right: 20px; bottom: 20px; z-index: 9400; width: 300px; background: var(--bg-card, #fff); border: 1px solid var(--border-dim); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 14px 16px; }
+html[data-theme="dark"] .tour-offer { background: #111827; }
+.tour-offer-title { font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--text-dark); margin-bottom: 4px; }
+.tour-offer-body { font-size: var(--fs-sm); color: var(--text-dark-secondary, var(--text-dark)); line-height: var(--lh-normal); margin-bottom: 10px; }
+.tour-offer-actions { display: flex; gap: 8px; }
 </style>
 </head>
 <body>
@@ -7693,6 +7715,7 @@ const App = {
         if (ok) {
           if (typeof this.markClean === 'function') this.markClean();
           this.toast('Loaded demo dataset (' + (this.data.projects || []).length + ' projects)', 'success');
+          if (typeof Tour !== 'undefined') Tour.offer();
         }
         return;
       } catch (e) { /* fall through to fetch */ }
@@ -7704,6 +7727,7 @@ const App = {
         if (ok) {
           if (typeof this.markClean === 'function') this.markClean();
           this.toast('Loaded demo dataset (' + (this.data.projects || []).length + ' projects)', 'success');
+          if (typeof Tour !== 'undefined') Tour.offer();
         }
       })
       .catch(err => {
@@ -16299,6 +16323,7 @@ const CommandPalette = {
       { title: 'Toggle theme (light/dark)', action: () => App.toggleTheme(), meta: 'Colour mode' },
       { title: 'Toggle Boardroom mode', action: () => App.togglePresentation(), meta: 'Larger fonts for presenting' },
       { title: 'Toggle RAG patterns', action: () => App.toggleRagPattern(), meta: 'Colour-blind safe' },
+      { title: 'Guided tour — how Velocity works', action: () => Tour.start(), meta: 'Spotlight walk of the main views' },
       { title: 'Assistant — chat with your portfolio', action: () => Assistant.open(), meta: 'Ctrl/Cmd+J' },
       { title: 'Health check — what needs my attention', action: () => HealthCheck.open(), meta: 'On-demand: briefing · drift · commercials · readiness' },
       { title: 'Briefing — what changed recently', action: () => Assistant.ask('What changed in the last week?'), meta: 'Grounded digest · deadlines ahead' },
@@ -39990,8 +40015,9 @@ const TrendsModal = {
 };
 
 /* ============================================================
-   Onboarding — inline per-view help (multi-step tour removed).
+   Onboarding — inline per-view help.
    Retained: showViewHelp(viewName) powers the "?" button on each view's toolbar.
+   The product-level guided tour lives in the separate Tour module below.
    ============================================================ */
 const Onboarding = {
   viewHelp: {
@@ -40043,6 +40069,211 @@ const Onboarding = {
 
     panel.innerHTML = '<h4>' + help.title + '</h4>' + help.content;
     panel.classList.add('visible');
+  }
+};
+
+/* ============================================================
+   Tour — guided spotlight walkthrough of the main views.
+   Distinct from Onboarding (the per-view "?" help above) and from
+   Walkthrough (the weekly sprint review). Step copy is static authored
+   HTML — no user data is ever interpolated into it. Offered once after
+   the demo dataset loads (Tour.offer, non-blocking corner card) and
+   re-runnable any time from the command palette. Completion/dismissal
+   persists in uiState under DONE_KEY.
+   ============================================================ */
+const Tour = {
+  DONE_KEY: 'tour.done',
+  _active: false,
+  _idx: 0,
+  _keyHandler: null,
+  _resizeHandler: null,
+
+  // Each step: { id, title, body } plus either `center:true` (dimmed layer,
+  // centered card) or a `target` selector to spotlight. Optional `view`
+  // navigates before showing; optional `placement:'right'` prefers the card
+  // beside the target. A target that is missing or hidden degrades to the
+  // centered layout, so steps never dead-end.
+  STEPS: [
+    { id: 'welcome', center: true, title: 'Welcome to Velocity',
+      body: 'This demo portfolio has three fictional customers — Acme Industries, Globex and Initech — with projects, teams, sprints and strategy already populated, so every view has something real to show.<br><br>Use the buttons or the arrow keys to move through the tour. Esc leaves at any point.' },
+    { id: 'customer', target: '#headerCustomer', title: 'Pick who you are working on',
+      body: 'Velocity is customer-scoped: this selector chooses whose portfolio every view shows, and anything you create belongs to that customer. The "All customers" option aggregates the read-and-review views across everyone.' },
+    { id: 'nav', target: '.sidebar', placement: 'right', title: 'Navigation, by scope',
+      body: '<strong>Portfolio</strong> aggregates every customer, read-only. <strong>Delivery</strong> is the active customer’s day-to-day — projects, board, RAID, planning and documents. <strong>System</strong> holds the audit trail and settings.' },
+    { id: 'projects', view: 'dashboard', target: '#summaryCards', title: 'Projects',
+      body: 'The working table of everything in flight. Click a row to open the full detail panel; double-click a cell to edit it in place. The cards up here roll up status, health and story points at a glance.' },
+    { id: 'board', view: 'board', target: '#kbBoard', title: 'Board',
+      body: 'The same projects as a Kanban board — drag a card to change its status. Columns subtotal story points and respect WIP limits; swimlanes, sorting and quick filters live in the toolbar.' },
+    { id: 'sprint', view: 'sprint', target: '#sprintBoard', title: 'Sprint Planning',
+      body: 'Skill work packed into five-week sprints. Drag chips between sprints to plan by hand, or press Auto-Allocate and the solver packs everything by priority, capacity and hard deadlines.' },
+    { id: 'roadmap', view: 'roadmap', target: '#ganttScroll', title: 'Roadmap',
+      body: 'Every project on a timeline. Toggle Baseline to see slippage against the original plan, Detailed for per-phase bars, and Critical path to highlight the dependency chain that sets the end date.' },
+    { id: 'raid', view: 'raid', target: '#raidTabs', title: 'RAID',
+      body: 'Risks, Assumptions, Issues, Decisions and Actions for the active customer. High-severity items surface on the Projects view and can be pulled straight into a Statement of Work.' },
+    { id: 'assistant', target: '#btnAssistant', title: 'Assistant',
+      body: 'Ask questions about the portfolio or ask for changes in plain language (Ctrl/Cmd+J). Every AI edit arrives as a proposal you confirm — nothing writes itself. Configure a model in System Settings &rarr; AI &amp; Assistant; the app is fully usable without one.' },
+    { id: 'finish', center: true, view: 'dashboard', title: 'That’s the essentials',
+      body: 'Press Ctrl/Cmd+K for the command palette — every view, project and action is a keystroke away, including this tour whenever you want a refresher. Press ? for keyboard shortcuts.<br><br>When you are ready to leave the demo: load your own JSON from the header, and rename the customers in System Settings.' }
+  ],
+
+  isDone() { return !!(App.uiStateGet && App.uiStateGet(this.DONE_KEY) === true); },
+
+  // Non-blocking corner prompt shown after the demo dataset loads. Never
+  // shown again once the tour was finished, skipped, or the offer declined.
+  offer() {
+    if (this.isDone() || this._active || App.customerMode) return;
+    if (document.getElementById('tourOffer')) return;
+    const el = document.createElement('div');
+    el.className = 'tour-offer';
+    el.id = 'tourOffer';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Guided tour offer');
+    el.innerHTML =
+      '<div class="tour-offer-title">New here?</div>' +
+      '<div class="tour-offer-body">Take a two-minute tour of the demo portfolio — the main views and where everything lives.</div>' +
+      '<div class="tour-offer-actions">' +
+        '<button class="btn btn-primary btn-sm" onclick="Tour.start()">Start tour</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="Tour.dismissOffer()">Not now</button>' +
+      '</div>';
+    document.body.appendChild(el);
+  },
+
+  dismissOffer() {
+    this._removeOffer();
+    if (App.uiStateSet) App.uiStateSet(this.DONE_KEY, true);
+  },
+
+  start() {
+    if (!App.data) { if (App.toast) App.toast('Load a dataset first — the tour walks through the live views.', 'info'); return; }
+    this._removeOffer();
+    this._teardown();
+    this._active = true;
+    this._idx = 0;
+    const layer = document.createElement('div');
+    layer.className = 'tour-layer';
+    layer.id = 'tourLayer';
+    layer.innerHTML =
+      '<div class="tour-spot" id="tourSpot"></div>' +
+      '<div class="tour-card" id="tourCard" role="dialog" aria-modal="true" aria-label="Guided tour"></div>';
+    document.body.appendChild(layer);
+    this._keyHandler = (e) => this._onKey(e);
+    document.addEventListener('keydown', this._keyHandler, true);
+    this._resizeHandler = () => { if (this._active) this._position(); };
+    window.addEventListener('resize', this._resizeHandler);
+    this._show(0);
+  },
+
+  next() {
+    if (!this._active) return;
+    if (this._idx >= this.STEPS.length - 1) { this.finish(); return; }
+    this._show(this._idx + 1);
+  },
+
+  prev() {
+    if (!this._active || this._idx === 0) return;
+    this._show(this._idx - 1);
+  },
+
+  finish() {
+    this._teardown();
+    if (App.uiStateSet) App.uiStateSet(this.DONE_KEY, true);
+    if (App.toast) App.toast('Tour finished — re-run it any time from the command palette (Ctrl/Cmd+K).', 'success');
+  },
+
+  skip() {
+    this._teardown();
+    if (App.uiStateSet) App.uiStateSet(this.DONE_KEY, true);
+  },
+
+  _show(idx) {
+    this._idx = idx;
+    const step = this.STEPS[idx];
+    if (step.view && App.currentView !== step.view) App.navigate(step.view);
+    const card = document.getElementById('tourCard');
+    if (!card) return;
+    const last = idx === this.STEPS.length - 1;
+    card.innerHTML =
+      '<div class="tour-step-count">Step ' + (idx + 1) + ' of ' + this.STEPS.length + '</div>' +
+      '<div class="tour-title">' + step.title + '</div>' +
+      '<div class="tour-body">' + step.body + '</div>' +
+      '<div class="tour-actions">' +
+        '<button class="btn btn-ghost btn-sm tour-skip" onclick="Tour.skip()">Skip tour</button>' +
+        (idx > 0 ? '<button class="btn btn-outline btn-sm" onclick="Tour.prev()">Back</button>' : '') +
+        '<button class="btn btn-primary btn-sm" id="tourNextBtn" onclick="Tour.next()">' + (last ? 'Finish' : 'Next') + '</button>' +
+      '</div>';
+    this._position();
+    // The destination view renders synchronously but scroll/layout settle a
+    // frame later — re-measure once more so the spotlight lands accurately.
+    const raf = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : function (fn) { setTimeout(fn, 16); };
+    raf(() => { if (this._active) this._position(); });
+    const btn = document.getElementById('tourNextBtn');
+    if (btn && btn.focus) btn.focus();
+  },
+
+  _targetEl(step) {
+    if (!step || step.center || !step.target) return null;
+    const el = document.querySelector(step.target);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null; // hidden target → centered fallback
+    return el;
+  },
+
+  _position() {
+    const step = this.STEPS[this._idx];
+    const layer = document.getElementById('tourLayer');
+    const spot = document.getElementById('tourSpot');
+    const card = document.getElementById('tourCard');
+    if (!layer || !spot || !card) return;
+    const el = this._targetEl(step);
+    if (!el) {
+      layer.classList.add('tour-centered');
+      card.style.left = '';
+      card.style.top = '';
+      return;
+    }
+    layer.classList.remove('tour-centered');
+    if (el.scrollIntoView) { try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) { /* older engines */ } }
+    const r = el.getBoundingClientRect();
+    const pad = 6;
+    spot.style.left = Math.max(0, r.left - pad) + 'px';
+    spot.style.top = Math.max(0, r.top - pad) + 'px';
+    spot.style.width = Math.min(window.innerWidth, r.width + pad * 2) + 'px';
+    spot.style.height = Math.min(window.innerHeight, r.height + pad * 2) + 'px';
+    // Card: beside the target when asked and it fits, else below, else above,
+    // else viewport-edge fallback; always clamped to the viewport.
+    const cw = card.offsetWidth || 340, ch = card.offsetHeight || 200;
+    const gap = 14, vw = window.innerWidth, vh = window.innerHeight;
+    let left, top;
+    if (step.placement === 'right' && r.right + gap + cw <= vw) { left = r.right + gap; top = r.top; }
+    else if (r.bottom + gap + ch <= vh) { left = r.left; top = r.bottom + gap; }
+    else if (r.top - gap - ch >= 0) { left = r.left; top = r.top - gap - ch; }
+    else { left = vw - cw - 12; top = Math.max(12, (vh - ch) / 2); }
+    card.style.left = Math.min(Math.max(12, left), Math.max(12, vw - cw - 12)) + 'px';
+    card.style.top = Math.min(Math.max(12, top), Math.max(12, vh - ch - 12)) + 'px';
+  },
+
+  _onKey(e) {
+    if (!this._active) return;
+    // The palette (Ctrl/Cmd+K) can open above the tour — let it own its keys.
+    const cmdk = document.getElementById('cmdkOverlay');
+    if (cmdk && cmdk.classList.contains('open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.skip(); }
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); this.next(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); this.prev(); }
+  },
+
+  _removeOffer() {
+    const el = document.getElementById('tourOffer');
+    if (el) el.remove();
+  },
+
+  _teardown() {
+    this._active = false;
+    const layer = document.getElementById('tourLayer');
+    if (layer) layer.remove();
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler, true); this._keyHandler = null; }
+    if (this._resizeHandler) { window.removeEventListener('resize', this._resizeHandler); this._resizeHandler = null; }
   }
 };
 
