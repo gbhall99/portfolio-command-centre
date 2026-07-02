@@ -283,6 +283,76 @@ describe('Tour spotlight geometry (H-111, stubbed rects)', () => {
   });
 });
 
+describe('Tour capability coverage', () => {
+  it('covers the solver, automated documents/SoW, and wireframes with anchored steps', async () => {
+    const app = await loadApp();
+    const { Tour, document } = app;
+    const byId = id => Tour.STEPS.find(s => s.id === id);
+
+    const solver = byId('solver');
+    expect(solver, 'solver step').toBeTruthy();
+    expect(solver.view).toBe('sprint');
+    expect(solver.target).toBe('#btnAutoAllocate');
+    expect(document.querySelector('#btnAutoAllocate')).toBeTruthy();
+    expect(solver.title + solver.body).toMatch(/solver/i);
+    expect(solver.body).toMatch(/deadline/i);
+
+    const docs = byId('documents');
+    expect(docs, 'documents step').toBeTruthy();
+    expect(docs.view).toBe('reports');
+    expect(docs.target).toBe('#reportsHubHost');
+    expect(document.querySelector('#reportsHubHost')).toBeTruthy();
+    expect(docs.title + docs.body).toMatch(/Statements? of Work/i);
+    expect(docs.title).toMatch(/automated document/i);
+
+    const wf = byId('wireframes');
+    expect(wf, 'wireframes step').toBeTruthy();
+    expect(wf.title + wf.body).toMatch(/wireframe/i);
+    expect(wf.body).toMatch(/build-ready/i);
+
+    // Order: sprint → solver (they share a view); documents before wireframes.
+    const ids = Tour.STEPS.map(s => s.id);
+    expect(ids.indexOf('solver')).toBe(ids.indexOf('sprint') + 1);
+    expect(ids.indexOf('wireframes')).toBe(ids.indexOf('documents') + 1);
+    app.teardown();
+  });
+
+  it('documents step displays real output: its action button generates a sample Customer Pack', async () => {
+    const app = await loadApp();
+    const { Tour, App, Reports, document } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    const docs = Tour.STEPS.find(s => s.id === 'documents');
+    expect(typeof docs.action.fn).toBe('function');
+    expect(docs.action.label).toMatch(/Customer Pack/);
+
+    Tour.start();
+    let hops = 0;
+    while (Tour.STEPS[Tour._idx].id !== 'documents' && Tour._active && hops++ < 30) Tour.next();
+    expect(Tour.STEPS[Tour._idx].id).toBe('documents');
+    const btn = document.getElementById('tourActionBtn');
+    expect(btn, 'action button rendered on the documents step').toBeTruthy();
+    expect(btn.textContent).toContain('Customer Pack');
+
+    // Clicking generates the pack (window.open is stubbed in the harness) and
+    // the tour stays open on the same step.
+    let called = null;
+    const orig = Reports.generate;
+    Reports.generate = (id, opts) => { called = { id, opts }; };
+    try { btn.click(); } finally { Reports.generate = orig; }
+    expect(called).toBeTruthy();
+    expect(called.id).toBe('portfolio_report');
+    expect(called.opts.audience).toBe('customer');
+    expect(Tour._active).toBe(true);
+    expect(Tour.STEPS[Tour._idx].id).toBe('documents');
+
+    // Steps without an action render no action button.
+    Tour.next();
+    expect(document.getElementById('tourActionBtn')).toBeFalsy();
+    Tour.skip();
+    app.teardown();
+  });
+});
+
 describe('Tour entry points', () => {
   it('command palette carries a Guided tour action', async () => {
     const app = await loadApp();
