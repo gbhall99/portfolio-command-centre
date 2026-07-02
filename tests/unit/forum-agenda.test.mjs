@@ -103,6 +103,96 @@ describe('Forum agenda missing-id guard', () => {
   });
 });
 
+describe('Build Agenda handler escaping (H-005 class)', () => {
+  // esc() does not encode quotes, so interpolating the free-text forum name
+  // into onclick="…exportForumAgenda('name')" broke the JS string on any
+  // apostrophe (silently dead button) and was script-injectable via imported
+  // JSON. The button is now index-based (realIdx into governance_forums, like
+  // the sibling edit/delete/startMeeting handlers); exportForumAgenda resolves
+  // numeric refs via the array and passes string refs through unchanged.
+  async function bootForums(forums) {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      projects: [makeProject({ name: 'Linked' })],
+      sprints: makeSprintSequence(2), team_members: [makeMember()],
+      governance_forums: forums
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.Governance.render();
+    return app;
+  }
+  function agendaButtons(app) {
+    return [...app.document.querySelectorAll('#govForumsContent button[title^="Build agenda pack"]')];
+  }
+
+  it("a forum named \"Bob's Steerco\" gets an index-based onclick and clicking builds the right agenda", async () => {
+    const app = await bootForums([
+      { name: "Bob's Steerco", customer: 'Acme Industries', cadence: 'Monthly', actions: [], decisions: [] }
+    ]);
+    const btn = agendaButtons(app)[0];
+    expect(btn).toBeTruthy();
+    const onclick = btn.getAttribute('onclick') || '';
+    // Index-based call — the raw name (and its handler-breaking quote) never
+    // appears in the inline handler.
+    expect(onclick).toMatch(/Governance\.exportForumAgenda\(\d+\)$/);
+    expect(onclick).not.toContain("Bob's");
+    // Clicking routes through to Reports.generate with the correct forum.
+    const { Reports } = app;
+    const calls = [];
+    const orig = Reports.generate;
+    Reports.generate = (kind, args) => { calls.push({ kind, args }); };
+    try { btn.click(); } finally { Reports.generate = orig; }
+    expect(calls).toEqual([{ kind: 'meeting_agenda', args: { forumId: "Bob's Steerco" } }]);
+    app.teardown();
+  });
+
+  it("a hostile name x',alert(1),' cannot alter the handler", async () => {
+    const app = await bootForums([
+      { name: "x',alert(1),'", customer: 'Acme Industries', cadence: 'Monthly', actions: [], decisions: [] }
+    ]);
+    const btn = agendaButtons(app)[0];
+    expect(btn).toBeTruthy();
+    const onclick = btn.getAttribute('onclick') || '';
+    expect(onclick).toMatch(/^event\.stopPropagation\(\);Governance\.exportForumAgenda\(\d+\)$/);
+    expect(onclick).not.toContain('alert');
+    app.teardown();
+  });
+
+  it('the index survives the next_date display sort (realIdx keys the unsorted array)', async () => {
+    const app = await bootForums([
+      { name: 'Later Forum', customer: 'Acme Industries', cadence: 'Monthly', next_date: '2099-12-01', actions: [], decisions: [] },
+      { name: 'Sooner Forum', customer: 'Acme Industries', cadence: 'Monthly', next_date: '2098-01-01', actions: [], decisions: [] }
+    ]);
+    // Sooner Forum sorts first on screen but is index 1 in governance_forums.
+    const btns = agendaButtons(app);
+    expect(btns.length).toBe(2);
+    const { Reports } = app;
+    const calls = [];
+    const orig = Reports.generate;
+    Reports.generate = (kind, args) => { calls.push(args.forumId); };
+    try { btns[0].click(); btns[1].click(); } finally { Reports.generate = orig; }
+    expect(calls).toEqual(['Sooner Forum', 'Later Forum']);
+    app.teardown();
+  });
+
+  it('exportForumAgenda still accepts string refs (id or name) for programmatic callers', async () => {
+    const app = await bootForums([
+      { id: 'gf-1', name: 'Acme Forum', customer: 'Acme Industries', cadence: 'Monthly', actions: [], decisions: [] }
+    ]);
+    const { Governance, Reports } = app;
+    const calls = [];
+    const orig = Reports.generate;
+    Reports.generate = (kind, args) => { calls.push(args.forumId); };
+    try {
+      Governance.exportForumAgenda('gf-1');
+      Governance.exportForumAgenda('Acme Forum');
+      Governance.exportForumAgenda(0); // numeric resolves to id first
+    } finally { Reports.generate = orig; }
+    expect(calls).toEqual(['gf-1', 'Acme Forum', 'gf-1']);
+    app.teardown();
+  });
+});
+
 describe('Briefing pack audience tagging', () => {
   // Every builder emits sections as { id, title, html, audiences }. Sections
   // without an audiences array pass Reports.Doc._filterSections for ANY

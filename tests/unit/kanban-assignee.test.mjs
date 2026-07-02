@@ -48,6 +48,18 @@ describe('card + swimlane', () => {
     expect(html).toContain('>BO<'); // Blair Okafor
   });
 
+  it('the aggregate assignees tooltip escapes double quotes in member names (attribute injection)', () => {
+    const { Kanban, App } = app;
+    const evil = 'M" onmouseover="window.pwned=1';
+    const p = makeProject({ id: 'PX', name: 'Evil', customer: 'Acme Industries', status: 'In Progress', skill_splits: splits([evil]) });
+    App.data.projects.push(p);
+    const div = app.document.createElement('div');
+    div.innerHTML = Kanban._cardHtml(p);
+    const agg = div.querySelector('.kb-card-assignees');
+    expect(agg.hasAttribute('onmouseover')).toBe(false);
+    expect(agg.getAttribute('title')).toBe('Assigned: ' + evil);
+  });
+
   it('"By assignee" is an available swimlane and groups projects per member (Unassigned last)', () => {
     const { Kanban } = app;
     expect(Kanban.SWIMLANES.some(l => l.id === 'assignee')).toBe(true);

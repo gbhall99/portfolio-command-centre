@@ -97,6 +97,35 @@ describe('pure T&M (no arrangements)', () => {
     expect(a2.by_skill.size_engineering.hourly_rate).toBe(150);
     expect(a2.billable_amount).toBe(6 * 8 * 150);
   });
+
+  it('multi-member splits blend by each member points share, not a simple average', () => {
+    const { Billing, App } = app;
+    App.data.team_members.push(
+      { name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 },
+      { name: 'Sam', customer: 'Acme Industries', country: 'United Kingdom', level: 'Consultant', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 }
+    );
+    // A-1's 10-SP complete DE split: Pat did 9 SP at $150/h, Sam 1 SP at $100/h.
+    App.data.projects.find(p => p.id === 'A-1').skill_splits.size_engineering[0].assigned_to =
+      [{ member: 'Pat', points: 9 }, { member: 'Sam', points: 1 }];
+    const s = Billing.customerSummary('Acme Industries');
+    const a1 = s.projects.find(r => r.id === 'A-1');
+    // Points-weighted: (9*150 + 1*100) / 10 = 145/h, NOT the simple average 125.
+    expect(a1.by_skill.size_engineering.hourly_rate).toBe(145);
+    expect(a1.by_skill.size_engineering.billable_amount).toBe(10 * 8 * 145); // 11600
+  });
+
+  it('points-less legacy assigned_to arrays still fall back to the simple average', () => {
+    const { Billing, App } = app;
+    App.data.team_members.push(
+      { name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 },
+      { name: 'Sam', customer: 'Acme Industries', country: 'United Kingdom', level: 'Consultant', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 }
+    );
+    App.data.projects.find(p => p.id === 'A-1').skill_splits.size_engineering[0].assigned_to =
+      [{ member: 'Pat' }, { member: 'Sam' }];
+    const s = Billing.customerSummary('Acme Industries');
+    const a1 = s.projects.find(r => r.id === 'A-1');
+    expect(a1.by_skill.size_engineering.hourly_rate).toBe(125); // (150+100)/2
+  });
 });
 
 describe('prepaid drawdown', () => {
@@ -223,6 +252,47 @@ describe('quoting (planned work, prepaid netting)', () => {
     const distinct = new Set(hourMatches.map(s => s.replace(' hours', '')));
     expect(distinct.has('22.5')).toBe(true);
     expect([...distinct]).not.toContain('23');
+  });
+});
+
+describe('plannedEconomics (shared prepaid pool across projects)', () => {
+  it('nets the remaining prepaid balance ONCE across all active projects, not per project', async () => {
+    resetIdSeq();
+    const data = makeDataset({
+      projects: [
+        makeProject({ id: 'A-1', name: 'Alpha', customer: 'Acme Industries', size_engineering: 20, status: 'In Progress' }),
+        makeProject({ id: 'A-2', name: 'Beta', customer: 'Acme Industries', size_engineering: 20, status: 'In Progress' })
+      ],
+      settings: {
+        rate_card: { size_engineering: { perm: 500 } },
+        billing: {
+          currency: 'USD', hours_per_point: 8,
+          rate_table: { 'United Kingdom': { Consultant: 100 } },
+          customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' } }
+        }
+      }
+    });
+    const a2 = await loadApp(data);
+    a2.Billing.addArrangement({ customer: 'Acme Industries', label: 'Pool', skill: 'any', prepaid_points: 30, amount_invoiced: 0 });
+
+    // No-arg quote semantics unchanged: a SINGLE project quoted alone still
+    // nets the customer's full remaining balance (the quoteAsText caveat).
+    const solo = a2.Billing.quoteForProject(a2.App.data.projects[0]);
+    expect(solo.totals.prepaid_covered).toBe(20);
+    expect(solo.totals.amount).toBe(0);
+
+    // Portfolio economics: the 30-SP pool covers 20 + 10 across the two
+    // projects (id order), leaving 10 billable SP — NOT 20 covered on each
+    // (40 SP from a 30-SP pool → phantom £0 revenue).
+    const e = a2.Billing.plannedEconomics('Acme Industries');
+    expect(e.planned_points).toBe(40);
+    expect(e.revenue).toBe(10 * 8 * 100);          // 8000, not 0
+    expect(e.cost).toBe(40 * 500);                 // 20000
+    expect(e.margin).toBe(8000 - 20000);
+    // Remaining prepaid reports the balance after CONSUMED drawdown only
+    // (nothing consumed here), untouched by the planned-quote netting.
+    expect(e.prepaid_remaining_points).toBe(30);
+    a2.teardown();
   });
 });
 

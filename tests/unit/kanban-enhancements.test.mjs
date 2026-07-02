@@ -60,6 +60,23 @@ describe('K4 WIP would-exceed helper', () => {
     expect(Kanban._wouldExceedWip('In Progress')).toBe(false);
     expect(Kanban._wouldExceedWip('On Hold')).toBe(false);     // no limit
   });
+
+  it('enforces against the real column even while board filters hide cards', () => {
+    const { Kanban } = app;
+    Kanban.setWipLimit('In Progress', 2); // column truly at limit (A-1 + A-2)
+    // Manager filter hides A-2 (Lee) → only 1 In Progress card visible, but
+    // the true column is still at its limit, so the guard must still fire.
+    Kanban.setManager('Dana');
+    expect(Kanban.projects().filter(p => p.status === 'In Progress').length).toBe(1);
+    expect(Kanban._wouldExceedWip('In Progress')).toBe(true);
+    // A search that hides every In Progress card must not defeat it either.
+    Kanban.setManager('');
+    Kanban.setSearch('Gamma');
+    expect(Kanban.projects().filter(p => p.status === 'In Progress').length).toBe(0);
+    expect(Kanban._wouldExceedWip('In Progress')).toBe(true);
+    Kanban.setSearch('');
+    Kanban.setWipLimit('In Progress', null);
+  });
 });
 
 describe('K5 column subtotals', () => {
@@ -106,6 +123,50 @@ describe('K8 collapse persistence', () => {
     expect(closed.classList.contains('kb-col-collapsed')).toBe(true);
     Kanban.toggleColumnCollapse('Closed'); // toggles back off
     expect(App.uiStateGet('board.collapsed.Acme Industries', null)).toBe(null);
+  });
+});
+
+describe('K10 keyboard support — menu keys are not hijacked by the card handler', () => {
+  const key = (el, k) => el.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const menuItem = (status) => {
+    const menu = app.document.querySelector('.kb-card[data-project-id="A-1"] .kb-card-menu');
+    return Array.from(menu.querySelectorAll('.kb-menu-item')).find(b => b.dataset.status === status);
+  };
+  let opened, origOpen;
+  beforeEach(() => {
+    opened = [];
+    origOpen = app.DetailPanel.open;
+    app.DetailPanel.open = (id) => opened.push(id);
+  });
+  afterEach(() => { app.DetailPanel.open = origOpen; });
+
+  it('Enter on a menu item does not open the detail panel or move the card', () => {
+    const { App, Kanban } = app;
+    Kanban.openCardMenu('A-1');
+    key(menuItem('On Hold'), 'Enter');
+    expect(opened).toEqual([]);
+    expect(App.data.projects.find(p => p.id === 'A-1').status).toBe('In Progress');
+  });
+
+  it('ArrowRight on a menu item does not move the card across columns', () => {
+    const { App, Kanban } = app;
+    Kanban.openCardMenu('A-1');
+    key(menuItem('On Hold'), 'ArrowRight');
+    expect(App.data.projects.find(p => p.id === 'A-1').status).toBe('In Progress');
+  });
+
+  it('Enter on the card itself opens the detail panel', () => {
+    const { document } = app;
+    key(document.querySelector('.kb-card[data-project-id="A-1"]'), 'Enter');
+    expect(opened).toEqual(['A-1']);
+  });
+
+  it('Escape on a menu item closes the menu', () => {
+    const { Kanban } = app;
+    Kanban.openCardMenu('A-1');
+    key(menuItem('On Hold'), 'Escape');
+    expect(Kanban._menuId).toBe(null);
+    expect(app.document.querySelector('.kb-card[data-project-id="A-1"] .kb-card-menu')).toBeNull();
   });
 });
 

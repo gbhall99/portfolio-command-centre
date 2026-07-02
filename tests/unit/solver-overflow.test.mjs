@@ -55,4 +55,43 @@ describe('Solver overflow diagnostics', () => {
     expect(terminal.length).toBe(0);
     app.teardown();
   });
+
+  it('Pass 2 rollback does not credit overflow slices back to remaining (no phantom capacity / negative used)', async () => {
+    // Overflow slices never consumed aggregate capacity when placed — Pass 1 pushes them into the
+    // last allowed sprint precisely because there was NO room. releaseProject must not credit them
+    // back, or `remaining` inflates above baseCap: the utilization grid goes negative and Pass 3
+    // would balance real work into an already saturated sprint.
+    // Repro shape: hard-deadline project too big for the WHOLE horizon → Pass 1 fills both
+    // sprints and overflows the rest into S2; the deadline miss triggers Pass 2 rollback +
+    // retry with ceiling 0. Without the guard, the rollback credits the S2 overflow slice back.
+    // Sprints must be in the FUTURE — past-sprint protection (D5) blocks placement into past
+    // sprints, which would sidestep the Pass 1 placement this repro depends on.
+    const member = makeMember({ name: 'Solo', available_points_per_sprint: 20, primary_skills: ['Data Engineering'] });
+    const futureStart = new Date();
+    futureStart.setDate(futureStart.getDate() + 7);
+    const sprints = makeSprintSequence(2, futureStart.toISOString().slice(0, 10));
+    const proj = makeProject({
+      id: 'Acme Industries-OFRB',
+      name: 'Overflow Rollback DE',
+      size_engineering: 45,
+      hard_deadline: sprints[0].end_date
+    });
+    const app = await loadApp(makeDataset({
+      team_members: [member],
+      sprints,
+      projects: [proj]
+    }));
+    const settings = { ...app.Sprint.allocSettings, spreadWork: false };
+    const plan = app.Solver.solve('Acme Industries', settings, app.App.data, app.Sprint);
+    // Sanity: the scenario really did overflow past the deadline ceiling.
+    expect(plan.warnings.some(w => w.type === 'capacity_overflow_deadline')).toBe(true);
+    // The invariant the bug broke: every utilization cell stays within [0, capacity].
+    Object.entries(plan.utilizationGrid).forEach(([sid, bySkill]) => {
+      Object.entries(bySkill).forEach(([skill, cell]) => {
+        expect(cell.used, sid + '/' + skill + ' used must not be negative').toBeGreaterThanOrEqual(0);
+        expect(cell.used, sid + '/' + skill + ' used must not exceed capacity').toBeLessThanOrEqual(cell.capacity);
+      });
+    });
+    app.teardown();
+  });
 });

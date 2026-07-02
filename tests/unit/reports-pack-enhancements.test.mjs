@@ -79,3 +79,63 @@ describe('R2 pack composer', () => {
     expect(captured).toContain('Executive summary');
   });
 });
+
+// Review fix: _kpiBand ships in both-audience sections of packs serialized for
+// customers, so its commercial tiles (planned margin / prepaid balance) are
+// fail-closed — rendered only when a caller passes { commercials: true }.
+// Neither pack does; internal margin figures live only in the internal-only
+// _commercialSummary section.
+describe('KPI band commercial gating', () => {
+  function configureBilling() {
+    const d = app.App.data;
+    d.settings.rate_card = { size_engineering: { perm: 300 } };
+    d.settings.billing = {
+      currency: 'GBP', hours_per_point: 8, target_margin_pct: 30,
+      rate_table: { 'United Kingdom': { Consultant: 100 } },
+      customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' } }
+    };
+    // Small prepaid block: leaves billable points so planned revenue is > 0.
+    d.billing_arrangements = [
+      { id: 'BA-1', customer: 'Acme Industries', skill: 'any', prepaid_points: 2, amount_invoiced: 1000 }
+    ];
+  }
+
+  it('economics are live and the explicit opt-in still renders the tiles', () => {
+    configureBilling();
+    // Sanity: with billing configured the tiles WOULD render if not gated.
+    const eco = app.Billing.plannedEconomics('Acme Industries');
+    expect(eco.revenue).toBeGreaterThan(0);
+    expect(eco.prepaid_remaining_points).toBeGreaterThan(0);
+    const band = app.Reports.Builders._kpiBand('Acme Industries', [], { commercials: true });
+    expect(band).toContain('>Margin</div>');
+    expect(band).toContain('>Prepaid left</div>');
+    // Default (no opts) is fail-closed.
+    const plain = app.Reports.Builders._kpiBand('Acme Industries', []);
+    expect(plain).not.toContain('>Margin</div>');
+    expect(plain).not.toContain('>Prepaid left</div>');
+  });
+
+  it('customerPack HTML never carries margin or prepaid tiles', () => {
+    configureBilling();
+    const doc = app.Reports.Builders.customerPack('Acme Industries');
+    expect(doc.audience).toBe('customer');
+    const html = app.Reports.Doc.toHtml(doc, {});
+    expect(html).not.toContain('>Margin</div>');
+    expect(html).not.toContain('>Prepaid left</div>');
+  });
+
+  it('portfolioPack exec band omits the tiles even when serialized as customer; internal commercials section keeps the figures', () => {
+    configureBilling();
+    const doc = app.Reports.Builders.portfolioPack('Acme Industries');
+    // The exec section is both-audience — it must not carry commercial tiles.
+    const exec = doc.sections.find(s => s.id === 'exec');
+    expect(exec.html).not.toContain('>Margin</div>');
+    expect(exec.html).not.toContain('>Prepaid left</div>');
+    const customerHtml = app.Reports.Doc.toHtml({ ...doc, audience: 'customer' }, {});
+    expect(customerHtml).not.toContain('>Margin</div>');
+    expect(customerHtml).not.toContain('>Prepaid left</div>');
+    // Internal serialization keeps the full figures via _commercialSummary.
+    const internalHtml = app.Reports.Doc.toHtml(doc, {});
+    expect(internalHtml).toContain('Planned margin');
+  });
+});

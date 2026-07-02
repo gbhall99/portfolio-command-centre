@@ -68,6 +68,68 @@ describe('manage_dependency', () => {
   });
 });
 
+describe('batch-safe removal (stale-index guard)', () => {
+  // Review fix: remove/update proposals must re-resolve the captured entry at
+  // apply time. Two removals in one App.runBatch used to splice by the
+  // propose-time index — the first splice shifted the array and the second
+  // deleted an item the user never approved.
+  it('two dependency removals in one runBatch remove exactly the approved items', () => {
+    const { AgentTools, App } = app;
+    const p = App.data.projects.find(x => x.id === 'A-1');
+    p.dependencies = [
+      { kind: 'external', type: 'blocked_by', label: 'Dep Zero' },
+      { kind: 'external', type: 'blocked_by', label: 'Dep One' },
+      { kind: 'external', type: 'blocked_by', label: 'Dep Two' }
+    ];
+    const c = ctx();
+    AgentTools.invoke('manage_dependency', { project_id: 'A-1', action: 'remove', index: 0 }, c);
+    AgentTools.invoke('manage_dependency', { project_id: 'A-1', action: 'remove', index: 1 }, c);
+    const out = App.runBatch('Remove two dependencies', c.proposals.map(pr => () => pr.apply()));
+    expect(out.applied).toBe(2);
+    expect(p.dependencies.map(d => d.label)).toEqual(['Dep Two']);
+  });
+
+  it('two milestone removals in one runBatch remove exactly the approved items', () => {
+    const { AgentTools, App } = app;
+    const p = App.data.projects.find(x => x.id === 'A-1');
+    p.customer_milestones = [
+      { name: 'M Zero', date: '2026-08-01', status: 'Planned' },
+      { name: 'M One', date: '2026-09-01', status: 'Planned' },
+      { name: 'M Two', date: '2026-10-01', status: 'Planned' }
+    ];
+    const c = ctx();
+    AgentTools.invoke('set_milestone', { project_id: 'A-1', action: 'remove', index: 0 }, c);
+    AgentTools.invoke('set_milestone', { project_id: 'A-1', action: 'remove', index: 1 }, c);
+    const out = App.runBatch('Remove two milestones', c.proposals.map(pr => () => pr.apply()));
+    expect(out.applied).toBe(2);
+    expect(p.customer_milestones.map(m => m.name)).toEqual(['M Two']);
+  });
+
+  it('an update after the milestone was removed errors instead of mutating a different item', () => {
+    const { AgentTools, App } = app;
+    const p = App.data.projects.find(x => x.id === 'A-1');
+    p.customer_milestones = [
+      { name: 'M Zero', date: '2026-08-01', status: 'Planned' },
+      { name: 'M One', date: '2026-09-01', status: 'Planned' }
+    ];
+    const c = ctx();
+    AgentTools.invoke('set_milestone', { project_id: 'A-1', action: 'update', index: 0, status: 'Achieved' }, c);
+    p.customer_milestones.splice(0, 1); // user deletes it in the UI before confirming
+    const out = App.runBatch('Update milestone', c.proposals.map(pr => () => pr.apply()));
+    expect(out.applied).toBe(0);
+    expect(out.results[0].error).toMatch(/no longer exists/);
+    expect(p.customer_milestones[0].status).toBe('Planned'); // the survivor was not mutated
+
+    const c2 = ctx();
+    p.dependencies = [{ kind: 'external', type: 'blocked_by', label: 'Gone' }];
+    AgentTools.invoke('manage_dependency', { project_id: 'A-1', action: 'remove', index: 0 }, c2);
+    p.dependencies.splice(0, 1); // removed in the UI before confirming
+    const out2 = App.runBatch('Remove dependency', c2.proposals.map(pr => () => pr.apply()));
+    expect(out2.applied).toBe(0);
+    expect(out2.results[0].error).toMatch(/no longer exists/);
+  });
+});
+
 describe('set_milestone', () => {
   it('adds, updates and removes a customer milestone (audited ai, undoable)', () => {
     const { AgentTools, App } = app;

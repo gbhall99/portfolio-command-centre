@@ -40,6 +40,21 @@ describe('engine parity with simulate_plan', () => {
   });
 });
 
+describe('capacity overflow summarisation', () => {
+  it('_summarise surfaces the suffixed capacity_overflow_* warning types in capacity_overflows', () => {
+    const { ScenarioLab } = app;
+    // 4 sprints x 10 DE pts = 40 pts capacity; 10 pts baseline + 500 hypothetical
+    // saturates the horizon, so the solver emits capacity_overflow_horizon (the
+    // plain 'capacity_overflow' type is no longer emitted since the type split).
+    const out = ScenarioLab.simulate('Acme Industries', { hypothesis: 'add_project', name: 'Huge', size_engineering: 500 });
+    const counts = out.hypothetical.warning_counts;
+    expect((counts.capacity_overflow_horizon || 0) + (counts.capacity_overflow_deadline || 0)).toBeGreaterThan(0);
+    expect(out.hypothetical.capacity_overflows.length).toBeGreaterThan(0);
+    expect(out.hypothetical.capacity_overflows.some(w =>
+      w.type === 'capacity_overflow_horizon' || w.type === 'capacity_overflow_deadline')).toBe(true);
+  });
+});
+
 describe('save / list / compare', () => {
   it('migration seeds plan_scenarios as an empty array', () => {
     expect(Array.isArray(app.App.data.plan_scenarios)).toBe(true);
