@@ -167,6 +167,52 @@ describe('Tour offer (post-demo-load prompt)', () => {
   });
 });
 
+describe('Tour hardening (H-101..H-104)', () => {
+  it('H-101: Enter on a focused card button is left to the button, not hijacked as next', async () => {
+    const app = await loadApp();
+    const { Tour, App, document, window } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    Tour.start();
+    Tour.next(); // step 2 — Back button exists
+    expect(Tour._idx).toBe(1);
+    const back = Array.from(document.querySelectorAll('#tourCard button')).find(b => b.textContent === 'Back');
+    expect(back).toBeTruthy();
+    back.focus();
+    back.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    // The capture handler must NOT advance; the button's own (native) click
+    // handles Enter in a real browser.
+    expect(Tour._idx).toBe(1);
+    Tour.skip();
+    app.teardown();
+  });
+
+  it('H-103: start is blocked in customer (read-only) mode', async () => {
+    const app = await loadApp();
+    const { Tour, App, document } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    App.customerMode = true;
+    Tour.start();
+    expect(Tour._active).toBe(false);
+    expect(document.getElementById('tourLayer')).toBeFalsy();
+    App.customerMode = false;
+    app.teardown();
+  });
+
+  it('H-104: focus returns to the pre-tour element on teardown', async () => {
+    const app = await loadApp();
+    const { Tour, App, document } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    const btn = document.getElementById('btnAssistant');
+    btn.focus();
+    expect(document.activeElement).toBe(btn);
+    Tour.start();
+    expect(document.activeElement).not.toBe(btn); // moved into the card
+    Tour.skip();
+    expect(document.activeElement).toBe(btn);
+    app.teardown();
+  });
+});
+
 describe('Tour entry points', () => {
   it('command palette carries a Guided tour action', async () => {
     const app = await loadApp();

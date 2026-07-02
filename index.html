@@ -40087,6 +40087,7 @@ const Tour = {
   _idx: 0,
   _keyHandler: null,
   _resizeHandler: null,
+  _prevFocus: null,
 
   // Each step: { id, title, body } plus either `center:true` (dimmed layer,
   // centered card) or a `target` selector to spotlight. Optional `view`
@@ -40145,8 +40146,12 @@ const Tour = {
 
   start() {
     if (!App.data) { if (App.toast) App.toast('Load a dataset first — the tour walks through the live views.', 'info'); return; }
+    // Customer (read-only) view curates the nav for screen-sharing; the tour
+    // navigates to internal planning views that curtain deliberately hides.
+    if (App.customerMode) { if (App.toast) App.toast('Exit customer view to run the tour — it visits internal planning views.', 'info'); return; }
     this._removeOffer();
     this._teardown();
+    this._prevFocus = document.activeElement;
     this._active = true;
     this._idx = 0;
     const layer = document.createElement('div');
@@ -40258,6 +40263,12 @@ const Tour = {
     // The palette (Ctrl/Cmd+K) can open above the tour — let it own its keys.
     const cmdk = document.getElementById('cmdkOverlay');
     if (cmdk && cmdk.classList.contains('open')) return;
+    const card = document.getElementById('tourCard');
+    if (e.key === 'Tab' && card) { App._modalTabTrap(e, card); return; }
+    // Enter must activate the focused card button (Back / Skip tour), not
+    // unconditionally advance — only treat it as "next" when focus is
+    // elsewhere (e.g. after a click stole focus to the page).
+    if (e.key === 'Enter' && card && card.contains(e.target) && e.target && e.target.tagName === 'BUTTON') return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.skip(); }
     else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); this.next(); }
     else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); this.prev(); }
@@ -40269,11 +40280,17 @@ const Tour = {
   },
 
   _teardown() {
+    const wasActive = this._active;
     this._active = false;
     const layer = document.getElementById('tourLayer');
     if (layer) layer.remove();
     if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler, true); this._keyHandler = null; }
     if (this._resizeHandler) { window.removeEventListener('resize', this._resizeHandler); this._resizeHandler = null; }
+    // Hand focus back to where the user was before the tour took it.
+    if (wasActive && this._prevFocus && this._prevFocus.focus && document.contains(this._prevFocus)) {
+      try { this._prevFocus.focus(); } catch (e) { /* detached/inert element */ }
+    }
+    this._prevFocus = null;
   }
 };
 
