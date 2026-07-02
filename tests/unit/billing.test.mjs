@@ -97,6 +97,35 @@ describe('pure T&M (no arrangements)', () => {
     expect(a2.by_skill.size_engineering.hourly_rate).toBe(150);
     expect(a2.billable_amount).toBe(6 * 8 * 150);
   });
+
+  it('multi-member splits blend by each member points share, not a simple average', () => {
+    const { Billing, App } = app;
+    App.data.team_members.push(
+      { name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 },
+      { name: 'Sam', customer: 'Acme Industries', country: 'United Kingdom', level: 'Consultant', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 }
+    );
+    // A-1's 10-SP complete DE split: Pat did 9 SP at $150/h, Sam 1 SP at $100/h.
+    App.data.projects.find(p => p.id === 'A-1').skill_splits.size_engineering[0].assigned_to =
+      [{ member: 'Pat', points: 9 }, { member: 'Sam', points: 1 }];
+    const s = Billing.customerSummary('Acme Industries');
+    const a1 = s.projects.find(r => r.id === 'A-1');
+    // Points-weighted: (9*150 + 1*100) / 10 = 145/h, NOT the simple average 125.
+    expect(a1.by_skill.size_engineering.hourly_rate).toBe(145);
+    expect(a1.by_skill.size_engineering.billable_amount).toBe(10 * 8 * 145); // 11600
+  });
+
+  it('points-less legacy assigned_to arrays still fall back to the simple average', () => {
+    const { Billing, App } = app;
+    App.data.team_members.push(
+      { name: 'Pat', customer: 'Acme Industries', country: 'United Kingdom', level: 'Principal', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 },
+      { name: 'Sam', customer: 'Acme Industries', country: 'United Kingdom', level: 'Consultant', primary_skills: ['Data Engineering'], available_points_per_sprint: 10 }
+    );
+    App.data.projects.find(p => p.id === 'A-1').skill_splits.size_engineering[0].assigned_to =
+      [{ member: 'Pat' }, { member: 'Sam' }];
+    const s = Billing.customerSummary('Acme Industries');
+    const a1 = s.projects.find(r => r.id === 'A-1');
+    expect(a1.by_skill.size_engineering.hourly_rate).toBe(125); // (150+100)/2
+  });
 });
 
 describe('prepaid drawdown', () => {

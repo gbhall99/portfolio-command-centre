@@ -44330,8 +44330,15 @@ const Billing = {
         if (!ev) return;
         let rate;
         if (Array.isArray(sp.assigned_to) && sp.assigned_to.length) {
-          const rates = sp.assigned_to.map(a => this.memberRate(a.member || a, customer));
-          rate = rates.reduce((s, r) => s + r, 0) / rates.length;
+          // Weight each member's rate by their points share; a points-less
+          // legacy assigned_to array falls back to the simple average.
+          const totPts = sp.assigned_to.reduce((s, a) => s + (Number(a.points) || 0), 0);
+          if (totPts > 0) {
+            rate = sp.assigned_to.reduce((s, a) => s + (Number(a.points) || 0) * this.memberRate(a.member || a, customer), 0) / totPts;
+          } else {
+            const rates = sp.assigned_to.map(a => this.memberRate(a.member || a, customer));
+            rate = rates.reduce((s, r) => s + r, 0) / rates.length;
+          }
         } else if (sp.assignee) {
           rate = this.memberRate(sp.assignee, customer);
         } else {
