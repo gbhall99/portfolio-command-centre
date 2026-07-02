@@ -13,10 +13,21 @@ Lenses rotate L1→L20 but are reviewed *as they apply to the tour*; findings
 use H-1xx ids to avoid collision with the completed app-wide run below.
 
 ## Status (tour run)
-- Last completed iteration: 5
-- Next lens: L6
-- Consecutive clean iterations: 2 (i4/L4 + i5/L5 — zero fixable findings)
+- Last completed iteration: 10
+- Next lens: L11
+- Consecutive clean iterations: 0 (H-111/H-112 found+fixed in i9/i10 batch)
 - i5 checkpoint: full unit+render suite GREEN — 1349 passed / 3 skipped.
+- L9/L10 METHOD: standalone Playwright script (not committed) — file:// load,
+  addScriptTag globals bridge, loadDemoData, applyTheme, Tour.start()/next()
+  walk; screenshots at 1440 light (all 10 steps) + 1440 dark (3) + 768 + 414
+  (offer + 4 steps each); zero page errors in all four sweeps; key frames
+  inspected via Read.
+- CI note (i10 batch): PR #75's E2E failed on gantt-interactions.spec — NOT
+  this branch's code (fails identically on unmodified main a3e7834; passed
+  1 Jul, failed 2 Jul). Diagnosed with elementFromPoint: the chart auto-scrolls
+  to Today and the STICKY LABELS COLUMN overlays the first phase bar's centre,
+  so hover({force:true}) targeted a non-hoverable label element → no tooltip.
+  Date-fragile test, fixed in-spec (H-112).
 - Branch: claude/guided-tour-demo-feature-lc40np (restarted from main a3e7834
   after PR #74 merged). PR cadence: i5/i10/i15/i20.
 - Fast gate: `npx vitest run tests/unit/guided-tour.test.mjs`; full unit at PR
@@ -30,7 +41,12 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | L3 | 1 | 3 |
 | L4 | 1 | 4 |
 | L5 | 1 | 5 |
-| L6–L20 | 0 | — |
+| L6 | 1 | 6 |
+| L7 | 1 | 7 |
+| L8 | 1 | 8 |
+| L9 | 1 | 9 |
+| L10 | 1 | 10 |
+| L11–L20 | 0 | — |
 
 ## Findings register (tour run)
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -39,6 +55,10 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | H-101 | 1 | L11* | P1 | index.html Tour._onKey | **Keyboard hijack.** Enter was intercepted unconditionally as "next", so a keyboard user who tabbed to "Back" or "Skip tour" and pressed Enter advanced FORWARD instead of activating the focused button. Fixed: Enter with focus on a button inside #tourCard is left to the button's native activation; Enter elsewhere still advances. Pinned by guided-tour.test.mjs H-101. (*opportunistic find during the i1 code read) | Fixed | i1 |
 | H-102 | 1 | L11* | P2 | index.html Tour card | `role=dialog aria-modal=true` with NO Tab focus trap — Tab walked out into the (pointer-blocked) background page, exactly the class H-016 fixed for the shortcuts overlay. Fixed: Tab in the tour's capture key handler routes through the house `App._modalTabTrap(e, card)`. Not jsdom-testable (offsetParent-based focusable filter) — verified by code parity with the H-016 pattern. | Fixed | i1 |
 | H-103 | 1 | L3* | P1 | index.html Tour.start | **Customer-mode pierce.** The offer is suppressed in customer (read-only/screen-share) mode, but a palette-invoked `Tour.start()` was not — the tour then `App.navigate`s to dashboard/sprint/capacity, views the customer-mode curtain deliberately hides, exposing internal planning data mid-screen-share. Fixed: start() now blocks in customerMode with an explanatory toast. Pinned by guided-tour.test.mjs H-103. | Fixed | i1 |
+| H-112 | 10 | L18* | P1 | tests/e2e/gantt-interactions.spec.ts:22 | **Date-fragile e2e (pre-existing on main; broke PR #75 CI).** The spec hovered the FIRST `.gantt-phase-bar` with `force:true` (element centre); the chart auto-scrolls to keep Today visible and the sticky labels column overlays the chart's left edge, so — depending on the current date — the bar's centre sits UNDER the labels column, hover targets a non-hoverable `gantt-label-sub`, and the delegated tooltip never fires (passed 1 Jul, failed 2 Jul, identical code; proven via elementFromPoint). Fixed in-spec: hover a point on the bar's visible chart-side portion (max(bar.left, labels.right)+6, clamped to the bar) via mouse.move — what a real cursor does. 3× repeat green. App code untouched (the delegated hover contract is correct; hovering an occluded region is not a user action). (*opportunistic — L18 lens, found via PR CI babysitting) | Fixed | i10 |
+| H-111 | 10 | L10 | P2 | index.html Tour._targetEl | On mobile (414) the nav step spotlighted the OFF-CANVAS sidebar: a translated-off-screen element has a non-zero rect, so the width/height===0 hidden-check missed it and the spot hugged the viewport edge highlighting nothing. Fixed: rects fully outside the viewport now degrade to the centered layout like missing targets. Verified by re-screenshot at 414 (`tour-centered` class asserted true on the nav step). | Fixed | i10 |
+| H-114 | 9 | L9 | — | Tour desktop UI @1440, light + dark | REVIEWED via real Playwright screenshots: all 10 steps light + 3-step dark spot-check. Spotlight ring lands on the customer pill / sidebar / summary cards / board / sprint board / gantt / RAID tabs / Assistant button; card placement below/right with clamping correct; dark card (#111827) readable; zero page errors. Offer card bottom-right non-blocking in both themes. No fix. | Reviewed (clean) | i9 |
+| H-113 | 6–8 | L6/L7/L8 | — | Tour vs solver/AI-transport/agent-tools | i6: solver untouched by the tour; lens applied as ADVERSARIAL APP STATES instead — new pinned test walks all 10 steps to finish on an EMPTY portfolio (0 projects, 0 sprints, 0 members) without crash (guided-tour.test.mjs H-110 block). i7: zero AI/transport coupling (no AI.* references). i8: tour is not an agent tool; palette entry is a literal `Tour.start()` (no args, no model strings, no proposal obligations); assistant deep-links can't fire mid-tour (layer blocks pointer). No code change. | Reviewed (clean; coverage added i6) | i8 |
 | H-109 | 5 | L5 | — | Tour vs integer/money discipline | REVIEWED, zero findings — no points, no money; only step indices (bounded ints) and pixel geometry. No code change. | Reviewed (clean) | i5 |
 | H-108 | 4 | L4 | — | Tour vs schema/migrations | REVIEWED, zero findings. Nothing in App.data; sole durable state is uiState `tour.done` (strict `=== true`, corrupt-store degradation covered by H-020, absent from exports by design, nothing to migrate, no key collisions). No code change. | Reviewed (clean) | i4 |
 | H-106 | 3 | L3 | — | Tour scoping model | REVIEWED clean otherwise: `tour.done` is GLOBAL uiState by design (the tour teaches the app, not a customer — parallels ui.customerMode, not board.* prefs); offer + start are customer-mode-gated (H-103); tour views under the "All customers" filter fall back per App.isAllScope with the titlebar note, and step copy stays accurate. | Reviewed (clean) | i3 |

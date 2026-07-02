@@ -213,6 +213,27 @@ describe('Tour hardening (H-101..H-104)', () => {
   });
 });
 
+describe('Tour under adversarial app states (H-110)', () => {
+  it('walks every step to finish on an EMPTY portfolio (0 projects) with the detail panel pre-opened', async () => {
+    const app = await loadApp({
+      customers: [{ name: 'Solo Co' }],
+      projects: [],
+      team_members: [],
+      sprint_config: { sprints: [] }
+    });
+    const { Tour, App, document } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    Tour.start();
+    expect(Tour._active).toBe(true);
+    let guard = 0;
+    while (Tour._active && guard++ < 30) Tour.next();
+    expect(Tour._active).toBe(false);
+    expect(App.uiStateGet(Tour.DONE_KEY)).toBe(true);
+    expect(document.getElementById('tourLayer')).toBeFalsy();
+    app.teardown();
+  });
+});
+
 describe('Tour entry points', () => {
   it('command palette carries a Guided tour action', async () => {
     const app = await loadApp();
