@@ -35989,9 +35989,14 @@ const Governance = {
     return Reports.Doc.toHtml(doc, Reports.Brand.for(doc.customer));
   },
 
-  exportForumAgenda(forumId) {
+  exportForumAgenda(forumRef) {
     // WS-E Task 6: route through the unified engine (token-styled PDF parity).
-    Reports.generate('meeting_agenda', { forumId: forumId });
+    // The forum card passes an index into App.data.governance_forums (forum
+    // names are free text and esc() does not encode quotes, so they must never
+    // be interpolated into an inline handler — see H-005). String refs (id or
+    // name) still pass through for programmatic/back-compat callers.
+    const forum = typeof forumRef === 'number' ? (App.data.governance_forums || [])[forumRef] : null;
+    Reports.generate('meeting_agenda', { forumId: forum ? (forum.id || forum.name) : forumRef });
   },
 
   activeTab: 'forums',
@@ -36116,7 +36121,7 @@ const Governance = {
             '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.editRoster(' + realIdx + ')" style="font-size:var(--fs-2xs)">Roster / RACI</button>' +
             '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.startMeeting(' + realIdx + ')" style="font-size:var(--fs-2xs)">Start Meeting</button>' +
             (forumProjects.length ? '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.exportBriefingPack(' + realIdx + ')" style="font-size:var(--fs-2xs)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Briefing Pack</button>' : '') +
-            '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.exportForumAgenda(\'' + Dashboard.esc(f.id || f.name) + '\')" style="font-size:var(--fs-2xs)" title="Build agenda pack — linked projects, open actions, escalated risks"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Build Agenda</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();Governance.exportForumAgenda(' + realIdx + ')" style="font-size:var(--fs-2xs)" title="Build agenda pack — linked projects, open actions, escalated risks"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Build Agenda</button>' +
           '</div>' +
         '</div>' +
       '</div>';
