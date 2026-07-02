@@ -3576,7 +3576,7 @@ html[data-theme="dark"] .tour-offer { background: #111827; }
 <body>
 
 <a class="skip-link" href="#mainContent" style="position:absolute;top:-100px;left:0;background:var(--accent-blue);color:white;padding:8px 16px;z-index:1000;font-size:14px;transition:top 0.2s" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to main content</a>
-<div id="sandboxBanner" style="display:none;background:#fbbf24;color:#7c2d12;font-size:11px;font-weight:700;padding:4px 12px;text-align:center">SANDBOX MODE — edits are isolated. Use Scenarios to save / discard.</div>
+<div id="sandboxBanner" style="display:none;background:#fbbf24;color:#7c2d12;font-size:11px;font-weight:700;padding:4px 12px;text-align:center">SANDBOX MODE — edits are isolated and not saved. Toggle sandbox off to keep or discard them.</div>
 <header class="app-header" role="banner">
   <button class="btn btn-ghost btn-sm mobile-menu-btn" onclick="App.toggleMobileMenu()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <div class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:4px"><path d="M4 4 L12 20 L20 4"/><line x1="2" y1="12" x2="6" y2="12"/></svg> Velocity</div>
@@ -7508,12 +7508,53 @@ const App = {
 
   toggleSandboxMode() {
     if (this.customerMode) { this.toast('Exit customer view to use sandbox mode.', 'info'); return; }
-    this.sandboxMode = !this.sandboxMode;
+    if (!this.sandboxMode) {
+      // Entering: snapshot the live data so exiting can discard back to it. While
+      // sandboxed, saveToLocalStorage still evaluates risk/RAG rules (in-session
+      // behaviour is unchanged) but skips the persist step, so nothing reaches
+      // localStorage until the user keeps the edits on exit.
+      this._sandboxBackup = this.data ? JSON.stringify(this.data) : null;
+      this.sandboxMode = true;
+      this._setSandboxBanner();
+      this.refreshDataHealthChip();
+      if (typeof this.toast === 'function') this.toast('Sandbox mode ON — changes are isolated', 'warn');
+      return Promise.resolve();
+    }
+    return this._exitSandbox();
+  },
+
+  async _exitSandbox() {
+    // Two-way exit: Keep persists the accumulated sandbox edits; Discard restores
+    // the pre-sandbox snapshot. Escape / click-away resolves to Keep (the
+    // non-destructive default); Discard itself is undoable (Ctrl+Z).
+    const discard = await this.confirm({
+      title: 'Exit sandbox mode',
+      body: 'Keep the edits you made in the sandbox, or discard them and restore your data from before the sandbox started? Discard can be undone with Ctrl+Z.',
+      confirmLabel: 'Discard sandbox edits',
+      cancelLabel: 'Keep changes',
+      danger: true
+    });
+    this.sandboxMode = false;
+    if (discard && this._sandboxBackup) {
+      // Convention: snapshot the pre-change (sandbox-edited) state before mutating.
+      this.pushUndo('Exit sandbox: discard changes');
+      this.data = JSON.parse(this._sandboxBackup);
+    }
+    this._sandboxBackup = null;
+    this._setSandboxBanner();
+    // Saves were suppressed while sandboxed, so persist explicitly on either path.
+    this.markDirty();
+    this.saveToLocalStorage();
+    if (discard) this.refreshCurrentView();
+    if (this.notifyDataChange) this.notifyDataChange();
+    if (typeof this.toast === 'function') {
+      this.toast(discard ? 'Sandbox edits discarded — data restored' : 'Sandbox edits kept', 'success');
+    }
+  },
+
+  _setSandboxBanner() {
     const banner = document.getElementById('sandboxBanner');
     if (banner) banner.style.display = this.sandboxMode ? '' : 'none';
-    if (typeof this.toast === 'function') {
-      this.toast(this.sandboxMode ? 'Sandbox mode ON — changes are isolated' : 'Sandbox mode OFF', this.sandboxMode ? 'warn' : 'success');
-    }
   },
 
   compareScenarios(idA, idB) {
@@ -7599,6 +7640,9 @@ const App = {
         if (typeof this.calculateRiskScore === 'function') p.risk_score = this.calculateRiskScore(p);
         if (typeof this.evaluateRagRules === 'function') this.evaluateRagRules(p);
       });
+      // Sandbox mode: rules above still run so in-session behaviour is unchanged,
+      // but nothing persists — edits stay in memory until Keep on exit.
+      if (this.sandboxMode) return;
       const json = JSON.stringify(this.data);
       localStorage.setItem(this.LS_KEY, json);
       localStorage.setItem(this.LS_META_KEY, JSON.stringify({ savedAt: new Date().toISOString(), projectCount: this.data.projects.length }));
@@ -9258,6 +9302,14 @@ const App = {
       label.textContent = 'No data loaded';
       chip.title = 'No data loaded';
       if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.ok;
+      return;
+    }
+    // Sandbox mode: persistence is suspended — say so instead of a stale saved time.
+    if (this.sandboxMode) {
+      chip.classList.add('state-warn');
+      label.textContent = 'Sandbox — edits not saved';
+      if (icon) icon.innerHTML = this._SAVE_STATE_ICONS.warn;
+      chip.title = 'Sandbox mode — edits are isolated in memory. Toggle sandbox off to keep or discard them.';
       return;
     }
     const savedTime = this._lastSavedAt
