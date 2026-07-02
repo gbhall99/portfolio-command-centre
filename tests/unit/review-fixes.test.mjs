@@ -118,3 +118,91 @@ describe('Solver.getProjectPhaseMap — B6 object-form phase_order entries (roll
     }
   });
 });
+
+describe('DetailPanel RAID tab risk/issue handlers are undoable (undo-persist #8)', () => {
+  async function bootWithRegisters() {
+    resetIdSeq();
+    const proj = makeProject({
+      name: 'RAID Undo',
+      risks_register: [
+        { description: 'Key SME leaves', action: 'Cross-train', owner: 'Alice', impact: 4, probability: 3, resolution_date: null }
+      ],
+      issues_register: [
+        { description: 'Env outage', action: 'Escalate', owner: 'Bob', opened_date: '2026-06-01', resolution_date: null }
+      ]
+    });
+    const app = await loadApp(makeDataset({ projects: [proj] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.DetailPanel.currentId = proj.id;
+    // The handlers re-render these panel fragments after mutating.
+    app.document.body.insertAdjacentHTML('beforeend',
+      '<div id="riskList"></div><span id="riskCount"></span>' +
+      '<div id="issueList"></div><span id="issueCount"></span>');
+    return { app, proj };
+  }
+
+  it('removeRisk snapshots undo and Ctrl+Z restores the risk intact', async () => {
+    const { app, proj } = await bootWithRegisters();
+    const { App, DetailPanel } = app;
+    try {
+      const before = App.undoStack.length;
+      DetailPanel.removeRisk(0);
+      expect(App.data.projects.find(p => p.id === proj.id).risks_register).toHaveLength(0);
+      expect(App.undoStack.length).toBe(before + 1);
+      expect(App.undoStack[App.undoStack.length - 1].description).toBe('Remove risk');
+
+      App.undo();
+      const restored = App.data.projects.find(p => p.id === proj.id).risks_register;
+      expect(restored).toHaveLength(1);
+      expect(restored[0].description).toBe('Key SME leaves');
+      expect(restored[0].owner).toBe('Alice');
+    } finally {
+      app.teardown();
+    }
+  });
+
+  it('removeIssue snapshots undo and Ctrl+Z restores the issue intact', async () => {
+    const { app, proj } = await bootWithRegisters();
+    const { App, DetailPanel } = app;
+    try {
+      const before = App.undoStack.length;
+      DetailPanel.removeIssue(0);
+      expect(App.data.projects.find(p => p.id === proj.id).issues_register).toHaveLength(0);
+      expect(App.undoStack.length).toBe(before + 1);
+      expect(App.undoStack[App.undoStack.length - 1].description).toBe('Remove issue');
+
+      App.undo();
+      const restored = App.data.projects.find(p => p.id === proj.id).issues_register;
+      expect(restored).toHaveLength(1);
+      expect(restored[0].description).toBe('Env outage');
+    } finally {
+      app.teardown();
+    }
+  });
+
+  it('addRisk and addIssue each push exactly one labelled undo snapshot', async () => {
+    const { app, proj } = await bootWithRegisters();
+    const { App, DetailPanel } = app;
+    try {
+      const before = App.undoStack.length;
+      DetailPanel.addRisk();
+      expect(App.undoStack.length).toBe(before + 1);
+      expect(App.undoStack[App.undoStack.length - 1].description).toBe('Add risk');
+      expect(App.data.projects.find(p => p.id === proj.id).risks_register).toHaveLength(2);
+
+      DetailPanel.addIssue();
+      expect(App.undoStack.length).toBe(before + 2);
+      expect(App.undoStack[App.undoStack.length - 1].description).toBe('Add issue');
+      expect(App.data.projects.find(p => p.id === proj.id).issues_register).toHaveLength(2);
+
+      // Undo the add-issue, then the add-risk — registers return to seed state.
+      App.undo();
+      App.undo();
+      const p = App.data.projects.find(pr => pr.id === proj.id);
+      expect(p.risks_register).toHaveLength(1);
+      expect(p.issues_register).toHaveLength(1);
+    } finally {
+      app.teardown();
+    }
+  });
+});
