@@ -42160,7 +42160,7 @@ const AgentTools = {
         const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
         if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
         if (!Array.isArray(p.dependencies)) p.dependencies = [];
-        let summary, change, dep, idx;
+        let summary, change, dep, existing;
         if (args.action === 'add') {
           const type = args.type || 'blocked_by';
           if (args.target_id) {
@@ -42179,8 +42179,8 @@ const AgentTools = {
             return { error: 'add needs either target_id (project link) or label (external blocker)' };
           }
         } else {
-          idx = App.toInteger(args.index);
-          const existing = p.dependencies[idx];
+          const idx = App.toInteger(args.index);
+          existing = p.dependencies[idx];
           if (!existing) return { error: 'No dependency at index ' + args.index + ' on ' + p.name + ' (it has ' + p.dependencies.length + ')' };
           const desc = existing.kind === 'external' ? existing.label : ((AgentTools._projects(ctx).find(x => x.id === existing.target_id) || {}).name || existing.target_id);
           change = { field: 'dependency #' + idx, before: (existing.type || '') + ' ' + (desc || ''), after: 'removed' };
@@ -42191,9 +42191,17 @@ const AgentTools = {
           kind: 'manage_dependency', summary, reason: args.reason || '',
           entity: { type: 'project', id: p.id, name: p.name }, changes: [change],
           apply() {
+            // Re-resolve the captured entry at apply time — a prior removal in the
+            // same batch (or a UI edit before confirm) may have shifted the array,
+            // so a splice by the propose-time index would delete the wrong item.
+            let i = -1;
+            if (args.action !== 'add') {
+              i = p.dependencies.indexOf(existing);
+              if (i < 0) throw new Error('That dependency no longer exists — it may have already been removed');
+            }
             App.pushUndo((args.action === 'add' ? 'Add' : 'Remove') + ' dependency on ' + p.name);
             if (args.action === 'add') p.dependencies.push(dep);
-            else p.dependencies.splice(idx, 1);
+            else p.dependencies.splice(i, 1);
             p.last_updated = new Date().toISOString();
             App.logChange(p.id, args.action === 'add' ? 'dependency_added' : 'dependency_removed', change.before || '', change.after, 'ai');
             App.markDirty(); App.saveToLocalStorage(); App.notifyDataChange();
@@ -42222,14 +42230,14 @@ const AgentTools = {
         const p = AgentTools._projects(ctx).find(x => x.id === args.project_id);
         if (!p) return { error: 'No project with id ' + args.project_id + ' for this customer' };
         if (!Array.isArray(p.customer_milestones)) p.customer_milestones = [];
-        let summary, changes = [], idx;
+        let summary, changes = [], existing;
         if (args.action === 'add') {
           if (!args.name || !args.date) return { error: 'add needs name and date (YYYY-MM-DD)' };
           changes = [{ field: 'milestone', before: '', after: String(args.name).slice(0, 120) + ' (' + args.date + ', ' + (args.status || 'Planned') + ')' }];
           summary = 'Add milestone “' + String(args.name).slice(0, 60) + '” to ' + p.name;
         } else {
-          idx = App.toInteger(args.index);
-          const existing = p.customer_milestones[idx];
+          const idx = App.toInteger(args.index);
+          existing = p.customer_milestones[idx];
           if (!existing) return { error: 'No milestone at index ' + args.index + ' on ' + p.name + ' (it has ' + p.customer_milestones.length + ')' };
           if (args.action === 'remove') {
             changes = [{ field: 'milestone #' + idx, before: (existing.name || '') + ' (' + (existing.date || '') + ')', after: 'removed' }];
@@ -42248,13 +42256,21 @@ const AgentTools = {
           kind: 'set_milestone', summary, reason: args.reason || '',
           entity: { type: 'project', id: p.id, name: p.name }, changes,
           apply() {
+            // Re-resolve the captured milestone at apply time — a prior removal in
+            // the same batch (or a UI edit before confirm) may have shifted the
+            // array, so indexing by the propose-time index would hit the wrong item.
+            let i = -1;
+            if (args.action !== 'add') {
+              i = p.customer_milestones.indexOf(existing);
+              if (i < 0) throw new Error('That milestone no longer exists — it may have already been removed');
+            }
             App.pushUndo('Milestone change on ' + p.name);
             if (args.action === 'add') {
               p.customer_milestones.push({ name: String(args.name).slice(0, 120), date: args.date, status: args.status || 'Planned', notes: '', external_commitment: !!args.external_commitment });
             } else if (args.action === 'remove') {
-              p.customer_milestones.splice(idx, 1);
+              p.customer_milestones.splice(i, 1);
             } else {
-              const m = p.customer_milestones[idx];
+              const m = existing;
               if (args.name !== undefined && args.name !== '') m.name = String(args.name).slice(0, 120);
               if (args.date !== undefined && args.date !== '') m.date = args.date;
               if (args.status !== undefined && args.status !== '') m.status = args.status;
