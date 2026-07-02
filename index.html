@@ -13080,9 +13080,11 @@ const Objectives = {
   rollup(objectiveId) {
     const obj = this.byId(objectiveId);
     if (!obj) return null;
-    const measuring_metrics = Metrics.list().filter(m => (m.objective_ids || []).includes(objectiveId));
+    // Entity-relative (obj.customer, not App.activeCustomer) so cross-customer
+    // reads resolve metrics/personas — mirrors the projects filter below.
+    const measuring_metrics = (App.data.metrics || []).filter(m => m.customer === obj.customer && (m.objective_ids || []).includes(objectiveId));
     const personaSet = new Set();
-    Personas.list().forEach(p => {
+    (App.data.personas || []).filter(p => p.customer === obj.customer).forEach(p => {
       const holds = (p.metric_holdings || []).some(h => measuring_metrics.some(m => m.id === h.metric_id));
       if (holds) personaSet.add(p.id);
     });
@@ -13813,7 +13815,9 @@ const Metrics = {
     const metric = this.byId(metricId);
     if (!metric) return null;
     const holders = [];
-    Personas.list().forEach(p => {
+    // Entity-relative (metric.customer, not App.activeCustomer) so cross-customer
+    // reads — e.g. metric_insight under the "All customers" filter — resolve holders.
+    (App.data.personas || []).filter(p => p.customer === metric.customer).forEach(p => {
       (p.metric_holdings || []).filter(h => h.metric_id === metricId)
         .forEach(h => holders.push({ persona: p, holding: h }));
     });
@@ -13843,10 +13847,11 @@ const Metrics = {
       });
     }
     const personaIds = new Set(holders.map(h => h.persona.id));
-    const personCount = (typeof Person !== 'undefined') ? Person.list().filter(prn =>
+    const personCount = (App.data.people || []).filter(prn =>
+      prn.customer === metric.customer &&
       ['accountable','responsible','consulted','informed'].some(r =>
         Array.isArray(metric.raci && metric.raci[r]) && metric.raci[r].includes(prn.id))
-    ).length : 0;
+    ).length;
     const targetCount = holders.filter(h => Array.isArray(h.holding.targets) && h.holding.targets.length > 0).length;
     const has_targets_anywhere = targetCount > 0;
     return {

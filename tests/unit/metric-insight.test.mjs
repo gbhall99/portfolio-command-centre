@@ -92,6 +92,54 @@ describe('metric_insight tool', () => {
   });
 });
 
+describe('rollup is entity-relative, not activeCustomer-relative', () => {
+  // Regression: rollup used Personas.list()/Person.list() (activeCustomer-scoped),
+  // so a foreign-customer metric — reachable via metric_insight under the
+  // "All customers" filter — lost its holders, targets and RACI person count.
+  beforeEach(() => {
+    app.App.data.objectives.push(makeObjective({ id: 'G-OBJ', name: 'Globex growth', customer: 'Globex' }));
+    app.App.data.personas.push(makePersona({
+      id: 'G-PER', name: 'COO', customer: 'Globex',
+      metric_holdings: [{ metric_id: 'G-MET', role: 'accountable', targets: [{ period: '2026-12', value: 55, period_type: 'month' }] }]
+    }));
+    app.App.data.people.push(makePerson({ id: 'G-PRSN', name: 'Gary Globex', customer: 'Globex', persona_id: 'G-PER' }));
+    app.App.data.metrics.push(makeMetric({
+      id: 'G-MET', name: 'Globex KPI', customer: 'Globex',
+      objective_ids: ['G-OBJ'],
+      raci: { accountable: ['G-PRSN'], responsible: [], consulted: [], informed: [] }
+    }));
+    app.App.activeCustomer = 'Acme Industries'; // deliberately a different customer
+  });
+
+  it('Metrics.rollup resolves holders/target/person_count via metric.customer', () => {
+    const r = app.Metrics.rollup('G-MET');
+    expect(r.holder_count).toBe(1);
+    expect(r.target_count).toBe(1);
+    expect(r.person_count).toBe(1);
+    expect(r.holders[0].persona.id).toBe('G-PER');
+  });
+
+  it('Metrics.insightFor surfaces the foreign metric\'s target and accountable person', () => {
+    const i = app.Metrics.insightFor('G-MET');
+    expect(i.target).toMatchObject({ period: '2026-12', value: 55, held_by: 'COO' });
+    expect(i.accountable).toEqual(['Gary Globex']);
+  });
+
+  it('Objectives.rollup resolves metrics/personas via obj.customer', () => {
+    const r = app.Objectives.rollup('G-OBJ');
+    expect(r.metric_count).toBe(1);
+    expect(r.measuring_metrics.map(m => m.id)).toEqual(['G-MET']);
+    expect(r.contributing_personas.map(p => p.id)).toEqual(['G-PER']);
+  });
+
+  it('unchanged behaviour when activeCustomer matches the entity customer', () => {
+    app.App.activeCustomer = 'Globex';
+    const r = app.Metrics.rollup('G-MET');
+    expect(r.holder_count).toBe(1);
+    expect(r.person_count).toBe(1);
+  });
+});
+
 describe('success_story report (data-derived)', () => {
   it('builds a doc whose Outcomes section carries the grounded metric movement', () => {
     const doc = app.Reports.Builders.successStory('A-1');
