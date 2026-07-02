@@ -90,4 +90,40 @@ describe('Gantt dependency arrows — clean L→R routing', () => {
     });
     app.teardown();
   });
+
+  it('grouped mode: arrow Y positions account for the 22px group-header spacer rows', async () => {
+    resetIdSeq();
+    const today = new Date();
+    const fmt = ms => new Date(ms).toISOString().slice(0, 10);
+    const sprints = [{ sprint_id: 'CY99-S1', start_date: fmt(today.getTime() - 30 * 86400000), hardening_start: fmt(today.getTime() + 1 * 86400000), end_date: fmt(today.getTime() + 8 * 86400000) }];
+    // Two projects in DIFFERENT categories → grouping emits a 22px spacer row before EACH of
+    // them (the first group change happens on the very first project). Layout constants:
+    // annotation row 34, group header 22, project row 56, main-bar mid offset 22 + 24/2 = 34.
+    // NOTE: category values must come from the canonical _CATEGORY_OPTS set — migration
+    // rewrites anything else to 'General', which would collapse the two groups into one.
+    const a = makeProject({ id: 'Acme Industries-A', name: 'A', category: 'BAU', start_date: fmt(today.getTime() - 30 * 86400000), target_date: fmt(today.getTime() - 5 * 86400000) });
+    const b = makeProject({ id: 'Acme Industries-B', name: 'B', category: 'Innovation', start_date: fmt(today.getTime() + 5 * 86400000), target_date: fmt(today.getTime() + 30 * 86400000) });
+    b.dependencies = [{ type: 'project', kind: 'blocked_by', target_id: 'Acme Industries-A' }];
+    const app = await loadApp(makeDataset({ projects: [a, b], sprints, team_members: [makeMember()] }));
+    app.App.activeCustomer = 'Acme Industries';
+    app.App.navigate('roadmap');
+    app.Gantt.setGroupBy('category'); // re-renders grouped
+    const path = app.window.document.querySelector('.gantt-dep-path[data-from="Acme Industries-A"][data-to="Acme Industries-B"]');
+    expect(path).not.toBeNull();
+    const d = path.getAttribute('d');
+    // Source Y: annotation(34) + BAU header(22) + bar mid(34) = 90. Without the spacer
+    // correction this used to render at 68 — 22px above the bar it points from.
+    const mStart = String(d).match(/^M\s*(-?[\d.]+)\s+(-?[\d.]+)/);
+    expect(mStart).not.toBeNull();
+    expect(parseFloat(mStart[2])).toBe(34 + 22 + 34);
+    // Target Y: annotation(34) + BAU header(22) + row A(56) + Innovation header(22) + bar mid(34) = 168.
+    // The final corner is `Q midX toY (midX+r) toY H toX` — read toY from the trailing Q.
+    const qEnd = String(d).match(/Q\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+H\s*(-?[\d.]+)\s*$/);
+    expect(qEnd).not.toBeNull();
+    expect(parseFloat(qEnd[4])).toBe(34 + 22 + 56 + 22 + 34);
+    // The dep SVG height stays honest: 2 rows(112) + annotation(34) + 2 headers(44) = 190.
+    const svg = path.closest('svg');
+    expect(svg.getAttribute('style')).toContain('height:190px');
+    app.teardown();
+  });
 });

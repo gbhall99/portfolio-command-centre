@@ -26231,6 +26231,11 @@ const Gantt = {
     const isExecutive = !!this.executiveMode;
     const isDetailed = !isExecutive && document.getElementById('ganttDetailed') && document.getElementById('ganttDetailed').checked;
     const subRowH = isDetailed ? 38 : 0;
+    // Group-header row height (px) — the slim header emitted in the labels column AND the
+    // matching chart-side spacer whenever the group key changes in grouped mode. Single source
+    // of truth: the dependency-arrow Y maths and the SVG/backdrop heights below MUST account
+    // for one of these per distinct consecutive group key, or every arrow drifts 22px per header.
+    const GROUP_HEADER_H = 22;
 
     // Critical path (needed before label rendering for fading). Prefer the
     // solver's persisted chain for the active customer (the longest blocked_by
@@ -26267,7 +26272,7 @@ const Gantt = {
         const gKey = p[this.groupBy] || '(no ' + this.groupBy + ')';
         if (gKey !== lastGroup) {
           lastGroup = gKey;
-          labelsHtml += '<div class="gantt-group-header" style="height:22px;padding:0 12px;display:flex;align-items:center;font-size:var(--fs-2xs);font-weight:700;color:var(--text-dark);background:var(--surface-2);border-top:1px solid var(--border-dim);border-bottom:1px solid var(--border-dim);text-transform:uppercase;letter-spacing:0.3px">' + Dashboard.esc(String(gKey)) + '</div>';
+          labelsHtml += '<div class="gantt-group-header" style="height:' + GROUP_HEADER_H + 'px;padding:0 12px;display:flex;align-items:center;font-size:var(--fs-2xs);font-weight:700;color:var(--text-dark);background:var(--surface-2);border-top:1px solid var(--border-dim);border-bottom:1px solid var(--border-dim);text-transform:uppercase;letter-spacing:0.3px">' + Dashboard.esc(String(gKey)) + '</div>';
         }
       }
       const colorMap = {}; App.getCustomers().forEach(function(c) { colorMap[c] = App.getCustomerColor(c); });
@@ -26363,7 +26368,7 @@ const Gantt = {
         const gKey = p[this.groupBy] || '(no ' + this.groupBy + ')';
         if (gKey !== _lastChartGroup) {
           _lastChartGroup = gKey;
-          groupSpacer = '<div class="gantt-row gantt-group-spacer" style="height:22px;background:var(--surface-2);border-top:1px solid var(--border-dim);border-bottom:1px solid var(--border-dim)"></div>';
+          groupSpacer = '<div class="gantt-row gantt-group-spacer" style="height:' + GROUP_HEADER_H + 'px;background:var(--surface-2);border-top:1px solid var(--border-dim);border-bottom:1px solid var(--border-dim)"></div>';
         }
       }
       const x1 = Math.max(0, dateToX(p.start_date));
@@ -26917,10 +26922,23 @@ const Gantt = {
       po.forEach(ph => { const sk = Solver.PHASE_SKILL_MAP[ph]; if (sk && (p[sk] || 0) > 0) n++; });
       return n;
     };
-    // Cumulative top-Y per project (main bar's top)
+    // Cumulative top-Y per project (main bar's top). Mirrors the row emission exactly:
+    // in grouped mode a GROUP_HEADER_H spacer row precedes the first row of every group
+    // (including the very first project), so it must be added here too or every dep arrow
+    // sits GROUP_HEADER_H px above its bars, drifting further with each group change.
     const projectTopY = {};
     let runningY = annotationH;
+    let groupHeadersH = 0; // total px of group-header spacer rows emitted this render
+    let _lastYGroup = null;
     projects.forEach(p => {
+      if (this.groupBy) {
+        const gKey = p[this.groupBy] || '(no ' + this.groupBy + ')';
+        if (gKey !== _lastYGroup) {
+          _lastYGroup = gKey;
+          runningY += GROUP_HEADER_H;
+          groupHeadersH += GROUP_HEADER_H;
+        }
+      }
       projectTopY[p.id] = runningY;
       runningY += rowH + subRowCountFor(p) * subRowH;
     });
@@ -27009,7 +27027,7 @@ const Gantt = {
     // Compute the full stack height — including phase sub-rows in Detailed mode — BEFORE drawing
     // the dep SVG. Previously svgH was `22 + projects.length * rowH`, which ignored sub-rows and
     // clipped any dep arrow aimed at a row below the main-row band in Detailed mode.
-    let totalRowHForSvg = projects.length * rowH + ANNOTATION_H;
+    let totalRowHForSvg = projects.length * rowH + ANNOTATION_H + groupHeadersH;
     if (isDetailed) {
       projects.forEach(p => {
         const po = (p.delivery_config && p.delivery_config.phase_order) || [];
@@ -27030,7 +27048,7 @@ const Gantt = {
     }
 
     // Compute the row stack height up front so the backdrop matches the expanded view exactly.
-    let totalRowH = projects.length * rowH + ANNOTATION_H; // + annotation row height
+    let totalRowH = projects.length * rowH + ANNOTATION_H + groupHeadersH; // + annotation row + group headers
     if (isDetailed) {
       projects.forEach(p => {
         const po = (p.delivery_config && p.delivery_config.phase_order) || [];
