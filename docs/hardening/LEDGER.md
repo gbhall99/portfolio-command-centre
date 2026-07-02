@@ -13,8 +13,8 @@ Lenses rotate L1→L20 but are reviewed *as they apply to the tour*; findings
 use H-1xx ids to avoid collision with the completed app-wide run below.
 
 ## Status (tour run)
-- Last completed iteration: 1
-- Next lens: L2
+- Last completed iteration: 3
+- Next lens: L4
 - Consecutive clean iterations: 0
 - Branch: claude/guided-tour-demo-feature-lc40np (restarted from main a3e7834
   after PR #74 merged). PR cadence: i5/i10/i15/i20.
@@ -25,7 +25,9 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | Lens | Visits | Last iteration |
 |---|---|---|
 | L1 | 1 | 1 |
-| L2–L20 | 0 | — |
+| L2 | 1 | 2 |
+| L3 | 1 | 3 |
+| L4–L20 | 0 | — |
 
 ## Findings register (tour run)
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -34,6 +36,9 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | H-101 | 1 | L11* | P1 | index.html Tour._onKey | **Keyboard hijack.** Enter was intercepted unconditionally as "next", so a keyboard user who tabbed to "Back" or "Skip tour" and pressed Enter advanced FORWARD instead of activating the focused button. Fixed: Enter with focus on a button inside #tourCard is left to the button's native activation; Enter elsewhere still advances. Pinned by guided-tour.test.mjs H-101. (*opportunistic find during the i1 code read) | Fixed | i1 |
 | H-102 | 1 | L11* | P2 | index.html Tour card | `role=dialog aria-modal=true` with NO Tab focus trap — Tab walked out into the (pointer-blocked) background page, exactly the class H-016 fixed for the shortcuts overlay. Fixed: Tab in the tour's capture key handler routes through the house `App._modalTabTrap(e, card)`. Not jsdom-testable (offsetParent-based focusable filter) — verified by code parity with the H-016 pattern. | Fixed | i1 |
 | H-103 | 1 | L3* | P1 | index.html Tour.start | **Customer-mode pierce.** The offer is suppressed in customer (read-only/screen-share) mode, but a palette-invoked `Tour.start()` was not — the tour then `App.navigate`s to dashboard/sprint/capacity, views the customer-mode curtain deliberately hides, exposing internal planning data mid-screen-share. Fixed: start() now blocks in customerMode with an explanatory toast. Pinned by guided-tour.test.mjs H-103. | Fixed | i1 |
+| H-106 | 3 | L3 | — | Tour scoping model | REVIEWED clean otherwise: `tour.done` is GLOBAL uiState by design (the tour teaches the app, not a customer — parallels ui.customerMode, not board.* prefs); offer + start are customer-mode-gated (H-103); tour views under the "All customers" filter fall back per App.isAllScope with the titlebar note, and step copy stays accurate. | Reviewed (clean) | i3 |
+| H-105 | 3 | L3 | P2 | index.html Tour.STEPS welcome/finish copy | Welcome step asserted "THIS demo portfolio has three fictional customers" and finish said "leave the demo" — wrong and confusing when the tour is re-run from ⌘K on the user's own (or renamed) dataset. Fixed with a static reword ("The demo dataset ships…", "Working with the demo?…") — dataset-agnostic while keeping the authored-HTML-only contract (no interpolation). | Fixed | i3 |
+| H-107 | 2 | L2 | — | Tour vs undo/audit contracts | REVIEWED, zero findings. Tour's entire App surface is toast/uiState/navigate/currentView/customerMode/data-presence/_modalTabTrap (verified by grep) — no entity mutators, so no pushUndo/logChange obligations; uiStateSet writes are deliberately outside the undo stack (same contract as board/palette prefs); the loadDemoData offer hook runs after markClean and touches only DOM, so save-state stays clean (guarded by tests/e2e/save-state-regression.spec.ts). No code change. | Reviewed (clean) | i2 |
 | H-104 | 1 | L11* | P2 | index.html Tour._teardown | Focus was abandoned on teardown (the focused Next button is removed with the layer → focus falls to `<body>`). Fixed: `start()` records `document.activeElement`, `_teardown()` restores it if still in the document. Pinned by guided-tour.test.mjs H-104. | Fixed | i1 |
 
 ## Deferred / wontfix log (tour run)
