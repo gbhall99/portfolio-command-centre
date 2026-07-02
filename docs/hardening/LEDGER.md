@@ -13,9 +13,9 @@ Lenses rotate L1→L20 but are reviewed *as they apply to the tour*; findings
 use H-1xx ids to avoid collision with the completed app-wide run below.
 
 ## Status (tour run)
-- Last completed iteration: 10
-- Next lens: L11
-- Consecutive clean iterations: 0 (H-111/H-112 found+fixed in i9/i10 batch)
+- Last completed iteration: 15
+- Next lens: L16
+- Consecutive clean iterations: 4 (i12/L12, i13/L13, i14/L14, i15/L15)
 - i5 checkpoint: full unit+render suite GREEN — 1349 passed / 3 skipped.
 - L9/L10 METHOD: standalone Playwright script (not committed) — file:// load,
   addScriptTag globals bridge, loadDemoData, applyTheme, Tour.start()/next()
@@ -46,7 +46,12 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | L8 | 1 | 8 |
 | L9 | 1 | 9 |
 | L10 | 1 | 10 |
-| L11–L20 | 0 | — |
+| L11 | 1 | 11 |
+| L12 | 1 | 12 |
+| L13 | 1 | 13 |
+| L14 | 1 | 14 |
+| L15 | 1 | 15 |
+| L16–L20 | 0 | — |
 
 ## Findings register (tour run)
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -55,6 +60,8 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | H-101 | 1 | L11* | P1 | index.html Tour._onKey | **Keyboard hijack.** Enter was intercepted unconditionally as "next", so a keyboard user who tabbed to "Back" or "Skip tour" and pressed Enter advanced FORWARD instead of activating the focused button. Fixed: Enter with focus on a button inside #tourCard is left to the button's native activation; Enter elsewhere still advances. Pinned by guided-tour.test.mjs H-101. (*opportunistic find during the i1 code read) | Fixed | i1 |
 | H-102 | 1 | L11* | P2 | index.html Tour card | `role=dialog aria-modal=true` with NO Tab focus trap — Tab walked out into the (pointer-blocked) background page, exactly the class H-016 fixed for the shortcuts overlay. Fixed: Tab in the tour's capture key handler routes through the house `App._modalTabTrap(e, card)`. Not jsdom-testable (offsetParent-based focusable filter) — verified by code parity with the H-016 pattern. | Fixed | i1 |
 | H-103 | 1 | L3* | P1 | index.html Tour.start | **Customer-mode pierce.** The offer is suppressed in customer (read-only/screen-share) mode, but a palette-invoked `Tour.start()` was not — the tour then `App.navigate`s to dashboard/sprint/capacity, views the customer-mode curtain deliberately hides, exposing internal planning data mid-screen-share. Fixed: start() now blocks in customerMode with an explanatory toast. Pinned by guided-tour.test.mjs H-103. | Fixed | i1 |
+| H-116 | 12–15 | L12/L13/L14/L15 | — | Tour error-states / event-hygiene / dates / storage | REVIEWED, zero fixable findings across four lenses. L12: every failure speaks (no-data toast pinned; empty-portfolio walk pinned i6; missing/hidden/off-canvas target → centered, pinned + screenshot-verified; failed demo load never offers; storage-broken uiState degrades to a re-offer). L13: capture-keydown + resize listeners removed symmetrically with nulled refs; double-start tears down first; rAF guarded by _active; next/prev inert when inactive; accepted cosmetic edge — ⌘K customer-switch mid-tour leaves the spot stale until the next step (self-heals; palette-over-tour is deliberate). L14: no date logic. L15: single uiState key under `pcc.ui` (H-020 quota/corrupt/private coverage). No code change. | Reviewed (clean ×4) | i15 |
+| H-115 | 11 | L11 | P2 | index.html Tour layer markup | Step changes swapped #tourCard innerHTML with no announcement for screen-reader users, and the decorative spotlight div wasn't hidden from the a11y tree. Fixed: `aria-live="polite"` on the card (content swaps announce), `aria-hidden="true"` on the spot. Keyboard-only walk re-verified: Tab trapped (H-102), arrows/Enter/Esc per H-101, focus restore per H-104. | Fixed | i11 |
 | H-112 | 10 | L18* | P1 | tests/e2e/gantt-interactions.spec.ts:22 | **Date-fragile e2e (pre-existing on main; broke PR #75 CI).** The spec hovered the FIRST `.gantt-phase-bar` with `force:true` (element centre); the chart auto-scrolls to keep Today visible and the sticky labels column overlays the chart's left edge, so — depending on the current date — the bar's centre sits UNDER the labels column, hover targets a non-hoverable `gantt-label-sub`, and the delegated tooltip never fires (passed 1 Jul, failed 2 Jul, identical code; proven via elementFromPoint). Fixed in-spec: hover a point on the bar's visible chart-side portion (max(bar.left, labels.right)+6, clamped to the bar) via mouse.move — what a real cursor does. 3× repeat green. App code untouched (the delegated hover contract is correct; hovering an occluded region is not a user action). (*opportunistic — L18 lens, found via PR CI babysitting) | Fixed | i10 |
 | H-111 | 10 | L10 | P2 | index.html Tour._targetEl | On mobile (414) the nav step spotlighted the OFF-CANVAS sidebar: a translated-off-screen element has a non-zero rect, so the width/height===0 hidden-check missed it and the spot hugged the viewport edge highlighting nothing. Fixed: rects fully outside the viewport now degrade to the centered layout like missing targets. Verified by re-screenshot at 414 (`tour-centered` class asserted true on the nav step). | Fixed | i10 |
 | H-114 | 9 | L9 | — | Tour desktop UI @1440, light + dark | REVIEWED via real Playwright screenshots: all 10 steps light + 3-step dark spot-check. Spotlight ring lands on the customer pill / sidebar / summary cards / board / sprint board / gantt / RAID tabs / Assistant button; card placement below/right with clamping correct; dark card (#111827) readable; zero page errors. Offer card bottom-right non-blocking in both themes. No fix. | Reviewed (clean) | i9 |
