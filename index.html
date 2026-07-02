@@ -35743,6 +35743,12 @@ const Solver = {
       const sprintIdxById = {};
       sprints.forEach((s, i) => { sprintIdxById[s.sprint_id] = i; });
 
+      // allProjectMap holds the ORIGINAL project objects; _hardDl only exists on the
+      // stamped copies in `projects`. Index the stamped deadlines so canShift's
+      // deadline guard actually fires (otherwise `undefined >= 0` is always false).
+      const hardDlById = {};
+      projects.forEach(p => { hardDlById[p.id] = p._hardDl; });
+
       const phaseForSkill = (p, skillKey) => {
         const m = this.getProjectPhaseMap(p);
         return m[skillKey] || 0;
@@ -35756,7 +35762,8 @@ const Solver = {
         if (protectPast && (pastSprintIds.has(fromSid) || pastSprintIds.has(toSid))) return false;
 
         // Deadline constraint
-        if (p._hardDl >= 0 && sprintIdxById[toSid] > p._hardDl) return false;
+        const dl = hardDlById[pid];
+        if (dl >= 0 && sprintIdxById[toSid] > dl) return false;
 
         // Per-person cap at destination
         if (enforcePerPerson && sliceAssignedTo && sliceAssignedTo.length) {

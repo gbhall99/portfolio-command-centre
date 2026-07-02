@@ -303,3 +303,34 @@ describe('Solver — portfolio-data.json smoke', () => {
     app.teardown();
   });
 });
+
+describe('Solver — Pass 3 (spreadWork) honours hard deadlines', () => {
+  it('never spread-shifts a slice into a sprint past the project hard_deadline', async () => {
+    resetIdSeq();
+    const sprints = makeSprintSequence(4, '2026-07-06'); // S1 ends 2026-08-09
+    const sprintIdx = {};
+    sprints.forEach((s, i) => { sprintIdx[s.sprint_id] = i; });
+    // 18 SP fits sprint 1 (20 SP member) so Pass 1/2 meet the deadline; Pass 3's
+    // load-balancer is the only thing that could push work into S2.
+    const proj = makeProject({
+      id: 'DL1', name: 'Deadline bound', size_engineering: 18,
+      hard_deadline: sprints[0].end_date
+    });
+    const member = makeMember({ name: 'Dana', available_points_per_sprint: 20, primary_skills: ['Data Engineering'] });
+    const { plan, app } = await runSolver(
+      makeDataset({ projects: [proj], sprints, team_members: [member] }),
+      'Acme Industries',
+      { spreadWork: true }
+    );
+    const dlIdx = 0; // hard_deadline sits inside sprint 0
+    const breaches = allSlices(plan).filter(s => s.pid === 'DL1' && sprintIdx[s.sprint] > dlIdx);
+    const missWarned = plan.warnings.some(w => w.type === 'deadline_miss');
+    // Either every slice meets the deadline, or the solver honestly warns —
+    // never a silent post-Pass-2 breach via spread-shift.
+    expect(breaches.length === 0 || missWarned).toBe(true);
+    // With 18 SP against a 20 SP sprint the plan is feasible: no breach at all.
+    expect(breaches).toEqual([]);
+    expect(missWarned).toBe(false);
+    app.teardown();
+  });
+});
