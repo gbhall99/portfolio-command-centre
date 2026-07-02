@@ -32473,10 +32473,11 @@ const Sprint = {
     if (!sprints[idx]) return;
     App.pushUndo('Change sprint date');
     sprints[idx].start_date = value;
-    // Auto-compute dates (4-week dev + 1-week hardening = 5 weeks)
-    const start = new Date(value);
-    const hardening = new Date(start); hardening.setDate(hardening.getDate() + 28);
-    const end = new Date(start); end.setDate(end.getDate() + 34);
+    // Auto-compute dates (4-week dev + 1-week hardening = 5 weeks) — in UTC so a
+    // DST boundary in the local timezone can't shift the +28/+34 day offsets (D-007)
+    const start = new Date(value + 'T00:00:00Z');
+    const hardening = new Date(start); hardening.setUTCDate(hardening.getUTCDate() + 28);
+    const end = new Date(start); end.setUTCDate(end.getUTCDate() + 34);
     sprints[idx].hardening_start = hardening.toISOString().split('T')[0];
     sprints[idx].end_date = end.toISOString().split('T')[0];
     App.markDirty();
@@ -32493,18 +32494,21 @@ const Sprint = {
     // actually finishes in. The old logic reused the first sprint's year prefix unchanged, so
     // a sprint that rolled into the following January was still labelled with the previous
     // year's CYxx.
+    // All arithmetic in UTC: date-only strings parse as UTC midnight, so local-time
+    // getDay()/setDate() shifts the persisted day for users west/east of UTC (D-007).
     let startDate;
     if (sprints.length) {
-      const lastEnd = new Date(sprints[sprints.length - 1].end_date);
-      startDate = new Date(lastEnd);
-      startDate.setDate(startDate.getDate() + 1);
-      while (startDate.getDay() !== 1) startDate.setDate(startDate.getDate() + 1);
+      startDate = new Date(sprints[sprints.length - 1].end_date + 'T00:00:00Z');
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+      while (startDate.getUTCDay() !== 1) startDate.setUTCDate(startDate.getUTCDate() + 1);
     } else {
-      startDate = new Date();
-      while (startDate.getDay() !== 1) startDate.setDate(startDate.getDate() + 1);
+      const t = new Date();
+      // UTC midnight of the LOCAL calendar date, so an evening (west) or morning (east) click can't shift the day
+      startDate = new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()));
+      while (startDate.getUTCDay() !== 1) startDate.setUTCDate(startDate.getUTCDate() + 1);
     }
-    const hardening = new Date(startDate); hardening.setDate(hardening.getDate() + 28);
-    const end = new Date(startDate); end.setDate(end.getDate() + 34);
+    const hardening = new Date(startDate); hardening.setUTCDate(hardening.getUTCDate() + 28);
+    const end = new Date(startDate); end.setUTCDate(end.getUTCDate() + 34);
     const endIso = end.toISOString().split('T')[0];
     const yearPrefix = Sprint.yearPrefixFromDate(endIso);
     const nextNum = Sprint.nextSprintNumberInYear(yearPrefix, sprints);

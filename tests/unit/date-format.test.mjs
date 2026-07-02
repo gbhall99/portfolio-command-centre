@@ -38,3 +38,57 @@ describe('App.fmtDate — timezone-safe (H-019)', () => {
     app.teardown();
   });
 });
+
+// D-007 (review finding #14): Sprint.addSprint / onSprintDateChange must do all
+// date arithmetic in UTC. Date-only end_date strings parse as UTC midnight, so
+// walking to "next Monday" with LOCAL getDay()/setDate() lands the persisted
+// start_date on a Tuesday for users west of UTC, and a local DST spring-forward
+// shifts the +28/+34 offsets by a day.
+describe('Sprint date computation — timezone-safe (D-007)', () => {
+  it('addSprint starts the next sprint on a Monday, west of UTC', async () => {
+    app = await loadApp(makeDataset({
+      sprints: [{
+        sprint_id: 'CY26-S1',
+        start_date: '2026-06-01',
+        hardening_start: '2026-06-29',
+        end_date: '2026-07-05' // a Sunday
+      }]
+    }));
+    const { App, Sprint } = app;
+
+    Sprint.addSprint();
+
+    const sprints = App.data.sprints;
+    expect(sprints.length).toBe(2);
+    const next = sprints[1];
+    expect(next.start_date).toBe('2026-07-06'); // the Monday after, not Tuesday
+    expect(new Date(next.start_date + 'T00:00:00Z').getUTCDay()).toBe(1);
+    expect(next.hardening_start).toBe('2026-08-03'); // +28
+    expect(next.end_date).toBe('2026-08-09'); // +34
+
+    app.teardown();
+  });
+
+  it('onSprintDateChange keeps +28/+34 offsets across a spring-forward DST boundary', async () => {
+    app = await loadApp(makeDataset({
+      sprints: [{
+        sprint_id: 'CY26-S1',
+        start_date: '2026-01-05',
+        hardening_start: '2026-02-02',
+        end_date: '2026-02-08'
+      }]
+    }));
+    const { App, Sprint } = app;
+
+    // 2026-02-23 + 28 days crosses the US spring-forward (8 Mar 2026); the old
+    // local-time setDate path persisted 2026-03-22 in America/Los_Angeles.
+    Sprint.onSprintDateChange(0, '2026-02-23');
+
+    const s = App.data.sprints[0];
+    expect(s.start_date).toBe('2026-02-23');
+    expect(s.hardening_start).toBe('2026-03-23'); // +28, not 03-22
+    expect(s.end_date).toBe('2026-03-29'); // +34
+
+    app.teardown();
+  });
+});
