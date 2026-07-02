@@ -41413,8 +41413,13 @@ const AgentTools = {
         const sprints = (App.data.sprints || []).filter(s => !args.sprint_id || s.sprint_id === args.sprint_id);
         if (!sprints.length) return { error: 'No matching sprint' };
         const projects = AgentTools._projects(ctx);
+        // Under the All-customers scope demand aggregates every customer, so capacity
+        // must too — a falsy customerFilter means all members (same idiom as the
+        // Capacity view's `customerFilter || undefined`). Otherwise utilisation would
+        // divide portfolio-wide demand by one customer's capacity.
+        const capCust = ctx.allScope ? undefined : ctx.customer;
         const out = sprints.map(s => {
-          const caps = Sprint.calcSkillCapacityForSprint ? Sprint.calcSkillCapacityForSprint(ctx.customer, s.sprint_id) : {};
+          const caps = Sprint.calcSkillCapacityForSprint ? Sprint.calcSkillCapacityForSprint(capCust, s.sprint_id) : {};
           const demand = {};
           projects.forEach(p => {
             Object.keys(p.skill_splits || {}).forEach(k => {
@@ -41671,7 +41676,10 @@ const AgentTools = {
         (App.data.sprints || []).forEach(s => {
           const caps = Sprint.calcSkillCapacityForSprint ? Sprint.calcSkillCapacityForSprint(ctx.customer, s.sprint_id) : {};
           const demand = {};
-          AgentTools._projects(ctx).forEach(p => Object.keys(p.skill_splits || {}).forEach(k =>
+          // This tool is inherently single-customer (ScenarioLab.baseline is per-customer),
+          // so ignore the All-customers scope for demand too — otherwise cross-customer
+          // demand would be divided by one customer's capacity.
+          AgentTools._projects({ customer: ctx.customer, allScope: false }).forEach(p => Object.keys(p.skill_splits || {}).forEach(k =>
             (p.skill_splits[k] || []).forEach(sl => { if (sl.sprint === s.sprint_id) demand[k] = (demand[k] || 0) + (sl.points || 0); })));
           Object.keys(demand).forEach(k => {
             const cap = App.toInteger(caps[k] || 0), dem = App.toInteger(demand[k] || 0);
@@ -41707,7 +41715,9 @@ const AgentTools = {
           return { last_run: null, inputs_changed_since: 0, recommend_rerun: false, note: 'The solver has not been run for this customer yet — run Auto-Allocate to build a plan.' };
         }
         const cutoff = new Date(meta.at).getTime();
-        const changed = AgentTools._projects(ctx).filter(p => p.last_updated && new Date(p.last_updated).getTime() > cutoff);
+        // solverRuns is per-customer, so drift must compare against the working
+        // customer's projects only — ignore the All-customers scope here.
+        const changed = AgentTools._projects({ customer: ctx.customer, allScope: false }).filter(p => p.last_updated && new Date(p.last_updated).getTime() > cutoff);
         const deadlineAffected = changed.some(p => p.hard_deadline);
         const hoursAgo = Math.round((Date.now() - cutoff) / 3600000);
         changed.slice(0, 20).forEach(p => AgentTools._cite(ctx, 'project', p.id, p.name));
