@@ -44479,9 +44479,13 @@ const Billing = {
   // capacity (after consumed drawdown) against the project's planned points.
   // Planned points convert to hours and price at the customer's default
   // country/level band (assignees aren't known until allocation).
-  quoteForProject(project) {
-    const summary = this.customerSummary(project.customer);
-    const remainingPools = summary.arrangements.map(a => ({ skill: a.skill, remaining: a.remaining_points, label: a.label }));
+  // Optional `pools` lets callers quoting SEVERAL projects share one mutable
+  // remaining-prepaid array (see plannedEconomics) so the same balance is never
+  // netted twice. No-arg callers (SOW quotes, quote_advisor) keep the
+  // full-remaining-balance semantics — matching the quoteAsText caveat.
+  quoteForProject(project, pools) {
+    const remainingPools = pools || this.customerSummary(project.customer).arrangements
+      .map(a => ({ skill: a.skill, remaining: a.remaining_points, label: a.label }));
     const poolsFor = (sk) => remainingPools.filter(p => p.skill === sk).concat(remainingPools.filter(p => p.skill === 'any'));
     const hpp = this.hoursPerPoint();
     const band = this.customerDefault(project.customer);
@@ -44522,15 +44526,24 @@ const Billing = {
   // remaining prepaid pool. Deterministic; reads App.data so it can be run on a
   // swapped-in scenario clone for £ deltas. Excludes Complete/Closed projects.
   plannedEconomics(customer) {
-    const projects = (App.data && App.data.projects || []).filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed');
+    const projects = (App.data && App.data.projects || [])
+      .filter(p => p.customer === customer && p.status !== 'Complete' && p.status !== 'Closed')
+      .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    // One drawdown of the remaining prepaid balance shared across ALL active
+    // projects — quoting each against a fresh pool would net the same points
+    // once per project and understate revenue/margin.
+    let sharedPools = [], prepaidRemaining = 0;
+    try {
+      const summary = this.customerSummary(customer);
+      sharedPools = (summary.arrangements || []).map(a => ({ skill: a.skill, remaining: a.remaining_points, label: a.label }));
+      prepaidRemaining = sharedPools.reduce((s, a) => s + (a.remaining || 0), 0);
+    } catch (e) { /* no billing */ }
     let cost = 0, revenue = 0, points = 0;
     projects.forEach(p => {
       const c = (App.computeProjectCost ? App.computeProjectCost(p) : { BAC: 0 });
       cost += c.BAC || 0;
-      try { const q = this.quoteForProject(p); revenue += (q.totals.amount || 0); points += (q.totals.points || 0); } catch (e) { /* unsized */ }
+      try { const q = this.quoteForProject(p, sharedPools); revenue += (q.totals.amount || 0); points += (q.totals.points || 0); } catch (e) { /* unsized */ }
     });
-    let prepaidRemaining = 0;
-    try { prepaidRemaining = (this.customerSummary(customer).arrangements || []).reduce((s, a) => s + (a.remaining_points || 0), 0); } catch (e) { /* no billing */ }
     revenue = Math.round(revenue); cost = Math.round(cost);
     return { customer, currency: this.currency(), planned_points: points, revenue, cost, margin: revenue - cost, margin_pct: revenue > 0 ? Math.round((revenue - cost) / revenue * 100) : 0, prepaid_remaining_points: prepaidRemaining };
   },

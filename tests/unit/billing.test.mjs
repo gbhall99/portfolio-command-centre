@@ -226,6 +226,47 @@ describe('quoting (planned work, prepaid netting)', () => {
   });
 });
 
+describe('plannedEconomics (shared prepaid pool across projects)', () => {
+  it('nets the remaining prepaid balance ONCE across all active projects, not per project', async () => {
+    resetIdSeq();
+    const data = makeDataset({
+      projects: [
+        makeProject({ id: 'A-1', name: 'Alpha', customer: 'Acme Industries', size_engineering: 20, status: 'In Progress' }),
+        makeProject({ id: 'A-2', name: 'Beta', customer: 'Acme Industries', size_engineering: 20, status: 'In Progress' })
+      ],
+      settings: {
+        rate_card: { size_engineering: { perm: 500 } },
+        billing: {
+          currency: 'USD', hours_per_point: 8,
+          rate_table: { 'United Kingdom': { Consultant: 100 } },
+          customer_defaults: { 'Acme Industries': { country: 'United Kingdom', level: 'Consultant' } }
+        }
+      }
+    });
+    const a2 = await loadApp(data);
+    a2.Billing.addArrangement({ customer: 'Acme Industries', label: 'Pool', skill: 'any', prepaid_points: 30, amount_invoiced: 0 });
+
+    // No-arg quote semantics unchanged: a SINGLE project quoted alone still
+    // nets the customer's full remaining balance (the quoteAsText caveat).
+    const solo = a2.Billing.quoteForProject(a2.App.data.projects[0]);
+    expect(solo.totals.prepaid_covered).toBe(20);
+    expect(solo.totals.amount).toBe(0);
+
+    // Portfolio economics: the 30-SP pool covers 20 + 10 across the two
+    // projects (id order), leaving 10 billable SP — NOT 20 covered on each
+    // (40 SP from a 30-SP pool → phantom £0 revenue).
+    const e = a2.Billing.plannedEconomics('Acme Industries');
+    expect(e.planned_points).toBe(40);
+    expect(e.revenue).toBe(10 * 8 * 100);          // 8000, not 0
+    expect(e.cost).toBe(40 * 500);                 // 20000
+    expect(e.margin).toBe(8000 - 20000);
+    // Remaining prepaid reports the balance after CONSUMED drawdown only
+    // (nothing consumed here), untouched by the planned-quote netting.
+    expect(e.prepaid_remaining_points).toBe(30);
+    a2.teardown();
+  });
+});
+
 describe('settings UI + report', () => {
   it('billing settings card renders rates, arrangements and the report control', () => {
     const { App, Billing, document } = app;
