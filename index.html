@@ -37767,8 +37767,12 @@ const Reports = {
     _eco(customer) { if (typeof Billing === 'undefined' || !Billing.plannedEconomics || !customer) return null; try { return Billing.plannedEconomics(customer); } catch (e) { return null; } },
     _targetMargin() { return (App.data && App.data.settings && App.data.settings.billing && App.data.settings.billing.target_margin_pct) || 30; },
 
-    // R3: executive KPI band — portfolio health + commercials + forecast.
-    _kpiBand(customer, active) {
+    // R3: executive KPI band — portfolio health + forecast. Commercial tiles
+    // (margin/prepaid) are fail-closed: only rendered when opts.commercials
+    // === true, because the band ships in both-audience sections of packs
+    // serialized for customers — internal figures belong to the internal-only
+    // _commercialSummary section instead.
+    _kpiBand(customer, active, opts) {
       const h = Reports.RAG_HEX, esc = Dashboard.esc, tiles = [];
       const health = (typeof App !== 'undefined' && App.portfolioHealth) ? App.portfolioHealth(customer || null) : null;
       if (health) {
@@ -37777,10 +37781,12 @@ const Reports = {
         tiles.push(['At risk', health.atRisk, h.Amber]);
         tiles.push(['Blocked', health.blocked, h.Red]);
       } else { tiles.push(['Active', (active || []).length, '']); }
-      const eco = this._eco(customer);
-      if (eco) {
-        tiles.push(['Margin', eco.margin_pct + '%', eco.margin_pct < this._targetMargin() ? h.Amber : h.Green]);
-        if (eco.prepaid_remaining_points > 0) tiles.push(['Prepaid left', App.fmtPoints(eco.prepaid_remaining_points) + ' SP', '']);
+      if (opts && opts.commercials === true) {
+        const eco = this._eco(customer);
+        if (eco) {
+          tiles.push(['Margin', eco.margin_pct + '%', eco.margin_pct < this._targetMargin() ? h.Amber : h.Green]);
+          if (eco.prepaid_remaining_points > 0) tiles.push(['Prepaid left', App.fmtPoints(eco.prepaid_remaining_points) + ' SP', '']);
+        }
       }
       let pf = null; if (typeof Forecast !== 'undefined' && Forecast.portfolioForecast && customer) { try { pf = Forecast.portfolioForecast(customer); } catch (e) { pf = null; } }
       const p80 = pf && (pf.p80 || pf.P80 || (pf.bands && pf.bands.p80));
