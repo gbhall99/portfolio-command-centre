@@ -62,7 +62,10 @@ describe('Tour lifecycle', () => {
     expect(document.getElementById('tourLayer').classList.contains('tour-centered')).toBe(true);
 
     // Walk forward to the board step — the tour must navigate the app with it.
-    while (Tour.STEPS[Tour._idx].id !== 'board') Tour.next();
+    // (guarded: a renamed step id must fail the assertion, not hang the suite)
+    let hops = 0;
+    while (Tour.STEPS[Tour._idx].id !== 'board' && Tour._active && hops++ < 30) Tour.next();
+    expect(Tour.STEPS[Tour._idx].id).toBe('board');
     expect(App.currentView).toBe('board');
     expect(document.getElementById('tourCard').textContent).toContain('Board');
 
@@ -72,7 +75,8 @@ describe('Tour lifecycle', () => {
     expect(App.currentView).toBe('dashboard');
 
     // Drive to the end; the final next() finishes, tears down and persists.
-    while (Tour._active && Tour._idx < Tour.STEPS.length - 1) Tour.next();
+    hops = 0;
+    while (Tour._active && Tour._idx < Tour.STEPS.length - 1 && hops++ < 30) Tour.next();
     expect(Tour.STEPS[Tour._idx].id).toBe('finish');
     Tour.next();
     expect(Tour._active).toBe(false);
@@ -230,6 +234,51 @@ describe('Tour under adversarial app states (H-110)', () => {
     expect(Tour._active).toBe(false);
     expect(App.uiStateGet(Tour.DONE_KEY)).toBe(true);
     expect(document.getElementById('tourLayer')).toBeFalsy();
+    app.teardown();
+  });
+});
+
+describe('Tour spotlight geometry (H-111, stubbed rects)', () => {
+  const rect = (left, top, width, height) => ({
+    left, top, width, height, right: left + width, bottom: top + height, x: left, y: top
+  });
+
+  it('an off-canvas target (non-zero rect, fully outside the viewport) degrades to centered', async () => {
+    const app = await loadApp();
+    const { Tour, App, document } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    const sidebar = document.querySelector('.sidebar');
+    // Mobile drawer position: translated fully off-screen to the left.
+    sidebar.getBoundingClientRect = () => rect(-220, 0, 220, 800);
+    Tour.start();
+    let hops = 0;
+    while (Tour.STEPS[Tour._idx].id !== 'nav' && Tour._active && hops++ < 30) Tour.next();
+    expect(Tour.STEPS[Tour._idx].id).toBe('nav');
+    expect(Tour._targetEl(Tour.STEPS[Tour._idx])).toBeNull();
+    expect(document.getElementById('tourLayer').classList.contains('tour-centered')).toBe(true);
+    Tour.skip();
+    app.teardown();
+  });
+
+  it('a visible target gets the spotlight box (padded rect) and leaves centered mode', async () => {
+    const app = await loadApp();
+    const { Tour, App, document, window } = app;
+    App.uiStateSet(Tour.DONE_KEY, null);
+    const header = document.getElementById('headerCustomer');
+    header.getBoundingClientRect = () => rect(100, 10, 200, 30);
+    // jsdom windows report innerWidth/innerHeight 1024x768 — the rect is inside.
+    expect(window.innerWidth).toBeGreaterThan(0);
+    Tour.start();
+    Tour.next(); // customer step targets #headerCustomer
+    expect(Tour.STEPS[Tour._idx].id).toBe('customer');
+    const layer = document.getElementById('tourLayer');
+    expect(layer.classList.contains('tour-centered')).toBe(false);
+    const spot = document.getElementById('tourSpot');
+    expect(spot.style.left).toBe('94px');  // 100 - 6px pad
+    expect(spot.style.top).toBe('4px');    // 10 - 6px pad
+    expect(spot.style.width).toBe('212px'); // 200 + 2*6
+    expect(spot.style.height).toBe('42px'); // 30 + 2*6
+    Tour.skip();
     app.teardown();
   });
 });

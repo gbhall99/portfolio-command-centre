@@ -13,9 +13,13 @@ Lenses rotate L1→L20 but are reviewed *as they apply to the tour*; findings
 use H-1xx ids to avoid collision with the completed app-wide run below.
 
 ## Status (tour run)
-- Last completed iteration: 15
-- Next lens: L16
-- Consecutive clean iterations: 4 (i12/L12, i13/L13, i14/L14, i15/L15)
+- Last completed iteration: 22
+- Next lens: L2 revisit — only if the loop is RE-RUN beyond completion.
+- Consecutive clean iterations: 2 (i21/L1-revisit + i22/L13-revisit — zero new fixable issues)
+- **LOOP COMPLETE**: yes — iteration 22 (≥20) AND last 2 consecutive iterations
+  clean. Full `npm test` (unit + render + e2e) run at completion — see PR #75.
+- Totals: 22 iterations · 9 fixes (3 P1, 6 P2) · 13 clean/reviewed lens passes ·
+  guided-tour.test.mjs grown 10 → 16 cases · 1 date-fragile e2e spec repaired.
 - i5 checkpoint: full unit+render suite GREEN — 1349 passed / 3 skipped.
 - L9/L10 METHOD: standalone Playwright script (not committed) — file:// load,
   addScriptTag globals bridge, loadDemoData, applyTheme, Tour.start()/next()
@@ -51,7 +55,13 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | L13 | 1 | 13 |
 | L14 | 1 | 14 |
 | L15 | 1 | 15 |
-| L16–L20 | 0 | — |
+| L16 | 1 | 16 |
+| L17 | 1 | 17 |
+| L18 | 2 | 18 (also i10 opportunistic) |
+| L19 | 1 | 19 |
+| L20 | 1 | 20 |
+| L1 (revisit) | 2 | 21 |
+| L13 (revisit) | 2 | 22 |
 
 ## Findings register (tour run)
 | ID | Iter | Lens | Sev | Location | Description | Status | Commit |
@@ -60,6 +70,11 @@ use H-1xx ids to avoid collision with the completed app-wide run below.
 | H-101 | 1 | L11* | P1 | index.html Tour._onKey | **Keyboard hijack.** Enter was intercepted unconditionally as "next", so a keyboard user who tabbed to "Back" or "Skip tour" and pressed Enter advanced FORWARD instead of activating the focused button. Fixed: Enter with focus on a button inside #tourCard is left to the button's native activation; Enter elsewhere still advances. Pinned by guided-tour.test.mjs H-101. (*opportunistic find during the i1 code read) | Fixed | i1 |
 | H-102 | 1 | L11* | P2 | index.html Tour card | `role=dialog aria-modal=true` with NO Tab focus trap — Tab walked out into the (pointer-blocked) background page, exactly the class H-016 fixed for the shortcuts overlay. Fixed: Tab in the tour's capture key handler routes through the house `App._modalTabTrap(e, card)`. Not jsdom-testable (offsetParent-based focusable filter) — verified by code parity with the H-016 pattern. | Fixed | i1 |
 | H-103 | 1 | L3* | P1 | index.html Tour.start | **Customer-mode pierce.** The offer is suppressed in customer (read-only/screen-share) mode, but a palette-invoked `Tour.start()` was not — the tour then `App.navigate`s to dashboard/sprint/capacity, views the customer-mode curtain deliberately hides, exposing internal planning data mid-screen-share. Fixed: start() now blocks in customerMode with an explanatory toast. Pinned by guided-tour.test.mjs H-103. | Fixed | i1 |
+| H-121 | 21–22 | L1/L13 revisit | — | The i1–i20 hardening diff itself | REVIEWED, zero new fixable issues twice consecutively. L1 revisit: every added line (aria attrs, off-canvas guard, Enter/Tab key-guard, copy rewrites) is static strings + geometry — no new interpolation sinks. L13 revisit: `_prevFocus` is one node ref nulled on teardown; `_modalTabTrap` call adds no listeners; aria-live changes no event flow; stubbed-rect tests touch no production listeners. LOOP COMPLETE. | Reviewed (clean ×2) | i22 |
+| H-120 | 20 | L20 | P2 | CLAUDE.md guided-tour bullet | Doc drift: bullet said the OFFER is suppressed in customer mode but not that `Tour.start()` is blocked there too (H-103 behaviour). Fixed the sentence; all other claims re-verified against code (offer-once semantics, ⌘K re-run, centered degradation, `tour.done` persistence). | Fixed | i20 |
+| H-119 | 19 | L19 | — | Tour on synthetic 200-project dataset | REVIEWED via jsdom timing: full 10-step walk 457ms total; per-step tour overhead single-digit ms — the cost is the destination views' own renders (board 92ms, projects 78ms, dashboard-return 195ms), out of tour scope and acceptable. No code change. | Reviewed (clean) | i19 |
+| H-118 | 18 | L18 | P2 | tests/unit/guided-tour.test.mjs | Two weaknesses in the tour's own tests: (a) the lifecycle `while` walk loops would spin to vitest timeout (not fail cleanly) if a step id were renamed — now hop-guarded with explicit assertions; (b) the H-111 off-canvas fallback and `_position` spotlight math had NO pinning test (jsdom zero-rects sidestep both) — added stubbed-getBoundingClientRect cases asserting centered degradation for an off-screen rect AND exact padded spot geometry (left/top/width/height) for a visible one. 16/16 green. | Fixed (coverage) | i18 |
+| H-117 | 16–17 | L16/L17 | — | Tour dead code / definitions | REVIEWED, zero findings. L16: module header, CSS z-index notes and Onboarding cross-ref accurate; every Tour member reachable; no TODO/stale cruft. L17: no definition files, embed pipeline untouched. No code change. | Reviewed (clean ×2) | i17 |
 | H-116 | 12–15 | L12/L13/L14/L15 | — | Tour error-states / event-hygiene / dates / storage | REVIEWED, zero fixable findings across four lenses. L12: every failure speaks (no-data toast pinned; empty-portfolio walk pinned i6; missing/hidden/off-canvas target → centered, pinned + screenshot-verified; failed demo load never offers; storage-broken uiState degrades to a re-offer). L13: capture-keydown + resize listeners removed symmetrically with nulled refs; double-start tears down first; rAF guarded by _active; next/prev inert when inactive; accepted cosmetic edge — ⌘K customer-switch mid-tour leaves the spot stale until the next step (self-heals; palette-over-tour is deliberate). L14: no date logic. L15: single uiState key under `pcc.ui` (H-020 quota/corrupt/private coverage). No code change. | Reviewed (clean ×4) | i15 |
 | H-115 | 11 | L11 | P2 | index.html Tour layer markup | Step changes swapped #tourCard innerHTML with no announcement for screen-reader users, and the decorative spotlight div wasn't hidden from the a11y tree. Fixed: `aria-live="polite"` on the card (content swaps announce), `aria-hidden="true"` on the spot. Keyboard-only walk re-verified: Tab trapped (H-102), arrows/Enter/Esc per H-101, focus restore per H-104. | Fixed | i11 |
 | H-112 | 10 | L18* | P1 | tests/e2e/gantt-interactions.spec.ts:22 | **Date-fragile e2e (pre-existing on main; broke PR #75 CI).** The spec hovered the FIRST `.gantt-phase-bar` with `force:true` (element centre); the chart auto-scrolls to keep Today visible and the sticky labels column overlays the chart's left edge, so — depending on the current date — the bar's centre sits UNDER the labels column, hover targets a non-hoverable `gantt-label-sub`, and the delegated tooltip never fires (passed 1 Jul, failed 2 Jul, identical code; proven via elementFromPoint). Fixed in-spec: hover a point on the bar's visible chart-side portion (max(bar.left, labels.right)+6, clamped to the bar) via mouse.move — what a real cursor does. 3× repeat green. App code untouched (the delegated hover contract is correct; hovering an occluded region is not a user action). (*opportunistic — L18 lens, found via PR CI babysitting) | Fixed | i10 |
