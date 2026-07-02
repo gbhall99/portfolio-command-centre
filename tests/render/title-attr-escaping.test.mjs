@@ -46,6 +46,67 @@ describe('Gantt pipeline — free-text title escaping (L1/H-006)', () => {
   });
 });
 
+describe('Allocation Results plan badge — assignee title escaping (L1/H-006 follow-on)', () => {
+  const HOSTILE_MEMBER = 'M' + HOSTILE;
+
+  it('a quote in an assigned member name cannot break out of the alloc-sprint-badge title', () => {
+    const { App, Sprint, document } = app;
+    const project = makeProject({});
+    App.data.projects.push(project);
+
+    let host = document.getElementById('allocResultsBody');
+    if (!host) { host = document.createElement('div'); host.id = 'allocResultsBody'; document.body.appendChild(host); }
+
+    Sprint.allocResultsTab = 'plan';
+    Sprint.renderAllocTab({
+      stats: {},
+      warnings: [],
+      utilizationGrid: { 'CY26-S1': {} },
+      allocations: {
+        [project.id]: {
+          size_engineering: [{
+            sprint: 'CY26-S1', points: 5, reasons: ['fits capacity'],
+            assigned_to: [{ member: HOSTILE_MEMBER, points: 5 }]
+          }]
+        }
+      }
+    });
+
+    const badge = host.querySelector('.alloc-sprint-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.getAttribute('onmouseover')).toBe(null);
+    // Hostile member name round-trips inside the tooltip, encoded not live.
+    expect(badge.getAttribute('title')).toContain('Assigned: ' + HOSTILE_MEMBER);
+  });
+});
+
+describe('Capacity sprint cards — team-skill-row title escaping (L1/H-006 follow-on)', () => {
+  const HOSTILE_MEMBER = 'M' + HOSTILE;
+
+  it('a quote in a contributing member name cannot break out of the capacity row tooltip', () => {
+    const { App, Capacity, document } = app;
+    // A sprint spanning today so _windowedSprints keeps it as "current".
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const start = new Date(); start.setDate(start.getDate() - 7);
+    const end = new Date(); end.setDate(end.getDate() + 21);
+    App.data.sprints.push({ sprint_id: 'CY26-S9', start_date: iso(start), end_date: iso(end), hardening_start: iso(end) });
+    App.data.team_members.push(makeMember({ name: HOSTILE_MEMBER }));
+
+    let host = document.getElementById('sprintCapGrid');
+    if (!host) { host = document.createElement('div'); host.id = 'sprintCapGrid'; document.body.appendChild(host); }
+    Capacity.renderSprintCapacity();
+
+    const rows = [...host.querySelectorAll('.team-skill-row')];
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach(row => {
+      expect(row.getAttribute('onmouseover')).toBe(null);
+    });
+    // The DE row's member-summary tooltip carries the hostile name, encoded.
+    const deRow = rows.find(r => (r.getAttribute('title') || '').includes(HOSTILE_MEMBER));
+    expect(deRow).toBeTruthy();
+  });
+});
+
 describe('Capacity team schedule — ts-bar title/aria-label escaping (L1/H-006)', () => {
   const HOSTILE_MEMBER = 'M' + HOSTILE;
 
