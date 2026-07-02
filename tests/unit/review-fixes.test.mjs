@@ -471,3 +471,120 @@ describe('Dashboard virtual-scroll listener lifecycle — stale closures never r
     } finally { app.teardown(); }
   });
 });
+
+describe('Customer (read-only) mode — hard curtain across navigation, shortcuts, palette and mutators', () => {
+  it('navigate() refuses hidden internal views (incl. Alt+N shortcuts) and keeps curated views reachable', async () => {
+    const app = await loadApp();
+    const { App, document, window } = app;
+    try {
+      App.customerMode = true;
+      App._applyCustomerMode(); // redirects the active view behind the curtain
+      expect(App.currentView).toBe('portfolio');
+
+      // Direct navigation to every hidden view is refused.
+      App.CUSTOMER_MODE_HIDDEN_VIEWS.forEach(v => {
+        App.navigate(v);
+        expect(App.currentView).toBe('portfolio');
+      });
+
+      // Alt+2 (Sprint Planning shortcut) goes through the same choke point.
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '2', altKey: true, bubbles: true, cancelable: true }));
+      expect(App.currentView).toBe('portfolio');
+
+      // Curated views stay reachable.
+      App.navigate('roadmap');
+      expect(App.currentView).toBe('roadmap');
+
+      // Exiting customer mode restores full navigation.
+      App.customerMode = false;
+      App._applyCustomerMode();
+      App.navigate('config');
+      expect(App.currentView).toBe('config');
+    } finally { app.teardown(); }
+  });
+
+  it('undo/redo, scenarios, sandbox and the When-by modal are inert while customer mode is on', async () => {
+    const app = await loadApp();
+    const { App, Dashboard, document, window } = app;
+    try {
+      const p = App.data.projects[0];
+      const scId = App.saveScenario('cm-guard'); // snapshot with the original status
+      const origStatus = p.status;
+      App.pushUndo('cm guard test');
+      p.status = origStatus === 'On Hold' ? 'Blocked' : 'On Hold';
+      const mutatedStatus = p.status;
+
+      App.customerMode = true;
+      App._applyCustomerMode();
+      const depth = App.undoStack.length;
+
+      App.undo();
+      expect(App.undoStack.length).toBe(depth);
+      expect(p.status).toBe(mutatedStatus);
+      // Ctrl+Z keyboard path hits the same guard.
+      document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
+      expect(App.undoStack.length).toBe(depth);
+      expect(p.status).toBe(mutatedStatus);
+      App.redo();
+      expect(App.data.projects[0].status).toBe(mutatedStatus);
+
+      // loadScenario refuses and mutates nothing.
+      expect(App.loadScenario(scId)).toBe(false);
+      expect(App.data.projects[0].status).toBe(mutatedStatus);
+
+      // Internal modals/toggles refuse to open.
+      App.openScenarioManager();
+      expect(document.getElementById('scenarioManagerOverlay')).toBe(null);
+      Dashboard.openWhenByModal();
+      expect(document.getElementById('whenByOverlay')).toBe(null);
+      App.toggleSandboxMode();
+      expect(!!App.sandboxMode).toBe(false);
+
+      // Exiting customer mode restores the paths.
+      App.customerMode = false;
+      App._applyCustomerMode();
+      App.undo();
+      expect(App.data.projects[0].status).toBe(origStatus);
+      expect(App.loadScenario(scId)).toBe(true);
+    } finally { app.teardown(); }
+  });
+
+  it('the command palette advertises no hidden views or mutation actions in customer mode', async () => {
+    const app = await loadApp();
+    const { App, CommandPalette } = app;
+    try {
+      App.customerMode = true;
+      App._applyCustomerMode();
+      const items = CommandPalette._build();
+      const titles = items.map(i => i.title);
+      ['Sprint Planning', 'Dashboard', 'Capacity & Workload', 'System Settings',
+        'New Project', 'Bulk import projects (CSV)', 'Bulk edit visible projects',
+        'Scenarios — save / compare / apply', 'Scenario Lab — compare solver what-ifs',
+        'Auto-Prioritise', 'Undo', 'Redo',
+        'Generate SOW from document', 'Tableau wireframe builder'].forEach(t => {
+        expect(titles).not.toContain(t);
+      });
+      // Curated entries survive the filter.
+      expect(titles).toContain('Portfolio Overview');
+      expect(titles).toContain('Roadmap / Gantt');
+
+      App.customerMode = false;
+      App._applyCustomerMode();
+      const fullTitles = CommandPalette._build().map(i => i.title);
+      ['Sprint Planning', 'System Settings', 'New Project', 'Undo'].forEach(t => {
+        expect(fullTitles).toContain(t);
+      });
+    } finally { app.teardown(); }
+  });
+
+  it('body.customer-mode CSS hides the header power tools and undo/redo cluster', async () => {
+    const app = await loadApp();
+    const { document } = app;
+    try {
+      const css = Array.from(document.querySelectorAll('style')).map(s => s.textContent).join('\n');
+      ['#btnWhenBy', '#btnScenarios', '#btnSandbox', '.undo-group', '#btnRedo'].forEach(sel => {
+        expect(css).toMatch(new RegExp('body\\.customer-mode\\s+' + sel.replace('.', '\\.') + ','));
+      });
+    } finally { app.teardown(); }
+  });
+});

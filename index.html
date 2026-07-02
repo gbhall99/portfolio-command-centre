@@ -444,6 +444,11 @@ body.customer-mode .nav-item[data-view="personas"],
 body.customer-mode .nav-item[data-view="activity"],
 body.customer-mode .nav-item[data-view="config"],
 body.customer-mode #btnAddProject,
+body.customer-mode #btnWhenBy,
+body.customer-mode #btnScenarios,
+body.customer-mode #btnSandbox,
+body.customer-mode .undo-group,
+body.customer-mode #btnRedo,
 body.customer-mode #btnExport { display: none !important; }
 .customer-mode-banner { display: none; align-items: center; gap: 10px; padding: 6px 14px; background: var(--accent-blue); color: #fff; font-size: 12px; font-weight: 600; }
 body.customer-mode .customer-mode-banner { display: flex; }
@@ -4907,6 +4912,7 @@ const App = {
   },
 
   undo() {
+    if (this.customerMode) { this.toast('Exit customer view to undo changes.', 'info'); return; }
     if (!this.undoStack.length || !this.data) return;
     this.redoStack.push({ snapshot: JSON.stringify(this.data), description: 'redo' });
     const prev = this.undoStack.pop();
@@ -4919,6 +4925,7 @@ const App = {
   },
 
   redo() {
+    if (this.customerMode) { this.toast('Exit customer view to redo changes.', 'info'); return; }
     if (!this.redoStack.length || !this.data) return;
     this.undoStack.push({ snapshot: JSON.stringify(this.data), description: 'undo' });
     const next = this.redoStack.pop();
@@ -6657,6 +6664,7 @@ const App = {
   dismissRestore() { document.getElementById('restoreBanner').classList.add('hidden'); },
 
   openScenarioManager() {
+    if (this.customerMode) { this.toast('Exit customer view to manage scenarios.', 'info'); return; }
     const existing = document.getElementById('scenarioManagerOverlay');
     if (existing) existing.remove();
     const list = this.listScenarios();
@@ -7499,6 +7507,7 @@ const App = {
   },
 
   toggleSandboxMode() {
+    if (this.customerMode) { this.toast('Exit customer view to use sandbox mode.', 'info'); return; }
     this.sandboxMode = !this.sandboxMode;
     const banner = document.getElementById('sandboxBanner');
     if (banner) banner.style.display = this.sandboxMode ? '' : 'none';
@@ -7554,6 +7563,7 @@ const App = {
   },
 
   loadScenario(id) {
+    if (this.customerMode) { this.toast('Exit customer view to load scenarios.', 'info'); return false; }
     if (!this.data || !Array.isArray(this.data._scenarios)) return false;
     const sc = this.data._scenarios.find(s => s.id === id);
     if (!sc) return false;
@@ -7859,6 +7869,14 @@ const App = {
     // deep-links, shortcuts and the customer-mode redirect still land correctly.
     let _raidTabOverride = null;
     if (viewName === 'myactions') { viewName = 'raid'; _raidTabOverride = 'actions'; }
+    // Customer (read-only) mode is a hard curtain, not just hidden nav CSS: Alt+N
+    // shortcuts, palette view entries, deep-links/hash restores and programmatic
+    // callers all pass through here, so this single choke point keeps every
+    // internal planning view unreachable while screen-sharing.
+    if (this.customerMode && this.CUSTOMER_MODE_HIDDEN_VIEWS.indexOf(viewName) >= 0) {
+      this.toast('Exit customer view to open internal planning views.', 'info');
+      viewName = 'portfolio';
+    }
     // Resilience: an unknown/legacy view key (e.g. 'settings' instead of 'config')
     // has no matching #view container, which would leave every panel inactive and
     // blank the content pane. Resolve such keys to a sensible target instead.
@@ -9125,7 +9143,7 @@ const App = {
 
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (this.data) this.exportJSON(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); if (this.data && !this.customerMode) this.exportJSON(); }
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); this.redo(); }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); if (typeof CommandPalette !== 'undefined') CommandPalette.open(); }
@@ -9452,6 +9470,9 @@ const App = {
   },
 
   // R1 — Customer (read-only) view: curate the sidebar to the customer-facing views and hide edit affordances.
+  // Views hidden behind the customer-mode curtain — shared by _applyCustomerMode (redirect at
+  // toggle time), App.navigate (guard on every subsequent navigation) and CommandPalette._build.
+  CUSTOMER_MODE_HIDDEN_VIEWS: ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'strategy', 'personas', 'activity', 'config'],
   toggleCustomerMode() {
     this.customerMode = !this.customerMode;
     this.uiStateSet('ui.customerMode', this.customerMode);
@@ -9480,8 +9501,7 @@ const App = {
     // Refresh RAID if it's the active view (it's always customer-scoped).
     if (on && typeof RaidView !== 'undefined') { if (this.currentView === 'raid' && RaidView.render) RaidView.render(); }
     // If the active view is now hidden by customer mode, redirect to the Portfolio Overview.
-    const hidden = ['dashboard', 'projects', 'backlog', 'sprint', 'capacity', 'strategy', 'personas', 'activity', 'config'];
-    if (on && hidden.indexOf(this.currentView) >= 0) this.navigate('portfolio');
+    if (on && this.CUSTOMER_MODE_HIDDEN_VIEWS.indexOf(this.currentView) >= 0) this.navigate('portfolio');
     // myactions is NOT hidden in customer mode, so it stays active. Re-render it so the owner
     // filter toolbar (gated on App.customerMode) is recomputed when toggling mode in place.
     if (typeof MyActions !== 'undefined' && this.currentView === 'myactions' && MyActions.render) MyActions.render();
@@ -16327,14 +16347,16 @@ const CommandPalette = {
       { title: 'Capacity & Workload', id: 'capacity' },
       { title: 'Governance Meetings', id: 'governance' },
       { title: 'System Settings', id: 'config' }
-    ].forEach(v => items.push({ group: 'Views', title: v.title, meta: 'View · ' + v.id, action: () => App.navigate(v.id), keywords: v.title.toLowerCase() }));
+    ].filter(v => !App.customerMode || App.CUSTOMER_MODE_HIDDEN_VIEWS.indexOf(v.id) < 0)
+      .forEach(v => items.push({ group: 'Views', title: v.title, meta: 'View · ' + v.id, action: () => App.navigate(v.id), keywords: v.title.toLowerCase() }));
 
     // Customers
     if (App.data) {
       App.getCustomers().forEach(c => items.push({ group: 'Customers', title: 'Switch to ' + c, meta: 'Customer', action: () => App.setActiveCustomer(c), keywords: ('customer ' + c).toLowerCase() }));
     }
 
-    // Actions
+    // Actions. Entries marked internal mutate data or launch authoring flows, so the
+    // customer (read-only) mode filter below keeps them out of the palette entirely.
     const actions = [
       { title: 'Export JSON backup', action: () => App.exportJSON(), meta: 'Save full portfolio state' },
       { title: 'Backup history (restore daily snapshot)', action: () => Backups.openUI(), meta: 'IndexedDB · last 14 days' },
@@ -16343,12 +16365,12 @@ const CommandPalette = {
       { title: 'Internal Status Report (all customers)', action: () => App.exportStatusReport(), meta: 'Internal — cross-customer' },
       { title: 'Portfolio Pack (branded)', action: () => Reports.generate('portfolio_report', { customer: App.activeCustomer, audience: 'internal' }), meta: 'Active customer only' },
       { title: 'Configure Branding', action: () => Reports.configureBranding(App.activeCustomer), meta: 'Logo, colour, classification' },
-      { title: 'New Project', action: () => DetailPanel.quickAdd(), meta: 'Create new project' },
-      { title: 'Bulk import projects (CSV)', action: () => ProjectImport.showImport(), meta: 'Paste rows or pick a file' },
-      { title: 'Bulk edit visible projects', action: () => ProjectImport.showBulkEdit(), meta: 'Apply change to selected rows' },
-      { title: 'Scenarios — save / compare / apply', action: () => Scenarios.openUI(), meta: 'What-if allocations' },
-      { title: 'Scenario Lab — compare solver what-ifs', action: () => ScenarioLab.openUI(), meta: 'Saved hypotheses · makespan/util/deadlines · promote' },
-      { title: 'Auto-Prioritise', action: () => App.autoPrioritise(), meta: 'Rank by risk score' },
+      { title: 'New Project', action: () => DetailPanel.quickAdd(), meta: 'Create new project', internal: true },
+      { title: 'Bulk import projects (CSV)', action: () => ProjectImport.showImport(), meta: 'Paste rows or pick a file', internal: true },
+      { title: 'Bulk edit visible projects', action: () => ProjectImport.showBulkEdit(), meta: 'Apply change to selected rows', internal: true },
+      { title: 'Scenarios — save / compare / apply', action: () => Scenarios.openUI(), meta: 'What-if allocations', internal: true },
+      { title: 'Scenario Lab — compare solver what-ifs', action: () => ScenarioLab.openUI(), meta: 'Saved hypotheses · makespan/util/deadlines · promote', internal: true },
+      { title: 'Auto-Prioritise', action: () => App.autoPrioritise(), meta: 'Rank by risk score', internal: true },
       { title: 'Toggle theme (light/dark)', action: () => App.toggleTheme(), meta: 'Colour mode' },
       { title: 'Toggle Boardroom mode', action: () => App.togglePresentation(), meta: 'Larger fonts for presenting' },
       { title: 'Toggle RAG patterns', action: () => App.toggleRagPattern(), meta: 'Colour-blind safe' },
@@ -16356,17 +16378,18 @@ const CommandPalette = {
       { title: 'Assistant — chat with your portfolio', action: () => Assistant.open(), meta: 'Ctrl/Cmd+J' },
       { title: 'Health check — what needs my attention', action: () => HealthCheck.open(), meta: 'On-demand: briefing · drift · commercials · readiness' },
       { title: 'Briefing — what changed recently', action: () => Assistant.ask('What changed in the last week?'), meta: 'Grounded digest · deadlines ahead' },
-      { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template' },
-      { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules' },
+      { title: 'Generate SOW from document', action: () => Skills.launch('sow'), meta: 'AI skill — governed template', internal: true },
+      { title: 'Tableau wireframe builder', action: () => Skills.launch('tableau-wireframe'), meta: 'AI skill — governed design rules', internal: true },
       { title: 'Billing & Costs report (active customer)', action: () => Billing.exportReport(App.activeCustomer), meta: 'Prepaid drawdown · T&M · margin' },
-      { title: 'Draft status report (active customer)', action: () => Skills.launch('status-report'), meta: 'AI skill — grounded in live data' },
-      { title: 'Extract RAID/status from meeting transcript', action: () => Skills.launch('extract-transcript'), meta: 'AI skill — per-item confirm' },
+      { title: 'Draft status report (active customer)', action: () => Skills.launch('status-report'), meta: 'AI skill — grounded in live data', internal: true },
+      { title: 'Extract RAID/status from meeting transcript', action: () => Skills.launch('extract-transcript'), meta: 'AI skill — per-item confirm', internal: true },
       { title: 'Activity feed', action: () => AuditPanel.open(), meta: 'Audit log' },
       { title: 'Trends', action: () => TrendsModal.open(), meta: 'Portfolio health trends' },
-      { title: 'Undo', action: () => App.undo(), meta: 'Ctrl/Cmd+Z' },
-      { title: 'Redo', action: () => App.redo(), meta: 'Ctrl/Cmd+Shift+Z' }
+      { title: 'Undo', action: () => App.undo(), meta: 'Ctrl/Cmd+Z', internal: true },
+      { title: 'Redo', action: () => App.redo(), meta: 'Ctrl/Cmd+Shift+Z', internal: true }
     ];
-    actions.forEach(a => items.push({ group: 'Actions', title: a.title, meta: a.meta, action: a.action, keywords: a.title.toLowerCase() }));
+    actions.filter(a => !App.customerMode || !a.internal)
+      .forEach(a => items.push({ group: 'Actions', title: a.title, meta: a.meta, action: a.action, keywords: a.title.toLowerCase() }));
 
     // Phase 1.3: ⌘K → agent bridge. Route typed intents straight into the
     // Assistant — same Agent pipeline as the chat box, scoped to the current
@@ -17841,6 +17864,7 @@ const Dashboard = {
   },
 
   openWhenByModal() {
+    if (App.customerMode) { App.toast('Exit customer view to open the capacity forecast.', 'info'); return; }
     const existing = document.getElementById('whenByOverlay');
     if (existing) existing.remove();
     const customers = (App.getCustomers ? App.getCustomers() : []);
