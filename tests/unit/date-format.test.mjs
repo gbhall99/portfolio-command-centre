@@ -91,4 +91,33 @@ describe('Sprint date computation — timezone-safe (D-007)', () => {
 
     app.teardown();
   });
+
+  // Review finding #15: migrateSchema recomputes EVERY sprint window on EVERY
+  // load, so the same local-setDate bug silently REWROTE a correct dataset's
+  // end_date/hardening_start one day early for west-of-UTC users whenever the
+  // 34-day window crossed the spring-forward transition (US: 8 Mar 2026).
+  it('migrateSchema keeps +28/+34 offsets across a spring-forward DST boundary', async () => {
+    app = await loadApp(makeDataset({
+      sprints: [{
+        sprint_id: 'CY26-S1',
+        start_date: '2026-02-15',
+        hardening_start: '2026-03-15',
+        end_date: '2026-03-21'
+      }]
+    }));
+    const { App } = app;
+
+    // Loading (which runs migrateSchema) must NOT rewrite the correct window:
+    // the old local path persisted 2026-03-14 / 2026-03-20 in America/Los_Angeles.
+    const s = App.data.sprints[0];
+    expect(s.hardening_start).toBe('2026-03-15'); // +28
+    expect(s.end_date).toBe('2026-03-21'); // +34
+
+    // And a second migrate pass is stable (idempotent under DST).
+    App.migrateSchema(App.data);
+    expect(App.data.sprints[0].hardening_start).toBe('2026-03-15');
+    expect(App.data.sprints[0].end_date).toBe('2026-03-21');
+
+    app.teardown();
+  });
 });

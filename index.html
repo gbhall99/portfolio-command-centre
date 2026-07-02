@@ -5370,12 +5370,15 @@ const App = {
       if (!p.baselines) p.baselines = {};
     });
     if (!data.daily_snapshots) data.daily_snapshots = [];
-    // Auto-compute sprint dates from start_date (4-week dev + 1-week hardening = 5 weeks)
+    // Auto-compute sprint dates from start_date (4-week dev + 1-week hardening = 5 weeks).
+    // All day arithmetic in UTC: a date-only start_date parses as UTC midnight, so local
+    // setDate() across a DST spring-forward lands the persisted end_date/hardening_start
+    // one calendar day early for west-of-UTC users — and this runs on every load (D-007).
     (data.sprints || []).forEach(s => {
       if (s.start_date) {
         const start = new Date(s.start_date);
-        const hardening = new Date(start); hardening.setDate(hardening.getDate() + 28);
-        const end = new Date(start); end.setDate(end.getDate() + 34);
+        const hardening = new Date(start); hardening.setUTCDate(hardening.getUTCDate() + 28);
+        const end = new Date(start); end.setUTCDate(end.getUTCDate() + 34);
         s.hardening_start = hardening.toISOString().split('T')[0];
         s.end_date = end.toISOString().split('T')[0];
       }
