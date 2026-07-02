@@ -43,6 +43,29 @@ describe('Sow.figuresCheck (accuracy)', () => {
     expect(flags.some(f => new RegExp(String(total)).test(f.amount.replace(/,/g, '')))).toBe(false); // grounded → not flagged
   });
 
+  it('does not flag the quote’s own hourly rate immediately after Generate quote', () => {
+    const { Sow } = app;
+    const sow = makeSow(quotedDef());
+    Sow.attachProject(sow.id, 'A-1');
+    expect(Sow.setQuote(sow.id).ok).toBe(true);
+    // Commercials is now quoteAsText output — "$100/hour" per billable line plus
+    // the "Rates basis" line. All of it traces to the quote, so no flags.
+    expect(Sow.figuresCheck(Sow.get(sow.id))).toEqual([]);
+    const v = Sow.validate(Sow.get(sow.id), quotedDef());
+    expect(v.warnings.filter(w => /cites \$100/.test(w))).toEqual([]);
+  });
+
+  it('flags euro amounts too (regex covers EUR)', () => {
+    const { Sow, App } = app;
+    App.data.settings.billing.currency = 'EUR';
+    const sow = makeSow(quotedDef());
+    Sow.attachProject(sow.id, 'A-1');
+    expect(Sow.setQuote(sow.id).ok).toBe(true);
+    Sow.updateSection(sow.id, 'background', 'A side budget of €7,777 is assumed.');
+    const flags = Sow.figuresCheck(Sow.get(sow.id));
+    expect(flags.some(f => /7,777/.test(f.amount))).toBe(true);
+  });
+
   it('returns nothing when there is no quote to ground against', () => {
     const { Sow } = app;
     const sow = makeSow(quotedDef());
