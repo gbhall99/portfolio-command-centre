@@ -19106,12 +19106,25 @@ const Dashboard = {
     App.toast('Applied preset "' + preset.name + '"', 'info');
   },
 
+  // The preset <select> resets to '' immediately after each selection, so the Delete
+  // button cannot read it at click time — it deletes the last-applied preset instead.
+  _activePresetIdx: null,
+  deleteSelectedFilterPreset() {
+    const idx = this._activePresetIdx;
+    if (idx == null || !App.data || !App.data.filter_presets || !App.data.filter_presets[idx]) {
+      App.toast('Select a preset first', 'info');
+      return;
+    }
+    this.deleteFilterPreset(idx);
+  },
+
   async deleteFilterPreset(idx) {
     if (!App.data || !App.data.filter_presets) return;
     const preset = App.data.filter_presets[idx];
     if (!preset) return;
     if (!await App.confirm({ title: 'Delete preset "' + preset.name + '"?', body: 'This filter preset will be permanently removed.', confirmLabel: 'Delete preset', danger: true })) return;
     App.data.filter_presets.splice(idx, 1);
+    this._activePresetIdx = null;
     App.markDirty();
     App.saveToLocalStorage();
     this.renderFilterPresets();
@@ -19128,13 +19141,13 @@ const Dashboard = {
       return;
     }
     container.style.display = 'flex';
-    let html = '<select class="filter-preset-select" onchange="if(this.value!==\'\')Dashboard.applyFilterPreset(parseInt(this.value));this.value=\'\';">' +
+    let html = '<select class="filter-preset-select" onchange="var v=this.value;if(v!==\'\'){Dashboard._activePresetIdx=parseInt(v);Dashboard.applyFilterPreset(parseInt(v));}this.value=\'\';">' +
       '<option value="">Presets...</option>';
     presets.forEach(function(p, i) {
       html += '<option value="' + i + '">' + Dashboard.esc(p.name) + '</option>';
     });
     html += '</select>';
-    html += '<button class="filter-preset-del" onclick="var s=document.querySelector(\'.filter-preset-select\');if(s&&s.value!==\'\'){Dashboard.deleteFilterPreset(parseInt(s.value))}" title="Delete selected preset" aria-label="Delete selected filter preset"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
+    html += '<button class="filter-preset-del" onclick="Dashboard.deleteSelectedFilterPreset()" title="Delete selected preset" aria-label="Delete selected filter preset"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
     // M5: "copy link" button — encodes the current filter state into a URL hash.
     html += '<button class="filter-preset-del" onclick="Dashboard.copyFilterLink()" title="Copy a shareable link with the current filters" aria-label="Copy filter link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></button>';
     container.innerHTML = html;

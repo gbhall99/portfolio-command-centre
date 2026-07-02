@@ -588,3 +588,62 @@ describe('Customer (read-only) mode — hard curtain across navigation, shortcut
     } finally { app.teardown(); }
   });
 });
+
+describe('Dashboard filter presets — Delete button works after the select self-resets (finding #29)', () => {
+  it('deletes the last-applied preset and clears the stashed index', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({ projects: [makeProject({ name: 'Preset Target' })] }));
+    const { App, Dashboard, document, window } = app;
+    try {
+      App.navigate('dashboard');
+      App.data.filter_presets = [
+        { name: 'Preset A', managers: [], statuses: [], categories: [], sprints: [], search: '' },
+        { name: 'Preset B', managers: [], statuses: [], categories: [], sprints: [], search: '' }
+      ];
+      App.confirm = async () => true; // auto-accept the delete confirmation modal
+      Dashboard.renderFilterPresets();
+
+      const select = document.querySelector('.filter-preset-select');
+      expect(select).toBeTruthy();
+      select.value = '0';
+      select.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+      // The select self-resets after applying, but the chosen index is stashed for Delete.
+      expect(select.value).toBe('');
+      expect(Dashboard._activePresetIdx).toBe(0);
+
+      const delBtn = document.querySelector('.filter-preset-del[aria-label="Delete selected filter preset"]');
+      expect(delBtn).toBeTruthy();
+      delBtn.click();
+      await new Promise(r => setTimeout(r, 0)); // deleteFilterPreset awaits App.confirm
+
+      expect(App.data.filter_presets.length).toBe(1);
+      expect(App.data.filter_presets[0].name).toBe('Preset B');
+      // Stale index cleared so a second click cannot delete the wrong preset.
+      expect(Dashboard._activePresetIdx).toBe(null);
+    } finally { app.teardown(); }
+  });
+
+  it('Delete with no preset applied is a guarded no-op with a toast', async () => {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({ projects: [makeProject({ name: 'Untouched' })] }));
+    const { App, Dashboard, document } = app;
+    try {
+      App.navigate('dashboard');
+      App.data.filter_presets = [
+        { name: 'Only Preset', managers: [], statuses: [], categories: [], sprints: [], search: '' }
+      ];
+      Dashboard._activePresetIdx = null;
+      Dashboard.renderFilterPresets();
+
+      const toasts = [];
+      App.toast = (msg, kind) => { toasts.push({ msg, kind }); };
+      const delBtn = document.querySelector('.filter-preset-del[aria-label="Delete selected filter preset"]');
+      delBtn.click();
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(App.data.filter_presets.length).toBe(1);
+      expect(toasts.some(t => /Select a preset first/.test(t.msg))).toBe(true);
+    } finally { app.teardown(); }
+  });
+});
