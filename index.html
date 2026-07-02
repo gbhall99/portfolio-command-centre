@@ -11238,7 +11238,11 @@ const Personas = {
 
   _remove(id) {
     if (!confirm('Remove this persona?')) return;
+    if (App.pushUndo) App.pushUndo('Remove persona');
     this.remove(id);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (App.notifyDataChange) App.notifyDataChange();
     if (App.renderActiveView) App.renderActiveView();
   },
 
@@ -12465,7 +12469,11 @@ const Person = {
 
   _removePrompt(id) {
     if (typeof confirm === 'function' && !confirm('Remove this person? RACI references will be cleared.')) return;
+    if (App.pushUndo) App.pushUndo('Remove person');
     this.remove(id);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (App.notifyDataChange) App.notifyDataChange();
     if (App.renderActiveView) App.renderActiveView();
   },
 
@@ -12986,7 +12994,11 @@ const Objectives = {
 
   _remove(id) {
     if (!confirm('Remove this objective?')) return;
+    if (App.pushUndo) App.pushUndo('Remove objective');
     this.remove(id);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (App.notifyDataChange) App.notifyDataChange();
     if (App.renderActiveView) App.renderActiveView();
   },
 
@@ -13550,7 +13562,17 @@ const MetricGroups = {
 
   _remove(id) {
     if (!confirm('Remove this group?')) return;
-    if (!this.remove(id)) { alert('Cannot remove: group is in use.'); return; }
+    // Pre-check remove()'s refusal conditions (missing / in use) so a rejected
+    // removal never leaves a spurious identical snapshot on the undo stack.
+    const cust = App.activeCustomer;
+    const exists = (App.data.metric_groups || []).some(g => g.customer === cust && g.id === id);
+    const inUse = (App.data.metrics || []).some(m => m.customer === cust && m.group_id === id);
+    if (!exists || inUse) { alert('Cannot remove: group is in use.'); return; }
+    if (App.pushUndo) App.pushUndo('Remove metric group');
+    this.remove(id);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (App.notifyDataChange) App.notifyDataChange();
     if (App.renderActiveView) App.renderActiveView();
     const overlay = document.getElementById('metricGroupsConfigOverlay');
     if (overlay) { overlay.remove(); this._openConfig(); }
@@ -13704,7 +13726,11 @@ const Metrics = {
 
   _remove(id) {
     if (!confirm('Remove this metric? Holdings on personas will be deleted.')) return;
+    if (App.pushUndo) App.pushUndo('Remove metric');
     this.remove(id);
+    if (App.markDirty) App.markDirty();
+    if (App.saveToLocalStorage) App.saveToLocalStorage();
+    if (App.notifyDataChange) App.notifyDataChange();
     if (App.renderActiveView) App.renderActiveView();
   },
 
