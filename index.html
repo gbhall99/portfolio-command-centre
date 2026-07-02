@@ -45520,7 +45520,10 @@ const SowSkill = {
   edit(id) { this._mode = 'edit'; this._sowId = id; this.render(); },
   backToList() { this._mode = 'list'; this._sowId = null; this.render(); },
 
-  _def() { return Definitions.resolve('sow', App.activeCustomer); },
+  // Resolve the governed set by the OPEN document's customer (template sets are
+  // per-customer — a foreign SOW opened under the All filter must keep its own
+  // approval gates); fall back to the active customer in list/new modes.
+  _def() { const s = this._sowId && Sow.get(this._sowId); return Definitions.resolve('sow', (s && s.customer) || App.activeCustomer); },
 
   // --- source intake ---
   onSourceInput(v) { this._source = v; },
@@ -47142,7 +47145,7 @@ const WireframeSkill = {
   edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this.render(); },
   backToList() { this._mode = 'list'; this._wfId = null; this.render(); },
 
-  _def() { const r = Definitions.resolve('tableau', App.activeCustomer); return r && r.files.definition; },
+  _def() { const w = this._wfId && Wireframe.get(this._wfId); const r = Definitions.resolve('tableau', (w && w.customer) || App.activeCustomer); return r && r.files.definition; },
 
   startNew() {
     const def = this._def();
@@ -48293,7 +48296,7 @@ const StatusReportSkill = {
   edit(id) { this._mode = 'edit'; this._id = id; this.render(); },
   backToList() { this._mode = 'list'; this._id = null; this.render(); },
 
-  _def() { const r = Definitions.resolve('status-report', App.activeCustomer); return r && r.files.definition; },
+  _def() { const sr = this._id && StatusReport.get(this._id); const r = Definitions.resolve('status-report', (sr && sr.customer) || App.activeCustomer); return r && r.files.definition; },
 
   async generate() {
     if (this._busy) return;

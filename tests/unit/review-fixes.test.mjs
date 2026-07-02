@@ -306,3 +306,96 @@ describe('AgentTools All-customers scope — demand vs capacity alignment (capac
     } finally { app.teardown(); }
   });
 });
+
+describe('Skill editors resolve the governed definition by the OPEN document\'s customer (#22)', () => {
+  async function boot() {
+    resetIdSeq();
+    const app = await loadApp(makeDataset({
+      customers: [{ name: 'Acme Industries' }, { name: 'Globex' }]
+    }));
+    app.App.activeCustomer = 'Acme Industries';
+    return app;
+  }
+
+  it('a foreign quoted-template SOW keeps its requires_quote Approve gate under a different active customer', async () => {
+    const app = await boot();
+    const { App, Definitions, Sow, SowSkill } = app;
+    try {
+      // Globex is governed by the 'quoted' set; Acme (the active customer) stays on 'default'.
+      Definitions.setSelectedSetId('sow', 'Globex', 'quoted');
+      const def = Definitions.loadJson('sow-quoted/sow-definition.json');
+      const filler = Array.from({ length: 45 }, (_, i) => 'w' + i).join(' ');
+      const sow = Sow.create({
+        customer: 'Globex',
+        definition: def,
+        generatedSections: def.sections.map(s => ({ id: s.id, content: filler, supported_by_source: true })),
+        name: 'Globex Quoted SOW',
+        source_text: 'src'
+      });
+      Sow.get(sow.id).sections.forEach(s => { s.flagged = false; });
+
+      // Open the Globex SOW while Acme is the working customer (All-filter deep-link path).
+      App.activeCustomer = 'Acme Industries';
+      SowSkill.open({});
+      SowSkill.edit(sow.id);
+
+      // _def() must resolve Globex's set, not Acme's.
+      expect(SowSkill._def().id).toBe('quoted');
+
+      SowSkill.uiSetStatus('Review');
+      expect(Sow.get(sow.id).status).toBe('Review');
+      // Approve must stay blocked by the quoted set's requires_quote gate.
+      SowSkill.uiSetStatus('Approved');
+      expect(Sow.get(sow.id).status).toBe('Review');
+      const v = Sow.validate(Sow.get(sow.id), SowSkill._def().files.definition);
+      expect(v.ok).toBe(false);
+      expect(v.errors.join(' ')).toMatch(/requires a generated quote/);
+
+      // List/new modes (no open document) still fall back to the active customer.
+      SowSkill.backToList();
+      expect(SowSkill._def().id).toBe('default');
+    } finally { app.teardown(); }
+  });
+
+  it('WireframeSkill._def and StatusReportSkill._def route through the open document\'s customer', async () => {
+    const app = await boot();
+    const { App, Definitions, WireframeSkill, StatusReportSkill } = app;
+    const orig = Definitions.resolve;
+    const calls = [];
+    try {
+      App.data.wireframes = App.data.wireframes || [];
+      App.data.wireframes.push({
+        id: 'WF-G1', customer: 'Globex', name: 'Globex WF', status: 'Concept',
+        grid: { cols: 12, rows: 8 }, components: [], metric_ids: []
+      });
+      App.data.status_reports = App.data.status_reports || [];
+      App.data.status_reports.push({
+        id: 'SR-G1', customer: 'Globex', period: 'FY27 P1', sections: []
+      });
+      Definitions.resolve = function (kind, customer) {
+        calls.push([kind, customer]);
+        return orig.call(this, kind, customer);
+      };
+
+      App.activeCustomer = 'Acme Industries';
+      WireframeSkill._mode = 'edit'; WireframeSkill._wfId = 'WF-G1';
+      expect(WireframeSkill._def()).toBeTruthy();
+      StatusReportSkill._mode = 'edit'; StatusReportSkill._id = 'SR-G1';
+      expect(StatusReportSkill._def()).toBeTruthy();
+      expect(calls).toContainEqual(['tableau', 'Globex']);
+      expect(calls).toContainEqual(['status-report', 'Globex']);
+
+      // No open document → active-customer fallback.
+      calls.length = 0;
+      WireframeSkill._mode = 'list'; WireframeSkill._wfId = null;
+      StatusReportSkill._mode = 'list'; StatusReportSkill._id = null;
+      WireframeSkill._def();
+      StatusReportSkill._def();
+      expect(calls).toContainEqual(['tableau', 'Acme Industries']);
+      expect(calls).toContainEqual(['status-report', 'Acme Industries']);
+    } finally {
+      Definitions.resolve = orig;
+      app.teardown();
+    }
+  });
+});
