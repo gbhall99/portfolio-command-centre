@@ -27524,6 +27524,10 @@ const Gantt = {
   attachResizeHandlers() {
     const scroll = document.getElementById('ganttScroll');
     if (!scroll) return;
+    // #ganttScroll persists across renders — guard like __ganttHoverWired so repeated
+    // renders don't stack listeners (each drag must commit exactly once: one undo snapshot).
+    if (scroll.__ganttResizeWired) return;
+    scroll.__ganttResizeWired = true;
     const self = this;
 
     scroll.addEventListener('mousedown', function(e) {
@@ -27600,8 +27604,14 @@ const Gantt = {
 
         const field = edge === 'left' ? 'start_date' : 'target_date';
         const oldValue = project[field];
+        // Entity-mutator contract: snapshot BEFORE mutating so the drag is undoable on its own
+        // (H-007 pattern — pushUndo at the UI caller, explicit save after). We deliberately do
+        // NOT route through App.updateProject: its notifyDataChange re-renders the Gantt on the
+        // next frame and would wipe the sticky .gantt-bar-dep-conflict marks below.
+        App.pushUndo('Move ' + field + ' on ' + (project.name || projectId));
         App.logChange(projectId, field, oldValue, newDate, 'gantt-drag');
         project[field] = newDate;
+        project.last_updated = new Date().toISOString();
 
         // R2-M2: check for dependency conflicts after drag — mark the affected bars with a
         // sticky .gantt-bar-dep-conflict class + tooltip until the conflict is resolved or undone.
@@ -27626,6 +27636,7 @@ const Gantt = {
         }
 
         App.markDirty();
+        App.saveToLocalStorage();
         self.render();
         self._markDragConflicts();
       };
