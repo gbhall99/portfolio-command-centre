@@ -35,7 +35,7 @@ export async function loadApp(fixture, opts = {}) {
   // </body> only — the source contains other </body> substrings inside JS template strings (report
   // generation code), and replacing those would corrupt the inline scripts.
   const bridge =
-    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Walkthrough, Personas, Person, Objectives, Products, MetricGroups, Metrics, Strategy, MetricsView, PersonasView, ProductsView, Overview, RAID, Delivery, Format, Reports, ReportsHub, RaidIntel, RaidView, MyActions, CommandPalette, ScenarioLab, HealthCheck, AI, AgentTools, AgentMemory, Agent, Assistant, Kanban, Definitions, Skills, Sow, SowSkill, Wireframe, WireframeSkill, Billing, StatusReport, StatusReportSkill, ExtractSkill, Tableau, ProjectWizard };</script>';
+    '<script>window.__pcc__ = { App, Solver, Sprint, Dashboard, Gantt, Capacity, Governance, DetailPanel, AuditPanel, Forecast, Walkthrough, Personas, Person, Objectives, Products, MetricGroups, Metrics, Strategy, MetricsView, PersonasView, ProductsView, Overview, RAID, Delivery, Format, Reports, ReportsHub, RaidIntel, RaidView, MyActions, CommandPalette, ScenarioLab, HealthCheck, AI, AgentTools, AgentMemory, Agent, Assistant, Kanban, Definitions, Skills, Sow, SowSkill, Wireframe, WireframeSkill, Billing, StatusReport, StatusReportSkill, ExtractSkill, Tableau, ProjectWizard, Tour };</script>';
   const lastBody = indexHtml.lastIndexOf('</body>');
   if (lastBody === -1) throw new Error('Could not find </body> in index.html');
   indexHtml = indexHtml.slice(0, lastBody) + bridge + indexHtml.slice(lastBody);
@@ -160,6 +160,7 @@ export async function loadApp(fixture, opts = {}) {
     StatusReportSkill: handles.StatusReportSkill,
     ExtractSkill: handles.ExtractSkill,
     Tableau: handles.Tableau,
+    Tour: handles.Tour,
     teardown
   };
 }
