@@ -42425,7 +42425,10 @@ const AgentTools = {
       description: 'Scan the active customer for hygiene issues and PROPOSE fixes the user can confirm individually: duplicate RAID items to close, and out-of-order project priorities to renumber to a clean 1…N. Detection changes nothing — every fix is a proposal.',
       params: {},
       handler(args, ctx) {
-        const projects = AgentTools._projects(ctx);
+        // Always scope to the working customer — even under the "All customers"
+        // filter (ctx.allScope). Priorities are a per-customer 1…N sequence, so a
+        // cross-customer renumber would corrupt every customer's ordering at once.
+        const projects = (App.data.projects || []).filter(p => p.customer === ctx.customer);
         if (!projects.length) return { error: 'No projects for this customer' };
         const mkId = () => 'prop_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
         const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();

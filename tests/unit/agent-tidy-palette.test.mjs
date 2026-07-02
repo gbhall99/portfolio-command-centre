@@ -97,6 +97,35 @@ describe('1.2 tidy_portfolio', () => {
     // Globex priority never renumbered relative to Acme.
     expect(App.data.projects.find(p => p.id === 'G-1').priority).toBe(1);
   });
+
+  it('stays scoped to the working customer under the All-customers filter (allScope)', () => {
+    const { AgentTools, App } = app;
+    // Both customers already hold clean per-customer 1..N sequences.
+    App.data.projects.find(p => p.id === 'A-1').risks_register = [{ description: 'only one' }];
+    App.data.projects.find(p => p.id === 'A-1').priority = 1;
+    App.data.projects.find(p => p.id === 'A-2').priority = 2;
+    App.data.projects.find(p => p.id === 'A-3').priority = 3;
+    // Clean per customer, but the cross-customer union (A:1, G:1, A:2, A:3)
+    // would look dirty if the scan wrongly aggregated under allScope.
+    const clean = AgentTools.invoke('tidy_portfolio', {}, ctx({ allScope: true }));
+    expect(clean.proposed).toBe(false);
+
+    // Now make Acme dirty again: the proposal must only touch Acme projects.
+    App.data.projects.find(p => p.id === 'A-2').priority = 5;
+    const c = ctx({ allScope: true });
+    const r = AgentTools.invoke('tidy_portfolio', {}, c);
+    expect(r.proposed).toBe(true);
+    const globexNames = ['Globex One'];
+    c.proposals.forEach(prop => {
+      expect(prop.entity.name === 'Globex' || globexNames.includes(prop.entity.name)).toBe(false);
+      (prop.changes || []).forEach(ch => expect(globexNames.includes(ch.field)).toBe(false));
+    });
+    App.runBatch('tidy', c.proposals.map(p => () => p.apply()));
+    // Both customers retain clean per-customer 1..N sequences.
+    const byId = id => App.data.projects.find(p => p.id === id).priority;
+    expect([byId('A-1'), byId('A-2'), byId('A-3')].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(byId('G-1')).toBe(1);
+  });
 });
 
 describe('1.3 ⌘K → agent bridge', () => {
