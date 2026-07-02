@@ -35711,6 +35711,11 @@ const Solver = {
     const releaseProject = (p) => {
       Object.keys(allocations[p.id] || {}).forEach(skillKey => {
         (allocations[p.id][skillKey] || []).forEach(sp => {
+          // Overflow slices never consumed aggregate capacity when placed (they record work that
+          // did NOT fit), so crediting them back would inflate `remaining` above baseCap — the
+          // utilization grid would go negative and Pass 3 would balance real work into an already
+          // saturated sprint. Their assigned_to is always empty, so per-person release is a no-op.
+          if ((sp.reasons || []).indexOf('overflow') >= 0) return;
           // L15: under past-sprint protection, past slices are reserved upfront and treated as
           // immutable. Skip them here so Pass 2's rollback doesn't inflate remaining capacity for
           // sprints we'll never place new work into.
