@@ -17384,6 +17384,16 @@ const Dashboard = {
     const empty = document.getElementById('emptyState');
     const watchingEl = document.getElementById('watchingSection');
 
+    // Detach any virtual-scroll listener from a previous render. A stale
+    // handler closes over the old (pre-filter) project list and would
+    // overwrite tbody with outdated rows on the next scroll — horizontal
+    // scrolling of this deliberately wide table fires 'scroll' too.
+    const vWrapper = document.querySelector('.table-wrapper');
+    if (vWrapper && vWrapper._virtualHandler) {
+      vWrapper.removeEventListener('scroll', vWrapper._virtualHandler);
+      vWrapper._virtualHandler = null;
+    }
+
     // Render pinned/watching section (REQ-DASH-05)
     const pinnedIds = (App.data && App.data.pinned_projects) || [];
     const pinnedProjects = pinnedIds.map(id => projects.find(p => p.id === id)).filter(Boolean);
@@ -17501,6 +17511,9 @@ const Dashboard = {
     // Create a spacer row at the end for total height
     tbody.innerHTML = '';
     const renderSlice = () => {
+      // A newer render owns the table (listener detached in renderTable) —
+      // a pending debounce tick must not repaint a stale slice.
+      if (wrapper._virtualHandler !== handler) return;
       const scrollTop = wrapper.scrollTop;
       const viewHeight = wrapper.clientHeight;
       const start = Math.max(0, Math.floor(scrollTop / this.ROW_HEIGHT) - this.VIRTUAL_BUFFER);
@@ -17519,11 +17532,12 @@ const Dashboard = {
       this.attachRowHandlers(tbody);
     };
 
-    renderSlice();
-    // Debounced scroll handler
+    // Debounced scroll handler — registered before the first slice so the
+    // ownership guard in renderSlice holds for the initial paint too.
     let scrollTimer;
     const handler = () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(renderSlice, 16); };
     wrapper._virtualHandler = handler;
+    renderSlice();
     wrapper.addEventListener('scroll', handler);
   },
 

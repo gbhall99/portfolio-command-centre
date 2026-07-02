@@ -399,3 +399,75 @@ describe('Skill editors resolve the governed definition by the OPEN document\'s 
     }
   });
 });
+
+describe('Dashboard virtual-scroll listener lifecycle — stale closures never repaint the table', () => {
+  const bigList = (n) => Array.from({ length: n }, (_, i) => makeProject({
+    id: 'Acme Industries-VS-' + i, name: 'Virtual ' + i, priority: i + 1
+  }));
+
+  it('re-rendering with a small filtered set detaches the stale virtual listener (scroll keeps filtered rows)', async () => {
+    resetIdSeq();
+    const projects = bigList(150);
+    const app = await loadApp(makeDataset({ projects }));
+    const { Dashboard, document, window } = app;
+    try {
+      const wrapper = document.querySelector('.table-wrapper');
+      const tbody = document.getElementById('projectTableBody');
+
+      // Large set → virtual path attaches a scroll listener.
+      Dashboard.renderTable(projects);
+      expect(Dashboard.virtualEnabled).toBe(true);
+
+      // Scroll BEFORE the re-render so a debounced renderSlice tick is pending.
+      wrapper.dispatchEvent(new window.Event('scroll'));
+
+      // Filter down to 5 → non-virtual path.
+      const filtered = projects.slice(0, 5);
+      Dashboard.renderTable(filtered);
+      expect(Dashboard.virtualEnabled).toBe(false);
+      expect(tbody.querySelectorAll('tr').length).toBe(5);
+
+      // Scroll AFTER the re-render (horizontal scroll fires 'scroll' too) and
+      // let both the pending and any new debounce timers elapse.
+      wrapper.dispatchEvent(new window.Event('scroll'));
+      await new Promise(r => setTimeout(r, 60));
+
+      // Without the fix the stale handler's renderSlice overwrites tbody with
+      // a slice of the pre-filter 150-project list (+ spacer rows).
+      const rows = tbody.querySelectorAll('tr');
+      expect(rows.length).toBe(5);
+      expect(rows[0].dataset.id).toBe(filtered[0].id);
+    } finally { app.teardown(); }
+  });
+
+  it('repeated virtual renders leave exactly one live scroll listener', async () => {
+    resetIdSeq();
+    const projects = bigList(120);
+    const app = await loadApp(makeDataset({ projects }));
+    const { Dashboard, document } = app;
+    try {
+      const wrapper = document.querySelector('.table-wrapper');
+      // The initial data load may already have attached a virtual listener —
+      // detach it so the spy counts from a clean slate.
+      if (wrapper._virtualHandler) {
+        wrapper.removeEventListener('scroll', wrapper._virtualHandler);
+        wrapper._virtualHandler = null;
+      }
+      let live = 0;
+      const origAdd = wrapper.addEventListener.bind(wrapper);
+      const origRemove = wrapper.removeEventListener.bind(wrapper);
+      wrapper.addEventListener = (type, fn, ...rest) => { if (type === 'scroll') live++; return origAdd(type, fn, ...rest); };
+      wrapper.removeEventListener = (type, fn, ...rest) => { if (type === 'scroll') live--; return origRemove(type, fn, ...rest); };
+
+      Dashboard.renderTable(projects);
+      Dashboard.renderTable(projects);
+      Dashboard.renderTable(projects);
+      expect(live).toBe(1);
+
+      // Empty-state path detaches too (early return happens after the detach).
+      Dashboard.renderTable([]);
+      expect(live).toBe(0);
+      expect(wrapper._virtualHandler).toBe(null);
+    } finally { app.teardown(); }
+  });
+});
