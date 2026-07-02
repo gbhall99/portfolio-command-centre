@@ -60,6 +60,23 @@ describe('K4 WIP would-exceed helper', () => {
     expect(Kanban._wouldExceedWip('In Progress')).toBe(false);
     expect(Kanban._wouldExceedWip('On Hold')).toBe(false);     // no limit
   });
+
+  it('enforces against the real column even while board filters hide cards', () => {
+    const { Kanban } = app;
+    Kanban.setWipLimit('In Progress', 2); // column truly at limit (A-1 + A-2)
+    // Manager filter hides A-2 (Lee) → only 1 In Progress card visible, but
+    // the true column is still at its limit, so the guard must still fire.
+    Kanban.setManager('Dana');
+    expect(Kanban.projects().filter(p => p.status === 'In Progress').length).toBe(1);
+    expect(Kanban._wouldExceedWip('In Progress')).toBe(true);
+    // A search that hides every In Progress card must not defeat it either.
+    Kanban.setManager('');
+    Kanban.setSearch('Gamma');
+    expect(Kanban.projects().filter(p => p.status === 'In Progress').length).toBe(0);
+    expect(Kanban._wouldExceedWip('In Progress')).toBe(true);
+    Kanban.setSearch('');
+    Kanban.setWipLimit('In Progress', null);
+  });
 });
 
 describe('K5 column subtotals', () => {
