@@ -75,6 +75,18 @@ describe('outcome capture (additive)', () => {
     const sow = approvedSow(app);
     expect(Sow.setOutcome(sow.id, { result: 'maybe' }).ok).toBe(false);
   });
+
+  it('escapes a double-quote in the reason fields (no attribute-injection XSS)', () => {
+    const { Sow, SowSkill } = app;
+    const sow = approvedSow(app);
+    const evil = 'x" autofocus onfocus="alert(1)';
+    Sow.setOutcome(sow.id, { result: 'lost', reason_code: evil, reason_text: evil });
+    const html = SowSkill._outcomeHtml(Sow.get(sow.id));
+    // The raw double-quote must be entity-escaped so it cannot break out of value="…".
+    expect(html).not.toContain('value="x" autofocus onfocus="alert(1)"');
+    expect(html).toContain('&quot;');
+    expect(html).not.toContain('onfocus="alert(1)"');
+  });
 });
 
 describe('quoted-vs-actual variance arithmetic', () => {

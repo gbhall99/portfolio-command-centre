@@ -146,5 +146,11 @@ describe('AI extraction is confirm-gated', () => {
     expect(SowSkill._obExtract).toBe(null);
     expect(Sow.get(sow.id).sections.find(s => s.id === 'assumptions_dependencies').items.length).toBe(2);
     expect(App.data.projects.find(p => p.id === 'A-1').assumptions_register.length).toBe(before + 2);
+
+    // AI accept is ONE undoable batch — a single undo reverts every obligation
+    // and its RAID mirror, not just the last one.
+    App.undo();
+    expect(Sow.get(sow.id).sections.find(s => s.id === 'assumptions_dependencies').items.length).toBe(0);
+    expect(App.data.projects.find(p => p.id === 'A-1').assumptions_register.length).toBe(before);
   });
 });

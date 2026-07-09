@@ -145,17 +145,29 @@ describe('batch apply — one undoable round', () => {
     expect(reverted.sections.find(s => s.id === 'background').comments.length).toBe(0);
   });
 
-  it('counter replaces the section with the governed fallback and records it', () => {
+  it('counter keeps the rest of the section and inserts the governed fallback (no content loss)', () => {
     const { Sow, SowSkill } = app;
-    const { sow } = makeSow({ commercials: 'Invoices are payable within 30 days.' });
+    // A real multi-clause Commercials section — the day rate and expenses terms
+    // must survive a counter; only the governed fallback clause is added.
+    const { sow, def } = makeSow({ commercials: 'The day rate is £850 per person. Expenses are charged at cost. Invoices are payable within 30 days of the invoice date.' });
+    const pasted = 'Commercials\nThe day rate is £850 per person. Expenses are charged at cost. Invoices are payable within 45 days of the invoice date.';
+    const t = Sow.triageMarkup(sow, pasted, { definition: def });
+    const c = t.changes.find(x => x.section_id === 'commercials');
+    expect(c.decision).toBe('counter');
+    expect(c.rule_id).toBeTruthy();
     SowSkill._sowId = sow.id; SowSkill._mode = 'edit';
-    SowSkill._markup = { changes: [
-      { section_id: 'commercials', section_title: 'Commercials', oldContent: 'Invoices are payable within 30 days.', newContent: 'Invoices are payable within 45 days.', classification: 'negotiable', decision: 'counter', counter_text: 'Invoices are payable within 30 days of the invoice date.', rule_title: 'Payment terms' }
-    ], unmatched: [] };
+    SowSkill._markup = { changes: [c], unmatched: [] };
     SowSkill.uiMarkupApply();
-    const c = Sow.get(sow.id).sections.find(s => s.id === 'commercials');
-    expect(c.content).toMatch(/payable within 30 days/i);
-    expect(c.comments.some(x => /Countered/.test(x.text))).toBe(true);
+    const sec = Sow.get(sow.id).sections.find(s => s.id === 'commercials');
+    // The other clauses are NOT deleted (the data-loss bug), and the counterparty's
+    // 45-day term is rejected (our section was never overwritten with it).
+    expect(sec.content).toMatch(/day rate is £850/i);
+    expect(sec.content).toMatch(/Expenses are charged at cost/i);
+    expect(sec.content).not.toMatch(/45 days/);
+    // The governed fallback clause is present, recorded with playbook provenance.
+    expect(sec.content).toMatch(/payable within 30 days/i);
+    expect((sec.sources || []).some(s => s.kind === 'playbook')).toBe(true);
+    expect(sec.comments.some(x => /Countered/.test(x.text))).toBe(true);
   });
 });
 

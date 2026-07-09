@@ -48609,7 +48609,10 @@ const SowSkill = {
   uiApplyObligations() {
     if (!this._obExtract || !this._obExtract.items.length) { this._obExtract = null; this.render(); return; }
     const ex = this._obExtract;
-    ex.items.forEach(it => Sow.addObligation(this._sowId, ex.sectionId, Object.assign({ source: 'ai' }, it)));
+    // AI accept: apply every extracted obligation (and its RAID mirror) as ONE
+    // undoable, audited batch — a single Ctrl+Z reverts the lot.
+    App.runBatch('Add ' + ex.items.length + ' AI-extracted obligation' + (ex.items.length === 1 ? '' : 's'),
+      ex.items.map(it => () => Sow.addObligation(this._sowId, ex.sectionId, Object.assign({ source: 'ai' }, it))));
     App.toast('Added ' + ex.items.length + ' obligation' + (ex.items.length === 1 ? '' : 's') + ' — undo with Ctrl+Z', 'success');
     this._obExtract = null;
     this.render();
@@ -49136,7 +49139,11 @@ const SowSkill = {
     if (c.decision === 'accept') {
       Sow.redraftSection(sowId, c.section_id, c.newContent);
     } else if (c.decision === 'counter') {
-      Sow.redraftSection(sowId, c.section_id, c.counter_text || c.oldContent);
+      // Reject the counterparty's edit — leave OUR section content intact — and
+      // insert the governed fallback clause once (deduped, with provenance).
+      // NEVER overwrite the whole section with the single fallback clause, which
+      // would silently delete the rest of the section (rates, IP, expenses…).
+      if (c.rule_id) Sow.insertPlaybookFallback(sowId, c.rule_id);
       Sow.addComment(sowId, c.section_id, 'Countered counterparty edit with governed fallback wording (' + (c.rule_title || 'playbook') + ').');
     } else if (c.decision === 'escalate') {
       Sow.addComment(sowId, c.section_id, 'ESCALATE — counterparty edit trips never-accept rule "' + (c.rule_title || '') + '": ' + (c.detail || c.rationale || 'walk-away term') + '. Their proposed text: ' + String(c.newContent || '').slice(0, 240));
@@ -49587,8 +49594,8 @@ const SowSkill = {
       (o ? '<div style="font-size:12px;color:var(--text-dark);margin-bottom:6px">Recorded: <b>' + esc(o.result.replace('_', ' ')) + '</b>' + (o.reason_code ? ' — ' + esc(o.reason_code) : '') + (o.reason_text ? '<div style="font-size:11px;color:var(--text-muted)">' + esc(o.reason_text) + '</div>' : '') + '</div>' : '') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
         '<select id="sowOutcomeResult" class="field-input" aria-label="Outcome result">' + opt('won', 'Won') + opt('lost', 'Lost') + opt('no_decision', 'No decision') + '</select>' +
-        '<input id="sowOutcomeCode" class="field-input" placeholder="Reason code" value="' + (o ? esc(o.reason_code) : '') + '">' +
-        '<input id="sowOutcomeText" class="field-input" style="grid-column:1/3" placeholder="Reason detail (a recurring loss reason becomes ambient AI context)" value="' + (o ? esc(o.reason_text) : '') + '">' +
+        '<input id="sowOutcomeCode" class="field-input" placeholder="Reason code" value="' + (o ? Dashboard.escAttr(o.reason_code) : '') + '">' +
+        '<input id="sowOutcomeText" class="field-input" style="grid-column:1/3" placeholder="Reason detail (a recurring loss reason becomes ambient AI context)" value="' + (o ? Dashboard.escAttr(o.reason_text) : '') + '">' +
         '<button class="btn btn-outline btn-sm" style="grid-column:1/3" onclick="SowSkill.uiSetOutcome()">' + (o ? 'Update outcome' : 'Record outcome') + '</button>' +
       '</div>' +
     '</div>';
