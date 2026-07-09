@@ -49323,7 +49323,12 @@ const Wireframe = {
     orientation:    { label: 'Orientation',    kind: 'enum', options: ['vertical', 'horizontal'] },
     comparison:     { label: 'Comparison',     kind: 'enum', options: ['none', 'vs target', 'vs prior period', 'vs prior year'] },
     control_type:   { label: 'Control type',   kind: 'enum', options: ['dropdown', 'multi-select', 'slider', 'date range', 'radio'] },
-    direction:      { label: 'Direction',      kind: 'enum', options: ['horizontal', 'vertical'] }
+    direction:      { label: 'Direction',      kind: 'enum', options: ['horizontal', 'vertical'] },
+    // WF-13: IBCS scenario notation + analytical message. Only the IBCS
+    // template set names these props on its components, so a customer on the
+    // default set never sees them (editableProps = definition ∩ PROP_SPECS).
+    scenario:       { label: 'Scenario (IBCS)', kind: 'enum', options: ['actual', 'plan', 'forecast', 'previous_year', 'delta'] },
+    message:        { label: 'Message (IBCS)',  kind: 'enum', options: ['time_series', 'comparison', 'deviation', 'structure', 'correlation'] }
   },
   // Props owned by other mutators — never writable through setComponentProps.
   // ('metric' is the metric_id binding, owned by setComponentMetric; no_metric
@@ -49779,6 +49784,44 @@ const Wireframe = {
       wf.components.filter(c => (c.type === 'kpi' || chartTypes.indexOf(c.type) >= 0) && !c.metric_id).forEach(c => {
         flag('warning', [c.id], 'The ' + c.type + ' component is not linked to a metric — bind it via "Shows metric" for traceability.');
       });
+    }
+    // WF-13: IBCS / ISO 24896 SUCCESS notation rules. Every branch is gated on
+    // ruleOn(id), so it fires ONLY when the selected template set declares it —
+    // the IBCS set does; the default set does not, so a customer not on IBCS
+    // mode is entirely unaffected. All thresholds/mappings live in the rule
+    // objects (governed data in the definition), never hardcoded here.
+    r = ruleOn('ibcs_scenario_notation');
+    if (r) {
+      const applies = Array.isArray(r.applies_to) && r.applies_to.length ? r.applies_to : null;
+      wf.components.filter(c => (applies ? applies.indexOf(c.type) >= 0 : this.isDataBearing(c)) && !(c.props && c.props.scenario)).forEach(c => {
+        flag(r.severity, [c.id], 'UNIFY: the ' + c.type + ' component carries no IBCS scenario marking (actual / plan / forecast / previous year / delta) — mark it so every value is unambiguous.');
+      });
+    }
+    r = ruleOn('ibcs_express_charttype');
+    if (r) {
+      const map = r.chart_for_message || {};
+      wf.components.filter(c => this.isDataBearing(c) && c.props && c.props.message && map[c.props.message]).forEach(c => {
+        const allowed = map[c.props.message];
+        if (allowed.indexOf(c.type) < 0) flag(r.severity, [c.id], 'EXPRESS: a "' + c.props.message + '" message should use ' + allowed.join(' or ') + ', not a ' + c.type + ' — match the chart type to the analytical message.');
+      });
+    }
+    r = ruleOn('ibcs_condense_density');
+    if (r && wf.components.length) {
+      const total = (wf.grid.cols || 0) * (wf.grid.rows || 0);
+      const used = wf.components.reduce((s, c) => s + Math.max(0, c.w) * Math.max(0, c.h), 0);
+      const pct = total ? Math.round((used / total) * 100) : 0;
+      const min = r.min_fill_pct || 0;
+      if (pct < min) flag(r.severity, [], 'CONDENSE: the canvas is only ' + pct + '% filled (IBCS expects at least ' + min + '%) — raise information density rather than leaving whitespace.');
+    }
+    r = ruleOn('ibcs_structure_order');
+    if (r) {
+      const kpis = wf.components.filter(c => c.type === 'kpi');
+      const charts = wf.components.filter(c => this.isDataBearing(c) && c.type !== 'kpi');
+      if (kpis.length && charts.length) {
+        const minChartY = Math.min.apply(null, charts.map(c => c.y));
+        const offenders = kpis.filter(k => k.y >= minChartY);
+        if (offenders.length) flag(r.severity, offenders.map(k => k.id), 'STRUCTURE: headline scenario figures (KPIs) must read above the analytical charts — this KPI sits level with or below a chart.');
+      }
     }
     // WF-11: fold in the set-level flow/interaction integrity checks. These are
     // ALWAYS evaluated (not def.rules-gated) — but a concept with no authored
@@ -53298,6 +53341,15 @@ Skills.register({
         "definition": "tableau/wireframe-definition.json",
         "guidelines": "tableau/tableau-design-guidelines.md"
       }
+    },
+    {
+      "id": "ibcs",
+      "name": "IBCS / ISO 24896 notation",
+      "dir": "tableau-ibcs",
+      "files": {
+        "definition": "tableau-ibcs/wireframe-definition.json",
+        "guidelines": "tableau-ibcs/ibcs-design-guidelines.md"
+      }
     }
   ],
   "status-report": [
@@ -54211,6 +54263,134 @@ only — it never flags content choices.
       "id": "chart_needs_title",
       "severity": "warning",
       "description": "Every chart-class component (bar, line, area, scatter, table, map) carries a non-empty title."
+    }
+  ]
+}
+</script>
+<script type="text/plain" data-definition="tableau-ibcs/ibcs-design-guidelines.md">
+# IBCS / ISO 24896 dashboard notation
+
+This house style encodes the **IBCS SUCCESS** rules (International Business Communication Standards, the basis of ISO 24896) for management reporting. Design every concept so a finance or controlling audience can read it without a legend and compare it against any other IBCS report. Prefer these rules over generic dashboard aesthetics.
+
+## SAY — convey a message
+- The **title states the message**, not just the subject: "Margin below plan in EMEA", not "Margin by region". Put it in the top-left of the top row.
+- Every chart title carries the takeaway, not the dimension name.
+
+## UNIFY — apply semantic notation (scenario marking)
+- Mark **every data-bearing element** with its scenario via the *Scenario (IBCS)* prop:
+  - **actual** — solid fill (the realised figure).
+  - **plan / budget** — outlined / framed (empty fill with an outline).
+  - **forecast** — hatched fill.
+  - **previous_year (PY)** — a thin, lighter bar behind or beside the actual.
+  - **delta** — the variance (actual − plan or actual − PY), shown as its own signed bar or a "vs plan / vs PY" figure.
+- Keep the same scenario-to-fill mapping across every page. A reader must never guess whether a value is actual or planned.
+
+## SUCCESS — provide proper visualisation
+- Use one message per chart and pick the chart type that fits the analytical message via the *Message (IBCS)* prop:
+  - **time_series** (development over time) → columns (vertical bars) or a line.
+  - **comparison** (ranking, actual vs plan) → bars.
+  - **deviation** (variance / bridge) → bars, ideally signed.
+  - **structure** (part-to-whole, composition) → stacked bars or a table.
+  - **correlation** → a scatter.
+- Do not use pie/donut encodings or gauges — they defeat comparison.
+
+## CONDENSE — increase information density
+- Fill the canvas with content; avoid decorative whitespace. Prefer small multiples and consistent scales over a few large, sparse charts.
+- Use consistent, comparable sizes for like elements so magnitudes read at a glance.
+
+## CHECK — ensure visual integrity
+- Bars start at zero. Use one consistent scale for comparable charts.
+- Show units once, clearly (£m, %, FTE), and keep them consistent.
+
+## EXPRESS / SIMPLIFY — remove clutter
+- No 3-D, no gradients, no redundant gridlines or borders. One accent colour at most.
+- Do not encode categories with red/green alone (inaccessible); pair colour with position, label or scenario notation.
+
+## STRUCTURE — organise consistently
+- Read top-to-bottom, summary-first: **headline KPIs above the analytical charts**, filters in the top band or right rail.
+- Order categories the same way everywhere (e.g. largest-to-smallest, or a fixed reporting order).
+
+Bind data-bearing components to the customer's real metrics wherever possible so the concept is build-ready and every figure traces to strategy.
+</script>
+<script type="text/plain" data-definition="tableau-ibcs/wireframe-definition.json">
+{
+  "id": "ibcs",
+  "kind": "tableau",
+  "name": "IBCS / ISO 24896 notation",
+  "version": 1,
+  "grid": {
+    "cols": 12,
+    "rows": 8,
+    "comment": "All components snap to this grid. x/y are zero-based cell coordinates; w/h are spans in cells."
+  },
+  "components": [
+    { "type": "title", "label": "Dashboard title (message)", "min_w": 6, "min_h": 1, "max_per_dashboard": 1, "props": ["text"] },
+    { "type": "kpi", "label": "KPI / BAN", "min_w": 2, "min_h": 1, "props": ["metric", "comparison", "scenario"] },
+    { "type": "bar", "label": "Bar / column chart", "min_w": 3, "min_h": 2, "props": ["measure", "dimension", "orientation", "scenario", "message"] },
+    { "type": "line", "label": "Line / trend chart", "min_w": 4, "min_h": 2, "props": ["measure", "date_dimension", "scenario", "message"] },
+    { "type": "area", "label": "Area chart", "min_w": 4, "min_h": 2, "props": ["measure", "date_dimension", "scenario", "message"] },
+    { "type": "scatter", "label": "Scatter plot", "min_w": 3, "min_h": 2, "props": ["measure_x", "measure_y", "dimension", "scenario", "message"] },
+    { "type": "table", "label": "Table / crosstab", "min_w": 4, "min_h": 2, "props": ["columns", "scenario", "message"] },
+    { "type": "map", "label": "Map", "min_w": 4, "min_h": 3, "props": ["geo_dimension", "measure", "scenario"] },
+    { "type": "filter", "label": "Filter control", "min_w": 2, "min_h": 1, "props": ["field", "control_type"] },
+    { "type": "legend", "label": "Legend", "min_w": 2, "min_h": 1, "props": [] },
+    { "type": "text", "label": "Text / annotation", "min_w": 2, "min_h": 1, "props": ["text"] },
+    { "type": "container", "label": "Layout container", "min_w": 4, "min_h": 2, "props": ["direction"] }
+  ],
+  "rules": [
+    {
+      "id": "title_required",
+      "severity": "error",
+      "description": "SAY: every dashboard carries exactly one title in the top row (y = 0) stating the message, not just the subject."
+    },
+    {
+      "id": "on_grid",
+      "severity": "error",
+      "description": "Components must lie fully inside the grid."
+    },
+    {
+      "id": "min_size",
+      "severity": "error",
+      "description": "Components must meet their type's minimum width/height so the rendered view stays legible."
+    },
+    {
+      "id": "no_overlap",
+      "severity": "error",
+      "description": "Components must not overlap."
+    },
+    {
+      "id": "chart_needs_title",
+      "severity": "warning",
+      "description": "Every chart-class component (bar, line, area, scatter, table, map) carries a non-empty, message-style title."
+    },
+    {
+      "id": "ibcs_scenario_notation",
+      "severity": "warning",
+      "applies_to": ["kpi", "bar", "line", "area", "scatter", "table", "map"],
+      "description": "UNIFY: every data-bearing element declares its IBCS scenario (actual, plan, forecast, previous year or delta) so a reader never has to guess whether a value is actual or planned. Mark it via the component's Scenario (IBCS) prop."
+    },
+    {
+      "id": "ibcs_express_charttype",
+      "severity": "warning",
+      "chart_for_message": {
+        "time_series": ["line", "area", "bar"],
+        "comparison": ["bar"],
+        "deviation": ["bar"],
+        "structure": ["bar", "table"],
+        "correlation": ["scatter"]
+      },
+      "description": "EXPRESS: choose the chart type that fits the analytical message — development over time uses columns or lines, comparison and deviation use bars, structure uses bars or a table, correlation uses a scatter. Declare the message via the component's Message (IBCS) prop."
+    },
+    {
+      "id": "ibcs_condense_density",
+      "severity": "warning",
+      "min_fill_pct": 45,
+      "description": "CONDENSE: maximise information density — an IBCS report fills at least 45% of the canvas with content rather than leaving wasteful whitespace. Increase density (small multiples, tighter layout) instead of spreading a few elements across empty space."
+    },
+    {
+      "id": "ibcs_structure_order",
+      "severity": "warning",
+      "description": "STRUCTURE: headline scenario figures (KPIs) read above the analytical charts — the summary leads, the detail follows, top to bottom."
     }
   ]
 }
