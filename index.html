@@ -46980,7 +46980,11 @@ const Sow = {
     synth[exclusion.skill] = App.toInteger(exclusion.size);
     let quote;
     try { quote = Billing.quoteForProject(synth, []); } catch (e) { return null; }
-    if (!quote || !quote.totals) return null;
+    // Billing.quoteForProject does NOT throw when the customer has no rate band —
+    // it returns hourly_rate 0 / rate_band null / amount 0. Treat that as
+    // unpriceable (return null) so the caller shows the honest "cannot be priced"
+    // gap rather than presenting £0 as a genuine Billing figure on a change order.
+    if (!quote || !quote.totals || !quote.rate_band || !(quote.hourly_rate > 0)) return null;
     return {
       currency: quote.currency, hours_per_point: quote.hours_per_point, hourly_rate: quote.hourly_rate,
       rate_band: quote.rate_band, skill: exclusion.skill, skill_label: this.exclusionSkillLabel(exclusion.skill),
@@ -51479,8 +51483,15 @@ const Wireframe = {
       comps.forEach(c => { if (c.metric_id) { const n = metricName(c.metric_id); if (n && metrics.indexOf(n) < 0) metrics.push(n); } });
       return { question: q, components: comps.map(c => ({ id: c.id, title: c.title || '', type: c.type })), metrics, answered: comps.length > 0 };
     });
+    // A component is an orphan when NONE of its answer refs is still a current
+    // authored question — so a component citing only stale/removed questions is
+    // correctly flagged, not just one citing nothing at all.
+    const qSet = new Set(questions);
     const orphans = dataComps
-      .filter(c => !(c.props && Array.isArray(c.props.answers) && c.props.answers.length))
+      .filter(c => {
+        const ans = (c.props && Array.isArray(c.props.answers)) ? c.props.answers : [];
+        return !ans.some(a => qSet.has(String(a)));
+      })
       .map(c => ({ id: c.id, title: c.title || '', type: c.type }));
     const answered = rows.filter(r => r.answered).length;
     return {
@@ -54838,7 +54849,10 @@ const WireframeSkill = {
     const sel = this._selId && wf ? wf.components.find(c => c.id === this._selId) : null;
     const persona = wf ? Wireframe.personaFor(wf) : null;
     if (!wf || !sel || !persona) return;
-    const q = (persona.business_questions || [])[qIndex];
+    // Resolve against the SAME filtered list _answersHtml renders its checkbox
+    // indices from — a falsy authored question would otherwise shift the indices
+    // and toggle the wrong question (or store an empty answer).
+    const q = (persona.business_questions || []).map(x => String(x)).filter(Boolean)[qIndex];
     if (q === undefined) return;
     const cur = (sel.props && Array.isArray(sel.props.answers)) ? sel.props.answers.slice() : [];
     const i = cur.indexOf(String(q));

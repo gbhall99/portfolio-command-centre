@@ -78,6 +78,18 @@ describe('WF-7 matrix (deterministic)', () => {
     const wf = Wireframe.create({ customer: 'Acme Industries', definition: def(), name: 'NoPersona', source: 'test' });
     expect(Wireframe.traceabilityMatrix(wf).has_persona).toBe(false);
   });
+  it('flags a component citing only a now-removed question as an orphan', () => {
+    const { Wireframe, App } = app;
+    const { wf, kpiId, barId } = boardWith();
+    Wireframe.setComponentAnswers(wf.id, kpiId, [Q1]);
+    Wireframe.setComponentAnswers(wf.id, barId, [Q2]);
+    expect(Wireframe.traceabilityMatrix(Wireframe.get(wf.id)).orphans).toEqual([]);
+    // Drop Q1 from the persona: the kpi now cites only a stale question and must
+    // surface as an orphan (not silently pass because it still has an answer ref).
+    App.data.personas.find(p => p.id === 'PER-1').business_questions = [Q2];
+    const m = Wireframe.traceabilityMatrix(Wireframe.get(wf.id));
+    expect(m.orphans.map(o => o.id)).toEqual([kpiId]);
+  });
 });
 
 describe('WF-7 AI mapping is confirm-gated', () => {

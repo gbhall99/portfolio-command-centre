@@ -145,6 +145,21 @@ describe('change order from exclusion — priced via Billing, confirm-gated, und
     const skel = Sow.exclusionChangeOrderSkeleton(Sow.get(sow.id), ex.id, {});
     expect(skel.price).toBe(null);
   });
+
+  it('is unpriceable (null, not £0) when the customer has no rate band', () => {
+    const { Sow, App } = app;
+    // Clone settings first (the shared billingSettings fixture is not deep-copied
+    // by loadApp), then strip the rate band so Billing returns £0 without throwing.
+    App.data.settings = JSON.parse(JSON.stringify(App.data.settings));
+    App.data.settings.billing.customer_defaults = {};
+    App.data.settings.billing.rate_table = {};
+    const sow = makeSow(app, 'A-1');
+    Sow.addExclusion(sow.id, { text: 'Extra engineering', skill: 'size_engineering', size: 5 });
+    const ex = Sow.exclusions(Sow.get(sow.id))[0];
+    // Must degrade to "cannot be priced" rather than presenting £0 as a real figure.
+    expect(Sow.exclusionPrice(Sow.get(sow.id), ex)).toBe(null);
+    expect(Sow.exclusionChangeOrderSkeleton(Sow.get(sow.id), ex.id, {}).price).toBe(null);
+  });
 });
 
 describe('agent tools — list_exclusions (read) + raise_exclusion_change_order (write)', () => {
