@@ -1,0 +1,125 @@
+{
+  "id": "default",
+  "kind": "sow-playbook",
+  "name": "Standard commercial playbook (T&M delivery)",
+  "version": 1,
+  "comment": "Preferred commercial positions, tiered fallback wording and hard never-accept rules for SOW review. Machine-checkable shapes (must_contain / must_not_contain / numeric bounds) run deterministically inside Sow.validate — no model. Rules carrying ai_check are additionally judged by the optional 'Run playbook review' AI pass (advisory only; AI findings never gate approval). Tiers: preferred = our opening position, fallback = an acceptable retreat with governed wording, never_accept = walk-away terms that block approval when the definition's approval_requires includes 'playbook_clean'. Rules are only evaluated on sections that have content (empty required sections are validate's job). must_contain entries may be a string or an array of acceptable alternatives; numeric patterns capture one number and are bounded by min/max. Edit here; re-run scripts/embed-definitions.mjs after any change.",
+  "rules": [
+    {
+      "id": "pb_payment_terms",
+      "title": "Payment terms — 30 days from invoice",
+      "section": "commercials",
+      "tier": "preferred",
+      "rationale": "Standard terms are 30 days from the invoice date. Longer terms strain cash flow on time-and-materials engagements where delivery costs land monthly.",
+      "check": {
+        "must_contain": [["payable within", "payment is due within", "net 30"]],
+        "numeric": { "pattern": "(?:within|net)\\s+(\\d[\\d,]*)\\s*(?:calendar\\s+|working\\s+|business\\s+)?days", "max": 30, "label": "payment days" }
+      },
+      "fallback_text": "Invoices are issued monthly in arrears against work delivered and are payable within 30 days of the invoice date. Late payments may accrue interest at the statutory rate.",
+      "ai_check": "Does the section genuinely commit the customer to unconditional payment within 30 days of the invoice date, with no acceptance-gated or pay-when-paid conditions that delay the clock?"
+    },
+    {
+      "id": "pb_payment_never_beyond_60",
+      "title": "Payment terms — never beyond 60 days or pay-when-paid",
+      "section": "commercials",
+      "tier": "never_accept",
+      "rationale": "Payment terms beyond 60 days, or payment conditional on the customer being paid by a third party, are never accepted — escalate to the commercial director rather than sign.",
+      "check": {
+        "must_not_contain": ["pay when paid", "paid when paid"],
+        "numeric": { "pattern": "(?:within|net)\\s+(\\d[\\d,]*)\\s*(?:calendar\\s+|working\\s+|business\\s+)?days", "max": 60, "label": "payment days" }
+      },
+      "fallback_text": "Invoices are issued monthly in arrears against work delivered and are payable within 30 days of the invoice date. Late payments may accrue interest at the statutory rate."
+    },
+    {
+      "id": "pb_ip_retain_preexisting",
+      "title": "IP — supplier retains pre-existing materials",
+      "section": "roles_responsibilities",
+      "tier": "fallback",
+      "rationale": "Bespoke deliverables may transfer on full payment, but the supplier must retain its pre-existing tools, methods, accelerators and frameworks. This fallback licence wording keeps core delivery assets reusable across clients.",
+      "check": {
+        "must_contain": [["pre-existing", "background IP", "background intellectual property"]]
+      },
+      "fallback_text": "On full payment of the relevant fees, ownership of the bespoke deliverables created specifically for the customer under this engagement transfers to the customer. The supplier retains ownership of its pre-existing materials, tools, methods and frameworks, and grants the customer a non-exclusive, perpetual licence to use them to the extent they are embedded in the deliverables.",
+      "ai_check": "Does the wording keep supplier ownership of pre-existing materials, methods and accelerators, granting the customer only a licence to what is embedded in the deliverables (rather than ownership of everything used)?"
+    },
+    {
+      "id": "pb_ip_no_blanket_assignment",
+      "title": "IP — no blanket assignment of all intellectual property",
+      "section": "roles_responsibilities",
+      "tier": "never_accept",
+      "rationale": "A blanket assignment of all intellectual property — including pre-existing tools, methods and accelerators — would prevent reuse of our core delivery assets on any future engagement. Never accepted.",
+      "check": {
+        "must_not_contain": ["assigns all intellectual property", "assign all intellectual property", "all intellectual property rights transfer", "transfers all intellectual property"]
+      }
+    },
+    {
+      "id": "pb_liability_cap_present",
+      "title": "Liability — an express cap on total liability",
+      "section": "acceptance_criteria",
+      "tier": "preferred",
+      "rationale": "Every engagement carries an express cap on total liability; silence on liability leaves exposure uncapped under general law.",
+      "check": {
+        "must_contain": [["liability is capped", "total liability", "aggregate liability"]]
+      },
+      "fallback_text": "Except for liability that cannot be excluded by law, neither party is liable for indirect or consequential loss, and each party's total liability under this engagement is capped at the fees paid in the twelve months preceding the claim."
+    },
+    {
+      "id": "pb_liability_never_uncapped",
+      "title": "Liability — never uncapped",
+      "section": "acceptance_criteria",
+      "tier": "never_accept",
+      "rationale": "Uncapped liability is a walk-away position — cover is limited to professional indemnity insurance and cannot underwrite unlimited exposure.",
+      "check": {
+        "must_not_contain": ["unlimited liability", "liability is uncapped", "no limit on liability", "without limit of liability"]
+      },
+      "fallback_text": "Except for liability that cannot be excluded by law, neither party is liable for indirect or consequential loss, and each party's total liability under this engagement is capped at the fees paid in the twelve months preceding the claim."
+    },
+    {
+      "id": "pb_liability_cap_floor",
+      "title": "Liability — cap at or above 1.0x the fees paid",
+      "section": "acceptance_criteria",
+      "tier": "fallback",
+      "rationale": "A cap expressed as a multiple of fees must be at least 1.0x the fees paid — lower caps are routinely rejected by customer procurement and reopen the negotiation at signature.",
+      "check": {
+        "numeric": { "pattern": "(\\d+(?:\\.\\d+)?)\\s*(?:x|times)\\s+(?:the\\s+)?fees", "min": 1.0, "label": "liability cap multiple" }
+      },
+      "fallback_text": "Except for liability that cannot be excluded by law, neither party is liable for indirect or consequential loss, and each party's total liability under this engagement is capped at the fees paid in the twelve months preceding the claim.",
+      "ai_check": "Is the liability cap at least the fees paid under the engagement (1.0x), and expressed clearly enough to be enforceable?"
+    },
+    {
+      "id": "pb_change_control",
+      "title": "Change control — written change requests only",
+      "section": "out_of_scope",
+      "tier": "preferred",
+      "rationale": "Without written change control, out-of-scope work erodes margin silently. Every change to scope, timeline or commercials must route through an agreed, signed change request.",
+      "check": {
+        "must_contain": [["change request", "change control", "change order"]]
+      },
+      "fallback_text": "Any change to the agreed scope, deliverables, timeline or commercials is managed through a written change request. No change takes effect until both parties have agreed and signed it, and work outside the agreed scope is not undertaken before then.",
+      "ai_check": "Does the section make a written, signed change request the only route to changing scope, timeline or commercials — with no informal or verbal variation path?"
+    },
+    {
+      "id": "pb_warranty_skill_care",
+      "title": "Warranties — reasonable skill and care, never error-free",
+      "section": "acceptance_criteria",
+      "tier": "preferred",
+      "rationale": "We warrant reasonable skill and care in line with good industry practice — never an outcome guarantee. Analytics deliverables cannot be warranted error-free or defect-free.",
+      "check": {
+        "must_contain": [["reasonable skill and care", "good industry practice"]],
+        "must_not_contain": ["error-free", "defect-free", "bug-free"]
+      },
+      "fallback_text": "The supplier warrants that the services are performed with reasonable skill and care and in line with good industry practice. No warranty is given that the deliverables are error-free."
+    },
+    {
+      "id": "pb_no_time_of_essence",
+      "title": "Timeline — dates are indicative, never of the essence",
+      "section": "timeline_milestones",
+      "tier": "fallback",
+      "rationale": "“Time is of the essence” turns any slip into a material breach. Dates remain indicative until sprint allocation is confirmed; hard deadlines are handled through the delivery plan, not contractual essence clauses.",
+      "check": {
+        "must_not_contain": ["time is of the essence"]
+      },
+      "fallback_text": "Dates in this section are indicative and are confirmed at sprint allocation. Slippage is managed through the weekly delivery cadence and, where material, the change control process."
+    }
+  ]
+}
