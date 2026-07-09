@@ -3472,7 +3472,11 @@ html[data-theme="dark"] .wf-canvas { background: var(--bg-card); }
 .wf-comp { cursor: grab; }
 .wf-comp rect.body { fill: rgba(59,130,246,0.06); stroke: var(--accent-blue); stroke-width: 1.2; rx: 4; }
 .wf-comp.selected rect.body { stroke-width: 2.4; fill: rgba(59,130,246,0.12); }
+.wf-comp.multi rect.body { stroke: #6366f1; stroke-width: 2.4; fill: rgba(99,102,241,0.14); }
+.wf-comp:focus { outline: none; }
+.wf-comp:focus-visible rect.body { stroke: #6366f1; stroke-width: 3; }
 .wf-comp.violating rect.body { stroke: var(--status-amber, #d97706); stroke-dasharray: 5 3; }
+.wf-marquee { pointer-events: none; }
 .wf-comp text.type { font-size: 9px; font-weight: 700; text-transform: uppercase; fill: var(--accent-blue); letter-spacing: 0.4px; }
 .wf-comp text.title { font-size: 11px; font-weight: 600; fill: #1e293b; }
 html[data-theme="dark"] .wf-comp text.title { fill: #e2e8f0; }
@@ -51200,9 +51204,17 @@ const WireframeSkill = {
   _compareActive: false,
   _compFix: null,        // { compId, ops, addressed:{ commentIdxs, flag } }
   _fixBusyComp: false,
+  // WF-4 multi-select + region-scoped refine, WF-14 canvas ergonomics.
+  _multi: [],            // ids of the current multi-selection (shift-click / marquee)
+  _marquee: null,        // { x0, y0, x1, y1 } in logical px while marquee-dragging
+  _pendingRefine: null,  // { scopeIds, ops } — region refine diff awaiting Accept/Discard
+  _regionBusy: false,
+  _clipboard: null,      // [{ type, title, props, metric_id, dx, dy, w, h }] for paste/duplicate
+  _zoom: 1,              // WF-14 canvas zoom (viewBox stays logical; width/height scale)
 
   open(ctx) {
     this._mode = 'list'; this._wfId = null; this._selId = null;
+    this._multi = []; this._marquee = null; this._pendingRefine = null; this._clipboard = null; this._zoom = 1;
     const ov = document.getElementById('wfModalOverlay');
     if (!ov) return;
     ov.classList.add('open');
@@ -51211,7 +51223,7 @@ const WireframeSkill = {
     if (modal) modal.focus();
   },
   close() { const ov = document.getElementById('wfModalOverlay'); if (ov) ov.classList.remove('open'); },
-  edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this._sizingProposal = null; this._calibration = null; this._calibBusy = false; this._compareActive = false; this._compFix = null; this.render(); },
+  edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this._sizingProposal = null; this._calibration = null; this._calibBusy = false; this._compareActive = false; this._compFix = null; this._multi = []; this._marquee = null; this._pendingRefine = null; this._zoom = 1; this.render(); },
   backToList() { this._mode = 'list'; this._wfId = null; this.render(); },
 
   _def() { const w = this._wfId && Wireframe.get(this._wfId); const r = Definitions.resolve('tableau', (w && w.customer) || App.activeCustomer); return r && r.files.definition; },
@@ -51628,7 +51640,23 @@ const WireframeSkill = {
   uiDismissImportGaps() { this._importGaps = null; this.render(); },
 
   // --- canvas interactions ---
-  select(compId) { this._selId = compId; this.render(); },
+  select(compId) { this._selId = compId; this._multi = []; this.render(); },
+  // WF-4: the live selection set — the multi-selection when one exists, else the
+  // single selected component. Pure; drives group nudge/align/duplicate/delete.
+  _selection() {
+    if (this._multi && this._multi.length) return this._multi.slice();
+    return this._selId ? [this._selId] : [];
+  },
+  _isSelected(id) { return id === this._selId || (this._multi && this._multi.indexOf(id) >= 0); },
+  // Shift-click toggle: add/remove a component from the multi-selection. The
+  // first shift-click seeds the set with the current single selection too.
+  _toggleMulti(compId) {
+    if (!this._multi) this._multi = [];
+    if (!this._multi.length && this._selId && this._selId !== compId) this._multi.push(this._selId);
+    const i = this._multi.indexOf(compId);
+    if (i >= 0) this._multi.splice(i, 1); else this._multi.push(compId);
+    this._selId = this._multi.length ? this._multi[this._multi.length - 1] : compId;
+  },
   uiAddComponent(type) {
     const def = this._def();
     const res = Wireframe.addComponent(this._wfId, type, def);
@@ -51666,53 +51694,132 @@ const WireframeSkill = {
     Wireframe._persist(wf, 'wireframe_renamed', '', wf.name, 'user');
   },
 
-  // Keyboard editing for the selected component. Skipped while typing in a
-  // field so the title input keeps normal arrow behaviour.
+  // Keyboard editing for the selected component(s). Skipped while typing in a
+  // field so the title input keeps normal arrow behaviour. WF-4: arrows/Delete
+  // act on the whole multi-selection; WF-14: copy/paste/duplicate keys.
   onModalKey(e) {
-    if (this._mode !== 'edit' || !this._selId) return;
+    if (this._mode !== 'edit') return;
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    // WF-14: copy / paste / duplicate work on the selection even without arrows.
+    const meta = e.ctrlKey || e.metaKey;
+    if (meta && (e.key === 'c' || e.key === 'C')) { if (this._selection().length) { e.preventDefault(); this.uiCopySelection(); } return; }
+    if (meta && (e.key === 'v' || e.key === 'V')) { if (this._clipboard && this._clipboard.length) { e.preventDefault(); this.uiPaste(); } return; }
+    if (meta && (e.key === 'd' || e.key === 'D')) { if (this._selection().length) { e.preventDefault(); this.uiDuplicateSelection(); } return; }
+    const sel = this._selection();
+    if (!sel.length) return;
     const wf = Wireframe.get(this._wfId);
-    const c = wf && wf.components.find(x => x.id === this._selId);
-    if (!c) return;
+    if (!wf) return;
     const def = this._def();
     const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
     if (step) {
       e.preventDefault();
-      if (e.shiftKey) Wireframe.updateComponent(this._wfId, c.id, { w: c.w + step[0], h: c.h + step[1] }, def);
-      else Wireframe.updateComponent(this._wfId, c.id, { x: c.x + step[0], y: c.y + step[1] }, def);
+      const resize = !!e.shiftKey;
+      const apply = (id) => {
+        const c = wf.components.find(x => x.id === id);
+        if (!c) return;
+        if (resize) Wireframe.updateComponent(this._wfId, id, { w: c.w + step[0], h: c.h + step[1] }, def);
+        else Wireframe.updateComponent(this._wfId, id, { x: c.x + step[0], y: c.y + step[1] }, def);
+      };
+      if (sel.length > 1) App.runBatch((resize ? 'Resize' : 'Move') + ' ' + sel.length + ' components', sel.map(id => () => apply(id)));
+      else apply(sel[0]);
       this.renderCanvasAndConf();
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
-      this.uiRemoveSelected();
+      if (sel.length > 1) this.uiDeleteSelection();
+      else this.uiRemoveSelected();
     }
   },
 
+  // WF-4/WF-14: pointer-driven drag (mouse, touch, stylus). The whole gesture
+  // coalesces into ONE undo — the pre-gesture state is snapshotted lazily on the
+  // first real move, then the per-tick updateComponent pushUndo calls are
+  // suppressed via the App._batching guard (mirrors runBatch), released on up.
   onCompDown(e, compId, resize) {
-    e.preventDefault();
-    e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
     const wf = Wireframe.get(this._wfId);
     const c = wf && wf.components.find(x => x.id === compId);
     if (!c) return;
+    // Shift-click toggles the multi-selection; it never starts a drag.
+    if (e.shiftKey) { this._toggleMulti(compId); this.render(); return; }
+    // Plain click on a component outside the multi-selection collapses to it;
+    // clicking one already in the set drags the whole group.
+    const group = (this._multi && this._multi.length && this._multi.indexOf(compId) >= 0) ? this._multi.slice() : [compId];
+    if (group.length === 1) this._multi = [];
     this._selId = compId;
-    const svg = document.getElementById('wfCanvas');
-    const rect = svg.getBoundingClientRect();
-    this._drag = { compId, resize: !!resize, startX: e.clientX, startY: e.clientY, orig: { x: c.x, y: c.y, w: c.w, h: c.h }, rect };
+    const origs = {};
+    group.forEach(id => { const g = wf.components.find(x => x.id === id); if (g) origs[id] = { x: g.x, y: g.y, w: g.w, h: g.h }; });
+    this._drag = { compId, resize: !!resize, startX: e.clientX, startY: e.clientY, group, origs, started: false, prevBatch: false, rect: null };
     this.render();
   },
+  // WF-4 marquee: a pointerdown on the empty canvas starts a rubber-band select.
+  onCanvasDown(e) {
+    // Only when the background itself is hit (components stopPropagation on down).
+    const svg = document.getElementById('wfCanvas');
+    if (!svg) return;
+    const p = this._toLogical(e, svg);
+    this._marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  },
+  // Map a pointer event to logical canvas px (undo the zoom scale on width/height).
+  _toLogical(e, svg) {
+    const rect = svg.getBoundingClientRect();
+    const z = this._zoom || 1;
+    return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
+  },
   onCanvasMove(e) {
-    if (!this._drag) return;
+    if (this._marquee) {
+      const svg = document.getElementById('wfCanvas');
+      if (svg) { const p = this._toLogical(e, svg); this._marquee.x1 = p.x; this._marquee.y1 = p.y; this.renderCanvasAndConf(); }
+      return;
+    }
     const d = this._drag;
-    const dx = Math.round((e.clientX - d.startX) / this.CELL);
-    const dy = Math.round((e.clientY - d.startY) / this.CELL_H);
+    if (!d) return;
+    const z = this._zoom || 1;
+    const dx = Math.round((e.clientX - d.startX) / (this.CELL * z));
+    const dy = Math.round((e.clientY - d.startY) / (this.CELL_H * z));
     if (!dx && !dy) return;
     const def = this._def();
-    if (d.resize) Wireframe.updateComponent(this._wfId, d.compId, { w: d.orig.w + dx, h: d.orig.h + dy }, def);
-    else Wireframe.updateComponent(this._wfId, d.compId, { x: d.orig.x + dx, y: d.orig.y + dy }, def);
+    // Lazy gesture-start: snapshot once, then coalesce every subsequent tick.
+    if (!d.started) {
+      App.pushUndo(d.resize ? 'Resize wireframe component' : 'Move wireframe component');
+      d.prevBatch = App._batching; App._batching = true; d.started = true;
+    }
+    d.group.forEach(id => {
+      const o = d.origs[id];
+      if (!o) return;
+      if (d.resize) Wireframe.updateComponent(this._wfId, id, { w: o.w + dx, h: o.h + dy }, def);
+      else Wireframe.updateComponent(this._wfId, id, { x: o.x + dx, y: o.y + dy }, def);
+    });
     this.renderCanvasAndConf();
   },
   onCanvasUp() {
-    if (this._drag) { this._drag = null; this.render(); }
+    if (this._marquee) {
+      const m = this._marquee;
+      this._marquee = null;
+      const w = Math.abs(m.x1 - m.x0), h = Math.abs(m.y1 - m.y0);
+      if (w < 6 && h < 6) { this._selId = null; this._multi = []; }  // a click = clear
+      else {
+        const box = { x: Math.min(m.x0, m.x1), y: Math.min(m.y0, m.y1), w, h };
+        const wf = Wireframe.get(this._wfId);
+        const hit = (wf ? wf.components : []).filter(c => this._boxHitsComp(box, c)).map(c => c.id);
+        this._multi = hit;
+        this._selId = hit.length ? hit[hit.length - 1] : null;
+      }
+      this.render();
+      return;
+    }
+    if (this._drag) {
+      const d = this._drag;
+      if (d.started) { App._batching = d.prevBatch; }
+      this._drag = null;
+      this.render();
+    }
+  },
+  // Marquee ↔ component intersection in logical px (component px = grid × cell).
+  _boxHitsComp(box, c) {
+    const cx = c.x * this.CELL, cy = c.y * this.CELL_H, cw = c.w * this.CELL, ch = c.h * this.CELL_H;
+    return box.x < cx + cw && cx < box.x + box.w && box.y < cy + ch && cy < box.y + box.h;
   },
 
   // --- WF-1: live chart previews (fidelity dial) ---
@@ -51735,9 +51842,16 @@ const WireframeSkill = {
     const f = this.fidelity();
     const btn = (mode, label, title) =>
       '<button class="btn btn-sm ' + (f === mode ? 'btn-primary' : 'btn-outline') + '" onclick="WireframeSkill.uiSetFidelity(\'' + mode + '\')" title="' + title + '">' + label + '</button>';
+    const z = this._zoom || 1;
+    // WF-14: zoom control — viewBox stays logical (grid cells); width/height scale.
+    const zoom = '<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-left:10px">Zoom</span>' +
+      '<button class="btn btn-sm btn-outline" onclick="WireframeSkill.uiZoom(-0.25)" title="Zoom out" aria-label="Zoom out"' + (z <= 0.5 ? ' disabled' : '') + '>&minus;</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="WireframeSkill.uiZoomReset()" title="Reset zoom to 100%">' + Math.round(z * 100) + '%</button>' +
+      '<button class="btn btn-sm btn-outline" onclick="WireframeSkill.uiZoom(0.25)" title="Zoom in" aria-label="Zoom in"' + (z >= 2 ? ' disabled' : '') + '>+</button>';
     return '<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Fidelity</span>' +
       btn('structure', 'Structure', 'Labelled boxes — pure layout') +
-      btn('preview', 'Preview', 'Chart-shaped previews with illustrative data — bound metrics use real figures');
+      btn('preview', 'Preview', 'Chart-shaped previews with illustrative data — bound metrics use real figures') +
+      zoom;
   },
 
   // Deterministic PRNG: FNV-1a hash of the seed string feeding a mulberry32
@@ -52165,6 +52279,235 @@ const WireframeSkill = {
       this.render();
     }
   },
+
+  /* ==========================================================================
+     WF-4 — region-scoped conversational refinement with proposal diffs.
+     The instruction targets ONLY the multi-selected components; the model's ops
+     are FILTERED to the selection (adds allowed) and, instead of mutating, land
+     as a PENDING DIFF (ghosts on the canvas + a removed list) with Accept /
+     Discard. Accept applies every op via ONE App.runBatch (single undo, audited
+     'ai'), mirroring the SoW _redraft / uiRedraftAccept contract. The applied
+     ops still route through the clamped mutators, so nothing escapes the grid /
+     vocabulary. Model-free bulk actions ride the same multi-selection below.
+     ========================================================================== */
+  async uiRegionRefine() {
+    if (this._regionBusy) return;
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const sel = this._selection();
+    if (!sel.length) { App.toast('Select one or more components first (shift-click or marquee)', 'error'); return; }
+    const input = document.getElementById('wfRegionInput');
+    const instruction = input ? input.value.trim() : '';
+    if (!instruction) { App.toast('Describe the change to the selected components', 'error'); return; }
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    if (!wf || !def) return;
+    const scope = sel.slice();
+    this._regionBusy = true;
+    this.render();
+    try {
+      const inScope = wf.components.filter(c => scope.indexOf(c.id) >= 0)
+        .map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '', metric_id: c.metric_id || null, props: Wireframe._specProps(c) }));
+      const context = wf.components.filter(c => scope.indexOf(c.id) < 0)
+        .map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '' }));
+      const messages = [
+        {
+          role: 'system',
+          content: 'You refine ONLY the SELECTED components of a Tableau dashboard wireframe on a ' + wf.grid.cols + 'x' + wf.grid.rows + ' grid by returning patch operations. You MAY add new components near the selection, but you MUST NOT move, resize, retitle, re-bind or remove any component that is not in the selected set.\n' +
+            'Allowed component types and minimum sizes: ' + def.components.map(c => c.type + '(' + c.min_w + 'x' + c.min_h + ')').join(', ') + '.\n' +
+            'Ops: add (type, x, y, w, h, title, optional metric_id/props), move (id, x, y), resize (id, w, h), retitle (id, title), remove (id), bind_metric (id, metric_id), set_props (id, props). Reference existing components by their exact id.\n' +
+            'Keep the design rules: no overlaps, on-grid, at or above minimum size.\n' +
+            this._metricPromptBlock(wf.customer) +
+            this._propsPromptBlock(def)
+        },
+        {
+          role: 'user',
+          content: 'SELECTED COMPONENTS (change only these):\n' + JSON.stringify(inScope) +
+            '\n\nOTHER COMPONENTS (context only — never modify):\n' + JSON.stringify(context) +
+            '\n\nINSTRUCTION: ' + instruction
+        }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, this._opsSchema(def));
+      // Per-op scope filter: adds pass; every other op must target a selected id.
+      const ops = (out.ops || []).filter(o => o.op === 'add' || (o.id && scope.indexOf(o.id) >= 0)).slice(0, 20);
+      if (!ops.length) { App.toast('The model proposed no in-scope changes', 'info'); this._regionBusy = false; this.render(); return; }
+      this._pendingRefine = { scopeIds: scope, ops };
+      if (input) input.value = '';
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._regionBusy = false;
+      this.render();
+    }
+  },
+  // Pure preview of a pending op set — the ghost boxes to draw and the ids that
+  // would be removed — computed WITHOUT mutating. Geometry is clamped the same
+  // way the mutators clamp, so the ghost matches the accepted result.
+  _refineDiff(wf, ops) {
+    const ghosts = [], removed = [];
+    const clamp = (c, patch) => {
+      const spec = this.componentSpecSafe(c.type);
+      let w = patch.w != null ? patch.w : c.w, h = patch.h != null ? patch.h : c.h;
+      w = Math.max(spec.min_w, Math.min(w, wf.grid.cols)); h = Math.max(spec.min_h, Math.min(h, wf.grid.rows));
+      let x = patch.x != null ? patch.x : c.x, y = patch.y != null ? patch.y : c.y;
+      x = Math.max(0, Math.min(x, wf.grid.cols - w)); y = Math.max(0, Math.min(y, wf.grid.rows - h));
+      return { x, y, w, h };
+    };
+    (ops || []).forEach(o => {
+      if (o.op === 'add' && o.type) {
+        const g = clamp({ x: 0, y: 0, w: o.w || 3, h: o.h || 2 }, { x: App.toInteger(o.x), y: App.toInteger(o.y), w: App.toInteger(o.w || 3), h: App.toInteger(o.h || 2) });
+        ghosts.push(Object.assign(g, { label: 'add ' + o.type, kind: 'add' }));
+      } else if ((o.op === 'move' || o.op === 'resize') && o.id) {
+        const c = wf.components.find(x => x.id === o.id);
+        if (!c) return;
+        const g = clamp(c, { x: App.toInteger(o.x), y: App.toInteger(o.y), w: o.op === 'resize' ? App.toInteger(o.w) : undefined, h: o.op === 'resize' ? App.toInteger(o.h) : undefined });
+        ghosts.push(Object.assign(g, { label: o.op, kind: 'change' }));
+      } else if (o.op === 'remove' && o.id) {
+        const c = wf.components.find(x => x.id === o.id);
+        if (c) removed.push({ id: c.id, type: c.type, title: c.title || '' });
+      } else if ((o.op === 'retitle' || o.op === 'bind_metric' || o.op === 'set_props') && o.id) {
+        const c = wf.components.find(x => x.id === o.id);
+        if (c) ghosts.push({ x: c.x, y: c.y, w: c.w, h: c.h, label: o.op.replace('_', ' '), kind: 'change' });
+      }
+    });
+    return { ghosts, removed };
+  },
+  // Min-size lookup that survives an unknown type (used only for a preview).
+  componentSpecSafe(type) {
+    const s = Wireframe.componentSpec(this._def(), type);
+    return s || { min_w: 2, min_h: 1 };
+  },
+  uiAcceptRefine() {
+    const p = this._pendingRefine;
+    if (!p) return;
+    const def = this._def();
+    const n = App.runBatch('AI region refine (' + p.ops.length + ' op' + (p.ops.length === 1 ? '' : 's') + ')', [() => this._applyOps(p.ops, def)]);
+    this._pendingRefine = null;
+    App.toast('Refinement applied — Ctrl+Z to undo', 'success');
+    this.render();
+    return n;
+  },
+  uiDiscardRefine() { this._pendingRefine = null; this.render(); },
+
+  // --- WF-4 model-free bulk actions over the multi-selection ---
+  uiDeleteSelection() {
+    const sel = this._selection();
+    if (!sel.length) return;
+    App.runBatch('Delete ' + sel.length + ' component' + (sel.length === 1 ? '' : 's'), sel.map(id => () => Wireframe.removeComponent(this._wfId, id)));
+    this._multi = []; this._selId = null;
+    App.toast('Deleted ' + sel.length + ' component' + (sel.length === 1 ? '' : 's') + ' — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  // Align selected components on a shared edge / centre (pure geometry, one undo).
+  uiAlign(mode) {
+    const sel = this._selection();
+    if (sel.length < 2) return;
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    const cs = sel.map(id => wf.components.find(c => c.id === id)).filter(Boolean);
+    const minX = Math.min.apply(null, cs.map(c => c.x)), maxR = Math.max.apply(null, cs.map(c => c.x + c.w));
+    const minY = Math.min.apply(null, cs.map(c => c.y)), maxB = Math.max.apply(null, cs.map(c => c.y + c.h));
+    const patchFor = (c) => {
+      if (mode === 'left') return { x: minX };
+      if (mode === 'right') return { x: maxR - c.w };
+      if (mode === 'top') return { y: minY };
+      if (mode === 'bottom') return { y: maxB - c.h };
+      if (mode === 'centre_x') return { x: Math.round((minX + maxR) / 2 - c.w / 2) };
+      if (mode === 'centre_y') return { y: Math.round((minY + maxB) / 2 - c.h / 2) };
+      return {};
+    };
+    App.runBatch('Align ' + cs.length + ' components', cs.map(c => () => Wireframe.updateComponent(this._wfId, c.id, patchFor(c), def)));
+    App.toast('Aligned ' + cs.length + ' components — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  // Distribute selected components evenly along an axis (equal gaps).
+  uiDistribute(axis) {
+    const sel = this._selection();
+    if (sel.length < 3) { App.toast('Select at least three components to distribute', 'info'); return; }
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    const cs = sel.map(id => wf.components.find(c => c.id === id)).filter(Boolean);
+    const horiz = axis === 'x';
+    cs.sort((a, b) => (horiz ? a.x - b.x : a.y - b.y));
+    const first = cs[0], last = cs[cs.length - 1];
+    const span = horiz ? (last.x - first.x) : (last.y - first.y);
+    const step = span / (cs.length - 1);
+    App.runBatch('Distribute ' + cs.length + ' components', cs.map((c, i) => () => {
+      if (i === 0 || i === cs.length - 1) return;
+      const pos = Math.round((horiz ? first.x : first.y) + step * i);
+      Wireframe.updateComponent(this._wfId, c.id, horiz ? { x: pos } : { y: pos }, def);
+    }));
+    App.toast('Distributed ' + cs.length + ' components — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+
+  /* ==========================================================================
+     WF-14 — clipboard (copy / paste / duplicate) + zoom. All deterministic.
+     Copies snapshot the selection with positions relative to its bounding box;
+     paste finds ONE free spot for that box via Wireframe._findFreeSpot and lays
+     each clone at anchor + offset (clamped by addComponent/updateComponent), in
+     one undo. Duplicate = copy-then-paste of the current selection.
+     ========================================================================== */
+  _cloneOf(list) {
+    if (!list.length) return null;
+    const minX = Math.min.apply(null, list.map(c => c.x)), minY = Math.min.apply(null, list.map(c => c.y));
+    return list.map(c => ({
+      type: c.type, title: c.title || '', w: c.w, h: c.h,
+      metric_id: c.metric_id || null,
+      props: c.props ? JSON.parse(JSON.stringify(c.props)) : {},
+      dx: c.x - minX, dy: c.y - minY
+    }));
+  },
+  uiCopySelection() {
+    const wf = Wireframe.get(this._wfId);
+    const sel = this._selection();
+    const cs = sel.map(id => wf && wf.components.find(c => c.id === id)).filter(Boolean);
+    this._clipboard = this._cloneOf(cs);
+    if (this._clipboard) App.toast('Copied ' + this._clipboard.length + ' component' + (this._clipboard.length === 1 ? '' : 's'), 'success');
+    this.render();
+  },
+  uiPaste() {
+    if (!this._clipboard || !this._clipboard.length) return;
+    this._placeClones(this._clipboard, 'Paste');
+  },
+  uiDuplicateSelection() {
+    const wf = Wireframe.get(this._wfId);
+    const sel = this._selection();
+    const cs = sel.map(id => wf && wf.components.find(c => c.id === id)).filter(Boolean);
+    const clones = this._cloneOf(cs);
+    if (clones) this._placeClones(clones, 'Duplicate');
+  },
+  // Shared placement: find a free anchor for the clone set's bounding box, then
+  // add each clone at anchor+offset preserving its props/metric, in one undo.
+  _placeClones(clones, label) {
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    if (!wf || !def) return;
+    const bw = Math.max.apply(null, clones.map(c => c.dx + c.w));
+    const bh = Math.max.apply(null, clones.map(c => c.dy + c.h));
+    const anchor = Wireframe._findFreeSpot(wf, Math.min(bw, wf.grid.cols), Math.min(bh, wf.grid.rows));
+    const newIds = [];
+    App.runBatch(label + ' ' + clones.length + ' component' + (clones.length === 1 ? '' : 's'), clones.map(cl => () => {
+      const comp = Wireframe.addComponent(this._wfId, cl.type, def, { x: anchor.x + cl.dx, y: anchor.y + cl.dy });
+      if (typeof comp === 'string') return;
+      newIds.push(comp.id);
+      Wireframe.updateComponent(this._wfId, comp.id, { x: anchor.x + cl.dx, y: anchor.y + cl.dy, w: cl.w, h: cl.h, title: cl.title }, def);
+      if (cl.metric_id) Wireframe.setComponentMetric(this._wfId, comp.id, cl.metric_id);
+      const cleanProps = Object.assign({}, cl.props); delete cleanProps.no_metric; delete cleanProps.metric;
+      if (Object.keys(cleanProps).length) Wireframe.setComponentProps(this._wfId, comp.id, cleanProps, def);
+      if (cl.props && cl.props.no_metric && !cl.metric_id) Wireframe.setComponentNoMetric(this._wfId, comp.id, true);
+    }));
+    if (newIds.length) { this._multi = newIds.length > 1 ? newIds : []; this._selId = newIds[newIds.length - 1]; }
+    App.toast(label + 'd ' + newIds.length + ' component' + (newIds.length === 1 ? '' : 's') + ' — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  uiZoom(delta) {
+    const next = Math.max(0.5, Math.min(2, Math.round(((this._zoom || 1) + delta) * 100) / 100));
+    this._zoom = next;
+    const bar = document.getElementById('wfToolbar');
+    if (bar) bar.innerHTML = this._toolbarHtml();
+    this.renderCanvasAndConf();
+  },
+  uiZoomReset() { this._zoom = 1; const bar = document.getElementById('wfToolbar'); if (bar) bar.innerHTML = this._toolbarHtml(); this.renderCanvasAndConf(); },
 
   // W4: one-click conformance fix. Feed the live checkConformance errors to
   // the model and apply the returned patch ops through the same clamped
@@ -52832,6 +53175,59 @@ const WireframeSkill = {
       '</div></div>';
   },
 
+  // WF-4: bulk-action + region-refine panel. Shows the pending region-refine
+  // diff (Accept/Discard), the multi-selection bulk actions (align/distribute/
+  // duplicate/copy/delete — all model-free), a scoped refine box (AI-gated), and
+  // a Paste control when the clipboard holds something.
+  _selectionHtml(wf) {
+    const esc = Dashboard.esc;
+    const sel = this._selection();
+    const multi = sel.length >= 2;
+    let out = '';
+    // Pending region-refine diff card.
+    if (this._pendingRefine) {
+      const pd = this._refineDiff(wf, this._pendingRefine.ops);
+      const adds = pd.ghosts.filter(g => g.kind === 'add').length;
+      const changes = pd.ghosts.filter(g => g.kind === 'change').length;
+      const removedList = pd.removed.length
+        ? '<div style="font-size:11px;color:var(--status-red,#dc2626);margin-top:4px">Removed: ' + pd.removed.map(r => '<span style="text-decoration:line-through">' + esc(r.title || r.type) + '</span>').join(', ') + '</div>'
+        : '';
+      out += '<div style="margin-top:10px;padding:8px;border:1px solid #6366f1;border-radius:6px;background:rgba(99,102,241,0.06)">' +
+        '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:#4338ca;margin-bottom:4px">Proposed changes — ' + this._pendingRefine.ops.length + ' op' + (this._pendingRefine.ops.length === 1 ? '' : 's') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted)">' + changes + ' change(s) · ' + adds + ' add(s) · ' + pd.removed.length + ' remove(s) — ghosted on the canvas.</div>' +
+        removedList +
+        '<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary btn-sm" onclick="WireframeSkill.uiAcceptRefine()">Accept</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiDiscardRefine()">Discard</button></div></div>';
+    }
+    if (multi) {
+      const alignBtn = (m, l) => '<button class="btn btn-outline btn-sm" style="padding:2px 6px" onclick="WireframeSkill.uiAlign(\'' + m + '\')">' + l + '</button>';
+      out += '<div style="margin-top:10px;padding:8px;border:1px solid var(--border-light);border-radius:6px">' +
+        '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Selection — ' + sel.length + ' components</div>' +
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:3px">Align</div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">' + alignBtn('left', 'Left') + alignBtn('centre_x', 'Centre') + alignBtn('right', 'Right') + alignBtn('top', 'Top') + alignBtn('centre_y', 'Middle') + alignBtn('bottom', 'Bottom') + '</div>' +
+        '<div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:3px">Distribute</div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">' +
+          '<button class="btn btn-outline btn-sm" style="padding:2px 6px" onclick="WireframeSkill.uiDistribute(\'x\')">Horizontally</button>' +
+          '<button class="btn btn-outline btn-sm" style="padding:2px 6px" onclick="WireframeSkill.uiDistribute(\'y\')">Vertically</button></div>' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiDuplicateSelection()">Duplicate</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiCopySelection()">Copy</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiDeleteSelection()">Delete all</button></div>' +
+        (AI.isConfigured()
+          ? '<div style="margin-top:8px"><div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:3px">Refine selection with AI</div>' +
+            '<div style="display:flex;gap:6px"><input id="wfRegionInput" class="field-input" style="flex:1" placeholder="e.g. make these two a dual-axis line + add a YoY delta KPI" aria-label="Region refinement instruction"' +
+            ' onkeydown="if(event.key===\'Enter\'){WireframeSkill.uiRegionRefine()}">' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiRegionRefine()"' + (this._regionBusy ? ' disabled' : '') + '>' + (this._regionBusy ? 'Refining…' : 'Refine') + '</button></div>' +
+            '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">Applies only to the selected components; changes preview as a diff before you accept.</div></div>'
+          : '') +
+      '</div>';
+    }
+    if (this._clipboard && this._clipboard.length) {
+      out += '<div style="margin-top:8px"><button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiPaste()" title="Paste (Ctrl/Cmd+V)">Paste ' + this._clipboard.length + ' component' + (this._clipboard.length === 1 ? '' : 's') + '</button></div>';
+    }
+    return out;
+  },
+
   renderCanvasSvg() {
     const wf = Wireframe.get(this._wfId);
     if (!wf) return '';
@@ -52846,18 +53242,25 @@ const WireframeSkill = {
     // WF-3: when the design review is open, highlight its findings (reusing the
     // violating outline) and draw a numbered reading-order overlay from pure geometry.
     const review = (this._reviewActive && this._review) ? this._review : null;
+    // WF-14 roving tabindex: exactly one component is in the tab order (the
+    // selected one, else the first). Arrow keys move the selection from there.
+    const rovingId = this._selId || (wf.components[0] && wf.components[0].id) || null;
     const comps = wf.components.map(c => {
       const px = c.x * this.CELL, py = c.y * this.CELL_H, pw = c.w * this.CELL, ph = c.h * this.CELL_H;
-      const sel = c.id === this._selId;
+      const primary = c.id === this._selId;
+      const inMulti = !!(this._multi && this._multi.indexOf(c.id) >= 0);
+      const sel = primary || inMulti;
       const viol = conf.violating[c.id] || (review && review.violating[c.id]);
       const title = (c.title || '').slice(0, Math.max(8, Math.floor(pw / 7)));
-      return '<g class="wf-comp' + (sel ? ' selected' : '') + (viol ? ' violating' : '') + '" ' +
-        'onmousedown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\')" onclick="event.stopPropagation()">' +
+      const aria = (c.type + (c.title ? ' — ' + c.title : '')).slice(0, 120);
+      return '<g class="wf-comp' + (sel ? ' selected' : '') + (inMulti ? ' multi' : '') + (viol ? ' violating' : '') + '" ' +
+        'role="button" tabindex="' + (c.id === rovingId ? '0' : '-1') + '" aria-label="' + Dashboard.escAttr(aria) + '" aria-pressed="' + (sel ? 'true' : 'false') + '" ' +
+        'onpointerdown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\')" onclick="event.stopPropagation()">' +
         '<rect class="body" x="' + (px + 3) + '" y="' + (py + 3) + '" width="' + (pw - 6) + '" height="' + (ph - 6) + '" rx="4"/>' +
         '<text class="type" x="' + (px + 10) + '" y="' + (py + 17) + '">' + esc(c.type) + '</text>' +
         (title ? '<text class="title" x="' + (px + 10) + '" y="' + (py + 32) + '">' + esc(title) + '</text>' : '') +
         (preview ? this._glyphSvg(c, px, py, pw, ph) : '') +
-        (sel ? '<rect class="wf-resize" x="' + (px + pw - 12) + '" y="' + (py + ph - 12) + '" width="9" height="9" rx="2" onmousedown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\', true)"/>' : '') +
+        (primary ? '<rect class="wf-resize" x="' + (px + pw - 12) + '" y="' + (py + ph - 12) + '" width="9" height="9" rx="2" onpointerdown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\', true)"/>' : '') +
       '</g>';
     }).join('');
     let overlay = '';
@@ -52889,9 +53292,29 @@ const WireframeSkill = {
       };
       diff.added.forEach(c => { redline += addTag(c); });
     }
-    return '<svg id="wfCanvas" class="wf-canvas" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" ' +
-      'onmousemove="WireframeSkill.onCanvasMove(event)" onmouseup="WireframeSkill.onCanvasUp()" onmouseleave="WireframeSkill.onCanvasUp()" onclick="WireframeSkill.select(null)" role="img" aria-label="Wireframe canvas">' +
-      grid + comps + overlay + redline + '</svg>';
+    // WF-4: pending region-refine diff — changed/added components ghosted in a
+    // distinct pending outline (removed ones are struck in the side list). Pure
+    // preview from _refineDiff (no mutation until Accept).
+    let pending = '';
+    if (this._pendingRefine) {
+      const pd = this._refineDiff(wf, this._pendingRefine.ops);
+      pending = pd.ghosts.map(g => {
+        const px = g.x * this.CELL, py = g.y * this.CELL_H, pw = g.w * this.CELL, ph = g.h * this.CELL_H;
+        return '<g class="wf-pending" pointer-events="none">' +
+          '<rect x="' + (px + 2) + '" y="' + (py + 2) + '" width="' + Math.max(0, pw - 4) + '" height="' + Math.max(0, ph - 4) + '" rx="4" fill="#6366f1" fill-opacity="0.08" stroke="#6366f1" stroke-width="2" stroke-dasharray="4 3"/>' +
+          '<text x="' + (px + 8) + '" y="' + (py + ph - 8) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="9" font-weight="700" fill="#4338ca">' + esc(g.label) + '</text></g>';
+      }).join('');
+    }
+    // WF-4 marquee rubber-band overlay (logical px).
+    let marquee = '';
+    if (this._marquee) {
+      const m = this._marquee, mx = Math.min(m.x0, m.x1), my = Math.min(m.y0, m.y1), mw = Math.abs(m.x1 - m.x0), mh = Math.abs(m.y1 - m.y0);
+      marquee = '<rect class="wf-marquee" pointer-events="none" x="' + mx + '" y="' + my + '" width="' + mw + '" height="' + mh + '" fill="#6366f1" fill-opacity="0.08" stroke="#6366f1" stroke-width="1" stroke-dasharray="4 2"/>';
+    }
+    const z = this._zoom || 1;
+    return '<svg id="wfCanvas" class="wf-canvas" viewBox="0 0 ' + W + ' ' + H + '" width="' + Math.round(W * z) + '" height="' + Math.round(H * z) + '" ' +
+      'onpointerdown="WireframeSkill.onCanvasDown(event)" onpointermove="WireframeSkill.onCanvasMove(event)" onpointerup="WireframeSkill.onCanvasUp()" onpointerleave="WireframeSkill.onCanvasUp()" role="img" aria-label="Wireframe canvas">' +
+      grid + comps + overlay + redline + pending + marquee + '</svg>';
   },
 
   // Customer metrics this concept answers — traceability from dashboard
@@ -53447,8 +53870,12 @@ const WireframeSkill = {
           sampleHtml +
           '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:8px">Position &amp; size (grid cells)</div>' +
           '<div style="display:flex;gap:6px;margin-top:2px">' + coord('X', 'x', sel.x, wf.grid.cols - 1) + coord('Y', 'y', sel.y, wf.grid.rows - 1) + coord('W', 'w', sel.w, wf.grid.cols) + coord('H', 'h', sel.h, wf.grid.rows) + '</div>' +
-          '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Drag to move · corner handle to resize · arrows nudge · Shift+arrows resize · Del removes</div>' +
-          '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
+          '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Drag to move · corner handle to resize · arrows nudge · Shift+arrows resize · Del removes · shift-click to multi-select</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiDuplicateSelection()" title="Duplicate (Ctrl/Cmd+D)">Duplicate</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiCopySelection()" title="Copy (Ctrl/Cmd+C)">Copy</button>' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiRemoveSelected()">Remove component</button>' +
+          '</div>' +
         '</div>'
       : '<div style="font-size:11px;color:var(--text-muted)">Select a component to edit its title, position, or metric. Tip: arrows nudge · Shift+arrows resize · Del removes.</div>';
     return this._header(wf.name, true) +
@@ -53472,6 +53899,8 @@ const WireframeSkill = {
           this._importGapsHtml() +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;margin-top:12px">Component palette (governed vocabulary)</div>' +
           '<div class="wf-palette">' + palette + '</div>' +
+          // WF-4: multi-selection bulk actions + region-scoped refine (+ pending diff).
+          this._selectionHtml(wf) +
           props +
           // WF-10: per-component comments / flag / Suggest fix (needs a selection).
           this._selReviewHtml(wf, sel) +
