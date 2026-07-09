@@ -45889,9 +45889,9 @@ const Sow = {
     if (!sec) return { ok: false, error: 'Unknown section' };
     const v = this.precedentVersions(sow, sectionId).find(x => x.sow_id === sourceSowId);
     if (!v) return { ok: false, error: 'That precedent is no longer available.' };
-    if (!Array.isArray(sec.sources)) sec.sources = [];
-    if (sec.sources.some(s => s.kind === 'precedent' && s.ref === sourceSowId)) return { ok: false, error: 'Already borrowed from that SoW.' };
+    if (Array.isArray(sec.sources) && sec.sources.some(s => s.kind === 'precedent' && s.ref === sourceSowId)) return { ok: false, error: 'Already borrowed from that SoW.' };
     App.pushUndo('Copy precedent into SOW ' + sec.title);
+    if (!Array.isArray(sec.sources)) sec.sources = [];
     const text = String(v.content).trim();
     sec.content = (sec.content && sec.content.trim()) ? (sec.content.replace(/\s+$/, '') + '\n\n' + text) : text;
     sec.sources.push({ kind: 'precedent', ref: sourceSowId, text: this.precedentLabel(v) });
@@ -46015,7 +46015,12 @@ const Sow = {
     if (roles.trim()) {
       const named = new Set();
       ['scope', 'background', 'signoff'].forEach(id => this._properNames(this._secText(sow, id)).forEach(n => named.add(n)));
-      [...named].filter(n => roles.indexOf(n) < 0).slice(0, 5).forEach(n => out.push('“' + n + '” is named in the document but not listed in Roles & Responsibilities.'));
+      // The customer/company name is a two-word Capitalised sequence too (e.g.
+      // "Acme Industries"), but it is an organisation, not a person — exclude
+      // it and its tokens so the org name isn't flagged as a missing signatory.
+      const custTokens = new Set(String(sow.customer || '').split(/\s+/).filter(Boolean));
+      const isOrg = n => n === sow.customer || n.split(' ').some(w => custTokens.has(w));
+      [...named].filter(n => roles.indexOf(n) < 0 && !isOrg(n)).slice(0, 5).forEach(n => out.push('“' + n + '” is named in the document but not listed in Roles & Responsibilities.'));
     }
     return out;
   },
@@ -49313,12 +49318,20 @@ const Wireframe = {
         const suggQuote = Billing.quoteForProject(clone);
         const baseAmt = (baseQuote.totals && baseQuote.totals.amount) || 0;
         const suggAmt = (suggQuote.totals && suggQuote.totals.amount) || 0;
-        out.priced = true;
-        out.currency = baseQuote.currency;
-        out.rate_band = baseQuote.rate_band;
-        out.current_amount = baseAmt;
-        out.suggested_amount = suggAmt;
-        out.delta_amount = suggAmt - baseAmt;
+        // Only present a £ delta when a real rate band prices the work. With no
+        // customer default / rate table, quoteForProject returns hourly_rate 0
+        // and amount 0 (it does not throw) — leaving priced:false so the
+        // "No rate band configured — the £ delta is unavailable" fallback fires
+        // in the panel and the wireframe_estimate tool, rather than showing £0
+        // as if it were a genuine price. (Mirrors Billing.quoteWithBands' rate guard.)
+        if ((baseQuote.hourly_rate || 0) > 0) {
+          out.priced = true;
+          out.currency = baseQuote.currency;
+          out.rate_band = baseQuote.rate_band;
+          out.current_amount = baseAmt;
+          out.suggested_amount = suggAmt;
+          out.delta_amount = suggAmt - baseAmt;
+        }
       } catch (e) { /* no rate band — the deterministic SP estimate still stands */ }
     }
     return out;
