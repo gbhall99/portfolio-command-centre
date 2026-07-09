@@ -5128,7 +5128,19 @@ const App = {
     if (!Array.isArray(data.wireframes)) data.wireframes = [];
     // Tableau reference links (2026-06): wireframes may cite live, deployed
     // dashboards as design reference points. Metadata only — never images.
-    data.wireframes.forEach(w => { if (!Array.isArray(w.tableau_refs)) w.tableau_refs = []; });
+    data.wireframes.forEach(w => {
+      if (!Array.isArray(w.tableau_refs)) w.tableau_refs = [];
+      // WF-10 (2026-07): per-component review comments (author-free), a baseline
+      // snapshot captured on approval, and a Superseded→successor pointer. All
+      // additive; legacy wireframes gain empty comment lists + null baseline.
+      if (!('baseline' in w)) w.baseline = null;
+      if (!('successor_id' in w)) w.successor_id = null;
+      (w.components || []).forEach(c => { if (!Array.isArray(c.comments)) c.comments = []; });
+      // WF-11: the set-level flow/interaction contract (drills, shared filters,
+      // cross-filters) rides the set's anchor page. Lazily shaped elsewhere;
+      // migration just guarantees the key exists so exports round-trip.
+      if (!('interactions' in w)) w.interactions = null;
+    });
     if (!Array.isArray(data.billing_arrangements)) data.billing_arrangements = [];
     if (!Array.isArray(data.status_reports)) data.status_reports = [];
     // Phase 3.1 (living documents): ensure the drift-detection fields exist.
@@ -38761,6 +38773,31 @@ const Reports = {
         sections = pageSections(spec, '', '');
         title = 'Build Spec — ' + (spec.name || 'Wireframe');
       }
+      // WF-11: Flow & interaction contract — a single set-level section built
+      // from the pure flowContract (drill matrix, shared filters, cross-filters).
+      const flow = Wireframe.flowContract(wf);
+      if (flow.drills.length || flow.shared_filters.length || flow.cross_filters.length) {
+        let flowHtml = '';
+        if (flow.drills.length) {
+          flowHtml += '<p style="font-weight:700">Drill actions</p>' + Reports.table({
+            columns: [
+              { key: 'from_page', label: 'From page', width: '24%', cell: r => esc(r.from_page) },
+              { key: 'source', label: 'Source component', width: '28%', cell: r => esc(r.source) },
+              { key: 'to_page', label: 'Target page', width: '24%', cell: r => esc(r.to_page) },
+              { key: 'dimensions', label: 'Carries', cell: r => r.dimensions.length ? esc(r.dimensions.join(', ')) : '—' }
+            ], rows: flow.drills, empty: 'No drill actions.'
+          });
+        }
+        if (flow.shared_filters.length) {
+          flowHtml += '<p style="font-weight:700">Shared filters (synced across all pages)</p><ul>' +
+            flow.shared_filters.map(s => '<li>' + esc(s.field) + '</li>').join('') + '</ul>';
+        }
+        if (flow.cross_filters.length) {
+          flowHtml += '<p style="font-weight:700">Cross-filter sources</p><ul>' +
+            flow.cross_filters.map(c => '<li>' + esc(c.page) + ' &middot; ' + esc(c.source) + '</li>').join('') + '</ul>';
+        }
+        sections.push({ id: 'ws-flow', title: 'Flow &amp; interaction contract', html: flowHtml, audiences: internal });
+      }
       return Reports.Doc.buildDoc({
         reportType: 'wireframe_spec',
         title: title,
@@ -48481,9 +48518,144 @@ const Wireframe = {
     }
     App.pushUndo('Wireframe ' + status.toLowerCase());
     wf.status = status;
-    if (status === 'Approved') wf.approved_at = new Date().toISOString();
+    if (status === 'Approved') {
+      wf.approved_at = new Date().toISOString();
+      // WF-10: snapshot the components on Concept→Approved so the redline
+      // "Compare" can diff any later revision against the signed-off layout.
+      wf.baseline = this._baselineSnapshot(wf);
+    }
+    // WF-10: Supersede may record the concept that replaces it (lineage).
+    if (status === 'Superseded' && opts && opts.successor_id) {
+      const succ = this.get(opts.successor_id);
+      if (succ && succ.customer === wf.customer && succ.id !== wf.id) wf.successor_id = opts.successor_id;
+    }
     this._persist(wf, 'wireframe_status', from, status, (opts && opts.source) || 'user');
     return { ok: true, wf };
+  },
+
+  // WF-10: a slim, deterministic snapshot of the layout — geometry, binding and
+  // props per component (comments/sample excluded; they are review/preview
+  // state, not the signed layout). Used as the Compare baseline.
+  _baselineSnapshot(wf) {
+    return {
+      at: new Date().toISOString(),
+      components: (wf.components || []).map(c => ({
+        id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h,
+        title: c.title || '', metric_id: c.metric_id || null,
+        props: this._specProps(c)
+      }))
+    };
+  },
+
+  // WF-10: record (or clear) the successor concept for a Superseded wireframe.
+  // Same-customer only; audited + undoable.
+  setSuccessor(wfId, successorId) {
+    const wf = this.get(wfId);
+    if (!wf) return { ok: false, error: 'No wireframe' };
+    let sid;
+    if (!successorId) sid = null;   // explicit clear
+    else {
+      const succ = this.get(successorId);
+      // Refuse an invalid / self / cross-customer id without wiping any existing link.
+      if (!succ || succ.customer !== wf.customer || succ.id === wf.id) return { ok: false, error: 'Invalid successor' };
+      sid = successorId;
+    }
+    if ((wf.successor_id || null) === sid) return { ok: true, wf };
+    App.pushUndo('Set wireframe successor');
+    wf.successor_id = sid;
+    this._persist(wf, 'wireframe_successor', '', sid || '(none)', 'user');
+    return { ok: true, wf };
+  },
+
+  /* ==========================================================================
+     WF-10 — Wireframe review workflow (ports the SOW S4 machinery). Per-component
+     comments (author-free {at,text,resolved}) + an optional flag, all model-free;
+     the redline diff is a pure components-vs-baseline comparison. AAI "suggest fix"
+     lives in WireframeSkill and reuses these mutators through App.runBatch.
+     ========================================================================== */
+  _findComp(wf, compId) { return (wf && wf.components || []).find(c => c.id === compId) || null; },
+  openComments(comp) { return ((comp && comp.comments) || []).filter(c => !c.resolved).length; },
+
+  addComment(wfId, compId, text) {
+    const wf = this.get(wfId);
+    if (!wf || !text || !String(text).trim()) return { ok: false };
+    const c = this._findComp(wf, compId);
+    if (!c) return { ok: false };
+    if (!Array.isArray(c.comments)) c.comments = [];
+    App.pushUndo('Comment on wireframe component');
+    c.comments.push({ at: new Date().toISOString(), text: String(text).trim().slice(0, 500), resolved: false });
+    this._persist(wf, 'wireframe_comment', '', String(text).slice(0, 60), 'user');
+    return { ok: true };
+  },
+  resolveComment(wfId, compId, index, resolved) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = this._findComp(wf, compId);
+    const cm = c && c.comments && c.comments[index];
+    if (!cm) return;
+    const next = resolved === undefined ? true : !!resolved;
+    if (!!cm.resolved === next) return;
+    App.pushUndo((next ? 'Resolve' : 'Reopen') + ' wireframe comment');
+    cm.resolved = next;
+    this._persist(wf, 'wireframe_comment_resolved', next ? 'open' : 'resolved', next ? 'resolved' : 'open', 'user');
+  },
+  // Optional per-component flag (mirrors a SOW section flag) — a single reason
+  // string; the AI suggest-fix folds it into the instruction alongside comments.
+  flagComponent(wfId, compId, reason) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = this._findComp(wf, compId);
+    if (!c) return;
+    App.pushUndo('Flag wireframe component');
+    c.flagged = true;
+    c.flag_reason = String(reason || '').slice(0, 300);
+    this._persist(wf, 'wireframe_flag', '', c.flag_reason || 'flagged', 'user');
+  },
+  resolveComponentFlag(wfId, compId) {
+    const wf = this.get(wfId);
+    if (!wf) return;
+    const c = this._findComp(wf, compId);
+    if (!c || !c.flagged) return;
+    App.pushUndo('Resolve wireframe flag');
+    c.flagged = false; c.flag_reason = '';
+    this._persist(wf, 'wireframe_flag_resolved', 'flagged', 'resolved', 'user');
+  },
+  // WF-10: open review items across the concept — components carrying an open
+  // flag or any open comment. Pure; drives the review side-panel + suggest-fix.
+  reviewItems(wf) {
+    if (!wf) return [];
+    return (wf.components || []).filter(c => c.flagged || this.openComments(c) > 0).map(c => ({
+      id: c.id, type: c.type, title: c.title || '',
+      flagged: !!c.flagged, flag_reason: c.flag_reason || '',
+      open_comments: this.openComments(c)
+    }));
+  },
+  // WF-10: pure structural redline — current components vs the signed baseline.
+  // added/removed/moved/binding-changed, matched by component id. Deterministic.
+  structuralDiff(wf) {
+    const base = (wf && wf.baseline && wf.baseline.components) || [];
+    const cur = (wf && wf.components) || [];
+    const byId = (arr) => { const m = {}; arr.forEach(c => { m[c.id] = c; }); return m; };
+    const baseMap = byId(base), curMap = byId(cur);
+    const added = cur.filter(c => !baseMap[c.id]).map(c => ({ id: c.id, type: c.type, title: c.title || '', x: c.x, y: c.y, w: c.w, h: c.h }));
+    const removed = base.filter(c => !curMap[c.id]).map(c => ({ id: c.id, type: c.type, title: c.title || '', x: c.x, y: c.y, w: c.w, h: c.h }));
+    const moved = [], bindingChanges = [];
+    cur.forEach(c => {
+      const b = baseMap[c.id];
+      if (!b) return;
+      if (b.x !== c.x || b.y !== c.y || b.w !== c.w || b.h !== c.h) {
+        moved.push({ id: c.id, type: c.type, title: c.title || '', from: { x: b.x, y: b.y, w: b.w, h: b.h }, to: { x: c.x, y: c.y, w: c.w, h: c.h } });
+      }
+      if ((b.metric_id || null) !== (c.metric_id || null)) {
+        bindingChanges.push({ id: c.id, type: c.type, title: c.title || '', from: b.metric_id || null, to: c.metric_id || null });
+      }
+    });
+    return {
+      has_baseline: !!(wf && wf.baseline),
+      baseline_at: (wf && wf.baseline) ? wf.baseline.at : null,
+      added, removed, moved, bindingChanges,
+      changed: added.length + removed.length + moved.length + bindingChanges.length
+    };
   },
 
   // Vocabulary-enforced component creation. Returns the component or an error string.
@@ -48501,7 +48673,8 @@ const Wireframe = {
       id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
       type, x: spot.x, y: spot.y, w, h,
       title: type === 'title' ? 'Dashboard title — what question does this answer?' : '',
-      props: {}
+      props: {},
+      comments: []   // WF-10: per-component review comments
     };
     App.pushUndo('Add ' + type + ' to wireframe');
     wf.components.push(comp);
@@ -48904,6 +49077,15 @@ const Wireframe = {
         blockers.push('Bind a metric to the ' + c.type + (c.title ? ' “' + c.title + '”' : '') + ' (or mark it “no metric”) before build hand-off.');
       });
     }
+    // WF-10: optional review gate — a definition may require open comments to be
+    // resolved before approval (mirrors the SOW `comments_resolved` token). The
+    // token lives on the definition JSON (not definitions/tableau — supplied by
+    // a governed set or a test); the shipped set omits it, so plain concepts are
+    // never blocked by comments.
+    if (def && Array.isArray(def.approval_requires) && def.approval_requires.indexOf('comments_resolved') >= 0) {
+      const open = wf.components.reduce((n, c) => n + this.openComments(c), 0);
+      if (open > 0) blockers.push(open + ' review comment' + (open === 1 ? '' : 's') + ' must be resolved before approval.');
+    }
     return { ok: blockers.length === 0, blockers, violating: conf.violating };
   },
   // Deterministic layout tidy (no model): clamp to grid + minimum sizes, force
@@ -49042,6 +49224,12 @@ const Wireframe = {
         flag('warning', [c.id], 'The ' + c.type + ' component is not linked to a metric — bind it via "Shows metric" for traceability.');
       });
     }
+    // WF-11: fold in the set-level flow/interaction integrity checks. These are
+    // ALWAYS evaluated (not def.rules-gated) — but a concept with no authored
+    // interactions produces no findings, so existing wireframes are untouched.
+    const flow = this.flowConformance(wf);
+    flow.errors.forEach(e => { errors.push(e.msg); (e.compIds || []).forEach(id => { violating[id] = true; }); });
+    flow.warnings.forEach(w => { warnings.push(w.msg); });
     return { ok: errors.length === 0, errors, warnings, violating };
   },
 
@@ -49179,6 +49367,11 @@ const Wireframe = {
       grid: { cols: (wf.grid && wf.grid.cols) || 0, rows: (wf.grid && wf.grid.rows) || 0 },
       pages: pages
     };
+    // WF-11: the flow & interaction contract (drill matrix, shared filters,
+    // cross-filters). Only attached when interactions are actually authored so
+    // single-page concepts stay lean.
+    const flow = this.flowContract(wf);
+    if (flow.drills.length || flow.shared_filters.length || flow.cross_filters.length) contract.flow = flow;
     const quote = this._contractQuote(wf);
     if (quote) contract.quote = quote;
     return contract;
@@ -49215,6 +49408,22 @@ const Wireframe = {
       lines.push('', 'Acceptance checklist:');
       pg.acceptance_checklist.forEach(x => lines.push('- [ ] ' + x));
     });
+    // WF-11: flow & interaction contract for the whole set.
+    if (contract.flow && (contract.flow.drills.length || contract.flow.shared_filters.length || contract.flow.cross_filters.length)) {
+      lines.push('', 'FLOW & INTERACTION CONTRACT:');
+      if (contract.flow.drills.length) {
+        lines.push('Drill actions:');
+        contract.flow.drills.forEach(d => lines.push('- ' + d.from_page + ' · "' + d.source + '" → ' + d.to_page + (d.dimensions.length ? '  (carry: ' + d.dimensions.join(', ') + ')' : '')));
+      }
+      if (contract.flow.shared_filters.length) {
+        lines.push('Shared filters (synced across all pages):');
+        contract.flow.shared_filters.forEach(s => lines.push('- ' + s.field));
+      }
+      if (contract.flow.cross_filters.length) {
+        lines.push('Cross-filter sources:');
+        contract.flow.cross_filters.forEach(c => lines.push('- ' + c.page + ' · "' + c.source + '"'));
+      }
+    }
     if (contract.quote) {
       const amt = contract.quote.amount != null ? (contract.quote.currency || '') + Math.round(contract.quote.amount).toLocaleString('en-GB') : 'n/a';
       lines.push('', 'Commercial envelope (from the delivery plan): ' + amt + (contract.quote.planned_points != null ? ' for ' + contract.quote.planned_points + ' planned points' : '') + '.');
@@ -49357,6 +49566,156 @@ const Wireframe = {
       changes: [{ field: 'size_tableau', before: String(from), after: String(to) }],
       apply() { App.updateProject(pid, 'size_tableau', to, src); return { applied: true }; }
     };
+  },
+
+  /* ==========================================================================
+     WF-11 — Dashboard suite flow contract. A SET (wireframes sharing set_id, or
+     a standalone as a set of one) carries a semantic interaction record on its
+     ANCHOR page (the first member): drill actions (component on page A → target
+     page B, carrying dimensions), shared/global filters synced across pages, and
+     per-component cross-filter/highlight behaviour. All authoring is model-free;
+     the flow strip, spec section, build contract and conformance rules are pure.
+     Vocabulary for interaction kinds lives here in JS (no definitions/ edit).
+     ========================================================================== */
+  INTERACTION_KINDS: ['drill', 'shared_filter', 'cross_filter'],
+  // The set anchor hosts the interactions record — the first member by order.
+  _setAnchor(wf) { const members = this.setOf(wf); return members[0] || wf; },
+  // Read the anchor's interactions, shaped { drills, shared_filters, cross_filters }.
+  interactions(wf) {
+    const anchor = this._setAnchor(wf);
+    const it = anchor && anchor.interactions;
+    return {
+      drills: (it && Array.isArray(it.drills)) ? it.drills : [],
+      shared_filters: (it && Array.isArray(it.shared_filters)) ? it.shared_filters : [],
+      cross_filters: (it && Array.isArray(it.cross_filters)) ? it.cross_filters : []
+    };
+  },
+  _ensureInteractions(anchor) {
+    if (!anchor.interactions || typeof anchor.interactions !== 'object') anchor.interactions = { drills: [], shared_filters: [], cross_filters: [] };
+    if (!Array.isArray(anchor.interactions.drills)) anchor.interactions.drills = [];
+    if (!Array.isArray(anchor.interactions.shared_filters)) anchor.interactions.shared_filters = [];
+    if (!Array.isArray(anchor.interactions.cross_filters)) anchor.interactions.cross_filters = [];
+    return anchor.interactions;
+  },
+  // Add a drill: a source component on its page navigates to a target page,
+  // carrying zero or more dimensions. Validated against real page/component ids;
+  // returns {ok} or {ok:false,error}. Same-set only. Audited + undoable.
+  addDrill(wfId, spec) {
+    const src = this.get(wfId);
+    if (!src || !spec) return { ok: false, error: 'No wireframe' };
+    const members = this.setOf(src);
+    const anchor = this._setAnchor(src);
+    const sourcePageId = spec.source_page_id || src.id;
+    const sourcePage = members.find(m => m.id === sourcePageId);
+    const targetPage = members.find(m => m.id === spec.target_page_id);
+    if (!sourcePage || !targetPage) return { ok: false, error: 'Drill source/target page must be in this set' };
+    if (sourcePage.id === targetPage.id) return { ok: false, error: 'A drill must target a different page' };
+    if (!(sourcePage.components || []).some(c => c.id === spec.source_component_id)) return { ok: false, error: 'Drill source component not found on its page' };
+    const dims = Array.isArray(spec.dimensions) ? spec.dimensions.map(d => String(d).slice(0, 60)).filter(Boolean).slice(0, 8) : [];
+    App.pushUndo('Add dashboard drill');
+    const it = this._ensureInteractions(anchor);
+    it.drills.push({
+      id: 'dr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      source_page_id: sourcePage.id, source_component_id: spec.source_component_id,
+      target_page_id: targetPage.id, dimensions: dims
+    });
+    this._persist(anchor, 'wireframe_drill', '', targetPage.name || targetPage.id, 'user');
+    return { ok: true };
+  },
+  removeDrill(wfId, drillId) {
+    const src = this.get(wfId);
+    if (!src) return;
+    const anchor = this._setAnchor(src);
+    if (!anchor.interactions || !Array.isArray(anchor.interactions.drills)) return;
+    if (!anchor.interactions.drills.some(d => d.id === drillId)) return;
+    App.pushUndo('Remove dashboard drill');
+    anchor.interactions.drills = anchor.interactions.drills.filter(d => d.id !== drillId);
+    this._persist(anchor, 'wireframe_drill', drillId, '', 'user');
+  },
+  // A global filter synchronised across every page in the set.
+  addSharedFilter(wfId, field) {
+    const src = this.get(wfId);
+    if (!src) return { ok: false, error: 'No wireframe' };
+    const f = String(field || '').trim().slice(0, 80);
+    if (!f) return { ok: false, error: 'Name the field the shared filter controls' };
+    const anchor = this._setAnchor(src);
+    const it = this._ensureInteractions(anchor);
+    if (it.shared_filters.some(s => s.field.toLowerCase() === f.toLowerCase())) return { ok: false, error: 'That shared filter already exists' };
+    App.pushUndo('Add shared filter');
+    it.shared_filters.push({ id: 'sf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), field: f });
+    this._persist(anchor, 'wireframe_shared_filter', '', f, 'user');
+    return { ok: true };
+  },
+  removeSharedFilter(wfId, id) {
+    const src = this.get(wfId);
+    if (!src) return;
+    const anchor = this._setAnchor(src);
+    if (!anchor.interactions || !Array.isArray(anchor.interactions.shared_filters)) return;
+    if (!anchor.interactions.shared_filters.some(s => s.id === id)) return;
+    App.pushUndo('Remove shared filter');
+    anchor.interactions.shared_filters = anchor.interactions.shared_filters.filter(s => s.id !== id);
+    this._persist(anchor, 'wireframe_shared_filter', id, '', 'user');
+  },
+  // A component that cross-filters/highlights the rest of its page on selection.
+  toggleCrossFilter(wfId, compId) {
+    const src = this.get(wfId);
+    if (!src) return { ok: false, error: 'No wireframe' };
+    if (!(src.components || []).some(c => c.id === compId)) return { ok: false, error: 'Component not found' };
+    const anchor = this._setAnchor(src);
+    const it = this._ensureInteractions(anchor);
+    App.pushUndo('Toggle cross-filter');
+    const existing = it.cross_filters.findIndex(x => x.source_component_id === compId && x.source_page_id === src.id);
+    if (existing >= 0) it.cross_filters.splice(existing, 1);
+    else it.cross_filters.push({ id: 'cf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), source_page_id: src.id, source_component_id: compId });
+    this._persist(anchor, 'wireframe_cross_filter', '', compId, 'user');
+    return { ok: true };
+  },
+  // WF-11: pure flow-integrity conformance — dangling drill targets/sources
+  // (error) and shared filters not present on every page (warning). Returns
+  // { errors:[{msg,compIds}], warnings:[{msg}] }. Empty when no interactions.
+  flowConformance(wf) {
+    const errors = [], warnings = [];
+    const members = this.setOf(wf);
+    const it = this.interactions(wf);
+    const pageIds = new Set(members.map(m => m.id));
+    const compIndex = {}; // pageId → Set(componentId)
+    members.forEach(m => { compIndex[m.id] = new Set((m.components || []).map(c => c.id)); });
+    it.drills.forEach(d => {
+      if (!pageIds.has(d.target_page_id)) errors.push({ msg: 'A drill points to a page that is no longer in the set.', compIds: [d.source_component_id] });
+      else if (!pageIds.has(d.source_page_id)) errors.push({ msg: 'A drill starts from a page that is no longer in the set.', compIds: [] });
+      else if (!compIndex[d.source_page_id] || !compIndex[d.source_page_id].has(d.source_component_id)) errors.push({ msg: 'A drill starts from a component that no longer exists.', compIds: [] });
+    });
+    // "Shared filter present on all pages": every page must carry a filter
+    // component bound to the shared field (props.field or title match).
+    if (it.shared_filters.length && members.length > 1) {
+      const hasFilterFor = (page, field) => (page.components || []).some(c => c.type === 'filter' && (
+        (c.props && c.props.field && String(c.props.field).toLowerCase() === field.toLowerCase()) ||
+        String(c.title || '').toLowerCase() === field.toLowerCase()
+      ));
+      it.shared_filters.forEach(sf => {
+        const missing = members.filter(m => !hasFilterFor(m, sf.field));
+        if (missing.length) warnings.push({ msg: 'Shared filter “' + sf.field + '” is missing on ' + missing.length + ' page' + (missing.length === 1 ? '' : 's') + ' — place a matching filter on every page.' });
+      });
+    }
+    return { errors, warnings };
+  },
+  // WF-11: the deterministic flow contract with page NAMES resolved — the drill
+  // matrix, shared-filter table and cross-filters. Pure; consumed by the build
+  // contract, the wireframe_spec report and the flow strip.
+  flowContract(wf) {
+    const members = this.setOf(wf);
+    const nameOf = (id) => { const m = members.find(p => p.id === id); return m ? (m.name || id) : id; };
+    const compOf = (pageId, compId) => { const m = members.find(p => p.id === pageId); const c = m && (m.components || []).find(x => x.id === compId); return c ? (c.title || c.type) : compId; };
+    const it = this.interactions(wf);
+    return {
+      pages: members.map((m, i) => ({ index: i + 1, id: m.id, name: m.name || ('Page ' + (i + 1)) })),
+      drills: it.drills.map(d => ({
+        from_page: nameOf(d.source_page_id), source: compOf(d.source_page_id, d.source_component_id),
+        to_page: nameOf(d.target_page_id), dimensions: d.dimensions || []
+      })),
+      shared_filters: it.shared_filters.map(s => ({ field: s.field })),
+      cross_filters: it.cross_filters.map(c => ({ page: nameOf(c.source_page_id), source: compOf(c.source_page_id, c.source_component_id) }))
+    };
   }
 };
 
@@ -49384,6 +49743,11 @@ const WireframeSkill = {
   _reviewActive: false,
   _reviewBusy: false,
   _reviewNarration: null,
+  // WF-10 review workflow: structural-redline "Compare" mode, a pending AI
+  // suggest-fix proposal (ops + the feedback it resolves), and its busy flag.
+  _compareActive: false,
+  _compFix: null,        // { compId, ops, addressed:{ commentIdxs, flag } }
+  _fixBusyComp: false,
 
   open(ctx) {
     this._mode = 'list'; this._wfId = null; this._selId = null;
@@ -49395,7 +49759,7 @@ const WireframeSkill = {
     if (modal) modal.focus();
   },
   close() { const ov = document.getElementById('wfModalOverlay'); if (ov) ov.classList.remove('open'); },
-  edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this._sizingProposal = null; this._calibration = null; this._calibBusy = false; this.render(); },
+  edit(id) { this._mode = 'edit'; this._wfId = id; this._selId = null; this._sizingProposal = null; this._calibration = null; this._calibBusy = false; this._compareActive = false; this._compFix = null; this.render(); },
   backToList() { this._mode = 'list'; this._wfId = null; this.render(); },
 
   _def() { const w = this._wfId && Wireframe.get(this._wfId); const r = Definitions.resolve('tableau', (w && w.customer) || App.activeCustomer); return r && r.files.definition; },
@@ -49554,9 +49918,55 @@ const WireframeSkill = {
     return {
       type: 'object', required: ['dashboards'],
       properties: {
-        dashboards: { type: 'array', items: this._layoutSchema(def) }
+        dashboards: { type: 'array', items: this._layoutSchema(def) },
+        // WF-11: the model may propose the cross-page flow. Pages and components
+        // are referenced by ZERO-BASED INDEX (ids don't exist until the set is
+        // built); every reference is validated against the real ids after the
+        // layout lands, and invalid references are dropped.
+        interactions: {
+          type: 'object',
+          properties: {
+            drills: {
+              type: 'array',
+              items: {
+                type: 'object', required: ['source_page', 'source_component', 'target_page'],
+                properties: {
+                  source_page: { type: 'integer' }, source_component: { type: 'integer' },
+                  target_page: { type: 'integer' }, dimensions: { type: 'array', items: { type: 'string' } }
+                }
+              }
+            },
+            shared_filters: {
+              type: 'array',
+              items: { type: 'object', required: ['field'], properties: { field: { type: 'string' } } }
+            }
+          }
+        }
       }
     };
+  },
+  // WF-11: land a model-proposed flow onto a freshly-built set. Pages/components
+  // are index references from _setSchema; each is resolved to a real id and
+  // validated at the mutator (invalid refs dropped). Pure-ish glue — every write
+  // routes through the audited Wireframe mutators. Returns the applied count.
+  _applySetInteractions(pages, interactions) {
+    if (!interactions || !pages.length) return 0;
+    const anchorId = pages[0].id;
+    let applied = 0;
+    (interactions.drills || []).forEach(d => {
+      const sp = pages[d.source_page], tp = pages[d.target_page];
+      if (!sp || !tp) return;
+      const comps = (Wireframe.get(sp.id) || {}).components || [];
+      const comp = comps[d.source_component];
+      if (!comp) return;
+      const dims = Array.isArray(d.dimensions) ? d.dimensions : [];
+      const r = Wireframe.addDrill(sp.id, { source_page_id: sp.id, source_component_id: comp.id, target_page_id: tp.id, dimensions: dims });
+      if (r && r.ok) applied++;
+    });
+    (interactions.shared_filters || []).forEach(sf => {
+      if (sf && sf.field) { const r = Wireframe.addSharedFilter(anchorId, sf.field); if (r && r.ok) applied++; }
+    });
+    return applied;
   },
 
   // W3: draft a whole set of linked dashboards. Page 1 is a fresh wireframe;
@@ -49597,15 +50007,18 @@ const WireframeSkill = {
       const dashboards = (out.dashboards || []).filter(d => d && Array.isArray(d.components)).slice(0, 6);
       if (!dashboards.length) { App.toast('The model returned no dashboards', 'error'); return; }
       let firstId = null;
+      const built = [];
       dashboards.forEach((d, di) => {
         const name = (typeof d.name === 'string' && d.name.trim()) ? d.name.trim().slice(0, 120) : (brief + ' (' + (di + 1) + ')');
         const wf = di === 0
           ? Wireframe.create({ customer: App.activeCustomer, definition: def, name, source: 'ai-wireframe' })
           : Wireframe.addPage(firstId, name);
         if (di === 0) firstId = wf.id;
-        if (wf) this._applyLayoutComponents(wf.id, d.components, def);
+        if (wf) { this._applyLayoutComponents(wf.id, d.components, def); built.push({ id: wf.id }); }
       });
-      App.toast('Drafted a set of ' + dashboards.length + ' linked dashboards', 'success');
+      // WF-11: land the proposed cross-page flow, validated against real ids.
+      const flowApplied = this._applySetInteractions(built, out.interactions);
+      App.toast('Drafted a set of ' + dashboards.length + ' linked dashboards' + (flowApplied ? ' with ' + flowApplied + ' flow link' + (flowApplied === 1 ? '' : 's') : ''), 'success');
       if (firstId) this.edit(firstId);
     } catch (e) {
       App.toast(AI.describeError(e), 'error');
@@ -50251,6 +50664,14 @@ const WireframeSkill = {
     if (!wf || !def) return;
     this._refineBusy = true;
     this.render();
+    // WF-11: when this concept belongs to a multi-page set, let the model rewire
+    // the cross-page flow too (referencing other pages by their exact id).
+    const setPages = Wireframe.setOf(wf);
+    const flowBlock = setPages.length > 1
+      ? '\nThis dashboard is page of a set. Other pages (reference by id for drills): ' +
+        setPages.filter(p => p.id !== wf.id).map(p => '"' + (p.name || p.id) + '" (id ' + p.id + ')').join(', ') +
+        '.\nFlow ops: add_drill (id=source component on THIS page, target_id=another page id, optional dimensions[]), add_shared_filter (field — a global filter synced across all pages), remove_drill (id=drill id).'
+      : '';
     try {
       const messages = [
         {
@@ -50261,7 +50682,8 @@ const WireframeSkill = {
             'Keep the design rules: one title at y=0, KPIs top third, filters top band or right rail, no overlaps, on-grid.\n' +
             this._metricPromptBlock(wf.customer) +
             this._propsPromptBlock(def) +
-            this._tableauPromptBlock(wf)
+            this._tableauPromptBlock(wf) +
+            flowBlock
         },
         {
           role: 'user',
@@ -50350,14 +50772,19 @@ const WireframeSkill = {
           items: {
             type: 'object', required: ['op'],
             properties: {
-              op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove', 'bind_metric', 'set_props'] },
+              // WF-11 adds flow ops: add_drill (id=source component, target_id=
+              // target page), add_shared_filter (field), remove_drill (id=drill).
+              op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove', 'bind_metric', 'set_props', 'add_drill', 'add_shared_filter', 'remove_drill'] },
               type: { type: 'string' },
               id: { type: 'string' },
               x: { type: 'number' }, y: { type: 'number' },
               w: { type: 'number' }, h: { type: 'number' },
               title: { type: 'string' },
               metric_id: { type: 'string' },
-              props: { type: 'object' }
+              props: { type: 'object' },
+              target_id: { type: 'string' },
+              field: { type: 'string' },
+              dimensions: { type: 'array', items: { type: 'string' } }
             }
           }
         }
@@ -50402,6 +50829,20 @@ const WireframeSkill = {
       // only counts as applied when at least one prop actually landed.
       else if (o.op === 'set_props' && exists) {
         if (Wireframe.setComponentProps(this._wfId, o.id, o.props || {}, def) > 0) applied++;
+      }
+      // WF-11: flow rewiring — validated at the mutators (dangling refs dropped).
+      else if (o.op === 'add_drill' && exists && o.target_id) {
+        const r = Wireframe.addDrill(this._wfId, { source_page_id: this._wfId, source_component_id: o.id, target_page_id: o.target_id, dimensions: Array.isArray(o.dimensions) ? o.dimensions : [] });
+        if (r && r.ok) applied++;
+      }
+      else if (o.op === 'add_shared_filter' && o.field) {
+        const r = Wireframe.addSharedFilter(this._wfId, o.field);
+        if (r && r.ok) applied++;
+      }
+      else if (o.op === 'remove_drill' && o.id) {
+        const before = Wireframe.interactions(wf).drills.length;
+        Wireframe.removeDrill(this._wfId, o.id);
+        if (Wireframe.interactions(Wireframe.get(this._wfId)).drills.length < before) applied++;
       }
     });
     return applied;
@@ -50850,15 +51291,41 @@ const WireframeSkill = {
     } else {
       btns = '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiSetStatus(\'Concept\')">Reopen</button>';
     }
+    // WF-10: a Superseded concept can point to its successor (lineage). Index-based
+    // handler — the wireframe ids are our own, but stay consistent with the codebase.
+    let succHtml = '';
+    if (st === 'Superseded') {
+      const esc = Dashboard.esc;
+      const others = Wireframe.list(wf.customer).filter(w => w.id !== wf.id && w.status !== 'Superseded');
+      const opts = '<option value="">— no successor —</option>' + others.map((w, i) => '<option value="' + i + '"' + (wf.successor_id === w.id ? ' selected' : '') + '>' + esc(w.name) + '</option>').join('');
+      const succ = wf.successor_id ? Wireframe.get(wf.successor_id) : null;
+      succHtml = '<div style="margin-top:6px">' +
+        '<label style="font-size:10px;color:var(--text-muted)">Replaced by</label>' +
+        '<select class="field-input" style="width:100%" onchange="WireframeSkill.uiSetSuccessor(this.value)" aria-label="Successor concept">' + opts + '</select>' +
+        (succ ? '<div style="font-size:11px;margin-top:2px"><a href="#" onclick="WireframeSkill.edit(\'' + esc(succ.id) + '\');return false">Open successor: ' + esc(succ.name) + '</a></div>' : '') +
+      '</div>';
+    }
     return '<div style="margin-bottom:10px">' +
       '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Status</div>' +
       '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + this._statusChip(st) + btns + '</div>' +
+      succHtml +
     '</div>';
   },
   uiSetStatus(status) {
     const r = Wireframe.setStatus(this._wfId, status, this._def());
     if (!r.ok) { App.toast(r.error || 'Could not change status', 'error'); return; }
     App.toast('Wireframe ' + status.toLowerCase() + (status === 'Approved' ? ' — Ctrl+Z to undo' : ''), 'success');
+    this.render();
+  },
+  // WF-10: set the successor by its INDEX into the same-customer concept list
+  // (rebuilt identically in _statusHtml) so no untrusted id rides an onchange.
+  uiSetSuccessor(idxStr) {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf) return;
+    if (idxStr === '' || idxStr == null) { Wireframe.setSuccessor(this._wfId, null); this.render(); return; }
+    const others = Wireframe.list(wf.customer).filter(w => w.id !== wf.id && w.status !== 'Superseded');
+    const target = others[parseInt(idxStr, 10)];
+    Wireframe.setSuccessor(this._wfId, target ? target.id : null);
     this.render();
   },
 
@@ -50949,9 +51416,30 @@ const WireframeSkill = {
           '<text x="' + cx + '" y="' + (cy + 3.5) + '" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="10" font-weight="700" fill="#ffffff">' + a.n + '</text></g>';
       }).join('');
     }
+    // WF-10: structural redline — removed components ghosted at their baseline
+    // position, moved components' "before" outline dashed, added components
+    // tagged. Pure geometry from Wireframe.structuralDiff (no model).
+    let redline = '';
+    if (this._compareActive) {
+      const diff = Wireframe.structuralDiff(wf);
+      const ghost = (g, colour, label) => {
+        const px = g.x * this.CELL, py = g.y * this.CELL_H, pw = g.w * this.CELL, ph = g.h * this.CELL_H;
+        return '<g class="wf-redline" pointer-events="none">' +
+          '<rect x="' + (px + 3) + '" y="' + (py + 3) + '" width="' + Math.max(0, pw - 6) + '" height="' + Math.max(0, ph - 6) + '" rx="4" fill="' + colour + '" fill-opacity="0.06" stroke="' + colour + '" stroke-width="1.5" stroke-dasharray="5 3"/>' +
+          '<text x="' + (px + 8) + '" y="' + (py + ph - 8) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="9" font-weight="700" fill="' + colour + '">' + esc(label) + '</text></g>';
+      };
+      diff.removed.forEach(c => { redline += ghost(c, '#b91c1c', 'removed'); });
+      diff.moved.forEach(m => { redline += ghost(m.from, '#64748b', 'was'); });
+      const addTag = (c) => {
+        const px = c.x * this.CELL, py = c.y * this.CELL_H;
+        return '<g class="wf-redline" pointer-events="none"><rect x="' + (px + 3) + '" y="' + (py + 3) + '" width="34" height="13" rx="3" fill="#15803d"/>' +
+          '<text x="' + (px + 6) + '" y="' + (py + 12.5) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="9" font-weight="700" fill="#ffffff">new</text></g>';
+      };
+      diff.added.forEach(c => { redline += addTag(c); });
+    }
     return '<svg id="wfCanvas" class="wf-canvas" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" ' +
       'onmousemove="WireframeSkill.onCanvasMove(event)" onmouseup="WireframeSkill.onCanvasUp()" onmouseleave="WireframeSkill.onCanvasUp()" onclick="WireframeSkill.select(null)" role="img" aria-label="Wireframe canvas">' +
-      grid + comps + overlay + '</svg>';
+      grid + comps + overlay + redline + '</svg>';
   },
 
   // Customer metrics this concept answers — traceability from dashboard
@@ -51141,6 +51629,313 @@ const WireframeSkill = {
     '</div>';
   },
 
+  /* ==========================================================================
+     WF-10 — review workflow UI: per-component comments/flags, the open-items
+     panel, the structural-redline Compare toggle, and AI "Suggest fix" (which
+     mirrors SowSkill.uiSuggestEdit — instruction machine-built, ops land via
+     App.runBatch alongside comment/flag resolution as ONE undo).
+     ========================================================================== */
+  // Compare (structural redline) — only meaningful once a baseline exists (i.e.
+  // the concept has been Approved at least once, so a later revision can diff).
+  uiToggleCompare() {
+    const wf = Wireframe.get(this._wfId);
+    if (!wf || !wf.baseline) { App.toast('No approved baseline yet — approve the concept first to enable Compare', 'info'); return; }
+    this._compareActive = !this._compareActive;
+    this.render();
+  },
+  _reviewPanelHtml(wf) {
+    const esc = Dashboard.esc;
+    const items = Wireframe.reviewItems(wf);
+    const hasBaseline = !!wf.baseline;
+    const diff = this._compareActive ? Wireframe.structuralDiff(wf) : null;
+    let compareLine = '';
+    if (hasBaseline) {
+      compareLine = '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiToggleCompare()" title="Diff the current layout against the signed-off baseline">' +
+        (this._compareActive ? 'Hide redline' : 'Compare to baseline') + '</button>';
+    }
+    let diffHtml = '';
+    if (diff) {
+      const chg = [];
+      if (diff.added.length) chg.push(diff.added.length + ' added');
+      if (diff.removed.length) chg.push(diff.removed.length + ' removed');
+      if (diff.moved.length) chg.push(diff.moved.length + ' moved/resized');
+      if (diff.bindingChanges.length) chg.push(diff.bindingChanges.length + ' re-bound');
+      diffHtml = '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Since baseline (' + esc((diff.baseline_at || '').slice(0, 10)) + '): ' + (chg.length ? esc(chg.join(' · ')) : 'no structural change') + '.</div>' +
+        (diff.bindingChanges.length
+          ? '<ul style="margin:4px 0 0;padding-left:16px;font-size:11px;color:var(--text-muted)">' + diff.bindingChanges.map(b => '<li>' + esc(b.title || b.type) + ': binding ' + esc(b.from ? (Metrics.byId(b.from) ? Metrics.byId(b.from).name : b.from) : '(none)') + ' → ' + esc(b.to ? (Metrics.byId(b.to) ? Metrics.byId(b.to).name : b.to) : '(none)') + '</li>').join('') + '</ul>'
+          : '');
+    }
+    const list = items.length
+      ? items.map(it => '<button class="btn btn-ghost btn-sm" style="display:block;width:100%;text-align:left;padding:3px 6px" onclick="WireframeSkill.select(\'' + esc(it.id) + '\')" title="Select this component">' +
+          '<span style="font-weight:600">' + esc(it.title || it.type) + '</span> ' +
+          (it.flagged ? '<span style="color:var(--status-amber)">flagged</span> ' : '') +
+          (it.open_comments ? '<span style="color:var(--text-muted)">' + it.open_comments + ' open comment' + (it.open_comments === 1 ? '' : 's') + '</span>' : '') +
+        '</button>').join('')
+      : '<div style="font-size:11px;color:var(--text-muted)">No open review items. Select a component to add a comment or flag.</div>';
+    return '<div style="margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Review' + (items.length ? ' (' + items.length + ')' : '') + '</div>' +
+      list + compareLine + diffHtml +
+    '</div>';
+  },
+  // Selected-component review controls: comments list, add-comment, flag,
+  // Suggest fix (+ its pending Accept/Reject card).
+  _selReviewHtml(wf, sel) {
+    if (!sel) return '';
+    const esc = Dashboard.esc;
+    const comments = (sel.comments || []);
+    const rows = comments.map((c, i) =>
+      '<div style="display:flex;gap:6px;align-items:flex-start;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border-light)' + (c.resolved ? ';opacity:0.55' : '') + '">' +
+        '<span style="flex:1' + (c.resolved ? ';text-decoration:line-through' : '') + '">' + esc(c.text) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" style="padding:0 4px" onclick="WireframeSkill.uiResolveComment(' + i + ',' + (c.resolved ? 'false' : 'true') + ')">' + (c.resolved ? 'Reopen' : 'Resolve') + '</button>' +
+      '</div>').join('');
+    const flagLine = sel.flagged
+      ? '<div style="font-size:11px;color:var(--status-amber);margin-top:4px">Flagged' + (sel.flag_reason ? ': ' + esc(sel.flag_reason) : '') +
+        ' <button class="btn btn-ghost btn-sm" style="padding:0 4px" onclick="WireframeSkill.uiResolveFlag()">Clear</button></div>'
+      : '<button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="WireframeSkill.uiFlagComp()" title="Flag this component using the comment box text as the reason">Flag component</button>';
+    const open = Wireframe.openComments(sel);
+    const canSuggest = AI.isConfigured() && (sel.flagged || open > 0);
+    const suggestBtn = canSuggest
+      ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiSuggestFix(\'' + esc(sel.id) + '\')"' + (this._fixBusyComp ? ' disabled' : '') + ' title="Let AI propose a scoped fix that addresses the open feedback on this component">' + (this._fixBusyComp ? 'Thinking…' : 'Suggest fix') + '</button>'
+      : '';
+    let fixCard = '';
+    if (this._compFix && this._compFix.compId === sel.id) {
+      const ops = this._compFix.ops || [];
+      const opDesc = ops.length
+        ? '<ul style="margin:4px 0;padding-left:16px;font-size:11px">' + ops.map(o => '<li>' + esc(this._describeOp(o)) + '</li>').join('') + '</ul>'
+        : '<div style="font-size:11px;color:var(--text-muted)">The model proposed no usable changes.</div>';
+      fixCard = '<div style="margin-top:6px;border:1px solid var(--border-light);border-radius:6px;padding:8px;background:var(--bg-subtle,rgba(148,163,184,0.08))">' +
+        '<div style="font-size:11px;font-weight:700;margin-bottom:2px">Suggested fix</div>' + opDesc +
+        '<div style="display:flex;gap:6px;margin-top:6px">' +
+          '<button class="btn btn-primary btn-sm"' + (ops.length ? '' : ' disabled') + ' onclick="WireframeSkill.uiAcceptFix()">Accept &amp; resolve</button>' +
+          '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiRejectFix()">Discard</button>' +
+        '</div></div>';
+    }
+    return '<div class="wf-props" style="margin-top:8px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Review this component</div>' +
+      (rows || '<div style="font-size:11px;color:var(--text-muted)">No comments yet.</div>') +
+      '<div style="display:flex;gap:6px;margin-top:6px"><input id="wfCommentInput" class="field-input" style="flex:1" placeholder="Add a comment…" aria-label="Comment on component" onkeydown="if(event.key===\'Enter\'){WireframeSkill.uiAddComment()}">' +
+      '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiAddComment()">Comment</button></div>' +
+      flagLine + suggestBtn + fixCard +
+    '</div>';
+  },
+  _describeOp(o) {
+    if (o.op === 'add') return 'Add ' + (o.type || 'component') + (o.title ? ' “' + o.title + '”' : '');
+    if (o.op === 'move') return 'Move to (' + o.x + ',' + o.y + ')';
+    if (o.op === 'resize') return 'Resize to ' + o.w + '×' + o.h;
+    if (o.op === 'retitle') return 'Retitle to “' + (o.title || '') + '”';
+    if (o.op === 'bind_metric') return 'Bind metric';
+    if (o.op === 'set_props') return 'Set properties';
+    if (o.op === 'remove') return 'Remove component';
+    return o.op;
+  },
+  uiAddComment() {
+    const input = document.getElementById('wfCommentInput');
+    const text = input ? input.value.trim() : '';
+    if (!text || !this._selId) { App.toast('Type a comment first', 'error'); return; }
+    Wireframe.addComment(this._wfId, this._selId, text);
+    if (input) input.value = '';
+    this.render();
+  },
+  uiResolveComment(index, resolved) {
+    if (!this._selId) return;
+    Wireframe.resolveComment(this._wfId, this._selId, index, resolved);
+    this.render();
+  },
+  uiFlagComp() {
+    if (!this._selId) return;
+    const input = document.getElementById('wfCommentInput');
+    const reason = (input && input.value.trim()) || 'Needs revision';
+    Wireframe.flagComponent(this._wfId, this._selId, reason);
+    if (input) input.value = '';
+    this.render();
+  },
+  uiResolveFlag() {
+    if (!this._selId) return;
+    Wireframe.resolveComponentFlag(this._wfId, this._selId);
+    this.render();
+  },
+  // AI suggest-fix: instruction machine-built from the component's flag + open
+  // comments; the model returns patch ops SCOPED to that component; nothing
+  // mutates until Accept.
+  async uiSuggestFix(compId) {
+    if (this._fixBusyComp) return;
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const wf = Wireframe.get(this._wfId);
+    const def = this._def();
+    const c = wf && wf.components.find(x => x.id === compId);
+    if (!c || !def) return;
+    const openIdx = [];
+    (c.comments || []).forEach((cm, i) => { if (!cm.resolved) openIdx.push(i); });
+    const feedback = [];
+    if (c.flagged && c.flag_reason) feedback.push('Flag: ' + c.flag_reason);
+    openIdx.forEach(i => feedback.push('Comment: ' + c.comments[i].text));
+    if (!feedback.length) { App.toast('No open comments or flag on this component to address', 'info'); return; }
+    this._compFix = null;
+    this._fixBusyComp = true;
+    this.render();
+    try {
+      const others = wf.components.filter(x => x.id !== compId).map(x => ({ id: x.id, type: x.type, x: x.x, y: x.y, w: x.w, h: x.h, title: x.title || '' }));
+      const messages = [
+        {
+          role: 'system',
+          content: 'You revise ONE component (id ' + compId + ') of a Tableau dashboard wireframe on a ' + wf.grid.cols + 'x' + wf.grid.rows + ' grid to ADDRESS reviewer feedback. Return ONLY patch operations that change THAT component — and at most one supporting add. Never touch the other components.\n' +
+            'Allowed component types and minimum sizes: ' + def.components.map(cc => cc.type + '(' + cc.min_w + 'x' + cc.min_h + ')').join(', ') + '.\n' +
+            'Ops: move (id, x, y), resize (id, w, h), retitle (id, title), bind_metric (id, metric_id), set_props (id, props), add (type, x, y, w, h, title). Reference the component by its exact id.\n' +
+            'Keep the design rules: no overlaps, on-grid, at or above minimum size.\n' +
+            this._metricPromptBlock(wf.customer) +
+            this._propsPromptBlock(def)
+        },
+        {
+          role: 'user',
+          content: 'COMPONENT TO FIX:\n' + JSON.stringify({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '', metric_id: c.metric_id || null, props: Wireframe._specProps(c) }) +
+            '\n\nOTHER COMPONENTS (context only — do NOT modify):\n' + JSON.stringify(others) +
+            '\n\nREVIEWER FEEDBACK TO ADDRESS:\n' + feedback.map((f, i) => (i + 1) + '. ' + f).join('\n')
+        }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, this._opsSchema(def));
+      // Scope guard: keep only ops on THIS component (or an add). Others dropped.
+      const ops = (out.ops || []).filter(o => o.op === 'add' || o.id === compId).slice(0, 10);
+      this._compFix = { compId, ops, addressed: { commentIdxs: openIdx, flag: !!c.flagged } };
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._fixBusyComp = false;
+      this.render();
+    }
+  },
+  // Accept: apply the ops AND resolve the addressed feedback as ONE App.runBatch
+  // (single undo, audited 'ai') — mirrors SowSkill.uiRedraftAccept's fromReview path.
+  uiAcceptFix() {
+    const f = this._compFix;
+    if (!f) return;
+    const def = this._def();
+    const fns = [() => this._applyOps(f.ops, def)];
+    (f.addressed.commentIdxs || []).forEach(i => fns.push(() => Wireframe.resolveComment(this._wfId, f.compId, i, true)));
+    if (f.addressed.flag) fns.push(() => Wireframe.resolveComponentFlag(this._wfId, f.compId));
+    App.runBatch('AI suggested fix on wireframe component', fns);
+    App.toast('Suggested fix applied — feedback resolved; Ctrl+Z to undo', 'success');
+    this._compFix = null;
+    this.render();
+  },
+  uiRejectFix() { this._compFix = null; this.render(); },
+
+  /* ==========================================================================
+     WF-11 — flow authoring UI: a compact flow strip (pages as nodes + drill
+     arrows), manual drill/shared-filter authoring, per-component cross-filter
+     toggle. All pure/model-free; validation happens at the mutators.
+     ========================================================================== */
+  _flowStripSvg(wf) {
+    const esc = Dashboard.esc;
+    const contract = Wireframe.flowContract(wf);
+    const pages = contract.pages;
+    if (!pages.length) return '';
+    const NW = 92, GAP = 34, NH = 30, PAD = 8, TOP = 22;
+    const W = PAD * 2 + pages.length * NW + Math.max(0, pages.length - 1) * GAP;
+    const H = TOP + NH + 14;
+    const cx = (i) => PAD + i * (NW + GAP) + NW / 2;
+    const idIndex = {}; pages.forEach((p, i) => { idIndex[p.name] = i; });
+    // Build id→index from members for arrow endpoints (contract uses names).
+    const members = Wireframe.setOf(wf);
+    const memIndex = {}; members.forEach((m, i) => { memIndex[m.id] = i; });
+    const it = Wireframe.interactions(wf);
+    let arrows = '';
+    it.drills.forEach(d => {
+      const a = memIndex[d.source_page_id], b = memIndex[d.target_page_id];
+      if (a == null || b == null) return;
+      const x1 = cx(a), x2 = cx(b), y = TOP + NH / 2;
+      const mx = (x1 + x2) / 2, dir = x2 >= x1 ? 1 : -1;
+      arrows += '<path d="M' + x1 + ' ' + (y - 2) + ' Q ' + mx + ' ' + (TOP - 12) + ' ' + (x2 - dir * 8) + ' ' + (y - 2) + '" fill="none" stroke="#6366f1" stroke-width="1.5" marker-end="url(#wfFlowArrow)"/>';
+    });
+    const nodes = pages.map((p, i) => {
+      const x = PAD + i * (NW + GAP);
+      return '<g><rect x="' + x + '" y="' + TOP + '" width="' + NW + '" height="' + NH + '" rx="5" fill="var(--bg-card,#fff)" stroke="#94a3b8"/>' +
+        '<text x="' + (x + NW / 2) + '" y="' + (TOP + NH / 2 + 4) + '" text-anchor="middle" font-family="Segoe UI, system-ui, sans-serif" font-size="10" fill="var(--text-dark,#0f172a)">' + esc((p.name || '').slice(0, 14)) + '</text></g>';
+    }).join('');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Dashboard flow" style="max-width:100%">' +
+      '<defs><marker id="wfFlowArrow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#6366f1"/></marker></defs>' +
+      arrows + nodes + '</svg>';
+  },
+  _flowHtml(wf) {
+    const esc = Dashboard.esc;
+    const members = Wireframe.setOf(wf);
+    const it = Wireframe.interactions(wf);
+    // Flow strip is meaningful for a set; shared filters/cross-filters can exist
+    // for any concept, but drills need >1 page. Show the section when the set has
+    // pages OR any interaction already exists.
+    if (members.length <= 1 && !it.drills.length && !it.shared_filters.length && !it.cross_filters.length) return '';
+    const sel = this._selId ? wf.components.find(c => c.id === this._selId) : null;
+    const strip = members.length > 1 ? '<div style="margin:4px 0">' + this._flowStripSvg(wf) + '</div>' : '';
+    const nameOf = (id) => { const m = members.find(p => p.id === id); return m ? (m.name || id) : id; };
+    const compOf = (pageId, compId) => { const m = members.find(p => p.id === pageId); const c = m && (m.components || []).find(x => x.id === compId); return c ? (c.title || c.type) : compId; };
+    const drillRows = it.drills.map(d =>
+      '<div style="display:flex;gap:6px;align-items:center;font-size:11px;padding:2px 0">' +
+        '<span style="flex:1">' + esc(compOf(d.source_page_id, d.source_component_id)) + ' → ' + esc(nameOf(d.target_page_id)) + (d.dimensions && d.dimensions.length ? ' <span style="color:var(--text-muted)">(' + esc(d.dimensions.join(', ')) + ')</span>' : '') + '</span>' +
+        '<button class="btn btn-ghost btn-sm" style="padding:0 4px" onclick="WireframeSkill.uiRemoveDrill(\'' + esc(d.id) + '\')" title="Remove drill">&times;</button>' +
+      '</div>').join('');
+    // Add-drill form: source = selected component on this page; target = another page.
+    let addDrill = '';
+    if (members.length > 1) {
+      const otherPages = members.filter(p => p.id !== wf.id);
+      const targetOpts = otherPages.map(p => '<option value="' + esc(p.id) + '">' + esc(p.name || p.id) + '</option>').join('');
+      addDrill = sel
+        ? '<div style="display:flex;gap:6px;margin-top:4px;align-items:center">' +
+            '<span style="font-size:11px;color:var(--text-muted)">Drill “' + esc(sel.title || sel.type) + '” →</span>' +
+            '<select id="wfDrillTarget" class="field-input" style="flex:1" aria-label="Drill target page">' + targetOpts + '</select>' +
+            '<input id="wfDrillDims" class="field-input" style="width:88px" placeholder="dims" aria-label="Carried dimensions (comma-separated)">' +
+            '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiAddDrill()">Add</button>' +
+          '</div>'
+        : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Select a component, then add a drill to another page.</div>';
+    }
+    const sfRows = it.shared_filters.map(s =>
+      '<div style="display:flex;gap:6px;align-items:center;font-size:11px;padding:2px 0"><span style="flex:1">' + esc(s.field) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" style="padding:0 4px" onclick="WireframeSkill.uiRemoveSharedFilter(\'' + esc(s.id) + '\')" title="Remove shared filter">&times;</button></div>').join('');
+    const addSf = '<div style="display:flex;gap:6px;margin-top:4px"><input id="wfSharedFilter" class="field-input" style="flex:1" placeholder="Shared filter field (e.g. Region)" aria-label="Shared filter field" onkeydown="if(event.key===\'Enter\'){WireframeSkill.uiAddSharedFilter()}">' +
+      '<button class="btn btn-outline btn-sm" onclick="WireframeSkill.uiAddSharedFilter()">Add</button></div>';
+    // Cross-filter toggle for the selected component.
+    let crossLine = '';
+    if (sel) {
+      const on = it.cross_filters.some(x => x.source_component_id === sel.id && x.source_page_id === wf.id);
+      crossLine = '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;color:var(--text-muted)"><input type="checkbox"' + (on ? ' checked' : '') + ' onchange="WireframeSkill.uiToggleCrossFilter()"> “' + esc(sel.title || sel.type) + '” cross-filters its page on selection</label>';
+    }
+    return '<div style="margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">' +
+      '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Flow &amp; interactions</div>' +
+      strip +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:6px">Drill actions</div>' +
+      (drillRows || '<div style="font-size:11px;color:var(--text-muted)">No drills yet.</div>') + addDrill +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:8px">Shared filters</div>' +
+      (sfRows || '<div style="font-size:11px;color:var(--text-muted)">None — filters here are page-local.</div>') + addSf +
+      crossLine +
+    '</div>';
+  },
+  uiAddDrill() {
+    if (!this._selId) { App.toast('Select the source component first', 'error'); return; }
+    const targetSel = document.getElementById('wfDrillTarget');
+    const dimsEl = document.getElementById('wfDrillDims');
+    const target = targetSel ? targetSel.value : '';
+    if (!target) { App.toast('Pick a target page', 'error'); return; }
+    const dims = dimsEl && dimsEl.value ? dimsEl.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const r = Wireframe.addDrill(this._wfId, { source_page_id: this._wfId, source_component_id: this._selId, target_page_id: target, dimensions: dims });
+    if (!r.ok) { App.toast(r.error || 'Could not add drill', 'error'); return; }
+    App.toast('Drill added — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  uiRemoveDrill(id) { Wireframe.removeDrill(this._wfId, id); this.render(); },
+  uiAddSharedFilter() {
+    const el = document.getElementById('wfSharedFilter');
+    const field = el ? el.value.trim() : '';
+    const r = Wireframe.addSharedFilter(this._wfId, field);
+    if (!r.ok) { App.toast(r.error || 'Could not add shared filter', 'error'); return; }
+    if (el) el.value = '';
+    App.toast('Shared filter added — Ctrl+Z to undo', 'success');
+    this.render();
+  },
+  uiRemoveSharedFilter(id) { Wireframe.removeSharedFilter(this._wfId, id); this.render(); },
+  uiToggleCrossFilter() {
+    if (!this._selId) return;
+    Wireframe.toggleCrossFilter(this._wfId, this._selId);
+    this.render();
+  },
+
   renderEditHtml() {
     const esc = Dashboard.esc;
     const wf = Wireframe.get(this._wfId);
@@ -51220,15 +52015,21 @@ const WireframeSkill = {
             ? this._reviewHtml()
             : '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiDesignReview()" title="Score the concept against the design-lint rules and show the reading order on the canvas">Review my concept</button>') +
           '<div id="wfCommercial">' + this._commercialHtml(wf) + '</div>' +
+          // WF-10: review workflow — open items + structural-redline Compare.
+          this._reviewPanelHtml(wf) +
           this._importGapsHtml() +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;margin-top:12px">Component palette (governed vocabulary)</div>' +
           '<div class="wf-palette">' + palette + '</div>' +
           props +
+          // WF-10: per-component comments / flag / Suggest fix (needs a selection).
+          this._selReviewHtml(wf, sel) +
           '<div style="margin-top:12px">' +
             '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Linked project</div>' +
             '<select class="field-input" onchange="WireframeSkill.uiAttach(this)" aria-label="Linked project">' + projOpts + '</select>' +
           '</div>' +
           this._metricsHtml(wf) +
+          // WF-11: dashboard-suite flow contract (flow strip + drill/filter authoring).
+          this._flowHtml(wf) +
           this._tableauHtml(wf) +
           this._visionHtml(wf) +
           '<div style="margin-top:12px">' +
