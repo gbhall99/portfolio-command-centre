@@ -3444,6 +3444,8 @@ html[data-theme="dark"] .wf-modal { background: var(--bg-card); }
 .wf-body { flex: 1; display: flex; overflow: hidden; }
 .wf-canvas-wrap { flex: 1.8; overflow: auto; padding: 16px; background: var(--bg-content, #f8fafc); display: flex; align-items: flex-start; justify-content: center; }
 html[data-theme="dark"] .wf-canvas-wrap { background: var(--bg-tertiary); }
+.wf-canvas-col { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.wf-canvas-toolbar { display: flex; gap: 6px; align-items: center; }
 .wf-side { flex: 1; min-width: 300px; max-width: 360px; overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--border-light); }
 .wf-canvas { background: var(--surface); border: 1px solid var(--border-light); border-radius: 6px; user-select: none; touch-action: none; }
 html[data-theme="dark"] .wf-canvas { background: var(--bg-card); }
@@ -46969,6 +46971,125 @@ const Wireframe = {
     this._persist(wf, 'wireframe_component_no_metric', c.type, on ? 'true' : 'false', 'user');
   },
 
+  // WF-5: governed per-component props. The definition declares WHICH props a
+  // component type carries (components[].props); this table governs the VALUES
+  // for the enum-like ones (a JS constant — never authored per customer, so no
+  // definitions/ edit is needed to render or validate them).
+  PROP_SPECS: {
+    measure:        { label: 'Measure',        kind: 'text' },
+    measure_x:      { label: 'Measure (X)',    kind: 'text' },
+    measure_y:      { label: 'Measure (Y)',    kind: 'text' },
+    dimension:      { label: 'Dimension',      kind: 'text' },
+    date_dimension: { label: 'Date dimension', kind: 'text' },
+    geo_dimension:  { label: 'Geo dimension',  kind: 'text' },
+    columns:        { label: 'Columns (comma-separated)', kind: 'text' },
+    field:          { label: 'Field',          kind: 'text' },
+    text:           { label: 'Text',           kind: 'text' },
+    orientation:    { label: 'Orientation',    kind: 'enum', options: ['vertical', 'horizontal'] },
+    comparison:     { label: 'Comparison',     kind: 'enum', options: ['none', 'vs target', 'vs prior period', 'vs prior year'] },
+    control_type:   { label: 'Control type',   kind: 'enum', options: ['dropdown', 'multi-select', 'slider', 'date range', 'radio'] },
+    direction:      { label: 'Direction',      kind: 'enum', options: ['horizontal', 'vertical'] }
+  },
+  // Props owned by other mutators — never writable through setComponentProps.
+  // ('metric' is the metric_id binding, owned by setComponentMetric; no_metric
+  // and sample have their own audited paths.)
+  _RESERVED_PROPS: ['no_metric', 'sample', 'metric'],
+  // The declared, editable props for a component type (definition ∩ PROP_SPECS).
+  editableProps(def, type) {
+    const spec = def ? this.componentSpec(def, type) : null;
+    return ((spec && spec.props) || []).filter(p => this._RESERVED_PROPS.indexOf(p) < 0 && !!this.PROP_SPECS[p]);
+  },
+  // Clean a props patch against the governed vocabulary: unknown/reserved prop
+  // names and out-of-vocabulary enum values are dropped per-key; text values
+  // are trimmed and length-clamped; ''/null clears. Pure — model output and
+  // UI input both funnel through this before touching the entity.
+  cleanProps(def, type, patch) {
+    const out = {};   // key → value, or null meaning "clear"
+    const allowed = this.editableProps(def, type);
+    Object.keys(patch || {}).forEach(k => {
+      if (allowed.indexOf(k) < 0) return;
+      const ps = this.PROP_SPECS[k];
+      const v = patch[k];
+      if (v === null || v === undefined || String(v).trim() === '') { out[k] = null; return; }
+      if (ps.kind === 'enum') {
+        if (ps.options.indexOf(v) >= 0) out[k] = v;   // invalid enum value → dropped
+      } else if (typeof v === 'string' || typeof v === 'number') {
+        out[k] = String(v).trim().slice(0, 120);
+      }
+    });
+    return out;
+  },
+  // WF-5: set/clear governed props on a component. Values are validated/clamped
+  // against the definition's declared props (cleanProps). pushUndo BEFORE
+  // mutating; audited + undoable. Returns the number of props actually changed.
+  setComponentProps(wfId, compId, patch, def) {
+    const wf = this.get(wfId);
+    if (!wf) return 0;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return 0;
+    const clean = this.cleanProps(def, c.type, patch);
+    const cur = c.props || {};
+    const changes = Object.keys(clean).filter(k => (clean[k] === null ? cur[k] !== undefined : cur[k] !== clean[k]));
+    if (!changes.length) return 0;
+    App.pushUndo('Edit wireframe component props');
+    if (!c.props) c.props = {};
+    changes.forEach(k => { if (clean[k] === null) delete c.props[k]; else c.props[k] = clean[k]; });
+    this._persist(wf, 'wireframe_component_props', c.type, changes.map(k => k + '=' + (clean[k] === null ? '(clear)' : clean[k])).join('; ').slice(0, 60), 'user');
+    return changes.length;
+  },
+
+  // WF-1: store an AI-suggested illustrative series on a component
+  // (props.sample) so the "preview" fidelity is reproducible and export-safe.
+  // Model output is untrusted: values are integer-clamped HERE, at the mutator.
+  // Pass null to clear. Returns true when the entity changed.
+  setComponentSample(wfId, compId, sample) {
+    const wf = this.get(wfId);
+    if (!wf) return false;
+    const c = wf.components.find(x => x.id === compId);
+    if (!c) return false;
+    const clean = sample ? this._cleanSample(c.type, sample) : null;
+    if (sample && !clean) return false;
+    App.pushUndo(clean ? 'Fill wireframe sample data' : 'Clear wireframe sample data');
+    if (!c.props) c.props = {};
+    if (clean) c.props.sample = clean; else delete c.props.sample;
+    this._persist(wf, 'wireframe_component_sample', c.type, clean ? 'filled' : '(cleared)', clean ? 'ai' : 'user');
+    return true;
+  },
+  // Integer-clamp a model-proposed sample series per component type. Values go
+  // through App.toInteger (magnitudes); deltas keep their sign. Returns null
+  // when the shape is unusable — the caller drops it rather than storing junk.
+  _cleanSample(type, s) {
+    if (!s || typeof s !== 'object') return null;
+    const int = (v) => App.toInteger(v);
+    const signedInt = (v) => (Number(v) < 0 ? -1 : 1) * App.toInteger(Math.abs(Number(v)));
+    const nums = (arr, max) => (Array.isArray(arr) ? arr : []).filter(v => isFinite(Number(v))).slice(0, max).map(int);
+    if (type === 'kpi') {
+      if (!isFinite(Number(s.value))) return null;
+      const out = { value: int(s.value) };
+      if (s.delta !== undefined && isFinite(Number(s.delta))) out.delta = signedInt(s.delta);
+      return out;
+    }
+    if (type === 'scatter') {
+      const points = (Array.isArray(s.points) ? s.points : [])
+        .filter(p => p && isFinite(Number(p.x)) && isFinite(Number(p.y)))
+        .slice(0, 24).map(p => ({ x: int(p.x), y: int(p.y) }));
+      return points.length >= 3 ? { points } : null;
+    }
+    if (type === 'table') {
+      const columns = (Array.isArray(s.columns) ? s.columns : [])
+        .filter(cName => typeof cName === 'string' && cName.trim()).slice(0, 8).map(cName => cName.trim().slice(0, 24));
+      return columns.length ? { columns } : null;
+    }
+    if (type === 'bar' || type === 'line' || type === 'area' || type === 'map') {
+      const values = nums(s.values, 12);
+      if (values.length < 2) return null;
+      const out = { values };
+      if (Array.isArray(s.labels)) out.labels = s.labels.slice(0, values.length).map(l => String(l).slice(0, 24));
+      return out;
+    }
+    return null;
+  },
+
   toggleMetric(wfId, metricId) {
     const wf = this.get(wfId);
     if (!wf) return;
@@ -47068,7 +47189,10 @@ const Wireframe = {
       components: sorted.map(c => ({
         type: c.type, title: c.title || '',
         x: c.x, y: c.y, w: c.w, h: c.h,
-        metric: c.metric_id ? metricName(c.metric_id) : null
+        metric: c.metric_id ? metricName(c.metric_id) : null,
+        // WF-5: declared props ride the build spec (sample preview data and the
+        // no_metric intent flag are editor concerns, not build contract).
+        props: this._specProps(c)
       })),
       metrics: (wf.metric_ids || []).map(metricName).filter(Boolean),
       references: (wf.tableau_refs || []).map(r => ({ name: r.name, workbook: r.workbook || '' }))
@@ -47090,6 +47214,28 @@ const Wireframe = {
     map: 'measure aggregated by geography'
   },
   isDataBearing(c) { return c && (c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0); },
+  // WF-5: the props that belong in a build spec (everything except the
+  // editor-only keys). Pure copy — never mutates the component.
+  _specProps(c) {
+    const out = {};
+    Object.keys((c && c.props) || {}).forEach(k => {
+      if (k !== 'no_metric' && k !== 'sample') out[k] = c.props[k];
+    });
+    return out;
+  },
+  // WF-5: does the component's props fully define its data (so the build spec
+  // does not lean on the title)? A scatter with both measures, a chart/map with
+  // a measure, or a table with columns is build-specifiable even without a
+  // bound metric — the calc/source IS defined. KPIs always need a metric (or
+  // the explicit no_metric flag): headline figures must trace to strategy.
+  propsSpecifyData(c) {
+    if (!c) return false;
+    const p = c.props || {};
+    if (c.type === 'bar' || c.type === 'line' || c.type === 'area' || c.type === 'map') return !!p.measure;
+    if (c.type === 'scatter') return !!(p.measure_x && p.measure_y);
+    if (c.type === 'table') return !!p.columns;
+    return false;
+  },
   // Phase 3.2 + follow-on: a per-component map for the developer hand-off. Covers
   // data-bearing components (field + aggregation) AND the supporting components
   // (filters/text/containers) so nothing on the canvas is left unspecified.
@@ -47098,22 +47244,42 @@ const Wireframe = {
     if (!spec) return [];
     const rows = [];
     spec.components.forEach(c => {
+      const p = c.props || {};
       if (c.type === 'kpi' || this.CHART_TYPES.indexOf(c.type) >= 0) {
+        // WF-5: field resolution order — bound metric, then declared measure
+        // props, then title, then the unbound flag; aggregation carries the
+        // chart-semantics props so the spec stops leaning on titles.
+        let field = c.metric ? '[' + c.metric + ']' : null;
+        if (!field) {
+          if (c.type === 'scatter' && p.measure_x && p.measure_y) field = '[' + p.measure_x + '] × [' + p.measure_y + ']';
+          else if (c.type === 'table' && p.columns) field = String(p.columns).split(',').map(s => '[' + s.trim() + ']').filter(s => s !== '[]').join(', ');
+          else if (p.measure) field = '[' + p.measure + ']';
+        }
+        if (!field) field = c.title ? '[' + c.title + ']' : '[unbound measure]';
+        let agg = this._AGG[c.type] || 'measure';
+        if (c.type === 'bar') agg = 'measure aggregated by ' + (p.dimension ? '[' + p.dimension + ']' : 'a dimension') + (p.orientation ? ' (' + p.orientation + ' bars)' : '');
+        else if (c.type === 'line' || c.type === 'area') agg = 'measure aggregated over a [' + (p.date_dimension || 'Date') + '] axis';
+        else if (c.type === 'map') agg = 'measure aggregated by ' + (p.geo_dimension ? '[' + p.geo_dimension + ']' : 'geography');
+        else if (c.type === 'scatter' && p.dimension) agg = this._AGG.scatter + ', one mark per [' + p.dimension + ']';
+        else if (c.type === 'kpi' && p.comparison && p.comparison !== 'none') agg = this._AGG.kpi + ' · comparison: ' + p.comparison;
+        const specified = !!c.metric || this.propsSpecifyData({ type: c.type, props: p });
         rows.push({
           component: c.type, title: c.title || '',
-          field: c.metric ? '[' + c.metric + ']' : (c.title ? '[' + c.title + ']' : '[unbound measure]'),
-          aggregation: this._AGG[c.type] || 'measure',
-          calc: c.metric ? '' : 'Define the calc/source for this ' + c.type + ' (no metric bound).'
+          field: field,
+          aggregation: agg,
+          calc: specified ? '' : 'Define the calc/source for this ' + c.type + ' (no metric bound).'
         });
       } else if (c.type === 'filter') {
+        const fieldName = p.field || c.title;
         rows.push({ component: 'filter', title: c.title || '',
-          field: c.title ? '[' + c.title + ']' : '[name the field]', aggregation: 'quick filter',
-          calc: c.title ? 'Wire this filter to every relevant sheet.' : 'Name the field this filter controls, then wire it to every relevant sheet.' });
+          field: fieldName ? '[' + fieldName + ']' : '[name the field]',
+          aggregation: (p.control_type ? p.control_type + ' ' : 'quick ') + 'filter',
+          calc: fieldName ? 'Wire this filter to every relevant sheet.' : 'Name the field this filter controls, then wire it to every relevant sheet.' });
       } else if (c.type === 'text') {
         rows.push({ component: 'text', title: c.title || '', field: '—', aggregation: 'static text',
           calc: c.title ? 'Static annotation: “' + c.title + '”.' : 'Add the annotation text for this block.' });
       } else if (c.type === 'container') {
-        rows.push({ component: 'container', title: c.title || '', field: '—', aggregation: 'layout', calc: 'Layout container — arrange the inner sheets.' });
+        rows.push({ component: 'container', title: c.title || '', field: '—', aggregation: 'layout' + (p.direction ? ' (' + p.direction + ')' : ''), calc: 'Layout container — arrange the inner sheets.' });
       }
     });
     return rows;
@@ -47126,7 +47292,9 @@ const Wireframe = {
     const conf = def ? this.checkConformance(wf, def) : { errors: [], violating: {} };
     conf.errors.forEach(e => blockers.push(e));
     if ((App.data.metrics || []).some(m => m.customer === wf.customer)) {
-      wf.components.filter(c => this.isDataBearing(c) && !c.metric_id && !(c.props && c.props.no_metric)).forEach(c => {
+      // WF-5: props-aware — a component whose declared props fully define its
+      // data (e.g. a scatter with both measures) is already build-specifiable.
+      wf.components.filter(c => this.isDataBearing(c) && !c.metric_id && !(c.props && c.props.no_metric) && !this.propsSpecifyData(c)).forEach(c => {
         blockers.push('Bind a metric to the ' + c.type + (c.title ? ' “' + c.title + '”' : '') + ' (or mark it “no metric”) before build hand-off.');
       });
     }
@@ -47176,9 +47344,18 @@ const Wireframe = {
     if (spec.metrics.length) items.push('The dashboard answers: ' + spec.metrics.join(', ') + '.');
     spec.components.forEach(c => {
       const where = c.title ? '“' + c.title + '”' : 'the ' + c.type;
-      if (c.type === 'kpi') items.push('KPI ' + where + ' shows ' + (c.metric || 'its bound measure') + ' as a single headline figure.');
-      else if (this.CHART_TYPES.indexOf(c.type) >= 0) items.push(c.type + ' chart ' + where + ' plots ' + (c.metric || 'its measure') + ' and carries a takeaway-style title.');
-      else if (c.type === 'filter') items.push('Filter ' + where + ' is wired to every relevant sheet.');
+      const p = c.props || {};
+      if (c.type === 'kpi') items.push('KPI ' + where + ' shows ' + (c.metric || 'its bound measure') + ' as a single headline figure' + (p.comparison && p.comparison !== 'none' ? ' with a ' + p.comparison + ' comparison' : '') + '.');
+      else if (this.CHART_TYPES.indexOf(c.type) >= 0) {
+        // WF-5: props sharpen the verify item — dimension/orientation/axes.
+        let detail = '';
+        if (c.type === 'bar') detail = (p.dimension ? ' by ' + p.dimension : '') + (p.orientation ? ' (' + p.orientation + ' bars)' : '');
+        else if (c.type === 'line' || c.type === 'area') detail = p.date_dimension ? ' over ' + p.date_dimension : '';
+        else if (c.type === 'map') detail = p.geo_dimension ? ' by ' + p.geo_dimension : '';
+        else if (c.type === 'scatter' && p.measure_x && p.measure_y) detail = ' (' + p.measure_x + ' vs ' + p.measure_y + ')';
+        items.push(c.type + ' chart ' + where + ' plots ' + (c.metric || (c.type === 'scatter' && p.measure_x && p.measure_y ? 'its two measures' : (p.measure || 'its measure'))) + detail + ' and carries a takeaway-style title.');
+      }
+      else if (c.type === 'filter') items.push('Filter ' + where + ' is ' + (p.control_type ? 'a ' + p.control_type + ' control ' : '') + 'wired to every relevant sheet.');
       else if (c.type === 'title') items.push('Title ' + where + ' sits in the top row.');
     });
     if (def) { const conf = this.checkConformance(wf, def); items.push('Passes the governed design rules (currently: ' + (conf.ok ? 'passes' : conf.errors.length + ' error(s)') + ').'); }
@@ -47310,12 +47487,59 @@ const WireframeSkill = {
               type: { type: 'string', enum: def.components.map(c => c.type) },
               x: { type: 'integer' }, y: { type: 'integer' },
               w: { type: 'integer' }, h: { type: 'integer' },
-              title: { type: 'string' }
+              title: { type: 'string' },
+              // WF-5: fresh drafts arrive metric-bound and props-populated.
+              // Both are validated at apply time (setComponentMetric refuses
+              // cross-customer/unknown ids; setComponentProps clamps values).
+              metric_id: { type: 'string' },
+              props: { type: 'object' }
             }
           }
         }
       }
     };
+  },
+
+  // WF-5: structured metric grounding for drafts/refines — id, name, unit,
+  // direction, latest actual + target (from Metrics.insightFor, i.e. recorded
+  // data) and the accountable persona. The model binds components to these ids;
+  // every figure is real — it may never invent values.
+  _metricPack(customer) {
+    if (typeof Metrics === 'undefined' || !Metrics.insightFor) return [];
+    return (App.data.metrics || []).filter(m => m.customer === customer).slice(0, 15).map(m => {
+      let i = null;
+      try { i = Metrics.insightFor(m.id); } catch (e) { /* strategy pack is best-effort */ }
+      i = i || {};
+      const row = { id: m.id, name: m.name, direction: i.direction || m.direction || 'higher_is_better' };
+      if (i.unit) row.unit = i.unit;
+      if (i.latest) row.latest = { period: i.latest.period, value: i.latest.value };
+      if (i.target) row.target = { period: i.target.period, value: i.target.value };
+      const owner = (i.accountable_personas && i.accountable_personas[0]) || (i.accountable && i.accountable[0]);
+      if (owner) row.owner = owner;
+      return row;
+    });
+  },
+  _metricPromptBlock(customer) {
+    const pack = this._metricPack(customer);
+    if (!pack.length) return '';
+    return 'CUSTOMER METRICS (bind components to these via "metric_id"; prefer them as KPI/chart subjects; latest/target figures are real recorded data — never invent values):\n' +
+      JSON.stringify(pack) + '\n';
+  },
+  // WF-5: the governed props vocabulary as prompt context — which props each
+  // component type carries and the allowed values for the enum-like ones.
+  _propsPromptBlock(def) {
+    const byType = (def.components || [])
+      .map(c => ({ t: c.type, p: Wireframe.editableProps(def, c.type) }))
+      .filter(x => x.p.length);
+    if (!byType.length) return '';
+    const seen = {}, enums = [];
+    byType.forEach(x => x.p.forEach(p => {
+      const ps = Wireframe.PROP_SPECS[p];
+      if (ps && ps.kind === 'enum' && !seen[p]) { seen[p] = true; enums.push(p + ': one of ' + ps.options.join(' | ')); }
+    }));
+    return 'COMPONENT PROPS (populate via "props" so the concept is build-ready; free-text props name the field/measure):\n' +
+      byType.map(x => '- ' + x.t + ': ' + x.p.join(', ')).join('\n') +
+      (enums.length ? '\nEnum values — ' + enums.join('; ') : '') + '\n';
   },
 
   async aiDraft(briefArg) {
@@ -47338,9 +47562,8 @@ const WireframeSkill = {
             'Use ONLY these component types with their minimum sizes:\n' +
             def.components.map(c => '- ' + c.type + ' (min ' + c.min_w + '×' + c.min_h + ')').join('\n') +
             '\nDESIGN RULES (mandatory): exactly one title at y=0; KPIs in the top third; filters in the top band or right rail; no overlaps; everything on-grid; every chart needs a takeaway-style title; at most 12 components.\n' +
-            ((App.data.metrics || []).filter(m => m.customer === App.activeCustomer).length
-              ? 'CUSTOMER METRICS (prefer these as KPI/chart subjects): ' + (App.data.metrics || []).filter(m => m.customer === App.activeCustomer).slice(0, 15).map(m => m.name).join('; ') + '\n'
-              : '') +
+            this._metricPromptBlock(App.activeCustomer) +
+            this._propsPromptBlock(def) +
             'GUIDELINES:\n' + String(guidelines.files.guidelines || '').slice(0, 2500) +
             (this._wfId ? this._tableauPromptBlock(Wireframe.get(this._wfId)) : '')
         },
@@ -47381,6 +47604,11 @@ const WireframeSkill = {
         w: Math.max(spec.min_w, App.toInteger(c.w)), h: Math.max(spec.min_h, App.toInteger(c.h)),
         title: typeof c.title === 'string' ? c.title.slice(0, 120) : ''
       }, def);
+      // WF-5: metric binding + props from the draft. Both are validated at the
+      // mutator (unknown/cross-customer metric ids and out-of-vocabulary prop
+      // values are refused/dropped per-key) — invalid values never land.
+      if (typeof c.metric_id === 'string' && c.metric_id) Wireframe.setComponentMetric(wfId, comp.id, c.metric_id);
+      if (c.props && typeof c.props === 'object' && !Array.isArray(c.props)) Wireframe.setComponentProps(wfId, comp.id, c.props, def);
     });
     return rejected;
   },
@@ -47417,9 +47645,8 @@ const WireframeSkill = {
             'Use ONLY these component types with their minimum sizes:\n' +
             def.components.map(c => '- ' + c.type + ' (min ' + c.min_w + '×' + c.min_h + ')').join('\n') +
             '\nDESIGN RULES per dashboard (mandatory): exactly one title at y=0; KPIs in the top third; filters in the top band or right rail; no overlaps; everything on-grid; every chart needs a takeaway-style title; at most 12 components.\n' +
-            ((App.data.metrics || []).filter(m => m.customer === App.activeCustomer).length
-              ? 'CUSTOMER METRICS (prefer these as KPI/chart subjects): ' + (App.data.metrics || []).filter(m => m.customer === App.activeCustomer).slice(0, 15).map(m => m.name).join('; ') + '\n'
-              : '') +
+            this._metricPromptBlock(App.activeCustomer) +
+            this._propsPromptBlock(def) +
             'GUIDELINES:\n' + String(guidelines.files.guidelines || '').slice(0, 2200)
         },
         { role: 'user', content: 'Design a linked dashboard set for: ' + brief }
@@ -47548,6 +47775,352 @@ const WireframeSkill = {
     if (this._drag) { this._drag = null; this.render(); }
   },
 
+  // --- WF-1: live chart previews (fidelity dial) ---
+  // 'structure' = today's labelled boxes; 'preview' = chart-shaped SVG glyphs
+  // with plausible series. Deterministic: a seeded PRNG keyed on the component
+  // id gives stable, reproducible previews with zero AI; metric-bound
+  // components render from real Metrics data. Persisted in uiState.
+  FIDELITY_KEY: 'wireframe.fidelity',
+  fidelity() {
+    const v = App.uiStateGet ? App.uiStateGet(this.FIDELITY_KEY, 'structure') : 'structure';
+    return v === 'preview' ? 'preview' : 'structure';
+  },
+  uiSetFidelity(mode) {
+    if (App.uiStateSet) App.uiStateSet(this.FIDELITY_KEY, mode === 'preview' ? 'preview' : null);
+    const bar = document.getElementById('wfToolbar');
+    if (bar) bar.innerHTML = this._toolbarHtml();
+    this.renderCanvasAndConf();
+  },
+  _toolbarHtml() {
+    const f = this.fidelity();
+    const btn = (mode, label, title) =>
+      '<button class="btn btn-sm ' + (f === mode ? 'btn-primary' : 'btn-outline') + '" onclick="WireframeSkill.uiSetFidelity(\'' + mode + '\')" title="' + title + '">' + label + '</button>';
+    return '<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted)">Fidelity</span>' +
+      btn('structure', 'Structure', 'Labelled boxes — pure layout') +
+      btn('preview', 'Preview', 'Chart-shaped previews with illustrative data — bound metrics use real figures');
+  },
+
+  // Deterministic PRNG: FNV-1a hash of the seed string feeding a mulberry32
+  // generator. Same component id → same series, forever, no model.
+  _seededRng(seedStr) {
+    let h = 2166136261 >>> 0;
+    const s = String(seedStr || '');
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    let a = h >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  },
+  // Real grounding for a metric-bound component — latest actual, target,
+  // direction — via Metrics.insightFor (recorded data only, never invented).
+  _previewFacts(c) {
+    if (!c || !c.metric_id || typeof Metrics === 'undefined' || !Metrics.insightFor) return null;
+    try { return Metrics.insightFor(c.metric_id); } catch (e) { return null; }
+  },
+  // Series for a chart preview. Order: real recorded actuals (bound metric),
+  // then the stored AI sample (props.sample), then a seeded synthetic walk.
+  // A bound metric's synthetic trend slopes in its IMPROVING direction
+  // (downwards for lower_is_better) and ends at the latest actual when known.
+  _previewSeries(c, n, facts) {
+    if (facts && facts.has_actuals) {
+      const m = (typeof Metrics !== 'undefined' && Metrics.byId) ? Metrics.byId(c.metric_id) : null;
+      const vals = ((m && m.actuals) || [])
+        .filter(a => a && a.value != null && isFinite(Number(a.value)))
+        .sort((a, b) => String(a.period).localeCompare(String(b.period)))
+        .map(a => Number(a.value)).slice(-n);
+      if (vals.length >= 2) return vals;
+    }
+    const sample = c.props && c.props.sample;
+    if (sample && Array.isArray(sample.values) && sample.values.length >= 2) return sample.values.slice(0, n);
+    const rng = this._seededRng(c.id);
+    const down = !!(facts && facts.direction === 'lower_is_better');
+    const end = (facts && facts.latest && isFinite(Number(facts.latest.value))) ? Number(facts.latest.value) : Math.round(40 + rng() * 60);
+    const span = Math.abs(end) || 50;
+    const start = down ? end + span * (0.35 + rng() * 0.4) : end - span * (0.35 + rng() * 0.4);
+    const out = [];
+    const step = (end - start) / Math.max(1, n - 1);
+    for (let i = 0; i < n; i++) {
+      const noise = (i === 0 || i === n - 1) ? 0 : (rng() - 0.5) * Math.abs(step) * 1.4;
+      out.push(start + step * i + noise);
+    }
+    return out;
+  },
+  _fmtPreviewNum(v) {
+    const n = Number(v);
+    if (!isFinite(n)) return '0';
+    if (Math.abs(n) >= 1000) return Math.round(n).toLocaleString('en-GB');
+    return String(Math.round(n * 100) / 100);
+  },
+
+  // Preview palette — presentation attributes only (no CSS classes) so the
+  // glyphs survive XMLSerializer export unchanged. Blues/greys; the KPI delta
+  // alone uses green/red because good/bad IS the RAG semantic there.
+  _GLYPH: {
+    accent: '#3b82f6', accentSoft: 'rgba(59,130,246,0.30)', accentFaint: 'rgba(59,130,246,0.12)',
+    axis: '#cbd5e1', ink: '#475569', value: '#0f172a',
+    good: '#16a34a', bad: '#dc2626', flat: '#64748b'
+  },
+  // One glyph per component, drawn inside the body rect below the type/title
+  // labels. Pure geometry + escaped text; wrapped pointer-events:none so drag
+  // and select behave exactly as in structure mode.
+  _glyphSvg(c, px, py, pw, ph) {
+    const gx = px + 10, gy = py + 38, gw = pw - 20, gh = ph - 48;
+    if (gw < 24 || gh < 8) return '';
+    let inner = '';
+    try { inner = this._glyphFor(c, gx, gy, gw, gh) || ''; } catch (e) { inner = ''; }
+    return inner ? '<g class="wf-glyph" pointer-events="none">' + inner + '</g>' : '';
+  },
+  _glyphFor(c, gx, gy, gw, gh) {
+    const G = this._GLYPH, esc = Dashboard.esc;
+    const rng = this._seededRng(c.id);
+    const facts = this._previewFacts(c);
+    const p = c.props || {};
+    const round2 = (v) => Math.round(v * 100) / 100;
+    // Scale a series into the glyph box (optionally including the target).
+    const scaled = (vals) => {
+      let lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      const tv = facts && facts.target ? Number(facts.target.value) : null;
+      if (tv != null && isFinite(tv)) { lo = Math.min(lo, tv); hi = Math.max(hi, tv); }
+      if (hi === lo) hi = lo + 1;
+      return {
+        x: (i) => round2(gx + (i / Math.max(1, vals.length - 1)) * gw),
+        y: (v) => round2(gy + gh - 2 - ((v - lo) / (hi - lo)) * (gh - 4)),
+        target: tv
+      };
+    };
+    const targetLine = (s) => (s.target != null && isFinite(s.target))
+      ? '<line x1="' + gx + '" y1="' + s.y(s.target) + '" x2="' + (gx + gw) + '" y2="' + s.y(s.target) + '" stroke="' + G.flat + '" stroke-width="1" stroke-dasharray="4 3"/>'
+      : '';
+
+    if (c.type === 'kpi') {
+      let value = null, deltaTxt = '', tone = 'flat', arrow = 0;
+      const unit = facts && facts.unit ? String(facts.unit) : '';
+      const sample = p.sample;
+      if (facts && facts.latest) {
+        value = facts.latest.value;
+        if (facts.movement) {
+          arrow = facts.movement.delta > 0 ? 1 : (facts.movement.delta < 0 ? -1 : 0);
+          tone = facts.movement.direction === 'improved' ? 'good' : (facts.movement.direction === 'worsened' ? 'bad' : 'flat');
+          deltaTxt = (facts.movement.delta > 0 ? '+' : '') + this._fmtPreviewNum(facts.movement.delta) + (unit ? ' ' + unit : '');
+        } else if (facts.target) {
+          deltaTxt = 'target ' + this._fmtPreviewNum(facts.target.value) + (unit ? ' ' + unit : '');
+        }
+      } else if (sample && isFinite(Number(sample.value))) {
+        value = sample.value;
+        if (sample.delta !== undefined && isFinite(Number(sample.delta))) {
+          arrow = sample.delta > 0 ? 1 : (sample.delta < 0 ? -1 : 0);
+          tone = arrow < 0 ? 'bad' : 'good';
+          deltaTxt = (sample.delta > 0 ? '+' : '') + this._fmtPreviewNum(sample.delta);
+        }
+      } else {
+        value = Math.round(20 + rng() * 940);
+        arrow = rng() > 0.45 ? 1 : -1;
+        tone = arrow > 0 ? 'good' : 'bad';
+        deltaTxt = (arrow > 0 ? '+' : '-') + Math.round(1 + rng() * 12) + '%';
+      }
+      const fs = Math.max(11, Math.min(26, gh * 0.62, gw / 4.5));
+      let svg = '<text x="' + gx + '" y="' + round2(gy + fs) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="' + round2(fs) + '" font-weight="700" fill="' + G.value + '">' +
+        esc(this._fmtPreviewNum(value)) + (unit ? ' ' + esc(unit) : '') + '</text>';
+      if (deltaTxt && gh >= fs + 12) {
+        const dy = round2(gy + fs + 12);
+        const col = G[tone] || G.flat;
+        if (arrow !== 0) {
+          svg += arrow > 0
+            ? '<path d="M ' + gx + ' ' + dy + ' L ' + (gx + 8) + ' ' + dy + ' L ' + (gx + 4) + ' ' + (dy - 7) + ' Z" fill="' + col + '"/>'
+            : '<path d="M ' + gx + ' ' + (dy - 7) + ' L ' + (gx + 8) + ' ' + (dy - 7) + ' L ' + (gx + 4) + ' ' + dy + ' Z" fill="' + col + '"/>';
+        }
+        svg += '<text x="' + (gx + (arrow !== 0 ? 12 : 0)) + '" y="' + dy + '" font-family="Segoe UI, system-ui, sans-serif" font-size="9.5" font-weight="600" fill="' + col + '">' + esc(deltaTxt) + '</text>';
+      }
+      return svg;
+    }
+    if (c.type === 'bar') {
+      const vals = this._previewSeries(c, Math.max(4, Math.min(7, Math.round(gw / 34))), facts).map(v => Math.abs(v));
+      const hi = Math.max.apply(null, vals) || 1;
+      if (p.orientation === 'horizontal') {
+        const slot = gh / vals.length;
+        return vals.map((v, i) =>
+          '<rect x="' + gx + '" y="' + round2(gy + i * slot + slot * 0.18) + '" width="' + round2(Math.max(2, (v / hi) * gw)) + '" height="' + round2(slot * 0.64) + '" fill="' + G.accentSoft + '" stroke="' + G.accent + '" stroke-width="0.8"/>'
+        ).join('') + '<line x1="' + gx + '" y1="' + gy + '" x2="' + gx + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="1"/>';
+      }
+      const slot = gw / vals.length;
+      return vals.map((v, i) => {
+        const bh = Math.max(2, (v / hi) * (gh - 2));
+        return '<rect x="' + round2(gx + i * slot + slot * 0.18) + '" y="' + round2(gy + gh - bh) + '" width="' + round2(slot * 0.64) + '" height="' + round2(bh) + '" fill="' + G.accentSoft + '" stroke="' + G.accent + '" stroke-width="0.8"/>';
+      }).join('') + '<line x1="' + gx + '" y1="' + (gy + gh) + '" x2="' + (gx + gw) + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="1"/>';
+    }
+    if (c.type === 'line' || c.type === 'area') {
+      const vals = this._previewSeries(c, Math.max(6, Math.min(12, Math.round(gw / 26))), facts);
+      const s = scaled(vals);
+      const pts = vals.map((v, i) => s.x(i) + ',' + s.y(v)).join(' ');
+      const last = vals.length - 1;
+      let svg = targetLine(s);
+      if (c.type === 'area') {
+        svg += '<polygon points="' + gx + ',' + (gy + gh) + ' ' + pts + ' ' + (gx + gw) + ',' + (gy + gh) + '" fill="' + G.accentFaint + '"/>';
+      }
+      svg += '<polyline points="' + pts + '" fill="none" stroke="' + G.accent + '" stroke-width="1.6"/>' +
+        '<circle cx="' + s.x(last) + '" cy="' + s.y(vals[last]) + '" r="2.4" fill="' + G.accent + '"/>' +
+        '<line x1="' + gx + '" y1="' + (gy + gh) + '" x2="' + (gx + gw) + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="1"/>';
+      return svg;
+    }
+    if (c.type === 'scatter') {
+      const sample = p.sample;
+      let dots;
+      if (sample && Array.isArray(sample.points) && sample.points.length >= 3) {
+        const xs = sample.points.map(pt => Number(pt.x)), ys = sample.points.map(pt => Number(pt.y));
+        const xlo = Math.min.apply(null, xs), xhi = Math.max.apply(null, xs) || 1;
+        const ylo = Math.min.apply(null, ys), yhi = Math.max.apply(null, ys) || 1;
+        dots = sample.points.map(pt =>
+          '<circle cx="' + round2(gx + ((Number(pt.x) - xlo) / Math.max(1e-9, xhi - xlo)) * gw) + '" cy="' + round2(gy + gh - ((Number(pt.y) - ylo) / Math.max(1e-9, yhi - ylo)) * gh) + '" r="2.4" fill="' + G.accent + '" fill-opacity="0.55"/>');
+      } else {
+        dots = [];
+        for (let i = 0; i < 14; i++) {
+          dots.push('<circle cx="' + round2(gx + rng() * gw) + '" cy="' + round2(gy + rng() * gh) + '" r="2.4" fill="' + G.accent + '" fill-opacity="0.55"/>');
+        }
+      }
+      return dots.join('') +
+        '<line x1="' + gx + '" y1="' + (gy + gh) + '" x2="' + (gx + gw) + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="1"/>' +
+        '<line x1="' + gx + '" y1="' + gy + '" x2="' + gx + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="1"/>';
+    }
+    if (c.type === 'table') {
+      const sample = p.sample;
+      const colNames = p.columns ? String(p.columns).split(',').map(sv => sv.trim()).filter(Boolean)
+        : (sample && Array.isArray(sample.columns) ? sample.columns : []);
+      const nCols = Math.max(2, Math.min(6, colNames.length || 4));
+      const rows = Math.max(2, Math.min(5, Math.floor((gh - 12) / 11)));
+      let svg = '<rect x="' + gx + '" y="' + gy + '" width="' + gw + '" height="12" fill="' + G.accentFaint + '"/>';
+      for (let i = 1; i < nCols; i++) {
+        const lx = round2(gx + (i / nCols) * gw);
+        svg += '<line x1="' + lx + '" y1="' + gy + '" x2="' + lx + '" y2="' + (gy + gh) + '" stroke="' + G.axis + '" stroke-width="0.8"/>';
+      }
+      for (let r = 0; r <= rows; r++) {
+        const ly = round2(gy + 12 + (r / rows) * (gh - 12));
+        svg += '<line x1="' + gx + '" y1="' + ly + '" x2="' + (gx + gw) + '" y2="' + ly + '" stroke="' + G.axis + '" stroke-width="0.8"/>';
+      }
+      colNames.slice(0, nCols).forEach((name, i) => {
+        svg += '<text x="' + round2(gx + (i / nCols) * gw + 3) + '" y="' + (gy + 9) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="7.5" font-weight="700" fill="' + G.ink + '">' + esc(String(name).slice(0, Math.max(3, Math.floor(gw / nCols / 5)))) + '</text>';
+      });
+      return svg;
+    }
+    if (c.type === 'map') {
+      const vals = this._previewSeries(c, 5, facts).map(v => Math.abs(v));
+      const hi = Math.max.apply(null, vals) || 1;
+      let svg = '<rect x="' + gx + '" y="' + gy + '" width="' + gw + '" height="' + gh + '" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>';
+      vals.forEach(v => {
+        const r = round2(2.5 + (v / hi) * Math.min(9, gh / 4));
+        svg += '<circle cx="' + round2(gx + r + rng() * (gw - 2 * r)) + '" cy="' + round2(gy + r + rng() * (gh - 2 * r)) + '" r="' + r + '" fill="' + G.accentSoft + '" stroke="' + G.accent + '" stroke-width="0.8"/>';
+      });
+      return svg;
+    }
+    if (c.type === 'filter') {
+      const boxH = Math.min(gh, 14);
+      const label = p.field || c.title || 'Select…';
+      const ct = p.control_type || 'dropdown';
+      if (ct === 'slider') {
+        const cy = round2(gy + gh / 2);
+        return '<line x1="' + gx + '" y1="' + cy + '" x2="' + (gx + gw) + '" y2="' + cy + '" stroke="' + G.axis + '" stroke-width="2.5" stroke-linecap="round"/>' +
+          '<line x1="' + round2(gx + gw * 0.25) + '" y1="' + cy + '" x2="' + round2(gx + gw * 0.7) + '" y2="' + cy + '" stroke="' + G.accent + '" stroke-width="2.5" stroke-linecap="round"/>' +
+          '<circle cx="' + round2(gx + gw * 0.25) + '" cy="' + cy + '" r="4" fill="#fff" stroke="' + G.accent + '" stroke-width="1.4"/>' +
+          '<circle cx="' + round2(gx + gw * 0.7) + '" cy="' + cy + '" r="4" fill="#fff" stroke="' + G.accent + '" stroke-width="1.4"/>';
+      }
+      if (ct === 'radio' || ct === 'multi-select') {
+        const rows = Math.max(1, Math.min(3, Math.floor(gh / 11)));
+        let svg = '';
+        for (let i = 0; i < rows; i++) {
+          const cy = round2(gy + 5 + i * 11);
+          svg += ct === 'radio'
+            ? '<circle cx="' + (gx + 4) + '" cy="' + cy + '" r="3.4" fill="' + (i === 0 ? G.accent : '#fff') + '" stroke="' + G.accent + '" stroke-width="1"/>'
+            : '<rect x="' + gx + '" y="' + (cy - 3.5) + '" width="7" height="7" rx="1.5" fill="' + (i === 0 ? G.accent : '#fff') + '" stroke="' + G.accent + '" stroke-width="1"/>';
+          svg += '<rect x="' + (gx + 12) + '" y="' + (cy - 1.5) + '" width="' + round2(gw * (0.55 - i * 0.1)) + '" height="3" rx="1.5" fill="' + G.axis + '"/>';
+        }
+        return svg;
+      }
+      if (ct === 'date range') {
+        const half = round2((gw - 8) / 2);
+        return '<rect x="' + gx + '" y="' + gy + '" width="' + half + '" height="' + boxH + '" rx="3" fill="#fff" stroke="' + G.axis + '" stroke-width="1"/>' +
+          '<rect x="' + round2(gx + half + 8) + '" y="' + gy + '" width="' + half + '" height="' + boxH + '" rx="3" fill="#fff" stroke="' + G.axis + '" stroke-width="1"/>' +
+          '<text x="' + round2(gx + half + 1.5) + '" y="' + round2(gy + boxH - 4) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="8" fill="' + G.ink + '">&#8211;</text>';
+      }
+      return '<rect x="' + gx + '" y="' + gy + '" width="' + gw + '" height="' + boxH + '" rx="3" fill="#fff" stroke="' + G.axis + '" stroke-width="1"/>' +
+        '<text x="' + (gx + 5) + '" y="' + round2(gy + boxH - 4) + '" font-family="Segoe UI, system-ui, sans-serif" font-size="8" fill="' + G.ink + '">' + esc(String(label).slice(0, Math.max(4, Math.floor(gw / 6)))) + '</text>' +
+        '<path d="M ' + round2(gx + gw - 12) + ' ' + round2(gy + boxH / 2 - 2) + ' l 3.5 4 l 3.5 -4 Z" fill="' + G.ink + '"/>';
+    }
+    if (c.type === 'legend') {
+      const shades = [G.accent, '#93c5fd', '#1d4ed8'];
+      const rows = Math.max(1, Math.min(3, Math.floor(gh / 11)));
+      let svg = '';
+      for (let i = 0; i < rows; i++) {
+        const cy = round2(gy + 2 + i * 11);
+        svg += '<rect x="' + gx + '" y="' + cy + '" width="8" height="8" rx="2" fill="' + shades[i % shades.length] + '"/>' +
+          '<rect x="' + (gx + 13) + '" y="' + (cy + 2.5) + '" width="' + round2(gw * (0.5 - i * 0.08)) + '" height="3" rx="1.5" fill="' + G.axis + '"/>';
+      }
+      return svg;
+    }
+    if (c.type === 'text') {
+      const widths = [0.9, 0.72, 0.55];
+      const rows = Math.max(1, Math.min(3, Math.floor(gh / 8)));
+      let svg = '';
+      for (let i = 0; i < rows; i++) {
+        svg += '<rect x="' + gx + '" y="' + round2(gy + i * 8) + '" width="' + round2(gw * widths[i % widths.length]) + '" height="3" rx="1.5" fill="' + G.axis + '"/>';
+      }
+      return svg;
+    }
+    if (c.type === 'container') {
+      return '<rect x="' + gx + '" y="' + gy + '" width="' + gw + '" height="' + gh + '" rx="4" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>';
+    }
+    return ''; // title keeps its structure rendering
+  },
+
+  // WF-1: AI "Fill with sample data" for UNBOUND components — structured output
+  // against a per-type series schema; App.toInteger-clamped at the mutator and
+  // stored in component.props.sample (reproducible + export-safe).
+  _sampleBusy: false,
+  _sampleSchema(type) {
+    if (type === 'kpi') return { type: 'object', required: ['value'], properties: { value: { type: 'integer' }, delta: { type: 'integer' } } };
+    if (type === 'scatter') return { type: 'object', required: ['points'], properties: { points: { type: 'array', items: { type: 'object', required: ['x', 'y'], properties: { x: { type: 'integer' }, y: { type: 'integer' } } } } } };
+    if (type === 'table') return { type: 'object', required: ['columns'], properties: { columns: { type: 'array', items: { type: 'string' } } } };
+    return { type: 'object', required: ['values'], properties: { values: { type: 'array', items: { type: 'integer' } }, labels: { type: 'array', items: { type: 'string' } } } };
+  },
+  async uiFillSample() {
+    if (this._sampleBusy) return;
+    if (!AI.isConfigured()) { App.toast('Connect a model in Settings → AI & Assistant first', 'error'); return; }
+    const wf = Wireframe.get(this._wfId);
+    const c = wf && this._selId ? wf.components.find(x => x.id === this._selId) : null;
+    if (!c || !Wireframe.isDataBearing(c)) return;
+    this._sampleBusy = true;
+    this.render();
+    try {
+      const messages = [
+        {
+          role: 'system',
+          content: 'You suggest plausible ILLUSTRATIVE sample data for one chart preview inside a Tableau dashboard wireframe. ' +
+            'This is mock data for a design concept — realistic magnitudes and shapes, integers only, no real claims. ' +
+            'Stay consistent with the component title and dashboard context.'
+        },
+        {
+          role: 'user',
+          content: 'Component type: ' + c.type + (c.title ? '\nComponent title: ' + c.title : '') +
+            '\nDashboard: ' + wf.name + '\nSuggest the sample data.'
+        }
+      ];
+      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, this._sampleSchema(c.type));
+      const ok = Wireframe.setComponentSample(this._wfId, c.id, out);
+      App.toast(ok ? 'Sample data attached to the preview — Ctrl+Z to undo' : 'The model returned no usable sample data', ok ? 'success' : 'error');
+    } catch (e) {
+      App.toast(AI.describeError(e), 'error');
+    } finally {
+      this._sampleBusy = false;
+      this.render();
+    }
+  },
+  uiClearSample() {
+    if (!this._selId) return;
+    Wireframe.setComponentSample(this._wfId, this._selId, null);
+    this.render();
+  },
+
   // W1a: visual grounding. A transient reference image (pasted/uploaded, never
   // persisted) plus any referenced Tableau dashboards' thumbnails are sent to a
   // vision-capable model so drafts/refines match the real dashboard's look.
@@ -47609,13 +48182,15 @@ const WireframeSkill = {
           role: 'system',
           content: 'You refine a Tableau dashboard wireframe on a ' + wf.grid.cols + 'x' + wf.grid.rows + ' grid by returning patch operations.\n' +
             'Allowed component types and minimum sizes: ' + def.components.map(c => c.type + '(' + c.min_w + 'x' + c.min_h + ')').join(', ') + '.\n' +
-            'Ops: add (type, x, y, w, h, title), move (id, x, y), resize (id, w, h), retitle (id, title), remove (id). Reference existing components by their exact id.\n' +
-            'Keep the design rules: one title at y=0, KPIs top third, filters top band or right rail, no overlaps, on-grid.' +
+            'Ops: add (type, x, y, w, h, title, optional metric_id/props), move (id, x, y), resize (id, w, h), retitle (id, title), remove (id), bind_metric (id, metric_id — link a component to a customer metric), set_props (id, props). Reference existing components by their exact id.\n' +
+            'Keep the design rules: one title at y=0, KPIs top third, filters top band or right rail, no overlaps, on-grid.\n' +
+            this._metricPromptBlock(wf.customer) +
+            this._propsPromptBlock(def) +
             this._tableauPromptBlock(wf)
         },
         {
           role: 'user',
-          content: 'CURRENT COMPONENTS:\n' + JSON.stringify(wf.components.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '' }))) +
+          content: 'CURRENT COMPONENTS:\n' + JSON.stringify(wf.components.map(c => ({ id: c.id, type: c.type, x: c.x, y: c.y, w: c.w, h: c.h, title: c.title || '', metric_id: c.metric_id || null, props: Wireframe._specProps(c) }))) +
             '\n\nINSTRUCTION: ' + instruction
         }
       ];
@@ -47628,27 +48203,7 @@ const WireframeSkill = {
           messages[0].content += '\nReference dashboard image(s) are attached — match their visual structure, density and emphasis where it does not conflict with the rules.';
         }
       }
-      const out = await AI.structuredOutput(profile, messages, {
-        type: 'object', required: ['ops'],
-        properties: {
-          ops: {
-            type: 'array',
-            items: {
-              type: 'object', required: ['op'],
-              properties: {
-                op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove'] },
-                // plain string: out-of-vocabulary types drop per-op via
-                // addComponent's check rather than failing the whole batch
-                type: { type: 'string' },
-                id: { type: 'string' },
-                x: { type: 'number' }, y: { type: 'number' },
-                w: { type: 'number' }, h: { type: 'number' },
-                title: { type: 'string' }
-              }
-            }
-          }
-        }
-      });
+      const out = await AI.structuredOutput(profile, messages, this._opsSchema(def));
       const considered = Math.min(20, (out.ops || []).length);
       const applied = this._applyOps(out.ops, def);
       const dropped = considered - applied;
@@ -47692,25 +48247,7 @@ const WireframeSkill = {
             '\n\nCONFORMANCE ERRORS TO FIX:\n' + before.errors.map((e, i) => (i + 1) + '. ' + e).join('\n')
         }
       ];
-      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, {
-        type: 'object', required: ['ops'],
-        properties: {
-          ops: {
-            type: 'array',
-            items: {
-              type: 'object', required: ['op'],
-              properties: {
-                op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove'] },
-                type: { type: 'string' },
-                id: { type: 'string' },
-                x: { type: 'number' }, y: { type: 'number' },
-                w: { type: 'number' }, h: { type: 'number' },
-                title: { type: 'string' }
-              }
-            }
-          }
-        }
-      });
+      const out = await AI.structuredOutput(AI.profileForTask('design'), messages, this._opsSchema(def));
       const applied = this._applyOps(out.ops, def);
       const after = Wireframe.checkConformance(this._wfId ? Wireframe.get(this._wfId) : wf, def);
       const cleared = before.errors.length - after.errors.length;
@@ -47725,13 +48262,42 @@ const WireframeSkill = {
     }
   },
 
+  // Shared schema for the patch-op flows (uiRefine/uiFixLayout). The op field
+  // is a strict enum; the component `type` stays a plain string so an
+  // out-of-vocabulary type drops per-op via addComponent's check rather than
+  // failing the whole batch. metric_id/props (WF-5) are validated at apply.
+  _opsSchema(def) {
+    return {
+      type: 'object', required: ['ops'],
+      properties: {
+        ops: {
+          type: 'array',
+          items: {
+            type: 'object', required: ['op'],
+            properties: {
+              op: { type: 'string', enum: ['add', 'move', 'resize', 'retitle', 'remove', 'bind_metric', 'set_props'] },
+              type: { type: 'string' },
+              id: { type: 'string' },
+              x: { type: 'number' }, y: { type: 'number' },
+              w: { type: 'number' }, h: { type: 'number' },
+              title: { type: 'string' },
+              metric_id: { type: 'string' },
+              props: { type: 'object' }
+            }
+          }
+        }
+      }
+    };
+  },
+
   // Shared patch-op applier for uiRefine/uiFixLayout: every op routes through
   // the clamped mutators, so out-of-vocabulary types and off-grid geometry are
   // dropped per-op rather than corrupting the layout. Returns the applied count.
   _applyOps(ops, def) {
     let applied = 0;
     (ops || []).slice(0, 20).forEach(o => {
-      const exists = o.id && Wireframe.get(this._wfId).components.some(c => c.id === o.id);
+      const wf = Wireframe.get(this._wfId);
+      const exists = o.id && wf.components.some(c => c.id === o.id);
       if (o.op === 'add' && o.type) {
         const comp = Wireframe.addComponent(this._wfId, o.type, def, (Number.isFinite(o.x) && Number.isFinite(o.y)) ? { x: App.toInteger(o.x), y: App.toInteger(o.y) } : undefined);
         if (typeof comp === 'string') return;
@@ -47740,11 +48306,28 @@ const WireframeSkill = {
           w: App.toInteger(o.w || comp.w), h: App.toInteger(o.h || comp.h),
           title: typeof o.title === 'string' ? o.title.slice(0, 160) : comp.title
         }, def);
+        // WF-5: an added component may arrive bound + specified, like a draft's.
+        if (typeof o.metric_id === 'string' && o.metric_id) Wireframe.setComponentMetric(this._wfId, comp.id, o.metric_id);
+        if (o.props && typeof o.props === 'object' && !Array.isArray(o.props)) Wireframe.setComponentProps(this._wfId, comp.id, o.props, def);
         applied++;
       } else if (o.op === 'move' && exists) { Wireframe.updateComponent(this._wfId, o.id, { x: App.toInteger(o.x), y: App.toInteger(o.y) }, def); applied++; }
       else if (o.op === 'resize' && exists) { Wireframe.updateComponent(this._wfId, o.id, { w: App.toInteger(o.w), h: App.toInteger(o.h) }, def); applied++; }
       else if (o.op === 'retitle' && exists) { Wireframe.updateComponent(this._wfId, o.id, { title: String(o.title || '').slice(0, 160) }, def); applied++; }
       else if (o.op === 'remove' && exists) { Wireframe.removeComponent(this._wfId, o.id); applied++; }
+      // WF-5: bind_metric — validated against the wireframe customer's metrics
+      // here so an invalid binding counts as a dropped op (setComponentMetric
+      // would otherwise null it silently).
+      else if (o.op === 'bind_metric' && exists) {
+        const ok = !o.metric_id || (App.data.metrics || []).some(m => m.id === o.metric_id && m.customer === wf.customer);
+        if (!ok) return;
+        Wireframe.setComponentMetric(this._wfId, o.id, o.metric_id || null);
+        applied++;
+      }
+      // WF-5: set_props — cleanProps drops unknown names/values per-key; the op
+      // only counts as applied when at least one prop actually landed.
+      else if (o.op === 'set_props' && exists) {
+        if (Wireframe.setComponentProps(this._wfId, o.id, o.props || {}, def) > 0) applied++;
+      }
     });
     return applied;
   },
@@ -47844,12 +48427,36 @@ const WireframeSkill = {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
+  // WF-1: self-contained SVG for export. The on-canvas SVG is styled by page
+  // CSS classes, which XMLSerializer output loses (rects rendered with SVG
+  // defaults outside the app). Clone the node, strip the editor chrome
+  // (selection state, resize handle, mouse handlers) and embed the needed
+  // rules as an inline <style> so PNG/print render faithfully at the chosen
+  // fidelity — preview glyphs already use presentation attributes only.
+  _EXPORT_CSS: 'svg{background:#fff}' +
+    '.wf-grid-line{stroke:rgba(100,116,139,0.12);stroke-width:1}' +
+    '.wf-comp rect.body{fill:rgba(59,130,246,0.06);stroke:#3b82f6;stroke-width:1.2}' +
+    '.wf-comp.violating rect.body{stroke:#d97706;stroke-dasharray:5 3}' +
+    '.wf-comp text.type{font:700 9px "Segoe UI",system-ui,sans-serif;text-transform:uppercase;fill:#3b82f6;letter-spacing:0.4px}' +
+    '.wf-comp text.title{font:600 11px "Segoe UI",system-ui,sans-serif;fill:#1e293b}',
+  _exportSvgXml() {
+    const svg = document.getElementById('wfCanvas');
+    if (!svg) return '';
+    const clone = svg.cloneNode(true);
+    Array.prototype.slice.call(clone.querySelectorAll('.wf-resize')).forEach(n => { if (n.parentNode) n.parentNode.removeChild(n); });
+    Array.prototype.slice.call(clone.querySelectorAll('.wf-comp.selected')).forEach(n => n.classList.remove('selected'));
+    ['onmousemove', 'onmouseup', 'onmouseleave', 'onclick'].forEach(a => clone.removeAttribute(a));
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = this._EXPORT_CSS;
+    clone.insertBefore(style, clone.firstChild);
+    return new XMLSerializer().serializeToString(clone);
+  },
   exportPng() {
     const svg = document.getElementById('wfCanvas');
     const wf = Wireframe.get(this._wfId);
     if (!svg || !wf) return;
     try {
-      const xml = new XMLSerializer().serializeToString(svg);
+      const xml = this._exportSvgXml();
       const img = new Image();
       const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
       img.onload = () => {
@@ -47888,7 +48495,7 @@ const WireframeSkill = {
         const names = (App.data.metrics || []).filter(m => ids.indexOf(m.id) >= 0).map(m => m.name);
         return names.length ? ' · answers: ' + esc(names.join(', ')) : '';
       })() + '</div>' +
-      new XMLSerializer().serializeToString(svg) +
+      this._exportSvgXml() +
       (conf.errors.length || conf.warnings.length ? '<ul>' + conf.errors.concat(conf.warnings).map(m => '<li>' + esc(m) + '</li>').join('') + '</ul>' : '') +
       '</body></html>';
     if (!Reports.open(html)) return;
@@ -47997,6 +48604,7 @@ const WireframeSkill = {
     let grid = '';
     for (let x = 1; x < wf.grid.cols; x++) grid += '<line class="wf-grid-line" x1="' + (x * this.CELL) + '" y1="0" x2="' + (x * this.CELL) + '" y2="' + H + '"/>';
     for (let y = 1; y < wf.grid.rows; y++) grid += '<line class="wf-grid-line" x1="0" y1="' + (y * this.CELL_H) + '" x2="' + W + '" y2="' + (y * this.CELL_H) + '"/>';
+    const preview = this.fidelity() === 'preview';
     const comps = wf.components.map(c => {
       const px = c.x * this.CELL, py = c.y * this.CELL_H, pw = c.w * this.CELL, ph = c.h * this.CELL_H;
       const sel = c.id === this._selId;
@@ -48007,6 +48615,7 @@ const WireframeSkill = {
         '<rect class="body" x="' + (px + 3) + '" y="' + (py + 3) + '" width="' + (pw - 6) + '" height="' + (ph - 6) + '" rx="4"/>' +
         '<text class="type" x="' + (px + 10) + '" y="' + (py + 17) + '">' + esc(c.type) + '</text>' +
         (title ? '<text class="title" x="' + (px + 10) + '" y="' + (py + 32) + '">' + esc(title) + '</text>' : '') +
+        (preview ? this._glyphSvg(c, px, py, pw, ph) : '') +
         (sel ? '<rect class="wf-resize" x="' + (px + pw - 12) + '" y="' + (py + ph - 12) + '" width="9" height="9" rx="2" onmousedown="WireframeSkill.onCompDown(event, \'' + esc(c.id) + '\', true)"/>' : '') +
       '</g>';
     }).join('');
@@ -48153,6 +48762,12 @@ const WireframeSkill = {
     Wireframe.setComponentNoMetric(this._wfId, this._selId, el.checked);
     this.render();
   },
+  // WF-5: one governed prop edit — clamped/validated in setComponentProps.
+  uiProp(name, value) {
+    if (!this._selId) return;
+    Wireframe.setComponentProps(this._wfId, this._selId, { [name]: value }, this._def());
+    this.renderCanvasAndConf();
+  },
 
   // W3: dashboard-set page strip — switch between pages, add a new one.
   _pageStripHtml(wf) {
@@ -48213,6 +48828,35 @@ const WireframeSkill = {
     const coord = (lbl, f, v, max) => '<label style="display:flex;flex-direction:column;font-size:10px;color:var(--text-muted);flex:1;gap:2px">' + lbl +
       '<input type="number" class="field-input" style="padding:2px 4px" min="0" max="' + max + '" value="' + v + '" onchange="WireframeSkill.uiCoord(\'' + f + '\', this.value)" aria-label="' + lbl + '"></label>';
     const isData = Wireframe.isDataBearing(sel);
+    // WF-5: governed prop inputs — the definition declares which props the type
+    // carries; PROP_SPECS governs enum values. Prop names come from the
+    // authored definition (not user input) so they may parameterise handlers.
+    const propInputs = sel ? Wireframe.editableProps(def, sel.type).map(pName => {
+      const ps = Wireframe.PROP_SPECS[pName];
+      const val = (sel.props && sel.props[pName] !== undefined) ? String(sel.props[pName]) : '';
+      if (ps.kind === 'enum') {
+        return '<label>' + esc(ps.label) + '</label>' +
+          '<select class="field-input" onchange="WireframeSkill.uiProp(\'' + pName + '\', this.value)" aria-label="' + Dashboard.escAttr(ps.label) + '">' +
+            '<option value="">&mdash;</option>' +
+            ps.options.map(o => '<option value="' + Dashboard.escAttr(o) + '"' + (val === o ? ' selected' : '') + '>' + esc(o) + '</option>').join('') +
+          '</select>';
+      }
+      return '<label>' + esc(ps.label) + '</label>' +
+        '<input class="field-input" value="' + Dashboard.escAttr(val) + '" placeholder="e.g. field name" onchange="WireframeSkill.uiProp(\'' + pName + '\', this.value)" aria-label="' + Dashboard.escAttr(ps.label) + '">';
+    }).join('') : '';
+    // WF-1: sample-data controls — AI fill only for unbound data components
+    // (bound ones preview real figures), and only when a model is configured.
+    const hasSample = !!(sel && sel.props && sel.props.sample);
+    const sampleHtml = sel && isData
+      ? (hasSample
+          ? '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);margin-top:6px">Sample preview data attached' +
+            '<button class="btn btn-ghost btn-sm" onclick="WireframeSkill.uiClearSample()">Clear</button></div>'
+          : (!sel.metric_id && AI.isConfigured()
+              ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="WireframeSkill.uiFillSample()"' + (this._sampleBusy ? ' disabled' : '') +
+                ' title="AI suggests plausible illustrative values for the preview — stored on the component, reproducible and export-safe">' +
+                (this._sampleBusy ? 'Filling…' : 'Fill with sample data') + '</button>'
+              : ''))
+      : '';
     const props = sel
       ? '<div class="wf-props">' +
           '<div style="font-size:var(--fs-2xs);font-weight:700;text-transform:uppercase;color:var(--text-muted)">Selected: ' + esc(sel.type) + '</div>' +
@@ -48221,6 +48865,8 @@ const WireframeSkill = {
           '<label for="wfMetricSelect">Shows metric</label>' +
           '<select id="wfMetricSelect" class="field-input" onchange="WireframeSkill.uiSetComponentMetric(this)" aria-label="Metric this component visualizes">' + metricOpts + '</select>' +
           (isData ? '<label style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:4px;color:var(--text-muted)"><input type="checkbox"' + (sel.props && sel.props.no_metric ? ' checked' : '') + ' onchange="WireframeSkill.uiNoMetric(this)"> No metric (intentional)</label>' : '') +
+          propInputs +
+          sampleHtml +
           '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-top:8px">Position &amp; size (grid cells)</div>' +
           '<div style="display:flex;gap:6px;margin-top:2px">' + coord('X', 'x', sel.x, wf.grid.cols - 1) + coord('Y', 'y', sel.y, wf.grid.rows - 1) + coord('W', 'w', sel.w, wf.grid.cols) + coord('H', 'h', sel.h, wf.grid.rows) + '</div>' +
           '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">Drag to move · corner handle to resize · arrows nudge · Shift+arrows resize · Del removes</div>' +
@@ -48229,7 +48875,10 @@ const WireframeSkill = {
       : '<div style="font-size:11px;color:var(--text-muted)">Select a component to edit its title, position, or metric. Tip: arrows nudge · Shift+arrows resize · Del removes.</div>';
     return this._header(wf.name, true) +
       '<div class="wf-body">' +
-        '<div class="wf-canvas-wrap" id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
+        '<div class="wf-canvas-wrap"><div class="wf-canvas-col">' +
+          '<div class="wf-canvas-toolbar" id="wfToolbar">' + this._toolbarHtml() + '</div>' +
+          '<div id="wfCanvasWrap">' + this.renderCanvasSvg() + '</div>' +
+        '</div></div>' +
         '<div class="wf-side">' +
           '<input class="field-input" style="width:100%;font-weight:700;margin-bottom:10px" value="' + Dashboard.escAttr(wf.name) + '" onchange="WireframeSkill.uiRename(this)" aria-label="Wireframe name">' +
           this._statusHtml(wf) +
