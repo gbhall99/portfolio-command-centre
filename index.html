@@ -46586,7 +46586,12 @@ const Sow = {
   // {type:'equal'|'del'|'ins', text}. Shared by the editor's Compare, the AI
   // redraft/doc-review redline cards, and counterparty markup triage. It never
   // renders — the caller escapes each token with Dashboard.esc.
-  _diffTokens(s) { return String(s == null ? '' : s).split(/(\s+)/).filter(t => t.length > 0); },
+  // Tokenise as word-plus-trailing-whitespace so the LCS never matches the
+  // spaces *between* unrelated words as "equal" — that would strip the
+  // separating spaces from inserted words (e.g. "Build the churn" collapsing to
+  // "Buildthechurn" in the rendered diff). Keeping whitespace attached to its
+  // preceding word means every equal/del/ins run reconstructs verbatim.
+  _diffTokens(s) { return String(s == null ? '' : s).match(/\s*\S+\s*/g) || []; },
   diffWords(a, b) {
     const A = this._diffTokens(a), B = this._diffTokens(b);
     const n = A.length, m = B.length;
