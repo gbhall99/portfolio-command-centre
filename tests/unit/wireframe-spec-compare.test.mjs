@@ -98,17 +98,24 @@ describe('compare to built — vision/text branching', () => {
     expect(app.WireframeSkill._parseDataUrl('not-a-data-url')).toBeNull();
   });
 
-  it('compareToBuilt runs end-to-end through the mock and shows a result', async () => {
-    const { AI, WireframeSkill, document } = app;
-    const id = AI.upsertProfile({ name: 'Mock', adapter: 'mock', model: 'mock' });
+  it('compareToBuilt (WF-9) records a structured acceptance run through the mock', async () => {
+    const { AI, WireframeSkill, Wireframe } = app;
+    const id = AI.upsertProfile({ name: 'Mock', adapter: 'mock', model: 'mock', vision: true });
     AI.setDefaultProfile(id);
     const wf = buildWireframe();
     WireframeSkill._wfId = wf.id; WireframeSkill._mode = 'edit';
-    AI.ADAPTERS.mock.program([{ text: 'Matches: KPI and trend present. Mismatch: filter missing. Verdict: mostly conforms.' }]);
+    // Structured verdicts: item 0 passes, item 1 fails.
+    AI.ADAPTERS.mock.program([{ text: JSON.stringify({
+      items: [{ index: 0, verdict: 'pass', note: 'grid matches' }, { index: 1, verdict: 'fail', note: 'KPI missing' }],
+      summary: 'mostly conforms'
+    }) }]);
     await WireframeSkill.compareToBuilt('data:image/png;base64,QUJD');
-    const ov = document.getElementById('wfCompareOverlay');
-    expect(ov).not.toBeNull();
-    expect(ov.textContent).toContain('Verdict: mostly conforms');
-    ov.remove();
+    const run = Wireframe.latestAcceptanceRun(Wireframe.get(wf.id));
+    expect(run).toBeTruthy();
+    expect(run.mode).toBe('vision');
+    expect(run.summary).toBe('mostly conforms');
+    // Unmatched items degrade to cannot_verify; at least one fail → not passed.
+    expect(run.items.some(i => i.verdict === 'fail')).toBe(true);
+    expect(run.passed).toBe(false);
   });
 });
