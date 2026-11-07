@@ -1,8 +1,7 @@
-// Generator for the Velocity capabilities deck — Deloitte-branded, 12 slides, 16:9.
+// Generator for the Velocity capabilities deck — Velocity-branded, 12 slides, 16:9.
 // Leads with the CORE platform; AI shown as the complement. Six role one-pagers
 // (Product Owner, Scrum Master, Developer, Senior Manager, Director, Customer)
-// with real app screenshots. Branding is a recreation of the Deloitte palette +
-// a text wordmark — it does NOT embed the trademarked logo artwork.
+// with real app screenshots. Branding is the Velocity palette + a text wordmark.
 // Run: node scripts/build-capability-deck.mjs   (needs pptxgenjs --no-save + dist/shots/*.png)
 // Output: dist/velocity-capabilities.pptx
 import PptxGenJSImport from 'pptxgenjs';
@@ -19,18 +18,18 @@ const OUT = path.join(OUT_DIR, 'velocity-capabilities.pptx');
 const shot = (n) => path.join(SHOTS, n + '.png');
 const hasShot = (n) => fs.existsSync(shot(n));
 
-// --- Deloitte-style palette (recreated; no logo artwork) ---
+// --- Velocity palette ---
 const BLACK = '000000', INK = '1A1A1A', GREEN = '86BC25', GREEN_D = '5A7D1E';
 const MUTED = '6B7280', PANEL = 'F4F6F3', LINE = 'D8E0D4', DARK = '000000';
 
 const pptx = new PptxGenJS();
 pptx.defineLayout({ name: 'W', width: 13.333, height: 7.5 });
 pptx.layout = 'W';
-pptx.author = 'Deloitte'; pptx.company = 'Deloitte'; pptx.title = 'Velocity — Capabilities';
+pptx.author = 'Gareth Hall'; pptx.company = 'Velocity'; pptx.title = 'Velocity — Capabilities';
 const W = 13.333, H = 7.5, MX = 0.62;
 
 function wordmark(slide, x, y, dark) {
-  slide.addText([{ text: 'Deloitte', options: { color: dark ? 'FFFFFF' : BLACK, bold: true } }, { text: '.', options: { color: GREEN, bold: true } }],
+  slide.addText([{ text: 'Velocity', options: { color: dark ? 'FFFFFF' : BLACK, bold: true } }, { text: '.', options: { color: GREEN, bold: true } }],
     { x, y, w: 1.5, h: 0.3, fontFace: 'Arial', fontSize: 13, align: 'right' });
 }
 
